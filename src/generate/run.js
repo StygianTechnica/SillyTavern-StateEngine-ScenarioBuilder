@@ -18,6 +18,8 @@ import { relationsOf } from '../library/relations.js';
 import { buildGenerationPrompt, parseGenerationResponse, buildOverviewPrompt, parseOverviewResponse } from './prompt.js';
 import { callModel } from './llm.js';
 import { storyRelationships, relationshipLine } from '../library/story-relations.js';
+import { relationsFor, pairCovered, authoredLine } from '../library/relations-edit.js';
+import { getSettingDoc } from '../store/setting-store.js';
 import { useStateEngineJsonParser } from './json.js';
 import { LOG_PREFIX } from '../constants.js';
 
@@ -90,9 +92,13 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         }
     }
 
-    // Relationships the story has formed (Archivist), as context.
+    // Relationships as context: the user's own first, then the story's
+    // (Archivist) for pairs the user has not written.
     if (entry?.id) {
-        for (const r of (await storyRelationships(entry)).slice(0, 10)) memories.push(relationshipLine(entry.name, r));
+        const authored = getSettingDoc(ctx.settingId).relations;
+        for (const r of relationsFor(entry.id, authored)) memories.push(authoredLine(entry.name, nameOfId.get(r.otherId) ?? 'someone', r));
+        const story = (await storyRelationships(entry)).filter((x) => !(x.otherId && pairCovered(entry.id, x.otherId, authored)));
+        for (const r of story.slice(0, 10)) memories.push(relationshipLine(entry.name, r));
     }
 
     const values = draft ? { description: draft.description, aliases: draft.aliases, ...draft.fields } : {};

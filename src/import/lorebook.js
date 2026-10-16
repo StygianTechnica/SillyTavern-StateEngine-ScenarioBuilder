@@ -89,8 +89,10 @@ export function parseClassify(text, entry) {
     const kind = clean(kindRaw).toLowerCase().replace(/^kind\s*:\s*/, '');
     const type = kind.startsWith('skip') ? 'skip' : IMPORT_TYPES.find((t) => kind.startsWith(t) || kind === `${t}s`);
     if (!type) return null;
-    const name = clean(rest.join('|')).replace(/^name\s*:\s*/i, '').replace(/^["']|["'.]$/g, '') || entry.title;
-    return { type, name };
+    // The entry's own title is its name; the model's name is used only when
+    // the entry has none (a model renaming entries merges or loses them).
+    const modelName = clean(rest.join('|')).replace(/^name\s*:\s*/i, '').replace(/^["']|["'.]$/g, '');
+    return { type, name: entry.title || modelName || entry.keys[0] || '' };
 }
 
 // "Pull this entry's facts into these fields" - a JSON template; fields
@@ -104,18 +106,62 @@ export function buildExtractPrompt(entry, { typeNoun, name, fields, refNames = {
         let value = '"..."';
         if (f.kind === 'list') value = '["...", "..."]';
         if (f.kind === 'enum') value = `"<one of: ${f.values.join(' | ')} - or \\"\\">"`;
-        if (f.kind === 'ref') value = refNames[f.refType]?.length ? `"<one of: ${refNames[f.refType].join(' | ')} - or \\"\\">"` : '""';
-        if (f.kind === 'refs') value = refNames[f.refType]?.length ? `["<names from: ${refNames[f.refType].join(' | ')}>"]` : '[]';
+        // No candidate lists for links: a small model copies the whole list.
+        // Links are only what the entry itself names (checked again after).
+        if (f.kind === 'ref') value = '""';
+        if (f.kind === 'refs') value = '[]';
         return [f.name, value];
     });
-    if (typeNoun === 'location') template.push(['located_in', locations.length ? `"<the place it is inside, if the entry says - e.g. one of: ${locations.slice(0, 30).join(' | ')} - or \\"\\">"` : '"<the place it is inside, if the entry says - or \\"\\">"']);
-    const needs = want.map((f) => `- "${f.name}" (${f.label})${f.about ? `: ${f.about}` : ''}`);
+    if (typeNoun === 'location') template.push(['located_in', '""']);
+    const needs = want.map((f) => {
+        if (f.kind === 'ref') return `- "${f.name}" (${f.label}): the name of the one ${f.refType} the entry text itself names for this - or "" if it names none`;
+        if (f.kind === 'refs') return `- "${f.name}" (${f.label}): only ${f.refType}s the entry text itself names for this - [] if it names none. Never add anyone the entry does not name.`;
+        return `- "${f.name}" (${f.label})${f.about ? `: ${f.about}` : ''}`;
+    });
+    if (typeNoun === 'location') needs.push('- "located_in": the larger place the entry says it is inside, by name - or "" if it does not say');
     const user = [
         entryBlock(entry),
         `# Your task\nThis entry is about the ${typeNoun} "${name}". Copy its facts into the fields below.\n- Use ONLY what the entry says. Do not invent anything.\n- Where the entry says nothing for a field, use "" (or [] for a list).\n- "description": what it is and what it is like, in a few sentences drawn from the entry.\n- "aliases": other names the entry gives it (its keywords may help).`,
         `# Reply\nReply with ONLY this JSON object, filled in. Keep exactly these keys:\n{\n${template.map(([k, v]) => `  "${k}": ${v}`).join(',\n')}\n}\nWhat each key needs:\n${needs.join('\n')}`,
     ].join('\n\n');
     return { system: SYSTEM, user, keys: template.map(([k]) => k) };
+}
+
+// Whether `name` (or one of `aliases`) appears in `text` as words.
+export function mentions(text, name, aliases = []) {
+    const hay = ` ${nameKey(text)} `;
+    return [name, ...aliases].map(nameKey).filter((k) => k.length > 1).some((k) => hay.includes(` ${k} `));
+}
+
+// The extracted values with every link the entry does not actually name
+// taken out: ref/refs fields keep only objects whose name or alias appears
+// in the entry's title, keywords or text; "located_in" likewise.
+// `objects`: [{ id, name, aliases }]. -> { values, removed: [names] }
+export function keepMentionedLinks(entry, values, fields, objects) {
+    const text = [entry.title, ...entry.keys, entry.content].join(' \n ');
+    const byId = new Map(objects.map((o) => [o.id, o]));
+    const named = (id) => {
+        const o = byId.get(id);
+        return !!o && mentions(text, o.name, o.aliases ?? []);
+    };
+    const out = { ...values };
+    const removed = [];
+    for (const f of fields) {
+        if (f.kind === 'ref' && out[f.name]) {
+            if (!named(out[f.name])) { removed.push(byId.get(out[f.name])?.name ?? out[f.name]); delete out[f.name]; }
+        }
+        if (f.kind === 'refs' && Array.isArray(out[f.name])) {
+            const keep = out[f.name].filter(named);
+            removed.push(...out[f.name].filter((id) => !keep.includes(id)).map((id) => byId.get(id)?.name ?? id));
+            out[f.name] = keep;
+            if (!keep.length) delete out[f.name];
+        }
+    }
+    if (typeof out.located_in === 'string' && out.located_in && !mentions(text, out.located_in)) {
+        removed.push(out.located_in);
+        delete out.located_in;
+    }
+    return { values: out, removed };
 }
 
 // When extraction fails: what the entry itself can always give - its text as

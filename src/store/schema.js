@@ -26,6 +26,14 @@
 //         environment: { climate, lighting, rules }   inherited down the tree (SB-142)
 //     } },
 //     groups: [{ id, name, entryIds: [] }],
+//     imports: [{ id, at, books, created: [{ id, type, name }],
+//                 filled: [{ id, name, before: { field: value }, parentBefore }] }]
+//                                   the last lorebook imports, for undoing one whole
+//     relations: [{ id, from, to, kind, note, mutual }]
+//                                   relationships the user authored (allies, rivals,
+//                                   family...) - where no State Engine field holds them
+//                                   (SB-110, SB-112); they take precedence over the
+//                                   story's (Archivist's) for the same pair
 //     tracked: [objectId],          objects Scenario Builder has taken in (src/library/intake.js)
 //     trackedReady,                 false until the first intake pass has seeded `tracked`
 //     graph: { positions: { [objectId]: { x, y } } } }   where the user dragged nodes in the graph view
@@ -101,8 +109,17 @@ export function normalizeEntryMeta(meta) {
     };
 }
 
+export const IMPORTS_KEPT = 10;
+
+function normalizeRelations(value) {
+    if (!Array.isArray(value)) return [];
+    return value.filter(isObject)
+        .filter((r) => typeof r.from === 'string' && r.from && typeof r.to === 'string' && r.to && r.from !== r.to)
+        .map((r) => ({ id: str(r.id) || newLocalId('r'), from: r.from, to: r.to, kind: str(r.kind) || 'knows', note: str(r.note), mutual: r.mutual === true }));
+}
+
 export function emptySettingDoc() {
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, graph: { positions: {} } };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {} } };
 }
 
 // Brings any stored setting document (or nothing) to the current shape.
@@ -127,7 +144,9 @@ export function normalizeSettingDoc(doc) {
     const groups = Array.isArray(d.groups)
         ? d.groups.filter(isObject).filter((g) => typeof g.id === 'string' && g.id).map((g) => ({ id: g.id, name: str(g.name) || 'Group', entryIds: strList(g.entryIds) }))
         : [];
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true, graph: { positions: normalizePositions(d.graph?.positions) } };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true,
+        imports: Array.isArray(d.imports) ? d.imports.filter(isObject).slice(-IMPORTS_KEPT) : [],
+        relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions) } };
 }
 
 export function emptyCanonical() {

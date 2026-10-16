@@ -20,10 +20,11 @@ import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
 import { baselineFields } from '../library/fields.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
+import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
 import { sparkButton, fieldWithTools } from './controls.js';
 import { generateEntry, canGenerateFor } from '../generate/run.js';
 import { confirmAction } from './confirm.js';
-import { ws, rerender, openSheet, closeSheet, markDirty } from './ws.js';
+import { ws, rerender, openSheet, closeSheet, markDirty, stopEditing } from './ws.js';
 import { h, icon, button, select, field, csv, fromCsv, toast } from './dom.js';
 
 const SHEET_TABS = Object.freeze([
@@ -165,8 +166,19 @@ export async function renderSheet(type, all) {
     }
 
     const defs = await fieldDefs(type);
-    if (ws.editing && ws.draftFor !== (entry.id ?? 'new')) startDraft(entry, defs);
-    if (!ws.editing) ws.draft = null;
+    // An unsaved new entry has nothing to show outside edit mode.
+    if (isNew && !ws.editing) {
+        closeSheet();
+        return h('div');
+    }
+    // A draft exists exactly while editing this entry: start one when there
+    // is none (or it belongs to another entry); drop it - and the marker of
+    // whose it was - when not editing, so the next Edit starts fresh.
+    if (ws.editing && (!ws.draft || ws.draftFor !== (entry.id ?? 'new'))) startDraft(entry, defs);
+    if (!ws.editing) {
+        ws.draft = null;
+        ws.draftFor = null;
+    }
 
     const doc = getChatDoc(chatKey);
     const parents = getParents(settingId);
@@ -202,7 +214,7 @@ export async function renderSheet(type, all) {
         h('div', { class: 'sb-spacer' }),
         ws.editing
             ? [button('Save', save, { iconName: 'fa-floppy-disk', cls: 'sb-primary' }), button('Cancel', () => {
-                ws.editing = false; ws.dirty = false; ws.draft = null;
+                stopEditing();
                 if (isNew) closeSheet(); else rerender();
             }, { iconName: 'fa-xmark' })]
             : [button('Enrich', () => { ws.editing = true; ws.pendingGen = 'enrich'; rerender(); }, { iconName: 'fa-wand-magic-sparkles', disabled: !gate.ok, title: gate.reason || 'Add detail to every field - fill the empty ones and deepen the rest. You review it before saving.' }),
@@ -393,44 +405,129 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
 
 async function relationsTab({ entry, isNew, allEntries, names, parents, defs }) {
     if (isNew) return h('div', { class: 'sb-muted' }, 'Save the entry first.');
+    const { chatId, settingId } = ws.ctx;
     const labels = new Map(defs.map((d) => [d.name, d.label]));
     const rel = relationsOf(entry, allEntries, parents, (typeId, f) => (typeId === entry.type ? labels.get(f) : null) ?? f.replace(/_/g, ' '));
-    const group = (title, ids) => (ids.length ? h('div', { class: 'sb-relgroup' }, h('div', { class: 'sb-section-title' }, title), h('div', { class: 'sb-chips' }, ids.map((id) => chip(id, names)))) : null);
+    const act = (fn) => async () => {
+        try {
+            await fn();
+            await syncNow();
+            rerender();
+        } catch (err) {
+            toast('error', `Could not change it: ${err?.message ?? err}`);
+        }
+    };
+    // A link chip with an x that takes the link out of the field holding it.
+    const unlink = (title, ownerId, field, targetId) => h('span', {
+        class: 'sb-iconbtn sb-unlink', title,
+        onclick: act(async () => {
+            if (!await removeLink(chatId, settingId, ownerId, field, targetId)) throw new Error('State Engine refused the change');
+        }),
+    }, icon('fa-xmark'));
+    const group = (title, items) => (items.length ? h('div', { class: 'sb-relgroup' }, h('div', { class: 'sb-section-title' }, title), h('div', { class: 'sb-chips' }, items)) : null);
     const incoming = new Map();
     for (const r of rel.incoming) {
-        const key = `${names.get(r.id)?.type ?? ''}:${r.label}`;
-        if (!incoming.has(key)) incoming.set(key, { label: r.label, ids: [] });
+        const key = `${names.get(r.id)?.type ?? ''}:${r.label}:${r.field}`;
+        if (!incoming.has(key)) incoming.set(key, { label: r.label, field: r.field, ids: [] });
         incoming.get(key).ids.push(r.id);
     }
     const sections = [
-        group('Inside', rel.parentPath.slice(-1)),
-        group('Places inside', rel.children),
-        ...rel.outgoing.map((o) => group(o.label, o.ids)),
-        ...[...incoming.values()].map((g) => group(`Linked as "${g.label}" by`, g.ids)),
+        group('Inside', rel.parentPath.slice(-1).map((id) => chip(id, names))),
+        group('Places inside', rel.children.map((id) => chip(id, names))),
+        ...rel.outgoing.map((o) => group(o.label, o.ids.map((id) => h('span', { class: 'sb-linkchip' }, chip(id, names), unlink('Remove this link', entry.id, o.field, id))))),
+        // On another object's field: removing it edits that object.
+        ...[...incoming.values()].map((g) => group(`Linked as "${g.label}" by`, g.ids.map((id) => h('span', { class: 'sb-linkchip' }, chip(id, names), unlink(`Remove ${entry.name} from this`, id, g.field, entry.id))))),
     ].filter(Boolean);
-    // What the story has made of it (Archivist's compiled relationships).
+
+    // Add a link through one of this entry's reference fields.
+    const refDefs = defs.filter((d) => d.kind === 'ref' || d.kind === 'refs');
+    let linkForm = null;
+    if (refDefs.length) {
+        const form = ws.linkForm?.entryId === entry.id ? ws.linkForm : (ws.linkForm = { entryId: entry.id, field: refDefs[0].name, target: '' });
+        const def = refDefs.find((d) => d.name === form.field) ?? refDefs[0];
+        const targets = allEntries.filter((e) => e.type === def.refType && e.id !== entry.id).sort((x, y) => x.name.localeCompare(y.name));
+        linkForm = h('div', { class: 'sb-row sb-addform' },
+            select(refDefs.map((d) => ({ value: d.name, label: d.label })), form.field, { onchange: (e) => { form.field = e.target.value; form.target = ''; rerender(); } }),
+            select([{ value: '', label: `Choose a ${def.refType}…` }, ...targets.map((t) => ({ value: t.id, label: t.name }))], form.target, { onchange: (e) => { form.target = e.target.value; } }),
+            button('Link', act(async () => {
+                if (!form.target) throw new Error(`choose a ${def.refType} first`);
+                if (!await addLink(chatId, settingId, entry.id, def.name, form.target, { multiple: def.kind === 'refs' })) throw new Error('State Engine refused the change');
+                form.target = '';
+            }), { iconName: 'fa-link' }));
+    }
+
+    // Authored relationships.
+    const relations = listRelations(settingId);
+    const mine = relationsFor(entry.id, relations);
+    const others = allEntries.filter((e) => e.id !== entry.id).sort((x, y) => x.name.localeCompare(y.name));
+    const draft = ws.relDraft?.entryId === entry.id ? ws.relDraft : (ws.relDraft = { entryId: entry.id, to: '', kind: 'ally', note: '', mutual: true, editing: null, flip: false });
+    const resetDraft = () => Object.assign(draft, { to: '', note: '', editing: null, flip: false });
+    const authored = mine.length ? h('div', { class: 'sb-relgroup' }, mine.map((m) => h('div', { class: 'sb-rel' },
+        icon(m.rel.mutual ? 'fa-arrows-left-right' : (m.direction === 'out' ? 'fa-arrow-right' : 'fa-arrow-left')),
+        h('span', { class: 'sb-chip sb-chip-on' }, m.kind),
+        names.get(m.otherId) ? chip(m.otherId, names) : h('span', { class: 'sb-chip sb-chip-missing' }, 'deleted entry'),
+        m.rel.note ? h('small', { class: 'sb-hint' }, m.rel.note) : null,
+        h('span', { class: 'sb-push' },
+            h('span', { class: 'sb-iconbtn', title: 'Edit', onclick: () => { Object.assign(draft, { to: m.otherId, kind: m.rel.kind, note: m.rel.note, mutual: m.rel.mutual, editing: m.rel.id, flip: m.direction === 'in' }); rerender(); } }, icon('fa-pen')),
+            h('span', { class: 'sb-iconbtn sb-danger', title: 'Remove', onclick: act(async () => removeRelation(settingId, m.rel.id)) }, icon('fa-trash')))))) : h('div', { class: 'sb-muted' }, 'None yet.');
+    const custom = draft.kind === '' || !RELATION_KINDS.includes(draft.kind);
+    const kindSel = h('select', {
+        class: 'text_pole',
+        onchange: (e) => { draft.kind = e.target.value === '__custom__' ? '' : e.target.value; draft.mutual = MUTUAL_KINDS.has(draft.kind); rerender(); },
+    }, RELATION_KINDS.map((k) => h('option', { value: k, selected: k === draft.kind }, k)), h('option', { value: '__custom__', selected: custom }, 'Your own…'));
+    const relForm = h('div', { class: 'sb-addform' },
+        h('div', { class: 'sb-row' },
+            h('b', {}, draft.flip ? '…' : entry.name), kindSel,
+            custom ? h('input', { class: 'text_pole', value: draft.kind, placeholder: 'e.g. sworn to', oninput: (e) => { draft.kind = e.target.value; } }) : null,
+            select([{ value: '', label: 'Choose who or what…' }, ...others.map((o) => ({ value: o.id, label: `${o.name} (${o.type})` }))], draft.to, { onchange: (e) => { draft.to = e.target.value; } }),
+            draft.flip ? h('b', {}, `→ ${entry.name}`) : null),
+        h('div', { class: 'sb-row' },
+            h('input', { class: 'text_pole', value: draft.note, placeholder: 'A note (optional) - e.g. "since the siege of Veylan"', oninput: (e) => { draft.note = e.target.value; } }),
+            h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: draft.mutual, onchange: (e) => { draft.mutual = e.target.checked; } }), h('span', {}, 'Both ways')),
+            button(draft.editing ? 'Save' : 'Add', act(async () => {
+                if (!draft.to) throw new Error('choose who or what first');
+                if (!String(draft.kind).trim()) throw new Error('say what the relationship is');
+                if (draft.editing) removeRelation(settingId, draft.editing);
+                const [from, to] = draft.flip ? [draft.to, entry.id] : [entry.id, draft.to];
+                addRelation(settingId, { from, to, kind: draft.kind, note: draft.note, mutual: draft.mutual });
+                resetDraft();
+            }), { iconName: draft.editing ? 'fa-floppy-disk' : 'fa-plus', cls: 'sb-primary' }),
+            draft.editing || draft.to ? button('Cancel', () => { resetDraft(); rerender(); }, { iconName: 'fa-xmark' }) : null));
+
+    // What the story has made of it (Archivist) - read-only; corrected by
+    // writing your own relationship for the pair.
     let story;
     if (!hasArchivist()) {
         story = h('div', { class: 'sb-muted' }, 'Install Archivist to see the relationships the story has formed.');
     } else {
         const rels = await storyRelationships(entry);
         story = rels.length ? h('div', { class: 'sb-relgroup' }, rels.map((r) => {
+            const covered = !!r.otherId && pairCovered(entry.id, r.otherId, relations);
             const other = r.otherId && names.get(r.otherId) ? chip(r.otherId, names) : h('b', {}, r.otherName);
-            return h('div', { class: 'sb-rel' },
+            return h('div', { class: `sb-rel${covered ? ' sb-superseded' : ''}` },
                 h('span', { title: r.direction === 'out' ? `How ${entry.name} sees them` : `How they see ${entry.name}` }, icon(r.direction === 'out' ? 'fa-arrow-right' : 'fa-arrow-left')),
                 other,
                 r.type ? h('span', { class: 'sb-chip' }, r.type) : null,
                 h('span', { class: `sb-pol ${r.polarity < 0 ? 'sb-pol-neg' : r.polarity > 0 ? 'sb-pol-pos' : ''}` }, `${r.polarityLabel} (${r.polarity > 0 ? '+' : ''}${r.polarity})`),
                 r.intensity ? h('small', { class: 'sb-hint' }, `${r.intensity} intensity`) : null,
                 r.trend ? h('small', { class: 'sb-hint' }, r.trend) : null,
+                h('span', { class: 'sb-push' }, covered
+                    ? h('small', { class: 'sb-hint' }, 'replaced by your relationship')
+                    : (r.otherId ? button('Correct it', () => { Object.assign(draft, { to: r.otherId, kind: r.type || 'knows', note: r.text, mutual: false, editing: null, flip: r.direction === 'in' }); rerender(); }, { iconName: 'fa-pen', title: 'Write your own version - it replaces this one in guidance and generation' }) : null)),
                 r.text ? h('div', { class: 'sb-hint', style: 'flex-basis: 100%' }, r.text) : null);
         })) : h('div', { class: 'sb-muted' }, 'No relationships compiled for it yet in this chat.');
     }
+
     return h('div', { class: 'sb-tabpane' },
-        h('div', { class: 'sb-section-title' }, icon('fa-link'), ' In the setting'),
-        sections.length ? sections : h('div', { class: 'sb-muted' }, 'No links yet. Reference fields (owner, members, location…) in Details create them.'),
-        h('div', { class: 'sb-section-title' }, icon('fa-heart-crack'), ' From the story'),
-        story);
+        h('div', { class: 'sb-section-title' }, icon('fa-link'), ' Links in the setting'),
+        sections.length ? sections : h('div', { class: 'sb-muted' }, 'No links yet.'),
+        linkForm,
+        h('div', { class: 'sb-section-title' }, icon('fa-people-arrows'), ' Relationships'),
+        authored,
+        relForm,
+        h('div', { class: 'sb-section-title' }, icon('fa-book-open-reader'), ' From the story'),
+        story,
+        h('small', { class: 'sb-hint' }, 'Story relationships come from Archivist and are read-only here; "Correct it" writes your own version, which takes precedence.'));
 }
 
 async function storyTab({ entry, isNew, doc }) {

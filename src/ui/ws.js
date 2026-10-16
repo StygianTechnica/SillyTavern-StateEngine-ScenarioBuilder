@@ -52,9 +52,21 @@ export function openSheet(entryId, chapter = null) {
     rerender();
 }
 
-export function closeSheet() {
-    ws.entryId = null;
+// Leaves edit mode cleanly - the one way out of it: the draft and the marker
+// of whose draft it was go together, and an unsaved new entry is dropped.
+export function stopEditing() {
     ws.editing = false;
     ws.dirty = false;
+    ws.draft = null;
+    ws.draftFor = null;
+    ws.overviewDraft = null;
+    ws.generatedFields = new Set();
+    ws.pendingGen = null;
+    if (ws.entryId === 'new') ws.entryId = null;
+}
+
+export function closeSheet() {
+    stopEditing();
+    ws.entryId = null;
     rerender();
 }

@@ -4,7 +4,9 @@
 // becomes a new object - and apply it. See src/import/run.js.
 
 import { getObjectTypes } from '../library/library.js';
-import { listBooks, startAnalysis, applyImport, cancelImport, clearImport, getImportJob } from '../import/run.js';
+import { listBooks, startAnalysis, applyImport, cancelImport, clearImport, getImportJob, listImports, undoImport } from '../import/run.js';
+import { confirmAction } from './confirm.js';
+import { syncNow } from '../guidance/sync.js';
 import { ws, rerender, openSheet } from './ws.js';
 import { h, icon, button, toast } from './dom.js';
 
@@ -44,11 +46,37 @@ async function chooseStep(failed) {
             OPTION_TEXT.map(([key, label, hint]) => h('label', { class: 'checkbox_label sb-option', title: hint || null },
                 h('input', { type: 'checkbox', checked: form.options[key] === true, onchange: (e) => { form.options[key] = e.target.checked; } }),
                 h('span', {}, label, hint ? h('small', { class: 'sb-hint' }, ` - ${hint}`) : null)))),
+        pastImports(),
         h('div', { class: 'sb-savebar' },
             button(form.books.size ? `Read ${form.books.size} book${form.books.size === 1 ? '' : 's'}` : 'Choose a book first', () => {
                 if (!form.books.size) return toast('info', 'Tick at least one lorebook.');
                 void startAnalysis({ ...ws.ctx, books: [...form.books], options: form.options });
             }, { iconName: 'fa-magnifying-glass', cls: 'sb-primary', disabled: !form.books.size })));
+}
+
+// Undo one whole import: what it created is deleted, what it filled goes
+// back to how it was.
+async function undo(rec) {
+    const what = [rec.created.length ? `delete the ${rec.created.length} ${rec.created.length === 1 ? 'entry' : 'entries'} it created` : '', rec.filled.length ? `put back the blank fields it filled on ${rec.filled.length} ${rec.filled.length === 1 ? 'entry' : 'entries'}` : ''].filter(Boolean).join(' and ');
+    if (!await confirmAction(`Undo the import of ${rec.books.join(', ')}?
+This will ${what}.
+Anything you changed in those fields since will be undone too.`)) return;
+    const out = await undoImport(ws.ctx.chatId, ws.ctx.settingId, rec.id);
+    if (!out) return toast('error', 'That import is no longer on record.');
+    toast(out.failed ? 'warning' : 'success', `Undone: ${out.deleted} deleted, ${out.restored} restored${out.failed ? `, ${out.failed} failed (see the console)` : ''}.`);
+    await syncNow();
+    if (getImportJob()?.importId === rec.id) clearImport();
+    rerender();
+}
+
+function pastImports() {
+    const recs = listImports(ws.ctx.settingId);
+    if (!recs.length) return null;
+    return h('div', { class: 'sb-card' }, h('div', { class: 'sb-card-title' }, icon('fa-clock-rotate-left'), ' Earlier imports'),
+        recs.map((rec) => h('div', { class: 'sb-row sb-past-import' },
+            h('span', {}, rec.books.join(', ')),
+            h('small', { class: 'sb-hint' }, `${new Date(rec.at).toLocaleString()} · ${rec.created.length} created, ${rec.filled.length} filled in`),
+            h('span', { class: 'sb-push' }, button('Undo', () => void undo(rec), { iconName: 'fa-rotate-left', title: 'Delete what it created and put back what it filled' })))));
 }
 
 function progressStep(job, title) {
@@ -111,6 +139,7 @@ function doneStep(job) {
         failed.length ? h('div', {}, failed.map((p) => h('div', { class: 'sb-hint' }, `${p.name}: ${p.error}`))) : null,
         h('small', { class: 'sb-hint' }, 'Find them in the Catalog. Imported entries are marked as imported, with the entry they came from.'),
         h('div', { class: 'sb-savebar' },
+            job.importId ? button('Undo this import', () => { const rec = listImports(ws.ctx.settingId).find((r) => r.id === job.importId); if (rec) void undo(rec); }, { iconName: 'fa-rotate-left', cls: 'sb-danger' }) : null,
             button('Import more', () => clearImport(), { iconName: 'fa-file-import' }),
             button('Open the catalog', () => { clearImport(); ws.tab = 'catalog'; ws.entryId = null; rerender(); }, { iconName: 'fa-book-atlas', cls: 'sb-primary' })));
 }

@@ -22,7 +22,7 @@ import { renderScene, renderReview, renderHistory, renderPreview } from './panel
 import { renderImport } from './import-panel.js';
 import { IMPORT_EVENT } from '../import/run.js';
 import { confirmAction } from './confirm.js';
-import { ws, setRedraw, rerender } from './ws.js';
+import { ws, setRedraw, rerender, stopEditing } from './ws.js';
 import { h, icon, select, toast } from './dom.js';
 
 const TABS = Object.freeze([
@@ -55,8 +55,7 @@ async function close() {
     pill = null;
     ws.open = false;
     ws.minimized = false;
-    ws.editing = false;
-    ws.dirty = false;
+    stopEditing();
 }
 
 function minimize() {
@@ -117,9 +116,8 @@ function listen() {
         const ctx = await bindContext();
         if (!ctx) return void close();
         ws.ctx = ctx;
+        stopEditing();
         ws.entryId = null;
-        ws.editing = false;
-        ws.dirty = false;
         rerender();
     });
 }
@@ -157,8 +155,7 @@ async function render() {
             onclick: async () => {
                 if (key === ws.tab) return;
                 if (ws.dirty && !await confirmAction('Leave without saving your changes?')) return;
-                ws.dirty = false;
-                ws.editing = false;
+                stopEditing();
                 ws.tab = key;
                 rerender();
             },

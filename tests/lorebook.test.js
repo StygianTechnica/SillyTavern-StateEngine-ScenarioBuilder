@@ -1,4 +1,4 @@
-import { readEntries, matchEntry, buildClassifyPrompt, parseClassify, buildExtractPrompt, fallbackValues, blanksOnly } from '../src/import/lorebook.js';
+import { readEntries, matchEntry, buildClassifyPrompt, parseClassify, buildExtractPrompt, fallbackValues, blanksOnly, keepMentionedLinks, mentions } from '../src/import/lorebook.js';
 
 const book = {
     entries: {
@@ -36,7 +36,7 @@ describe('classifying and extracting', () => {
 
     it('asks for one "kind | name" line and reads it forgivingly', () => {
         expect(buildClassifyPrompt(market).user).toContain('kind | name');
-        expect(parseClassify('location | The Brass Market', market)).toEqual({ type: 'location', name: 'The Brass Market' });
+        expect(parseClassify('location | The Brass Market', market)).toEqual({ type: 'location', name: 'Brass Market' });
         expect(parseClassify('Sure!\n**Location** | Brass Market.', market)).toEqual({ type: 'location', name: 'Brass Market' });
         expect(parseClassify('characters | Mira', market).type).toBe('character');
         expect(parseClassify('skip', market).type).toBe('skip');
@@ -60,5 +60,40 @@ describe('classifying and extracting', () => {
         const existing = { name: 'Mira Vane', description: 'Innkeeper.', role: '', aliases: ['Mira'] };
         expect(blanksOnly(existing, { description: 'Other text', role: 'innkeeper', aliases: ['mira', 'The Widow'] }))
             .toEqual({ role: 'innkeeper', aliases: ['Mira', 'The Widow'] });
+    });
+});
+
+describe('links only to what the entry names', () => {
+    const entry = { title: 'Followers of Ferunox', keys: ['ferunox cult'], content: 'Only Garrick serves Ferunox openly; the rest fear him.' };
+    const objects = [
+        { id: 'chr_g', name: 'Garrick Holt', aliases: ['Garrick'] },
+        { id: 'chr_m', name: 'Mira Vane', aliases: [] },
+        { id: 'chr_e', name: 'Ethloe', aliases: [] },
+        { id: 'loc_v', name: 'Veylan', aliases: [] },
+    ];
+    const fields = [{ name: 'members', kind: 'refs', refType: 'character' }, { name: 'leader', kind: 'ref', refType: 'character' }];
+
+    it('drops members the entry never names (a model copying the whole list)', () => {
+        const { values, removed } = keepMentionedLinks(entry, { members: ['chr_g', 'chr_m', 'chr_e'], leader: 'chr_m', description: 'x' }, fields, objects);
+        expect(values.members).toEqual(['chr_g']);
+        expect(values.leader).toBeUndefined();
+        expect(removed.sort()).toEqual(['Ethloe', 'Mira Vane', 'Mira Vane']);
+        expect(values.description).toBe('x');
+    });
+
+    it('keeps a place it is inside only if the entry names it', () => {
+        expect(keepMentionedLinks(entry, { located_in: 'Veylan' }, [], objects).values.located_in).toBeUndefined();
+        expect(keepMentionedLinks({ ...entry, content: 'A cult in Veylan.' }, { located_in: 'Veylan' }, [], objects).values.located_in).toBe('Veylan');
+    });
+
+    it('matches names as whole words, ignoring possessives', () => {
+        expect(mentions("Ethloe's disciples gather at dawn", 'Ethloe')).toBe(true);
+        expect(mentions('Ethloenna sings', 'Ethloe')).toBe(false);
+    });
+
+    it('offers no candidate lists for links in the prompt', () => {
+        const { user } = buildExtractPrompt(entry, { typeNoun: 'faction', name: 'Followers of Ferunox', fields, refNames: { character: ['Mira Vane', 'Ethloe'] } });
+        expect(user).not.toContain('Mira Vane');
+        expect(user).toContain('Never add anyone the entry does not name');
     });
 });

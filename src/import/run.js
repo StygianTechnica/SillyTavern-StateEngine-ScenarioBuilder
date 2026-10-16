@@ -19,14 +19,14 @@
 import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getObject } from '../api/objects.js';
-import { getEntryMeta } from '../store/setting-store.js';
-import { getObjectTypes, listEntries, createEntry, updateEntry, setEntryMeta, setParent, setCanonOnly } from '../library/library.js';
+import { getEntryMeta, getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
+import { getObjectTypes, listEntries, createEntry, updateEntry, setEntryMeta, setParent, setCanonOnly, getParents, deleteEntry } from '../library/library.js';
 import { baselineFields } from '../library/fields.js';
 import { callModel } from '../generate/llm.js';
 import { askReliably } from '../generate/run.js';
 import { useStateEngineJsonParser } from '../generate/json.js';
 import { parseGenerationResponse } from '../generate/prompt.js';
-import { readEntries, matchEntry, buildClassifyPrompt, parseClassify, buildExtractPrompt, fallbackValues, blanksOnly } from './lorebook.js';
+import { readEntries, matchEntry, buildClassifyPrompt, parseClassify, buildExtractPrompt, fallbackValues, blanksOnly, keepMentionedLinks } from './lorebook.js';
 
 export const IMPORT_EVENT = 'scenario_builder_import';
 
@@ -206,13 +206,52 @@ async function extract(entry, { type, name, existing, fieldsFor, maxTokens, obje
     try {
         const result = await askReliably({ ...prompt, plain: false }, read, maxTokens);
         if (!result.error) {
-            if (!result.values.description && !existing.description) result.values.description = entry.content;
-            return { values: result.values, note: '' };
+            // Links survive only if the entry itself names the object.
+            const { values, removed } = keepMentionedLinks(entry, result.values, fields, objects);
+            if (!values.description && !existing.description) values.description = entry.content;
+            return { values, note: removed.length ? `left out links the entry does not name: ${removed.slice(0, 6).join(', ')}${removed.length > 6 ? '…' : ''}` : '' };
         }
     } catch (err) {
         console.warn(LOG_PREFIX, 'extraction failed', err);
     }
     return { values: fallbackValues(entry, name), note: 'used the entry text as it is' };
+}
+
+// The setting's recorded imports, newest first.
+export function listImports(settingId) {
+    return [...getSettingDoc(settingId).imports].reverse();
+}
+
+// Undoes one import: the objects it created are deleted (State Engine
+// removes them from every reference), and the fields it filled go back to
+// what they held before (as do places it moved). Fields edited since are
+// still restored - the import's values are what is taken back. -> summary
+export async function undoImport(chatId, settingId, importId) {
+    const rec = getSettingDoc(settingId).imports.find((i) => i.id === importId);
+    if (!rec) return null;
+    const out = { deleted: 0, restored: 0, failed: 0 };
+    for (const c of rec.created) {
+        try {
+            if (await deleteEntry(chatId, settingId, c.id)) out.deleted += 1;
+        } catch (err) {
+            console.warn(LOG_PREFIX, `could not delete ${c.name}`, err);
+            out.failed += 1;
+        }
+    }
+    for (const f of rec.filled) {
+        try {
+            if (Object.keys(f.before ?? {}).length && !await updateEntry(chatId, settingId, f.id, f.before)) throw new Error('refused');
+            if (f.parentBefore !== undefined && getParents(settingId)[f.id] !== (f.parentBefore ?? undefined)) setParent(settingId, f.id, f.parentBefore ?? null);
+            setEntryMeta(settingId, f.id, { source: '' });
+            out.restored += 1;
+        } catch (err) {
+            console.warn(LOG_PREFIX, `could not restore ${f.name}`, err);
+            out.failed += 1;
+        }
+    }
+    updateSettingDoc(settingId, (d) => { d.imports = d.imports.filter((i) => i.id !== importId); });
+    announce();
+    return out;
 }
 
 // Applies the proposals the user kept. Never throws.
@@ -227,6 +266,9 @@ export async function applyImport() {
     const summary = { filled: 0, created: 0, failed: 0, placed: 0 };
     const created = new Map(); // "type|name" -> id, so two entries about one thing make one object
     const places = [];
+    // What this import did, so it can be undone as one (SB-133a/SB-226).
+    const record = { id: `imp_${Date.now().toString(36)}`, at: new Date().toISOString(), books: [...job.books], created: [], filled: [] };
+    const parentsBefore = getParents(settingId);
     try {
         for (const p of kept) {
             if (job.cancelled) break;
@@ -240,6 +282,10 @@ export async function applyImport() {
                     const base = fresh?.base ?? fresh ?? {};
                     const patch = blanksOnly({ name: fresh?.name, aliases: base.aliases ?? [], ...base }, p.values);
                     if (Object.keys(patch).length && !await updateEntry(chatId, settingId, targetId, patch)) throw new Error('State Engine refused the change');
+                    if (!created.has(key) || p.matchId) {
+                        const before = Object.fromEntries(Object.keys(patch).map((k) => [k, structuredClone(base[k] ?? (Array.isArray(patch[k]) ? [] : ''))]));
+                        record.filled.push({ id: targetId, name: fresh?.name ?? p.name, before, parentBefore: parentsBefore[targetId] ?? null });
+                    }
                     const meta = { ...(job.options.canonLock ? { canonLocked: true } : {}) };
                     if (!getEntryMeta(settingId, targetId).source) meta.source = p.entry.source;
                     setEntryMeta(settingId, targetId, meta);
@@ -249,6 +295,7 @@ export async function applyImport() {
                     const obj = await createEntry(chatId, settingId, p.type, { name: p.name, ...p.values }, { origin: 'import', source: p.entry.source, canonLocked: job.options.canonLock === true });
                     if (!obj) throw new Error('State Engine refused to create it');
                     created.set(key, obj.id);
+                    record.created.push({ id: obj.id, type: p.type, name: p.name });
                     summary.created += 1;
                     if (p.locatedIn && p.type === 'location') places.push([obj.id, p.locatedIn]);
                 }
@@ -270,6 +317,10 @@ export async function applyImport() {
             }
         }
         if (job.options.canonOnly) setCanonOnly(settingId, true);
+        if (record.created.length || record.filled.length) {
+            updateSettingDoc(settingId, (d) => { d.imports = [...d.imports, record]; });
+            job.importId = record.id;
+        }
         job.summary = summary;
         job.state = 'done';
     } catch (err) {

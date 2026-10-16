@@ -26,6 +26,7 @@ import { getBoundSettingId, readField } from '../library/library.js';
 import { pathOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { buildGuidance, buildStateBlock, timeText } from './build.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
+import { relationsFor, pairCovered } from '../library/relations-edit.js';
 
 export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
 
@@ -97,13 +98,23 @@ export async function gatherInputs(chatId, chatKey) {
             why: 'canonically present',
         });
     }
-    // How the characters present feel about each other (Archivist).
-    if (hasArchivist() && cast.length > 1) {
+    // How the characters present relate to each other: the relationships
+    // the user authored first, then the story's (Archivist) for pairs the
+    // user has not written.
+    if (cast.length > 1) {
         const present = new Set(c.castIds);
+        const nameById = new Map(cast.map((m) => [m.id, m.name]));
+        const authored = settingId ? library.relations ?? [] : [];
         for (const member of cast) {
-            const rels = (await storyRelationships({ id: member.id, name: member.name })).filter((r) => r.direction === 'out' && present.has(r.otherId));
-            member.relations = rels.map((r) => `toward ${r.otherName}: ${[r.type, r.polarityLabel, r.trend].filter(Boolean).join(', ')}`).sort();
-            if (rels.length) member.why = 'canonically present; relationships from the story';
+            const lines = relationsFor(member.id, authored).filter((r) => present.has(r.otherId))
+                .map((r) => `toward ${nameById.get(r.otherId)}: ${r.kind}${r.rel.note ? ` (${r.rel.note})` : ''}`);
+            if (hasArchivist()) {
+                const rels = (await storyRelationships({ id: member.id, name: member.name }))
+                    .filter((r) => r.direction === 'out' && present.has(r.otherId) && !pairCovered(member.id, r.otherId, authored));
+                lines.push(...rels.map((r) => `toward ${r.otherName}: ${[r.type, r.polarityLabel, r.trend].filter(Boolean).join(', ')}`));
+            }
+            member.relations = lines.sort();
+            if (lines.length) member.why = 'canonically present; relationships';
         }
     }
 

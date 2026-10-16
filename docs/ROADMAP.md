@@ -58,9 +58,13 @@ These came after spec v0.5 and should be folded into its next revision.
 - [ ] Graph, next: draw an edge between two nodes to create a reference;
   Archivist relationships (allies, rivals, family) as edges; edge labels on
   the canvas; pinch-zoom on touch screens; group/cluster by region.
-- [ ] Relationship authoring on the sheet: add allies, rivals, family and
-  employer as typed links (Scenario Builder metadata where State Engine has no
-  field, SB-110), plus starting relationships (SB-112).
+- [x] Relationship editing on the sheet: links in reference fields removed
+  (x) and added; authored relationships (ally, rival, family, mentor... or
+  your own words, with a note, one-way or mutual) kept as Scenario Builder
+  metadata (SB-110, SB-112); "Correct it" on a story relationship writes your
+  own version, which takes precedence in guidance and generation (Archivist
+  itself is never written, SB-005).
+- [ ] Show authored relationships as edges in the graph view.
 - [x] Relationships from Archivist's compiled memory (dossiers): shown on the
   sheet, given to generation, and - between the characters present - in the
   guidance's cast lines.
@@ -148,6 +152,10 @@ calls (one entry at a time, retry, and the entry text as a fallback).
 
 - [ ] Run large books on State Engine independent presets (resumable across
   reloads, SB-157) instead of in-page.
+- [x] Undo a whole import (the last 10 are kept on record): deletes what it
+  created, puts back the blank fields it filled.
+- [x] Links only to objects an entry actually names (a small model copying
+  the candidate list made everyone a member); the entry's title is its name.
 - [ ] Re-import that updates entries an earlier import created (today it
   only fills blanks again).
 - [ ] Change an entry's kind in the plan (today: untick it, or fix the type

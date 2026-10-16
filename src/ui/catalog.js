@@ -12,7 +12,7 @@ import { truncate } from '../guidance/build.js';
 import { safeImageSrc } from '../images/attach.js';
 import { filterEntries, sortEntries, tagsOf, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderSheet } from './sheet.js';
-import { ws, rerender, openSheet, markDirty } from './ws.js';
+import { ws, rerender, openSheet, markDirty, stopEditing } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
 import { chipSelect, selectWithCustom, diceButton, sparkButton, fieldWithTools } from './controls.js';
 import {
@@ -73,10 +73,9 @@ function railItem(key, iconName, label, count, color) {
     return h('div', {
         class: `sb-rail-item${ws.chapter === key ? ' active' : ''}`,
         onclick: () => {
+            stopEditing();
             ws.chapter = key;
             ws.entryId = null;
-            ws.editing = false;
-            ws.dirty = false;
             ws.search = '';
             ws.tag = '';
             ws.status = '';

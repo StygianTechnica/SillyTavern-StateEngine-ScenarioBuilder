@@ -290,6 +290,14 @@
 .sb-act-create { background: rgba(76, 175, 80, 0.35); }
 .sb-act-fill { background: rgba(74, 144, 217, 0.35); }
 .sb-skipped summary { cursor: pointer; opacity: 0.75; }
+.sb-linkchip { display: inline-flex; align-items: center; }
+.sb-unlink { padding: 1px 5px; opacity: 0.45; }
+.sb-linkchip:hover .sb-unlink { opacity: 1; color: #e06060; }
+.sb-addform { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px dashed var(--sb-line); border-radius: 8px; }
+.sb-addform.sb-row { flex-direction: row; }
+.sb-addform select, .sb-addform input.text_pole { width: auto; flex: 1 1 160px; margin: 0; }
+.sb-superseded { opacity: 0.5; }
+.sb-superseded .sb-chip, .sb-superseded .sb-pol { text-decoration: line-through; }
 .sb-dd { display: flex; gap: 6px; align-items: flex-start; }
 .sb-dd-value { flex: 1; min-width: 0; }
 .sb-dd .sb-spark, .sb-section-title .sb-spark { opacity: 0.55; }
