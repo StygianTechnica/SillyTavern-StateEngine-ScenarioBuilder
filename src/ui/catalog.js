@@ -14,6 +14,10 @@ import { filterEntries, sortEntries, tagsOf, chatStatusOf, STATUS_LABELS } from 
 import { renderSheet } from './sheet.js';
 import { ws, rerender, openSheet, markDirty } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
+import { chipSelect, selectWithCustom, diceButton, sparkButton, fieldWithTools } from './controls.js';
+import { WORLD_TYPES, CAPABILITY_LEVELS, TONES, THEMES, eraGroups, randomFor } from '../library/world-options.js';
+import { generateOverview, generateEntry } from '../generate/run.js';
+import { fieldDefs } from './sheet.js';
 
 const CHAPTER_BLURBS = Object.freeze({
     character: 'The people of the setting - allies, rivals, shopkeepers.',
@@ -94,43 +98,95 @@ async function frontPage(types, all) {
 
     if (!editing) {
         const empty = !Object.values(overview).some((v) => String(v).trim());
-        const meta = [['Tone', overview.tone], ['Themes', overview.themes], ['Era', overview.era]].filter(([, v]) => String(v).trim());
+        const label = (list, id) => list.find(([k]) => k === id)?.[1] ?? id;
+        const meta = [
+            ['World', overview.worldType ? label(WORLD_TYPES, overview.worldType) : ''],
+            ['Magic / tech', overview.magicLevel ? label(CAPABILITY_LEVELS, overview.magicLevel) : ''],
+            ['Era', overview.era], ['Tone', overview.tone], ['Themes', overview.themes],
+        ].filter(([, v]) => String(v).trim());
         return h('div', { class: 'sb-front' },
             h('div', { class: 'sb-front-head' },
                 h('div', {}, h('small', { class: 'sb-kicker' }, 'Setting'), h('h2', {}, setting?.name ?? 'Setting')),
-                button('Edit', () => { ws.editing = true; rerender(); }, { iconName: 'fa-pen' })),
-            empty ? h('div', { class: 'sb-callout' }, icon('fa-feather'), h('span', {}, 'Every setting starts with a premise. What is this world about? Click Edit to write its front page.'))
+                h('div', { class: 'sb-actions' },
+                    empty ? button('Surprise me', () => { ws.editing = true; ws.overviewDraft = null; ws.surprise = true; rerender(); }, { iconName: 'fa-dice', title: 'Roll a random world and write its front page' }) : null,
+                    button('Edit', () => { ws.editing = true; ws.overviewDraft = null; rerender(); }, { iconName: 'fa-pen', cls: 'sb-primary' }))),
+            empty ? h('div', { class: 'sb-callout' }, icon('fa-feather'), h('span', {}, 'Every setting starts with a premise. Click Edit to choose its world, tone and era - or Surprise me to roll one and have it written for you.'))
                 : [
                     overview.premise ? h('p', { class: 'sb-premise' }, overview.premise) : null,
                     meta.length ? h('div', { class: 'sb-chips' }, meta.map(([k, v]) => h('span', { class: 'sb-chip' }, h('b', {}, `${k}: `), v))) : null,
-                    overview.rules ? h('div', { class: 'sb-front-rules' }, h('h4', {}, 'How the world works'), h('p', {}, overview.rules)) : null,
+                    overview.rules ? h('div', { class: 'sb-front-rules' }, h('h4', {}, 'How the world works'), h('p', { class: 'sb-prose' }, overview.rules)) : null,
                 ],
             canonCard(settingId),
             h('h4', {}, 'Contents'),
             toc);
     }
 
-    const inputs = {};
-    const area = (key, label, rows, hint) => {
-        inputs[key] = h('textarea', { class: 'text_pole', rows, oninput: markDirty });
-        inputs[key].value = overview[key] ?? '';
-        return field(label, inputs[key], hint);
+    // ---- edit: one draft, so rolling and generating never lose input
+    const d = ws.overviewDraft ?? (ws.overviewDraft = { ...overview });
+    const set = (key, value) => { d[key] = value; markDirty(); };
+    const reroll = (key) => () => { set(key, randomFor(key, d)); rerender({ force: true }); };
+    const canonBlocked = isCanonOnly(settingId) ? 'This setting is canon-only - turn that off on the front page to generate text.' : '';
+    const busy = ws.generating?.scope === 'overview' ? ws.generating.field : null;
+
+    const write = async (fields) => {
+        ws.generating = { scope: 'overview', field: fields.length > 1 ? 'all' : fields[0] };
+        rerender({ force: true });
+        try {
+            const { values } = await generateOverview({ ctx: ws.ctx, fields, overview: d, all, brief: ws.overviewBrief ?? '' });
+            Object.assign(d, values);
+            ws.dirty = true;
+            toast('success', 'Written - check it, change anything, then Save.');
+        } catch (err) {
+            toast('error', `Could not generate: ${err?.message ?? err}`);
+        } finally {
+            ws.generating = null;
+            rerender({ force: true });
+        }
     };
+    const rollAll = () => {
+        for (const key of ['worldType', 'magicLevel', 'era', 'tone', 'themes']) d[key] = randomFor(key, d);
+        markDirty();
+    };
+    if (ws.surprise) {
+        ws.surprise = false;
+        rollAll();
+        if (!canonBlocked) queueMicrotask(() => void write(['premise', 'rules']));
+    }
+
+    const textArea = (key, rows) => {
+        const el = h('textarea', { class: `text_pole${busy === key || busy === 'all' ? ' sb-gen-busy' : ''}`, rows, oninput: (e) => set(key, e.target.value) });
+        el.value = d[key] ?? '';
+        return el;
+    };
+    const spark = (key) => sparkButton(() => void write([key]), { title: d[key] ? 'Enrich - keep it and add more' : 'Write it from the choices above', busy: busy === key || busy === 'all', disabledReason: canonBlocked });
+
     return h('div', { class: 'sb-front' },
-        h('div', { class: 'sb-front-head' }, h('div', {}, h('small', { class: 'sb-kicker' }, 'Setting'), h('h2', {}, setting?.name ?? 'Setting'))),
+        h('div', { class: 'sb-front-head' },
+            h('div', {}, h('small', { class: 'sb-kicker' }, 'Setting'), h('h2', {}, setting?.name ?? 'Setting')),
+            h('div', { class: 'sb-actions' },
+                button('Roll everything', () => { rollAll(); rerender({ force: true }); }, { iconName: 'fa-dice', title: 'Roll world type, magic, era, tone and themes' }),
+                button('Write front page', () => void write(['premise', 'rules']), { iconName: 'fa-wand-magic-sparkles', disabled: !!canonBlocked || !!busy, title: canonBlocked || 'Write (or enrich) the premise and the rules from your choices' }))),
         h('div', { class: 'sb-card' },
-            area('premise', 'Premise', 4, 'The pitch: what this world is and what stories happen in it.'),
-            h('div', { class: 'sb-row' }, area('tone', 'Tone', 1), area('themes', 'Themes', 1), area('era', 'Era', 1)),
-            area('rules', 'How the world works', 4, 'Magic, technology, law, taboos. Kept short in the guidance.')),
+            h('div', { class: 'sb-fieldgrid' },
+                fieldWithTools('World type', select([{ value: '', label: '—' }, ...WORLD_TYPES.map(([v, l]) => ({ value: v, label: l }))], d.worldType, { onchange: (e) => { set('worldType', e.target.value); rerender({ force: true }); } }), [diceButton(reroll('worldType'))]),
+                fieldWithTools('Magic / technology', select([{ value: '', label: '—' }, ...CAPABILITY_LEVELS.map(([v, l]) => ({ value: v, label: l }))], d.magicLevel, { onchange: (e) => set('magicLevel', e.target.value) }), [diceButton(reroll('magicLevel'))]),
+                fieldWithTools('Era', selectWithCustom({ groups: eraGroups(d.worldType).map((g) => ({ label: g.label, items: g.eras })), value: d.era, onChange: (v) => set('era', v) }), [diceButton(reroll('era'))])),
+            fieldWithTools('Tone', chipSelect({ options: [...TONES], value: d.tone, onChange: (v) => set('tone', v) }), [diceButton(reroll('tone'))], 'Pick as many as fit.'),
+            fieldWithTools('Themes', chipSelect({ options: [...THEMES], value: d.themes, onChange: (v) => set('themes', v), placeholder: 'Add your own theme…' }), [diceButton(reroll('themes'))])),
+        h('div', { class: 'sb-card' },
+            fieldWithTools('Premise', textArea('premise', 5), [spark('premise')], 'The pitch: what this world is and what stories happen in it.'),
+            fieldWithTools('How the world works', textArea('rules', 4), [spark('rules')], 'Magic, technology, law, taboos. Kept short in the guidance.'),
+            field('Steer the writing (optional)', h('input', { class: 'text_pole', value: ws.overviewBrief ?? '', placeholder: 'e.g. "a coastal trading republic sinking into the sea"', oninput: (e) => { ws.overviewBrief = e.target.value; } }))),
         h('div', { class: 'sb-savebar' },
             button('Save', () => {
-                setOverview(settingId, Object.fromEntries(Object.entries(inputs).map(([k, el]) => [k, el.value])));
+                setOverview(settingId, d);
                 ws.editing = false;
                 ws.dirty = false;
+                ws.overviewDraft = null;
                 toast('success', 'Front page saved.');
                 rerender();
             }, { iconName: 'fa-floppy-disk', cls: 'sb-primary' }),
-            button('Cancel', () => { ws.editing = false; ws.dirty = false; rerender(); }, { iconName: 'fa-xmark' })));
+            button('Cancel', () => { ws.editing = false; ws.dirty = false; ws.overviewDraft = null; rerender(); }, { iconName: 'fa-xmark' })));
 }
 
 // The canon switch: a fixed setting (from a published lorebook, say) that
@@ -176,6 +232,7 @@ function chapterPage(type, all, doc) {
         PLACED.has(type.id) && locations.length ? select([{ value: '', label: 'Anywhere' }, ...locations.map((l) => ({ value: l.id, label: `Within ${pathLabel(l.id) || l.name}` })).sort((a, b) => a.label.localeCompare(b.label))], ws.within, { title: 'Where', onchange: (e) => { ws.within = e.target.value; rerender(); } }) : null,
         view !== 'tree' ? select([{ value: 'name', label: 'A–Z' }, { value: 'recent', label: 'Recently edited' }, { value: 'status', label: 'In play first' }], sort, { title: 'Sort', onchange: (e) => { getSettings().catalog.sort = e.target.value; saveSettings(); rerender(); } }) : null,
         h('div', { class: 'sb-viewtoggle' }, views.map(([v, i, label]) => h('div', { class: `sb-viewbtn${view === v ? ' active' : ''}`, title: label, onclick: () => setView(type.id, v) }, icon(i)))),
+        button('Generate', () => { ws.genPanel = ws.genPanel === type.id ? null : type.id; rerender(); }, { iconName: 'fa-wand-magic-sparkles', title: `Generate a new ${type.noun} - from your idea, or a surprise` }),
         button(`New ${type.noun}`, () => openSheet('new'), { iconName: 'fa-plus', cls: 'sb-primary' }));
 
     let body;
@@ -183,7 +240,9 @@ function chapterPage(type, all, doc) {
         body = h('div', { class: 'sb-callout sb-callout-big' },
             h('i', { class: `fa-solid ${type.icon}`, style: `color: ${type.color}` }),
             h('div', {}, h('b', {}, `No ${type.plural.toLowerCase()} yet.`), h('div', {}, CHAPTER_BLURBS[type.id] ?? '')),
-            button(`Create the first ${type.noun}`, () => openSheet('new'), { iconName: 'fa-plus', cls: 'sb-primary' }));
+            h('div', { class: 'sb-actions' },
+                button(`Create the first ${type.noun}`, () => openSheet('new'), { iconName: 'fa-plus', cls: 'sb-primary' }),
+                button('Generate one', () => { ws.genPanel = type.id; rerender(); }, { iconName: 'fa-wand-magic-sparkles' })));
     } else if (!filtered.length) {
         body = h('div', { class: 'sb-callout' }, icon('fa-filter-circle-xmark'), h('span', {}, 'Nothing matches.'), button('Clear filters', () => { ws.search = ''; ws.tag = ''; ws.status = ''; ws.within = ''; rerender(); }));
     } else if (view === 'tree' && !filtering) {
@@ -200,9 +259,60 @@ function chapterPage(type, all, doc) {
             h('div', {}, h('h2', {}, CHAPTER_LABELS[type.id] ?? type.plural), h('small', { class: 'sb-hint' }, CHAPTER_BLURBS[type.id] ?? '')),
             h('span', { class: 'sb-count-big' }, filtering ? `${filtered.length} of ${entries.length}` : String(entries.length))),
         toolbar,
+        ws.genPanel === type.id ? generatePanel(type, all, pathLabel) : null,
         view === 'tree' && filtering ? h('small', { class: 'sb-hint' }, 'Filtering shows a flat list; clear the filters to see the tree.') : null,
         body);
 }
+
+// "Generate a new ..." - from the user's idea, or a surprise. The result
+// opens as a new sheet in edit mode: nothing is created until Save (SB-133).
+function generatePanel(type, all, pathLabel) {
+    const busy = ws.generating?.scope === 'create';
+    const placed = type.id === 'location' || PLACED.has(type.id);
+    const g = ws.genInput ?? (ws.genInput = { brief: '', parentId: '' });
+    const brief = h('textarea', { class: 'text_pole', rows: 2, placeholder: `What do you want? e.g. "${EXAMPLES[type.id] ?? 'something unexpected'}" - or leave empty for a surprise`, oninput: (e) => { g.brief = e.target.value; } });
+    brief.value = g.brief;
+    const locations = (all.location ?? []).map((l) => ({ value: l.id, label: pathLabel(l.id) || l.name })).sort((a, b) => a.label.localeCompare(b.label));
+    const run = async (useBrief) => {
+        ws.generating = { scope: 'create' };
+        rerender();
+        try {
+            const fields = await fieldDefs(type);
+            const { values, dropped } = await generateEntry({ task: 'create', type, ctx: ws.ctx, fields, all, brief: useBrief ? g.brief : '', parentId: g.parentId || null });
+            ws.prefill = { values, parentId: g.parentId || null };
+            ws.genPanel = null;
+            if (dropped.length) toast('info', `Left out what did not fit: ${dropped.slice(0, 4).join('; ')}`);
+            openSheet('new');
+        } catch (err) {
+            toast('error', `Could not generate: ${err?.message ?? err}`);
+        } finally {
+            ws.generating = null;
+            rerender();
+        }
+    };
+    return h('div', { class: 'sb-genpanel', style: `--sb-accent: ${type.color}` },
+        h('div', { class: 'sb-card-title' }, icon('fa-wand-magic-sparkles'), ` Generate a ${type.noun}`,
+            h('small', { class: 'sb-hint' }, ' - written to fit this setting; you review it before anything is saved')),
+        brief,
+        h('div', { class: 'sb-row' },
+            placed && locations.length ? field(type.id === 'location' ? 'Inside' : 'Located in', select([{ value: '', label: type.id === 'location' ? '(a new region)' : '(anywhere)' }, ...locations], g.parentId, { onchange: (e) => { g.parentId = e.target.value; } })) : null,
+            h('div', { class: 'sb-actions sb-push' },
+                button(busy ? 'Writing…' : 'Generate', () => void run(true), { iconName: busy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles', cls: 'sb-primary', disabled: busy }),
+                button('Surprise me', () => void run(false), { iconName: 'fa-dice', disabled: busy, title: 'Ignore the idea box and invent something' }),
+                button('', () => { ws.genPanel = null; rerender(); }, { iconName: 'fa-xmark', title: 'Close' }))));
+}
+
+const EXAMPLES = Object.freeze({
+    character: 'a smuggler with a conscience who owes the wrong people',
+    location: 'a tavern where deals are sealed in blood',
+    faction: 'a guild of cartographers who erase places from maps',
+    item: 'a compass that points to what you fear',
+    creature: 'something that nests in shipwrecks',
+    lore: 'why the bells ring at low tide',
+    quest: 'recover a debt ledger before it is burned',
+    scene: 'a tense auction interrupted by a fire',
+    event: 'the night the lighthouse goes dark',
+});
 
 // A one-line subtitle for an entry: role, place, category...
 function subtitleOf(entry, pathLabel) {

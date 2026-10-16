@@ -36,9 +36,14 @@ const DEFAULTS = {
     policies: { ...DEFAULT_POLICIES },
     // How many AI replies a correction line stays in the guidance.
     correctionTurns: 2,
-    // SillyTavern Connection Profile for generation runs (later phases;
-    // '' = State Engine's own connection).
+    // SillyTavern Connection Profile for content generation (src/generate/;
+    // '' = the active connection).
     connectionProfileId: '',
+    // Generation: detail level ('brief' | 'standard' | 'rich', SB-133b) and
+    // answer size.
+    // autoEnrich: objects newly confirmed into the setting get their empty
+    // fields written in the background (SB-133b; canon switches permitting).
+    generation: { detail: 'standard', maxTokens: 1200, autoEnrich: true },
     // Which version of the Scenario State preset blueprint is installed
     // (src/preset/blueprint.js, PRESET_VERSION). null = none yet.
     presetVersion: null,
@@ -71,6 +76,9 @@ export function getSettings() {
     for (const [key, value] of Object.entries(DEFAULT_IMAGE_OPTIONS)) settings.imagePrompts[key] ??= structuredClone(value);
     for (const [key, value] of Object.entries(DEFAULT_IMAGE_OPTIONS.midjourney)) settings.imagePrompts.midjourney[key] ??= value;
     settings.catalog.views ??= {};
+    settings.generation.detail ??= 'standard';
+    settings.generation.maxTokens ??= 1200;
+    settings.generation.autoEnrich ??= true;
     return settings;
 }
 

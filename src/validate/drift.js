@@ -17,17 +17,17 @@
 //   contradiction  breaks library facts (a rejected name, a missing object)
 //   ambiguous      cannot decide (e.g. everyone gone at once)
 //
-// Actions: 'accept' (canonical := observed), 'adopt' (something new the
-// story introduced: it joins the library and the scene), 'adjust' (write
-// canonical back, add a correction line to the guidance), 'ask' (queue for
-// review), 'candidate' (review queue; observed kept, canonical unchanged).
+// Actions: 'accept' (canonical := observed), 'adjust' (write canonical
+// back, add a correction line to the guidance), 'ask' (queue for review).
 //
 // The story leads (the user's decision, over the spec's conservative
 // SB-222/SB-225 defaults): by default whatever the roleplay establishes is
-// accepted, and anything new it invents is adopted into the library to be
-// fleshed out - never overridden. 'canonical' and 'ask' remain per-field
-// options, and a setting marked canon-only (`adoptNew: false`) sends new
-// inventions to the review queue instead of adopting them.
+// accepted - never overridden. Something new the story invents is accepted
+// into the scene as State Engine created it (an unconfirmed object);
+// CONFIRMING it into the setting is State Engine's own object review (its
+// "detected for review" notification), not repeated here. Once confirmed,
+// src/library/intake.js takes it into the library and enriches it.
+// 'canonical' and 'ask' remain per-field options.
 
 import { relation } from '../library/hierarchy.js';
 
@@ -102,12 +102,10 @@ function isBlank(field, value) {
 const isRejected = (rejected, obj) => !!obj && (rejected ?? []).some((r) => r.type === obj.type && String(r.name).toLowerCase() === String(obj.name).toLowerCase());
 const isCandidateObject = (obj) => !!obj && obj.confirmed === false;
 
-function decide(classification, policy, adoptNew = true) {
+function decide(classification, policy) {
     switch (classification) {
         case 'consistent': return 'none';
-        case 'candidate':
-            if (policy === 'canonical') return 'adjust';
-            return policy === 'observed' && adoptNew ? 'adopt' : 'candidate';
+        case 'candidate': return policy === 'canonical' ? 'adjust' : (policy === 'ask' ? 'ask' : 'accept');
         case 'contradiction': return 'adjust';
         case 'ambiguous': return 'ask';
         case 'natural': return policy === 'canonical' ? 'adjust' : 'accept';
@@ -119,17 +117,16 @@ function decide(classification, policy, adoptNew = true) {
 // Every difference worth acting on.
 //   input: { canonical, observed (readObserved), lastObserved (readObserved
 //            or {}), objects: Map id -> { id, type, name, confirmed },
-//            parents (location parent map), policies, rejected,
-//            adoptNew (false for a canon-only setting) }
+//            parents (location parent map), policies, rejected }
 // A field is looked at only when its observed value differs from canonical
 // AND changed since the last reconciliation - so a question still waiting
 // in the review queue is not asked again, and running twice on the same
 // values does nothing (SB-223: reconciliation is idempotent).
 // -> [{ field, op?, objectId?, canonical, observed, classification, action, reason }]
-export function detectDrift({ canonical, observed, lastObserved = {}, objects = new Map(), parents = {}, policies = DEFAULT_POLICIES, rejected = [], adoptNew = true }) {
+export function detectDrift({ canonical, observed, lastObserved = {}, objects = new Map(), parents = {}, policies = DEFAULT_POLICIES, rejected = [] }) {
     const items = [];
     const policyOf = (field) => (POLICY_VALUES.includes(policies?.[field]) ? policies[field] : DEFAULT_POLICIES[field]);
-    const decideFor = (classification, policy) => decide(classification, policy, adoptNew);
+    const decideFor = decide;
 
     for (const [field, { canonical: key }] of Object.entries(OBSERVED_FIELDS)) {
         const obs = observed[field];

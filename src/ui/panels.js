@@ -16,6 +16,15 @@ import { OBSERVED_NAMES } from '../preset/blueprint.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getLastBuild, syncNow } from '../guidance/sync.js';
 import { curatorStatus, curatorLine } from './status-model.js';
+import { enrichListed } from '../library/intake.js';
+import { getEnrichmentStatus, cancelEnrichment } from '../generate/enrich.js';
+
+const ENRICH_LABELS = { queued: ['Detail queued', 'fa-clock'], running: ['Adding detail…', 'fa-spinner fa-spin'], done: ['Detail added', 'fa-wand-magic-sparkles'], failed: ['Detail failed', 'fa-triangle-exclamation'], held: ['Held while editing', 'fa-pause'], off: ['', ''] };
+
+function enrichBadge(a) {
+    const [label, iconName] = ENRICH_LABELS[a.enrich] ?? ['', ''];
+    return label ? h('span', { class: `sb-badge sb-enrich-${a.enrich}`, title: a.error || label }, icon(iconName), ` ${label}`) : null;
+}
 import { setScene } from './sheet.js';
 import { confirmAction } from './confirm.js';
 import { ws, rerender, openSheet, markDirty } from './ws.js';
@@ -119,10 +128,12 @@ export async function renderReview() {
             h('div', { class: 'sb-row' },
                 h('i', { class: `fa-solid ${t?.icon ?? 'fa-star'}` }),
                 h('b', {}, a.name),
-                h('small', { class: 'sb-hint' }, `new ${t?.noun ?? 'entry'}${a.placedUnder ? ` · placed in ${a.placedUnder}` : ''}`)),
-            h('small', { class: 'sb-hint' }, 'Added to the library because the story introduced it. Give it some detail, or check where it sits.'),
+                h('small', { class: 'sb-hint' }, `new ${t?.noun ?? 'entry'}${a.placedUnder ? ` · placed in ${a.placedUnder}` : ''}`),
+                enrichBadge(a)),
+            h('small', { class: 'sb-hint' }, 'Confirmed into the setting and now tracked here. Check its details and where it sits.'),
             h('div', { class: 'sb-actions' },
                 button('Open sheet', () => openSheet(a.objectId, a.type), { iconName: 'fa-pen', cls: 'sb-primary' }),
+                ['off', 'failed', 'held'].includes(a.enrich) ? button('Add detail', () => enrichListed(chatId, chatKey, settingId, a.id), { iconName: 'fa-wand-magic-sparkles', title: a.error || 'Write its empty fields from the setting\'s context' }) : null,
                 button('Done', () => dismissAdopted(chatKey, a.id), { iconName: 'fa-check', title: 'Take it off this list' }),
                 button('Not part of this world', async () => {
                     if (!await confirmAction(`Remove "${a.name}" from the library? Later mentions of it will be corrected.`)) return;
@@ -156,8 +167,13 @@ export async function renderReview() {
     }
 
     const section = (title, iconName, items, empty) => [h('h3', {}, icon(iconName), ` ${title}`), items.length ? items : h('div', { class: 'sb-muted' }, empty)];
+    const status = getEnrichmentStatus();
     return h('div', { class: 'sb-review' },
-        section('New from the story', 'fa-seedling', adopted, 'Nothing new. When the story introduces a place or character, it lands here - already in the library.'),
+        h('small', { class: 'sb-hint' }, 'New places and characters the story mentions are confirmed in State Engine\'s own object review. Once confirmed, they appear here - tracked, placed, and (if auto-enrich is on) given detail.'),
+        status.current || status.queued ? h('div', { class: 'sb-callout' }, icon('fa-spinner fa-spin'),
+            h('span', {}, `Adding detail${status.current ? ` to ${status.current.name}` : ''}${status.queued ? ` - ${status.queued} more waiting` : ''}.`),
+            status.queued ? button('Stop', () => cancelEnrichment(), { iconName: 'fa-stop' }) : null) : null,
+        section('New in the setting', 'fa-seedling', adopted, 'Nothing new. Objects confirmed into the setting while you play land here.'),
         pending.length ? section('Questions', 'fa-circle-question', questions, '') : null,
         candidates.length ? section('Waiting for you', 'fa-inbox', candidates, '') : null,
         doc.rejected.length ? section('Not part of this world', 'fa-ban', doc.rejected.map((r, i) => h('div', { class: 'sb-review-item sb-row' },

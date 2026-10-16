@@ -7,7 +7,6 @@
 
 import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc } from '../store/chat-store.js';
-import { getObjectFields } from '../api/objects.js';
 import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview } from '../library/library.js';
 import { pathOf, descendantsOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
@@ -19,6 +18,9 @@ import { syncNow } from '../guidance/sync.js';
 import { safeImageSrc } from '../images/attach.js';
 import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
+import { baselineFields } from '../library/fields.js';
+import { sparkButton, fieldWithTools } from './controls.js';
+import { generateEntry, canGenerateFor } from '../generate/run.js';
 import { confirmAction } from './confirm.js';
 import { ws, rerender, openSheet, closeSheet, markDirty } from './ws.js';
 import { h, icon, button, select, field, csv, fromCsv, toast } from './dom.js';
@@ -34,27 +36,8 @@ const SHEET_TABS = Object.freeze([
 
 // ---- fields
 
-// A field of the setting's object preset (or the registry default) as an
-// editor kind.
-function editorKind(def) {
-    if (def.kind) {
-        const map = { text: 'text', longtext: 'longtext', list: 'list', enum: 'enum', ref: 'ref', refs: 'refs', timestamp: 'text' };
-        return { name: def.name, label: def.label || def.name, kind: map[def.kind] ?? 'text', values: def.values ?? [], refType: def.refType };
-    }
-    const base = { name: def.name, label: def.label || def.name, values: def.enumValues ?? [] };
-    if (def.type === 'object') return { ...base, kind: 'ref', refType: def.objectType };
-    if (def.type === 'array' && def.itemType === 'object') return { ...base, kind: 'refs', refType: def.itemObjectType };
-    if (def.type === 'array') return { ...base, kind: 'list' };
-    if (def.type === 'enum') return { ...base, kind: 'enum' };
-    if (def.type === 'number') return { ...base, kind: 'number' };
-    if (def.type === 'boolean') return { ...base, kind: 'boolean' };
-    if (def.type === 'string') return { ...base, kind: 'longtext' };
-    return { ...base, kind: 'text' };
-}
-
-async function fieldDefs(type) {
-    const defs = (await getObjectFields(ws.ctx.settingId, type.id)).filter((d) => d.scope === 'global');
-    return (defs.length ? defs : type.fields).map(editorKind);
+export async function fieldDefs(type) {
+    return baselineFields(ws.ctx.settingId, type);
 }
 
 const isEmpty = (v) => v === undefined || v === null || v === '' || (Array.isArray(v) && !v.length);
@@ -81,6 +64,31 @@ function startDraft(entry, defs) {
     };
     ws.draftFor = entry.id ?? 'new';
     ws.newParent = null;
+    ws.generatedFields = new Set();
+    // A generated new entry (catalog "Generate") arrives as a prefill.
+    if (!entry.id && ws.prefill) {
+        const { values, parentId } = ws.prefill;
+        applyGenerated(values, 'create');
+        if (parentId) {
+            if (entry.type === 'location') ws.draft.meta.parentId = parentId;
+            else if ('location' in ws.draft.fields && !ws.draft.fields.location) ws.draft.fields.location = parentId;
+        }
+        ws.prefill = null;
+        ws.dirty = true;
+    }
+}
+
+// Puts generated values into the draft. 'fill' never replaces content;
+// the other tasks replace (an enriched field already holds what was there).
+function applyGenerated(values, task) {
+    const d = ws.draft;
+    const take = (current) => task !== 'fill' || isEmpty(current);
+    for (const [key, value] of Object.entries(values)) {
+        if (key === 'name') { if (take(d.name)) { d.name = value; ws.generatedFields.add('name'); } continue; }
+        if (key === 'description') { if (take(d.description)) { d.description = value; ws.generatedFields.add(key); } continue; }
+        if (key === 'aliases') { if (take(d.aliases)) { d.aliases = value; ws.generatedFields.add(key); } continue; }
+        if (key in d.fields && take(d.fields[key])) { d.fields[key] = value; ws.generatedFields.add(key); }
+    }
 }
 
 const set = (path, value) => {
@@ -175,6 +183,14 @@ export async function renderSheet(type, all) {
         if (next && next.id !== entry.id) openSheet(next.id);
     };
     const save = () => void saveSheet(type, entry, defs, isNew);
+    genCtx = { type, entry, defs, all, isNew };
+    const gate = canGenerateFor(settingId, isNew ? null : entry.id);
+    const busy = ws.generating?.scope === 'sheet';
+    if (ws.editing && ws.pendingGen) {
+        const task = ws.pendingGen;
+        ws.pendingGen = null;
+        queueMicrotask(() => void runGen(task));
+    }
     const topbar = h('div', { class: 'sb-sheet-top' },
         h('div', { class: 'sb-back', onclick: () => { if (ws.dirty) return void confirmAction('Leave without saving your changes?').then((ok) => ok && closeSheet()); closeSheet(); } },
             icon('fa-arrow-left'), h('span', {}, CHAPTER_LABELS[type.id] ?? type.plural)),
@@ -188,8 +204,17 @@ export async function renderSheet(type, all) {
                 ws.editing = false; ws.dirty = false; ws.draft = null;
                 if (isNew) closeSheet(); else rerender();
             }, { iconName: 'fa-xmark' })]
-            : [button('Edit', () => { ws.editing = true; rerender(); }, { iconName: 'fa-pen', cls: 'sb-primary' }),
+            : [button('Enrich', () => { ws.editing = true; ws.pendingGen = 'enrich'; rerender(); }, { iconName: 'fa-wand-magic-sparkles', disabled: !gate.ok, title: gate.reason || 'Add detail to every field - fill the empty ones and deepen the rest. You review it before saving.' }),
+                button('Edit', () => { ws.editing = true; rerender(); }, { iconName: 'fa-pen', cls: 'sb-primary' }),
                 button('', () => void removeEntry(entry), { iconName: 'fa-trash', cls: 'sb-danger', title: 'Delete' })]);
+
+    // ---- generation strip (edit mode)
+    const genStrip = ws.editing ? h('div', { class: 'sb-genstrip' },
+        icon(busy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'),
+        h('input', { class: 'text_pole', value: ws.genBrief ?? '', placeholder: gate.ok ? 'Steer the writing (optional) - e.g. "make her secretly loyal to the Guild"' : gate.reason, disabled: !gate.ok, oninput: (e) => { ws.genBrief = e.target.value; } }),
+        button(isNew && !draft.name ? 'Write it' : 'Fill empty', () => void runGen('fill'), { iconName: 'fa-fill-drip', disabled: !gate.ok || busy, title: 'Write only the fields that are still empty' }),
+        isNew && !draft.name ? null : button('Enrich all', () => void runGen('enrich'), { iconName: 'fa-wand-magic-sparkles', disabled: !gate.ok || busy, title: 'Fill the empty fields and deepen the ones with content' }),
+        ws.generatedFields?.size ? h('small', { class: 'sb-hint' }, `${ws.generatedFields.size} field${ws.generatedFields.size === 1 ? '' : 's'} written - highlighted until you save`) : null) : null;
 
     // ---- header
     const status = isNew ? 'unused' : chatStatusOf(entry.id, doc);
@@ -234,8 +259,49 @@ export async function renderSheet(type, all) {
         console.warn(LOG_PREFIX, 'could not draw the sheet', err);
         body = h('div', { class: 'sb-error' }, `Something went wrong: ${err?.message ?? err}`);
     }
-    return h('div', { class: `sb-sheet${ws.editing ? ' sb-editing' : ''}` }, topbar, header, tabs, h('div', { class: 'sb-sheet-body' }, body));
+    return h('div', { class: `sb-sheet${ws.editing ? ' sb-editing' : ''}` }, topbar, header, genStrip, tabs, h('div', { class: 'sb-sheet-body' }, body));
 }
+
+// ---- generation on the sheet
+
+let genCtx = null;
+
+// Runs a generation into the edit draft. task: 'field' (with `field`),
+// 'fill', 'enrich'. A brand-new entry with no name yet is created whole.
+async function runGen(task, field = null) {
+    if (!genCtx || !ws.draft || ws.generating) return;
+    const { type, entry, defs, all, isNew } = genCtx;
+    const effective = isNew && !ws.draft.name && task !== 'field' ? 'create' : task;
+    ws.generating = { scope: 'sheet', field: field ?? task };
+    rerender({ force: true });
+    try {
+        const { values, dropped } = await generateEntry({
+            task: effective, type, ctx: ws.ctx, fields: defs, entry: isNew ? null : entry, draft: ws.draft, all,
+            targetField: field, brief: ws.genBrief ?? '', parentId: type.id === 'location' ? (ws.draft.meta.parentId || null) : null,
+        });
+        applyGenerated(values, effective === 'create' ? 'fill' : effective);
+        ws.dirty = true;
+        if (dropped.length) toast('info', `Left out what did not fit: ${dropped.slice(0, 4).join('; ')}`);
+    } catch (err) {
+        toast('error', `Could not generate: ${err?.message ?? err}`);
+    } finally {
+        ws.generating = null;
+        rerender({ force: true });
+    }
+}
+
+// The sparkle for one field: write it if empty, enrich it otherwise.
+function spark(fieldName, current) {
+    const gate = canGenerateFor(ws.ctx.settingId, genCtx?.isNew ? null : genCtx?.entry?.id);
+    const busy = ws.generating?.scope === 'sheet' && (ws.generating.field === fieldName || ws.generating.field === 'fill' || ws.generating.field === 'enrich');
+    return sparkButton(() => void runGen('field', fieldName), {
+        title: isEmpty(current) ? 'Write this field' : 'Enrich - keep it and add more',
+        busy,
+        disabledReason: gate.ok ? (ws.generating ? 'Writing…' : '') : gate.reason,
+    });
+}
+
+const genClass = (name) => (ws.generatedFields?.has(name) ? 'sb-generated' : '');
 
 async function sheetBody(tab, c) {
     switch (tab) {
@@ -252,7 +318,7 @@ function overviewTab({ type, entry, isNew, defs, doc }) {
     const narrative = isNew ? '' : doc.narrative[entry.id]?.text ?? '';
     if (ws.editing) {
         return h('div', { class: 'sb-tabpane' },
-            field('Description', textArea('description', ws.draft.description, 5), 'The setting\'s description - true in every chat on this setting.'),
+            fieldWithTools('Description', textArea('description', ws.draft.description, 5), [spark('description', ws.draft.description)], 'The setting\'s description - true in every chat on this setting.', genClass('description')),
             !isNew && type.scope === 'world' ? field('Current description (this chat)', textArea('narrative', ws.draft.narrative, 4, { placeholder: 'Only when the story has changed it - a forest after the fire. Replaces the description above in this chat.' }),
                 'Used instead of the description in this chat\'s guidance and image prompts. Leave empty to use the description.') : null);
     }
@@ -288,7 +354,7 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
         }
         return h('div', { class: 'sb-tabpane' },
             parentField,
-            defs.length ? h('div', { class: 'sb-fieldgrid' }, defs.map((d) => field(d.label, fieldControl(d, all)))) : h('small', { class: 'sb-hint' }, 'This type has no extra fields in the setting.'),
+            defs.length ? h('div', { class: 'sb-fieldgrid' }, defs.map((d) => fieldWithTools(d.label, fieldControl(d, all), [d.kind === 'boolean' ? null : spark(d.name, ws.draft.fields[d.name])], null, genClass(d.name)))) : h('small', { class: 'sb-hint' }, 'This type has no extra fields in the setting.'),
             envCard);
     }
     const rows = defs.map((d) => [d, fieldDisplay(d, entry.base?.[d.name] ?? entry[d.name], names)]).filter(([, v]) => v !== null);
@@ -386,7 +452,8 @@ function gmTab({ entry }) {
         h('div', { class: 'sb-gm-note' }, icon('fa-user-secret'), h('small', {}, ' For your eyes only - never sent to the model.')),
         h('div', { class: 'sb-chips' },
             entry.meta?.canonLocked ? h('span', { class: 'sb-chip' }, icon('fa-lock'), ' Canon - no generated detail') : null,
-            origin ? h('span', { class: 'sb-chip' }, origin) : null),
+            origin ? h('span', { class: 'sb-chip' }, origin) : null,
+            entry.meta?.generated?.length ? h('span', { class: 'sb-chip', title: 'Fields written by generation' }, icon('fa-wand-magic-sparkles'), ` ${entry.meta.generated.join(', ')}`) : null),
         entry.meta?.gmNotes ? h('div', { class: 'sb-prose' }, entry.meta.gmNotes) : h('div', { class: 'sb-muted' }, 'No secrets yet.'));
 }
 
@@ -399,6 +466,8 @@ async function saveSheet(type, entry, defs, isNew) {
     for (const def of defs) if (d.fields[def.name] !== undefined) patch[def.name] = d.fields[def.name] ?? (def.kind === 'refs' || def.kind === 'list' ? [] : '');
     if (!patch.name) return toast('warning', 'Give it a name first.');
     const meta = { tags: d.meta.tags, pinned: d.meta.pinned, canonLocked: d.meta.canonLocked, gmNotes: d.meta.gmNotes };
+    // Which fields came from generation (SB-136), shown on the GM tab.
+    if (ws.generatedFields?.size) meta.generated = [...new Set([...(entry.meta?.generated ?? []), ...ws.generatedFields])].filter((f) => f !== 'name');
     if (isNew) meta.origin = 'user';
     if (type.id === 'location') meta.environment = d.meta.environment;
     try {
@@ -420,6 +489,7 @@ async function saveSheet(type, entry, defs, isNew) {
         ws.editing = false;
         ws.dirty = false;
         ws.draft = null;
+        ws.generatedFields = new Set();
         toast('success', 'Saved.');
         await syncNow();
         rerender();

@@ -6,7 +6,7 @@
 // (spec SB-601). Object data is NOT here (SB-011): only ids plus
 // Scenario Builder's own metadata.
 //   { schemaVersion,
-//     overview: { premise, tone, themes, era, rules },
+//     overview: { premise, worldType, magicLevel, tone, themes, era, rules },
 //     canonOnly,                    the setting is fixed canon (e.g. from a published
 //                                   lorebook): nothing generated is added to its
 //                                   entries, and story inventions wait for review
@@ -17,10 +17,13 @@
 //         tags: [], pinned,
 //         origin,                   '' | 'user' | 'story' | 'import' - where it came from
 //         canonLocked,              never add generated detail to this entry
+//         generated: [field],       fields last filled by generation (SB-136)
 //         excluded,                 never selected for guidance (SB-401)
 //         environment: { climate, lighting, rules }   inherited down the tree (SB-142)
 //     } },
-//     groups: [{ id, name, entryIds: [] }] }
+//     groups: [{ id, name, entryIds: [] }],
+//     tracked: [objectId],          objects Scenario Builder has taken in (src/library/intake.js)
+//     trackedReady }                false until the first intake pass has seeded `tracked`
 //
 // CHAT DOCUMENT - per-chat state (spec SB-603), keyed by chat key.
 //   { schemaVersion, settingId,
@@ -34,9 +37,11 @@
 //     lastObserved: { [field]: value },     what State Engine extracted last time
 //     lastReply: source message id of the newest AI reply reconciled
 //     drift: [driftItem],                   see src/validate/drift.js
-//     adopted: [{ id, objectId, type, name, field, source, at, placedUnder }],
-//                                           what the story introduced and the library took in,
-//                                           listed until the user has looked at it
+//     adopted: [{ id, objectId, type, name, at, placedUnder, enrich }],
+//                                           objects confirmed into the setting while this chat
+//                                           was open, taken in by intake.js; enrich: 'queued' |
+//                                           'running' | 'done' | 'failed' | 'off' | 'held'.
+//                                           Listed in Review until the user has looked
 //     candidates: [{ id, objectId, type, name, field, source, at }],
 //     rejected: [{ type, name }],           suppressed candidate names (SB-225)
 //     corrections: [{ id, text, turnsLeft, source }],
@@ -63,11 +68,11 @@ const str = (value) => (typeof value === 'string' ? value : '');
 const strList = (value) => (Array.isArray(value) ? [...new Set(value.filter((v) => typeof v === 'string' && v))] : []);
 
 export function emptyOverview() {
-    return { premise: '', tone: '', themes: '', era: '', rules: '' };
+    return { premise: '', worldType: '', magicLevel: '', tone: '', themes: '', era: '', rules: '' };
 }
 
 export function emptyEntryMeta() {
-    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, environment: { climate: '', lighting: '', rules: '' } };
+    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, generated: [], environment: { climate: '', lighting: '', rules: '' } };
 }
 
 export function normalizeEntryMeta(meta) {
@@ -81,12 +86,13 @@ export function normalizeEntryMeta(meta) {
         excluded: m.excluded === true,
         origin: ['user', 'story', 'import'].includes(m.origin) ? m.origin : '',
         canonLocked: m.canonLocked === true,
+        generated: strList(m.generated),
         environment: { climate: str(env.climate), lighting: str(env.lighting), rules: str(env.rules) },
     };
 }
 
 export function emptySettingDoc() {
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [] };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false };
 }
 
 // Brings any stored setting document (or nothing) to the current shape.
@@ -99,7 +105,7 @@ export function normalizeSettingDoc(doc) {
     const groups = Array.isArray(d.groups)
         ? d.groups.filter(isObject).filter((g) => typeof g.id === 'string' && g.id).map((g) => ({ id: g.id, name: str(g.name) || 'Group', entryIds: strList(g.entryIds) }))
         : [];
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, entries, groups };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true };
 }
 
 export function emptyCanonical() {

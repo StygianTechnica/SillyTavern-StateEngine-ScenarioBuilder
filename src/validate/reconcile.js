@@ -22,8 +22,7 @@ import { getVariableValues, setVariableValue } from '../api/variables.js';
 import { getObject, confirmObject, resolveObject } from '../api/objects.js';
 import { PRESET_NAME, OBSERVED_NAMES } from '../preset/blueprint.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
-import { getBoundSettingId, getParents, setParent, setEntryMeta, getLocationPathNames, deleteEntry } from '../library/library.js';
-import { getSettingDoc } from '../store/setting-store.js';
+import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
 import { detectDrift, readObserved, applyAccepted, correctionText, describeItem, OBSERVED_FIELDS } from './drift.js';
 
@@ -113,27 +112,6 @@ async function namers(chatId, settingId, objects) {
     return { nameOf, placeOf: (id) => paths.get(id) ?? nameOf(id) };
 }
 
-// Takes a new object the story introduced into the library: State Engine
-// confirms it (moving it into the setting), it is marked as coming from the
-// story, and a new place is put next to where the scene was (a neighbour
-// of the current location - the user can drag it elsewhere in the tree).
-// -> { objectId, type, name, placedUnder } or null when State Engine refused.
-async function adopt(chatId, settingId, obj, item, fromLocationId, nameOf) {
-    if (!obj) return null;
-    const confirmed = await confirmObject(chatId, obj.id);
-    if (!confirmed) return null;
-    let placedUnder = '';
-    if (settingId) {
-        setEntryMeta(settingId, obj.id, { origin: 'story' });
-        if (obj.type === 'location' && fromLocationId && fromLocationId !== obj.id) {
-            const parents = getParents(settingId);
-            const parent = parents[fromLocationId] ?? null;
-            if (!parents[obj.id] && parent && setParent(settingId, obj.id, parent)) placedUnder = nameOf(parent);
-        }
-    }
-    return { objectId: obj.id, type: obj.type, name: confirmed.name ?? obj.name, placedUnder };
-}
-
 let running = false;
 let again = false;
 
@@ -180,7 +158,6 @@ async function reconcileOnce() {
         parents: settingId ? getParents(settingId) : {},
         policies: settings.policies,
         rejected: doc.rejected,
-        adoptNew: settingId ? !getSettingDoc(settingId).canonOnly : true,
     });
 
     if (!items.length && !newReply && JSON.stringify(doc.lastObserved) === JSON.stringify(observed)) return;
@@ -192,7 +169,6 @@ async function reconcileOnce() {
     const corrections = [];
     const driftLog = [];
     const candidates = [];
-    const adopted = [];
 
     for (const item of items) {
         const record = {
@@ -220,20 +196,6 @@ async function reconcileOnce() {
             case 'ask':
                 record.status = 'pending';
                 break;
-            case 'adopt': {
-                // The story made something new: it joins the library and the scene.
-                const objectId = item.field === 'cast' ? item.objectId : item.observed;
-                const adoption = await adopt(chatId, settingId, objects.get(objectId), item, doc.canonical.locationId, nameOf);
-                if (adoption) {
-                    canonical = applyAccepted(canonical, item);
-                    accepted.push(`${adoption.name} joined the setting`);
-                    adopted.push({ id: newLocalId('a'), ...adoption, field: item.field, source: replySource, at: record.at });
-                    record.resolution = 'adopted';
-                    break;
-                }
-                // State Engine refused: fall back to the review queue.
-            }
-            // falls through
             case 'candidate': {
                 const objectId = item.field === 'cast' ? item.objectId : item.observed;
                 const obj = objects.get(objectId);
@@ -256,8 +218,6 @@ async function reconcileOnce() {
         d.corrections = [...d.corrections, ...corrections];
         const known = new Set(d.candidates.map((c) => c.objectId));
         d.candidates = [...d.candidates, ...candidates.filter((c) => !known.has(c.objectId))];
-        const seen = new Set(d.adopted.map((a) => a.objectId));
-        d.adopted = [...d.adopted, ...adopted.filter((a) => !seen.has(a.objectId))];
         const pending = d.drift.filter((x) => x.status === 'pending' || x.status === 'candidate');
         const resolved = d.drift.filter((x) => x.status !== 'pending' && x.status !== 'candidate');
         d.drift = [...pending, ...resolved.slice(-DRIFT_LIMIT), ...driftLog];

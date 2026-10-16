@@ -20,6 +20,7 @@ import { startGuidanceSync } from './guidance/sync.js';
 import { startLifecycle } from './state/lifecycle.js';
 import { addSettingsDrawer } from './ui/settings-drawer.js';
 import { exposeScenarioBuilderApi } from './public-api.js';
+import { startReviewNotice } from './ui/review-notice.js';
 import { pruneSettingDocs } from './store/setting-store.js';
 import { listAllSettings } from './library/library.js';
 
@@ -85,6 +86,11 @@ export async function initExtension() {
         await addSettingsDrawer();
     } catch (err) {
         console.error(`${LOG_PREFIX} the settings drawer failed to load.`, err);
+    }
+    try {
+        await startReviewNotice();
+    } catch (err) {
+        console.error(`${LOG_PREFIX} the review notification failed to start.`, err);
     }
     exposeScenarioBuilderApi();
 }

@@ -7,6 +7,8 @@
 //   GENERATION_STARTED             -> validate -> push canonical -> rebuild (SB-213, SB-306)
 //   MESSAGE_SWIPED / EDITED / DELETED -> revert what that message caused (SB-224)
 //   CHAT_CHANGED                   -> drop pending work, bind the setting, rebuild (SB-501)
+//   (after validation and on a chat change, newly confirmed objects are
+//   taken into the library and enriched - src/library/intake.js)
 //
 // Nothing here waits on an LLM: State Engine's data is local, so the
 // generation hook only costs milliseconds (SB-801).
@@ -16,12 +18,21 @@ import { isActive } from '../settings.js';
 import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
 import { VARIABLES_CHANGED_EVENT } from '../api/variables.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
-import { ensureBoundSetting } from '../library/library.js';
+import { ensureBoundSetting, getBoundSettingId } from '../library/library.js';
+import { runIntake } from '../library/intake.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
 
 const VALIDATE_DEBOUNCE_MS = 1000;
 let timer = null;
+
+// Objects newly confirmed into the open chat's setting are taken in (and
+// enriched) - src/library/intake.js. Never throws.
+async function intakeOpenChat() {
+    const ref = getCurrentChatRef();
+    if (!ref || !isActive()) return;
+    await runIntake(ref.chatId, chatKeyFor(ref), await getBoundSettingId(ref.chatId));
+}
 
 function scheduleValidation(chatId) {
     const ref = getCurrentChatRef();
@@ -29,6 +40,7 @@ function scheduleValidation(chatId) {
     clearTimeout(timer);
     timer = setTimeout(async () => {
         await reconcileOpenChat();
+        await intakeOpenChat();
         await syncNow();
     }, VALIDATE_DEBOUNCE_MS);
 }
@@ -59,6 +71,7 @@ async function onChatChanged() {
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not bind the chat\'s setting', err);
     }
+    await intakeOpenChat();
     await syncNow();
 }
 

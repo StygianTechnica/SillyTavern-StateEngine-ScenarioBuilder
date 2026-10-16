@@ -43,3 +43,13 @@ export function sceneLine({ locationName, time, weather, pending }) {
     if (pending) parts.push(`${pending} to review`);
     return parts.join(' · ');
 }
+
+// The notification's text for a chat document, or '' for none (pure).
+export function noticeText(doc) {
+    const fresh = doc.adopted.length;
+    const questions = doc.drift.filter((d) => d.status === 'pending').length + doc.candidates.length;
+    const parts = [];
+    if (fresh) parts.push(`${fresh} new ${fresh === 1 ? 'entry' : 'entries'} in the setting${doc.adopted.some((a) => a.enrich === 'done') ? ' (detail added)' : ''}`);
+    if (questions) parts.push(`${questions} ${questions === 1 ? 'question' : 'questions'} about the scene`);
+    return parts.length ? `Scenario Builder: ${parts.join(', ')} - click to review.` : '';
+}

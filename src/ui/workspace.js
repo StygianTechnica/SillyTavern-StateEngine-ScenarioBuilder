@@ -15,6 +15,7 @@ import { LIBRARY_CHANGED_EVENT } from '../store/setting-store.js';
 import { ensureBoundSetting, getSettingSummary, listAllSettings, switchSetting } from '../library/library.js';
 import { DRIFT_CHANGED_EVENT } from '../validate/reconcile.js';
 import { syncNow, GUIDANCE_CHANGED_EVENT } from '../guidance/sync.js';
+import { setEditingCheck, ENRICH_EVENT } from '../generate/enrich.js';
 import { renderCatalog } from './catalog.js';
 import { renderScene, renderReview, renderHistory, renderPreview } from './panels.js';
 import { confirmAction } from './confirm.js';
@@ -101,6 +102,9 @@ function listen() {
     const later = () => rerender({ force: false });
     for (const event of [SCENARIO_CHANGED_EVENT, LIBRARY_CHANGED_EVENT, DRIFT_CHANGED_EVENT]) eventSource.on(event, later);
     eventSource.on(GUIDANCE_CHANGED_EVENT, () => { if (ws.tab === 'preview') later(); });
+    eventSource.on(ENRICH_EVENT, later);
+    // Background enrichment holds off an entry the user is editing.
+    setEditingCheck((id) => ws.open && ws.editing && ws.entryId === id);
     eventSource.on(eventTypes.CHAT_CHANGED, async () => {
         if (!ws.open) return;
         const ctx = await bindContext();

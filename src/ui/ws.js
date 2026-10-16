@@ -46,6 +46,8 @@ export function openSheet(entryId, chapter = null) {
     ws.entryId = entryId;
     ws.sheetTab = 'overview';
     ws.editing = entryId === 'new';
+    ws.draftFor = null;
+    ws.generatedFields = new Set();
     ws.dirty = false;
     rerender();
 }

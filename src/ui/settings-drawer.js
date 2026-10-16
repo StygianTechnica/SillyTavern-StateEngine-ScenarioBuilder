@@ -19,6 +19,7 @@ import { FIELD_LABELS, POLICY_VALUES } from '../validate/drift.js';
 import { DRIFT_CHANGED_EVENT } from '../validate/reconcile.js';
 import { curatorStatus, curatorLine, presetLine, sceneLine } from './status-model.js';
 import { openWorkspace } from './workspace.js';
+import { listConnectionProfiles } from './connection-profiles.js';
 import { h, icon, toast } from './dom.js';
 
 // SillyTavern resolves extension templates relative to
@@ -134,6 +135,29 @@ export async function addSettingsDrawer() {
         saveSettings();
     });
     byId('sb_open_workspace').addEventListener('click', () => void openWorkspace());
+
+    // Generation: its own connection profile, detail level and answer size.
+    const connection = byId('sb_gen_connection');
+    const fillConnections = () => {
+        const chosen = settings.connectionProfileId || '';
+        const options = [{ id: '', name: 'Same as the chat' }, ...listConnectionProfiles()];
+        if (chosen && !options.some((o) => o.id === chosen)) options.push({ id: chosen, name: '(profile no longer exists)' });
+        connection.replaceChildren(...options.map((o) => h('option', { value: o.id, selected: o.id === chosen }, o.name)));
+    };
+    fillConnections();
+    connection.addEventListener('focus', fillConnections);
+    connection.addEventListener('change', (e) => { settings.connectionProfileId = e.target.value; saveSettings(); });
+    byId('sb_auto_enrich').checked = settings.generation.autoEnrich === true;
+    byId('sb_auto_enrich').addEventListener('change', (e) => { settings.generation.autoEnrich = e.target.checked; saveSettings(); });
+    byId('sb_gen_detail').value = settings.generation.detail;
+    byId('sb_gen_detail').addEventListener('change', (e) => { settings.generation.detail = e.target.value; saveSettings(); });
+    byId('sb_gen_tokens').value = settings.generation.maxTokens;
+    byId('sb_gen_tokens').addEventListener('change', (e) => {
+        const value = Math.round(Number(e.target.value));
+        settings.generation.maxTokens = Number.isFinite(value) ? Math.min(8000, Math.max(200, value)) : 1200;
+        e.target.value = settings.generation.maxTokens;
+        saveSettings();
+    });
 
     const toggle = byId('sb_preset_toggle');
     toggle.addEventListener('click', async () => {

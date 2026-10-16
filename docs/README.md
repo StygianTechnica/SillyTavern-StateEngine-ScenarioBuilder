@@ -33,6 +33,13 @@ laid out, and [api.md](api.md) for the public API.
      Overview, Details, Relationships, Story (history and Archivist memories),
      Image and GM notes. Every entry is a State Engine object in the chat's
      setting.
+   - **Generate** - every field on a sheet has a sparkle to write it (or
+     enrich what is there); *Fill empty* and *Enrich all* do the whole entry;
+     a chapter's *Generate* writes a new entry from your idea or as a
+     surprise. The front page has dropdowns and dice for world type, magic,
+     era, tone and themes, and writes the premise and rules for you. You
+     review everything before it is saved. Choose a separate (bigger) model
+     in the drawer's *Generation* section.
    - **Image** (on a sheet) - a prompt written for Midjourney (or Stable
      Diffusion / natural language) in your chosen style, to copy out. Then
      upload, paste or link the picture, or generate one with SillyTavern's
@@ -51,13 +58,15 @@ laid out, and [api.md](api.md) for the public API.
 2. After the reply, State Engine extracts what the story says into the
    prompted `sb__scene_*` variables.
 3. Scenario Builder compares that with canonical state. The story leads: by
-   default its changes are **accepted**, and a place or character it invents
-   is **adopted** into the library at once (Review → *New from the story*
-   lists it so you can flesh it out, re-place it, or say it is not part of
-   this world). Per field you can choose instead to **write the canonical
-   value back** (with a correction line in the next guidance) or to **ask**.
-   A setting marked **Canon only** sends inventions to Review instead.
-4. Swiping, editing or deleting a reply reverts what it changed.
+   default its changes are **accepted**. Per field you can choose instead to
+   **write the canonical value back** (with a correction line in the next
+   guidance) or to **ask**.
+4. A new place or character the story names is confirmed in **State Engine's
+   own object review**. Once confirmed, Scenario Builder takes it in: tracks
+   it, places a new location in the tree, and (with auto-enrich on) writes
+   its empty fields. Its notification and Review → *New in the setting* show
+   what arrived.
+5. Swiping, editing or deleting a reply reverts what it changed.
    Everything automated is in **History**, with undo.
 
 ## Outputs

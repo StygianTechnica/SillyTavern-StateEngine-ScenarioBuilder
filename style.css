@@ -243,6 +243,32 @@
 .sb-sections { border-collapse: collapse; font-size: 0.9em; }
 .sb-sections th, .sb-sections td { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--sb-line); vertical-align: top; }
 
+/* ---- choosing and generating */
+
+.sb-field-head { display: flex; align-items: center; gap: 6px; }
+.sb-field-tools { margin-left: auto; display: flex; gap: 2px; }
+.sb-field-tools .sb-iconbtn { padding: 2px 6px; }
+.sb-spark i { color: var(--sb-gold); }
+.sb-dice i { color: var(--SmartThemeBodyColor, #ddd); }
+.sb-off { opacity: 0.3 !important; cursor: not-allowed; }
+.sb-generated { border-left: 3px solid var(--sb-gold); padding-left: 8px; border-radius: 2px; background: linear-gradient(90deg, color-mix(in srgb, var(--sb-gold) 8%, transparent), transparent 40%); }
+.sb-gen-busy { opacity: 0.55; }
+.sb-chipselect { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.sb-chipopt { padding: 3px 10px; border-radius: 14px; border: 1px solid var(--sb-line); cursor: pointer; font-size: 0.88em; opacity: 0.75; user-select: none; transition: all 0.12s; }
+.sb-chipopt:hover { opacity: 1; }
+.sb-chipopt.on { opacity: 1; background: color-mix(in srgb, var(--sb-gold) 25%, transparent); border-color: var(--sb-gold); }
+.sb-chipinput { width: 170px !important; flex: none; padding: 2px 8px !important; border-radius: 14px !important; font-size: 0.88em; }
+.sb-selectcustom { display: flex; flex-direction: column; gap: 6px; }
+.sb-selectcustom select { margin: 0; width: 100%; }
+.sb-genstrip { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px dashed color-mix(in srgb, var(--sb-gold) 50%, transparent); border-radius: var(--sb-radius); flex-wrap: wrap; }
+.sb-genstrip > i { color: var(--sb-gold); }
+.sb-genstrip input { flex: 1 1 260px; margin: 0; }
+.sb-genpanel { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--sb-line); border-left: 4px solid var(--sb-accent); border-radius: var(--sb-radius); background: var(--sb-soft); }
+.sb-genpanel .sb-card-title i { color: var(--sb-gold); }
+.sb-enrich-done { background: color-mix(in srgb, var(--sb-gold) 30%, transparent); }
+.sb-enrich-failed { background: rgba(224, 85, 85, 0.35); }
+.sb-enrich-running, .sb-enrich-queued, .sb-enrich-held { background: var(--sb-softer); }
+
 @media (max-width: 900px) {
     .sb-ws-panel { height: 100dvh; width: 100vw; border-radius: 0; }
     .sb-ws-header { flex-wrap: wrap; }

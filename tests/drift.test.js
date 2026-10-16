@@ -47,15 +47,14 @@ describe('drift detection', () => {
         expect(correctionText(item, { nameOf: (id) => objects.get(id)?.name ?? id })).toBe('The scene is still at Market, not Moon.');
     });
 
-    it('adopts a place the story invents', () => {
+    it('follows the story to a place it invents (State Engine reviews confirmation)', () => {
         const [item] = detectDrift({ canonical: canon({ locationId: 'market' }), observed: observed({ scene_location: 'inn' }), objects, parents });
-        expect(item).toMatchObject({ classification: 'candidate', action: 'adopt' });
+        expect(item).toMatchObject({ classification: 'candidate', action: 'accept' });
     });
 
-    it('queues inventions for review in a canon-only setting, or when asked to', () => {
+    it('asks or adjusts for inventions when the policy says so', () => {
         const input = { canonical: canon({ locationId: 'market' }), observed: observed({ scene_location: 'inn' }), objects, parents };
-        expect(detectDrift({ ...input, adoptNew: false })[0].action).toBe('candidate');
-        expect(detectDrift({ ...input, policies: { ...DEFAULT_POLICIES, location: 'ask' } })[0].action).toBe('candidate');
+        expect(detectDrift({ ...input, policies: { ...DEFAULT_POLICIES, location: 'ask' } })[0].action).toBe('ask');
         expect(detectDrift({ ...input, policies: { ...DEFAULT_POLICIES, location: 'canonical' } })[0].action).toBe('adjust');
     });
 
@@ -68,7 +67,7 @@ describe('drift detection', () => {
         const items = detectDrift({ canonical: canon({ castIds: ['mira'] }), observed: observed({ scene_characters: ['bob', 'ghost'] }), objects, parents });
         expect(items.map((i) => [i.op, i.objectId, i.classification, i.action])).toEqual([
             ['add', 'bob', 'library_match', 'accept'],
-            ['add', 'ghost', 'candidate', 'adopt'],
+            ['add', 'ghost', 'candidate', 'accept'],
             ['remove', 'mira', 'natural', 'accept'],
         ]);
     });

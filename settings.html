@@ -54,6 +54,35 @@
             <hr class="sysHR" />
 
             <div class="sb-section">
+                <div class="sb-heading"><i class="fa-solid fa-wand-magic-sparkles"></i><b>Generation</b></div>
+                <small class="sb-hint">Writing and enriching catalog entries. Use a separate, larger model here if you like - it does not change the chat's connection.</small>
+                <label class="sb-field" title="The model generation runs on: the chat's own connection, or any SillyTavern Connection Manager profile.">
+                    <span>Connection</span>
+                    <select id="sb_gen_connection" class="text_pole"></select>
+                </label>
+                <label class="checkbox_label" title="When State Engine's review confirms a new object into the setting, Scenario Builder writes its empty fields in the background. Never for a canon-only setting or a canon-locked entry; never overwrites what you wrote.">
+                    <input id="sb_auto_enrich" type="checkbox" />
+                    <span>Add detail to new entries automatically</span>
+                </label>
+                <div class="sb-row">
+                    <label class="sb-field" title="How much each generated text field says.">
+                        <span>Detail</span>
+                        <select id="sb_gen_detail" class="text_pole">
+                            <option value="brief">Brief</option>
+                            <option value="standard">Standard</option>
+                            <option value="rich">Rich</option>
+                        </select>
+                    </label>
+                    <label class="sb-field" title="The longest answer generation may take, in tokens. Enriching a whole entry in rich detail needs more.">
+                        <span>Max answer (tokens)</span>
+                        <input id="sb_gen_tokens" class="text_pole" type="number" min="200" max="8000" step="100" />
+                    </label>
+                </div>
+            </div>
+
+            <hr class="sysHR" />
+
+            <div class="sb-section">
                 <div class="sb-heading"><i class="fa-solid fa-scale-balanced"></i><b>Validation</b></div>
                 <small class="sb-hint">By default the scene follows the <b>story</b>, and new places and characters it invents join the library. Per field you can choose <b>canonical</b> (write the canonical value back and correct the next reply) or <b>ask</b> (put the change in Review).</small>
                 <div id="sb_policies" class="sb-policies"></div>

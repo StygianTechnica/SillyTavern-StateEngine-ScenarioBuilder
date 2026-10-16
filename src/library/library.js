@@ -120,6 +120,8 @@ export async function createEntry(chatId, settingId, typeId, data, meta = null) 
         ? await se.createObject(settingId, typeId, data)
         : await se.createChatObject(chatId, typeId, data.name, data);
     if (created && meta) setEntryMeta(settingId, created.id, meta);
+    // Made here, so intake (src/library/intake.js) never "takes it in" again.
+    if (created && type.scope === 'world') updateSettingDoc(settingId, (doc) => { doc.tracked = [...doc.tracked, created.id]; });
     return created;
 }
 

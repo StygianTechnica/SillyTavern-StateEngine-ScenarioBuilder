@@ -1,4 +1,4 @@
-import { curatorStatus, curatorLine, presetLine, sceneLine } from '../src/ui/status-model.js';
+import { curatorStatus, curatorLine, presetLine, sceneLine, noticeText } from '../src/ui/status-model.js';
 import { normalizeChatDoc, normalizeSettingDoc, emptyChatDoc } from '../src/store/schema.js';
 
 describe('drawer status', () => {
@@ -18,6 +18,14 @@ describe('drawer status', () => {
     it('summarises the scene', () => {
         expect(sceneLine({ locationName: 'Market', time: 'day 2, night', weather: ['Rainy'], pending: 1 })).toBe('Market · day 2, night · Rainy · 1 to review');
         expect(sceneLine({})).toBe('No location set');
+    });
+});
+
+describe('review notification', () => {
+    it('counts new entries and questions, and is empty with nothing to review', () => {
+        const doc = { adopted: [{ enrich: 'done' }, { enrich: 'queued' }], drift: [{ status: 'pending' }, { status: 'resolved' }], candidates: [] };
+        expect(noticeText(doc)).toBe('Scenario Builder: 2 new entries in the setting (detail added), 1 question about the scene - click to review.');
+        expect(noticeText({ adopted: [], drift: [], candidates: [] })).toBe('');
     });
 });
 

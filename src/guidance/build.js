@@ -11,6 +11,9 @@
 
 import { REFERENCE_HEADER } from '../constants.js';
 import { fitToBudget, estimateTokens } from './budget.js';
+import { WORLD_TYPES, CAPABILITY_LEVELS } from '../library/world-options.js';
+
+const labelOf = (list, id) => list.find(([key]) => key === id)?.[1] ?? id;
 
 // The sections, in display order (spec 9.2), with their budget priority
 // (higher = kept longer) and whether they are never dropped (SB-305: last
@@ -63,7 +66,11 @@ function overviewSection(overview) {
     const o = overview ?? {};
     const lines = [];
     if (clean(o.premise)) lines.push(sentence(truncate(o.premise, 400)));
-    const meta = [['Tone', o.tone], ['Themes', o.themes], ['Era', o.era]].filter(([, v]) => clean(v)).map(([k, v]) => `${k}: ${clean(v)}`);
+    const meta = [
+        ['World', o.worldType ? labelOf(WORLD_TYPES, o.worldType).toLowerCase() : ''],
+        ['Magic/technology', o.magicLevel ? labelOf(CAPABILITY_LEVELS, o.magicLevel).toLowerCase() : ''],
+        ['Tone', o.tone], ['Themes', o.themes], ['Era', o.era],
+    ].filter(([, v]) => clean(v)).map(([k, v]) => `${k}: ${clean(v)}`);
     if (meta.length) lines.push(`${meta.join('. ')}.`);
     if (clean(o.rules)) lines.push(`World rules: ${sentence(truncate(o.rules, 400))}`);
     if (!lines.length) return null;
