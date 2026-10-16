@@ -4,10 +4,11 @@
     "description": "Scenario Builder is the narrative director for the system, generating canonical world state, scene guidance, and per‑character perspectives to drive coherent, context‑aware storytelling.",
     "version": "0.1.0",
     "js": "src/index.js",
+    "css": "style.css",
     "loading_order": 100,
     "requires": [],
     "optional": [],
-    "author": "",
+    "author": "StygianTechnica",
     "homePage": "https://github.com/StygianTechnica/SillyTavern-StateEngine-ScenarioBuilder",
     "auto_update": false
 }

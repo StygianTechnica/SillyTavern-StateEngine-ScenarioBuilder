@@ -4,5 +4,12 @@
     "private": true,
     "type": "module",
     "description": "Scenario Builder is the narrative director for the system, generating canonical world state, scene guidance, and per‑character perspectives to drive coherent, context‑aware storytelling.",
-    "license": "SEE LICENSE IN LICENSE"
+    "license": "SEE LICENSE IN LICENSE",
+    "scripts": {
+        "test": "vitest",
+        "test:run": "vitest run"
+    },
+    "devDependencies": {
+        "vitest": "^4.1.11"
+    }
 }

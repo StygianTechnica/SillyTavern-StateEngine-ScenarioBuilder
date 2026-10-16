@@ -1,64 +1,90 @@
-// Extension bootstrap: confirms the State Engine dependency is actually
-// present, then claims a namespace, registers this extension for
-// discovery, and declares its capabilities - the things every State
-// Engine extension must do before it can create presets, variables, or
-// anything else. Nothing else belongs here: no presets, no variables,
-// no events, no UI beyond the one missing-dependency popup. See
-// docs/how-to-extend.md for where everything else actually goes once
-// you start building.
+// Scenario Builder bootstrap (spec SB-500): dependency check -> claim the
+// namespace, register with State Engine (variables, capabilities) ->
+// restore the Scenario State preset -> load settings -> start following
+// the chat (validation, guidance) -> the drawer and the public API.
+//
+// The dependency check runs FIRST and gates everything else (SB-001): if
+// State Engine is not installed, not enabled, or its API cannot be
+// reached, this shows one popup and returns.
 
 import { EXTENSION_ID, NAMESPACE, LOG_PREFIX } from './constants.js';
 import { ensureStateEngineAvailable, warnStateEngineMissing } from './api/dependency-check.js';
 import { claimNamespace } from './api/namespace.js';
 import { registerWithStateEngine } from './api/registration.js';
 import { declareCapabilities } from './api/capabilities.js';
+import { qualifiedName } from './api/variables.js';
+import { getSettings } from './settings.js';
+import { ensureScenarioPreset } from './preset/scenario-preset.js';
+import { ALL_VARIABLES } from './preset/blueprint.js';
+import { startGuidanceSync } from './guidance/sync.js';
+import { startLifecycle } from './state/lifecycle.js';
+import { addSettingsDrawer } from './ui/settings-drawer.js';
+import { exposeScenarioBuilderApi } from './public-api.js';
+import { pruneSettingDocs } from './store/setting-store.js';
+import { listAllSettings } from './library/library.js';
 
-// ---------------------------------------------------------------------
-// EXTENSION IDENTITY - rename these before building on this template.
-// See docs/README.md, "Renaming the namespace".
-// ---------------------------------------------------------------------
+const OUTPUTS = ['guidance', 'state_block'].map(qualifiedName);
 
-// Plain strings describing what your extension provides, e.g.
-// "ui.panel" or "data.inventory" - leave empty until you actually
-// provide something another extension might want to depend on.
-const CAPABILITIES = [];
+// What Scenario Builder provides (SB-002, SB-310): each output offered to
+// Curator for injection, as a user message by default (the user may change
+// the role in Curator) - plus the scenario.* capabilities for other
+// extensions. The state block's capability is declared even when it is
+// switched off: it is then simply ''.
+const CAPABILITIES = [
+    ...OUTPUTS.flatMap((name) => [`curator.inject:${name}`, `curator.inject.role:user:${name}`]),
+    'scenario.library',
+    'scenario.state',
+];
 
-// Called once, on load (see src/index.js). Safe to call again on a
-// later page load - claimNamespace() is idempotent for the same
-// EXTENSION_ID/NAMESPACE pair, and registerWithStateEngine()/
-// declareCapabilities() simply replace the previous declaration with
-// the same one.
-//
-// The dependency check runs FIRST, and gates everything else: if State
-// Engine is not installed, not enabled, or its API cannot be reached,
-// this shows one popup and returns - no namespace is claimed, no
-// registration or capability call is ever attempted.
 export async function initExtension() {
     const available = await ensureStateEngineAvailable();
     if (!available) {
         warnStateEngineMissing();
-        console.warn(`[${EXTENSION_ID}] State Engine was not found (not installed, not enabled, or not ready) - initialization aborted.`);
+        console.warn(`${LOG_PREFIX} State Engine was not found (not installed, not enabled, or not ready) - initialization aborted.`);
         return;
     }
 
     try {
         await claimNamespace(EXTENSION_ID, NAMESPACE);
-
         await registerWithStateEngine(EXTENSION_ID, {
             namespace: NAMESPACE,
+            variables: ALL_VARIABLES.map(([name]) => qualifiedName(name)),
             capabilities: CAPABILITIES,
-            description: '',
+            description: 'The narrative director: a setting library, canonical world state checked against the story, and narrative guidance for Curator to inject.',
         });
-
         await declareCapabilities(EXTENSION_ID, CAPABILITIES);
-
-        console.log(`[${EXTENSION_ID}] initialized - namespace "${NAMESPACE}" claimed.`);
+        console.log(`${LOG_PREFIX} initialized - namespace "${NAMESPACE}" claimed.`);
     } catch (err) {
-        // State Engine looked present (the check above passed) but an
-        // actual call still failed - "its API cannot be reached", the
-        // one failure mode ensureStateEngineAvailable() can't catch in
-        // advance. Same warning, never thrown further.
         warnStateEngineMissing();
-        console.warn(`[${EXTENSION_ID}] State Engine calls failed unexpectedly - initialization aborted.`, err);
+        console.warn(`${LOG_PREFIX} State Engine calls failed unexpectedly - initialization aborted.`, err);
+        return;
     }
+
+    // Scenario Builder's own startup - a failure here is ours, not State
+    // Engine's, so it is logged rather than shown as the missing-dependency
+    // popup (SB-802).
+    getSettings();
+    try {
+        // Library data of settings State Engine no longer has (SB-601).
+        pruneSettingDocs((await listAllSettings()).map((s) => s.id));
+    } catch (err) {
+        console.warn(`${LOG_PREFIX} could not tidy up library data.`, err);
+    }
+    try {
+        await ensureScenarioPreset();
+    } catch (err) {
+        console.error(`${LOG_PREFIX} could not set up the Scenario State preset.`, err);
+    }
+    try {
+        startLifecycle();
+        startGuidanceSync();
+    } catch (err) {
+        console.error(`${LOG_PREFIX} could not start following the chat.`, err);
+    }
+    try {
+        await addSettingsDrawer();
+    } catch (err) {
+        console.error(`${LOG_PREFIX} the settings drawer failed to load.`, err);
+    }
+    exposeScenarioBuilderApi();
 }

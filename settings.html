@@ -1,0 +1,68 @@
+<div id="scenario_builder_settings">
+    <div class="inline-drawer">
+        <div class="inline-drawer-toggle inline-drawer-header">
+            <b>Scenario Builder</b>
+            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+        </div>
+        <div class="inline-drawer-content">
+
+            <div class="sb-section">
+                <div class="sb-row">
+                    <label class="checkbox_label" title="Off: the guidance and state block are empty and validation stops. Your library and chat data are kept.">
+                        <input id="sb_enabled" type="checkbox" />
+                        <span>Enable Scenario Builder</span>
+                    </label>
+                    <label class="checkbox_label" title="Empty the outputs for now, without switching anything off.">
+                        <input id="sb_paused" type="checkbox" />
+                        <span>Pause</span>
+                    </label>
+                </div>
+                <div id="sb_open_workspace" class="menu_button menu_button_icon" title="The setting library, the scene state, the review queue, history and the guidance preview">
+                    <i class="fa-solid fa-book-atlas"></i><span>Open Scenario Builder</span>
+                </div>
+            </div>
+
+            <hr class="sysHR" />
+
+            <div class="sb-section">
+                <div class="sb-heading"><i class="fa-solid fa-sliders"></i><b>This chat</b></div>
+                <small id="sb_setting_line" class="sb-hint"></small>
+                <div class="sb-status-row">
+                    <small id="sb_preset_status" class="sb-status"></small>
+                    <div id="sb_preset_toggle" class="menu_button menu_button_icon" title="Activate or deactivate the Scenario State preset for this chat, through State Engine"></div>
+                </div>
+                <small id="sb_scene_context_hint" class="sb-hint sb-warn" hidden></small>
+                <small id="sb_scene_line" class="sb-hint"></small>
+                <small id="sb_curator_line" class="sb-hint"></small>
+            </div>
+
+            <hr class="sysHR" />
+
+            <div class="sb-section">
+                <div class="sb-heading"><i class="fa-solid fa-feather"></i><b>Guidance</b></div>
+                <label class="sb-field" title="The guidance is cut to fit this many tokens (estimated). Low-priority sections are shortened, then dropped; location, time and corrections are kept.">
+                    <span>Token budget</span>
+                    <input id="sb_token_budget" class="text_pole" type="number" min="50" max="8000" step="50" />
+                </label>
+                <div id="sb_sections" class="sb-checks"></div>
+                <label class="checkbox_label" title="Also write the canonical state as a short block (sb__state_block), which Curator offers separately.">
+                    <input id="sb_state_block" type="checkbox" />
+                    <span>Write the canonical state block</span>
+                </label>
+            </div>
+
+            <hr class="sysHR" />
+
+            <div class="sb-section">
+                <div class="sb-heading"><i class="fa-solid fa-scale-balanced"></i><b>Validation</b></div>
+                <small class="sb-hint">By default the scene follows the <b>story</b>, and new places and characters it invents join the library. Per field you can choose <b>canonical</b> (write the canonical value back and correct the next reply) or <b>ask</b> (put the change in Review).</small>
+                <div id="sb_policies" class="sb-policies"></div>
+                <label class="sb-field" title="How many replies a correction stays in the guidance.">
+                    <span>Corrections last (replies)</span>
+                    <input id="sb_correction_turns" class="text_pole" type="number" min="1" max="10" step="1" />
+                </label>
+            </div>
+
+        </div>
+    </div>
+</div>
