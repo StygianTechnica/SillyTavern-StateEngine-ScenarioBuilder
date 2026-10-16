@@ -25,7 +25,8 @@ const DEFAULTS = {
     // validation queue (a quick toggle while the user steers by hand).
     paused: false,
     // Token budget for sb__guidance (spec SB-305), estimated as chars/4.
-    tokenBudget: 600,
+    // Generous: the guidance is meant to replace world-info entries.
+    tokenBudget: 2000,
     // Which guidance sections are built (spec 9.2), { [key]: boolean }.
     sections: { ...DEFAULT_SECTIONS },
     // Whether sb__state_block is written (spec SB-301).
@@ -56,6 +57,13 @@ const DEFAULTS = {
     // Quests (src/quests/): make quest objects from Archivist's quest seeds,
     // goals and plans automatically; how many active quests are tracked.
     quests: { autoCreate: true, tracked: 5 },
+    // The director (src/director/): a game master's briefing written before
+    // each reply. timeout: seconds the reply waits for it (the last note is
+    // used when it is late); allowCreate: it may add the rooms, people and
+    // items the scene needs to the library (never in a canon-only setting).
+    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700 },
+    // Settings migrations already applied.
+    migrated: [],
     // { [settingId]: library document } - src/store/setting-store.js.
     library: {},
     // { [chatKey]: chat document } - src/store/chat-store.js.
@@ -75,6 +83,12 @@ export function getSettings() {
     }
     // New sections/policies added by an update get their defaults.
     for (const [key, value] of Object.entries(DEFAULT_SECTIONS)) settings.sections[key] ??= value;
+    for (const [key, value] of Object.entries(DEFAULTS.director)) settings.director[key] ??= value;
+    // The old 600-token default was far too small for a narrative briefing.
+    if (!settings.migrated.includes('budget-2000')) {
+        if (settings.tokenBudget === 600) settings.tokenBudget = DEFAULTS.tokenBudget;
+        settings.migrated.push('budget-2000');
+    }
     for (const [key, value] of Object.entries(DEFAULT_POLICIES)) settings.policies[key] ??= value;
     for (const [key, value] of Object.entries(DEFAULT_IMAGE_OPTIONS)) settings.imagePrompts[key] ??= structuredClone(value);
     for (const [key, value] of Object.entries(DEFAULT_IMAGE_OPTIONS.midjourney)) settings.imagePrompts.midjourney[key] ??= value;

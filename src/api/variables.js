@@ -43,6 +43,17 @@ export async function getVariableValues(chatId, variableNames) {
     return out;
 }
 
+// Values by FULLY-QUALIFIED name, any namespace (the Variable Value API's
+// cross-namespace read): { [qualifiedName]: value }; names without a value
+// are left out.
+export async function getRawValues(chatId, qualifiedNames) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    const found = stateEngine.getVariableValues(EXTENSION_ID, instanceId, chatId, qualifiedNames) ?? {};
+    const out = {};
+    for (const name of qualifiedNames) if (found[name]) out[name] = found[name].value;
+    return out;
+}
+
 export async function setVariableValue(chatId, presetName, variableName, value) {
     const { stateEngine, instanceId } = await getStateEngine();
     return stateEngine.setVariableValue(EXTENSION_ID, instanceId, chatId, ref(presetName, variableName), value);

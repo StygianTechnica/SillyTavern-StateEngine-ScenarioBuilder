@@ -22,6 +22,7 @@ import { renderGraph } from './graph.js';
 import { renderScene, renderReview, renderHistory, renderPreview } from './panels.js';
 import { renderImport } from './import-panel.js';
 import { IMPORT_EVENT } from '../import/run.js';
+import { DIRECTOR_EVENT } from '../director/run.js';
 import { confirmAction } from './confirm.js';
 import { ws, setRedraw, rerender, stopEditing } from './ws.js';
 import { h, icon, select, toast } from './dom.js';
@@ -111,6 +112,7 @@ function listen() {
     eventSource.on(QUESTS_EVENT, later);
     // The import's progress redraws the Import tab (no unsaved input there).
     eventSource.on(IMPORT_EVENT, () => { if (ws.tab === 'import') rerender(); });
+    eventSource.on(DIRECTOR_EVENT, () => { if (ws.tab === 'preview') rerender(); });
     // Background enrichment holds off an entry the user is editing.
     setEditingCheck((id) => ws.open && ws.editing && ws.entryId === id);
     eventSource.on(eventTypes.CHAT_CHANGED, async () => {

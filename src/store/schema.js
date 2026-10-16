@@ -51,6 +51,8 @@
 //                                           the "current description": what the story
 //                                           has made of an object in this chat (a burnt
 //                                           forest), used instead of its base description
+//     director: { note, key, at, created: [{ id, kind, name }], error }
+//                                           the game master's latest briefing (src/director/)
 //     lastObserved: { [field]: value },     what State Engine extracted last time
 //     lastReply: source message id of the newest AI reply reconciled
 //     drift: [driftItem],                   see src/validate/drift.js
@@ -184,6 +186,21 @@ function normalizeNarrative(value) {
     return out;
 }
 
+export function emptyDirector() {
+    return { note: '', key: '', at: '', created: [], error: '' };
+}
+
+function normalizeDirector(value) {
+    if (!isObject(value)) return emptyDirector();
+    return {
+        note: str(value.note),
+        key: str(value.key),
+        at: str(value.at),
+        created: Array.isArray(value.created) ? value.created.filter((c) => isObject(c) && str(c.id)).slice(-20) : [],
+        error: str(value.error),
+    };
+}
+
 export function emptyChatDoc() {
     return {
         schemaVersion: CHAT_SCHEMA_VERSION,
@@ -191,6 +208,7 @@ export function emptyChatDoc() {
         canonical: emptyCanonical(),
         inPlay: [],
         narrative: {},
+        director: emptyDirector(),
         questLinks: {},
         questsSeen: null,
         lastObserved: {},
@@ -213,6 +231,7 @@ export function normalizeChatDoc(doc) {
         canonical: normalizeCanonical(d.canonical),
         inPlay: strList(d.inPlay),
         narrative: normalizeNarrative(d.narrative),
+        director: normalizeDirector(d.director),
         questLinks: isObject(d.questLinks) ? d.questLinks : {},
         questsSeen: Array.isArray(d.questsSeen) ? strList(d.questsSeen) : null,
         lastObserved: isObject(d.lastObserved) ? d.lastObserved : {},

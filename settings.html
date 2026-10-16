@@ -40,7 +40,19 @@
 
             <div class="sb-section">
                 <div class="sb-heading"><i class="fa-solid fa-feather"></i><b>Guidance</b></div>
-                <label class="sb-field" title="The guidance is cut to fit this many tokens (estimated). Low-priority sections are shortened, then dropped; location, time and corrections are kept.">
+                <label class="checkbox_label" title="Before each reply, a game master reads the recent chat and the scene and writes the narrator a briefing: what the people present want, what should probably happen next, what to show. It goes first in the guidance. Uses the generation connection.">
+                    <input id="sb_director" type="checkbox" />
+                    <span>Game master briefing before each reply</span>
+                </label>
+                <label class="checkbox_label" title="The game master may add the rooms, people and items the scene needs to the library (under the current location). Never in a canon-only setting.">
+                    <input id="sb_director_create" type="checkbox" />
+                    <span>Let it add places, people and items</span>
+                </label>
+                <label class="sb-field" title="How long the reply waits for the briefing. If it is late, the previous briefing is used and the new one is kept for later.">
+                    <span>Wait at most (seconds)</span>
+                    <input id="sb_director_timeout" class="text_pole" type="number" min="5" max="300" step="5" />
+                </label>
+                <label class="sb-field" title="The guidance is cut to fit this many tokens (estimated). Low-priority sections are shortened, then dropped; the briefing, location, time and corrections are kept. It is meant to replace world-info entries, so it can be generous.">
                     <span>Token budget</span>
                     <input id="sb_token_budget" class="text_pole" type="number" min="50" max="8000" step="50" />
                 </label>

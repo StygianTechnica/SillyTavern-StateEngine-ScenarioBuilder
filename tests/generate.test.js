@@ -191,7 +191,7 @@ describe('world limits in prompts and guidance', () => {
     it('keeps the limits in the guidance even when the overview is shortened', async () => {
         const { buildGuidance } = await import('../src/guidance/build.js');
         const full = buildGuidance({ overview: godWar, budget: 2000 }).text;
-        expect(full).toContain('World limits:');
+        expect(full).toContain("Never break the world's limits.");
         expect(full).toContain('arcane');
         const tight = buildGuidance({ overview: { ...godWar, premise: 'x'.repeat(900), rules: 'y'.repeat(900) }, location: { path: ['Keep'] }, budget: 160 });
         expect(tight.sections.find((s) => s.key === 'overview').mode).toBe('compact');

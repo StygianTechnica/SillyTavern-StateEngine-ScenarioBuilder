@@ -85,6 +85,9 @@ function renderSettings() {
     byId('sb_token_budget').value = settings.tokenBudget;
     byId('sb_state_block').checked = settings.stateBlockEnabled === true;
     byId('sb_correction_turns').value = settings.correctionTurns;
+    byId('sb_director').checked = settings.director.enabled === true;
+    byId('sb_director_create').checked = settings.director.allowCreate === true;
+    byId('sb_director_timeout').value = settings.director.timeout;
 
     byId('sb_sections').replaceChildren(...SECTIONS.map((s) => h('label', { class: 'checkbox_label' },
         h('input', {
@@ -124,7 +127,7 @@ export async function addSettingsDrawer() {
     byId('sb_state_block').addEventListener('change', (e) => { settings.stateBlockEnabled = e.target.checked; changed(); });
     byId('sb_token_budget').addEventListener('change', (e) => {
         const value = Math.round(Number(e.target.value));
-        settings.tokenBudget = Number.isFinite(value) ? Math.min(8000, Math.max(50, value)) : 600;
+        settings.tokenBudget = Number.isFinite(value) ? Math.min(8000, Math.max(50, value)) : 2000;
         e.target.value = settings.tokenBudget;
         changed();
     });
@@ -132,6 +135,14 @@ export async function addSettingsDrawer() {
         const value = Math.round(Number(e.target.value));
         settings.correctionTurns = Number.isFinite(value) ? Math.min(10, Math.max(1, value)) : 2;
         e.target.value = settings.correctionTurns;
+        saveSettings();
+    });
+    byId('sb_director').addEventListener('change', (e) => { settings.director.enabled = e.target.checked; changed(); });
+    byId('sb_director_create').addEventListener('change', (e) => { settings.director.allowCreate = e.target.checked; saveSettings(); });
+    byId('sb_director_timeout').addEventListener('change', (e) => {
+        const value = Math.round(Number(e.target.value));
+        settings.director.timeout = Number.isFinite(value) ? Math.min(300, Math.max(5, value)) : 45;
+        e.target.value = settings.director.timeout;
         saveSettings();
     });
     byId('sb_open_workspace').addEventListener('click', () => void openWorkspace());

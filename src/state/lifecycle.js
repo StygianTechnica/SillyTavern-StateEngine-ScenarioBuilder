@@ -10,8 +10,9 @@
 //   (after validation and on a chat change, newly confirmed objects are
 //   taken into the library and enriched - src/library/intake.js)
 //
-// Nothing here waits on an LLM: State Engine's data is local, so the
-// generation hook only costs milliseconds (SB-801).
+// Only the director waits on a model before a reply (bounded by its
+// timeout, settings.director.timeout); everything else is local, so the
+// rest of the generation hook costs milliseconds (SB-801).
 
 import { LOG_PREFIX } from '../constants.js';
 import { isActive } from '../settings.js';
@@ -23,6 +24,7 @@ import { runIntake } from '../library/intake.js';
 import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
+import { directBeforeReply } from '../director/run.js';
 
 const VALIDATE_DEBOUNCE_MS = 1000;
 let timer = null;
@@ -68,6 +70,9 @@ async function beforeGeneration(type, _options, dryRun) {
         await reconcileOpenChat();
         await pushCanonicalToObserved(ref.chatId, chatKeyFor(ref));
         await writeActiveQuests(ref.chatId, chatKeyFor(ref), await getBoundSettingId(ref.chatId));
+        // The game master thinks before the reply (src/director/): the one
+        // step here that waits on a model, bounded by its timeout.
+        if (type !== 'impersonate') await directBeforeReply(ref.chatId, chatKeyFor(ref), type);
         await syncNow();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not prepare the guidance before generation', err);

@@ -319,6 +319,10 @@
 .sb-superseded .sb-chip, .sb-superseded .sb-pol { text-decoration: line-through; }
 .sb-dd { display: flex; gap: 6px; align-items: flex-start; }
 .sb-dd-value { flex: 1; min-width: 0; }
+.sb-editable { cursor: text; border-radius: 4px; }
+.sb-editable:hover { background: var(--sb-soft); outline: 1px dashed var(--sb-line); }
+.sb-pencil { opacity: 0.4; }
+.sb-dd:hover .sb-pencil { opacity: 1; }
 .sb-dd .sb-spark, .sb-section-title .sb-spark { opacity: 0.55; }
 .sb-dd:hover .sb-spark, .sb-section-title:hover .sb-spark { opacity: 1; }
 .sb-rel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 8px; background: var(--sb-soft); }

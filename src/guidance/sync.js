@@ -18,11 +18,11 @@ import { getSettings, isActive } from '../settings.js';
 import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
 import { getChatDoc, updateChatDoc, SCENARIO_CHANGED_EVENT } from '../store/chat-store.js';
 import { getSettingDoc, LIBRARY_CHANGED_EVENT } from '../store/setting-store.js';
-import { getVariableValues, setVariableValue, VARIABLES_CHANGED_EVENT } from '../api/variables.js';
-import { getObject } from '../api/objects.js';
+import { getVariableValues, getRawValues, setVariableValue, VARIABLES_CHANGED_EVENT } from '../api/variables.js';
+import { getObject, listObjects } from '../api/objects.js';
 import { PRESET_NAME } from '../preset/blueprint.js';
 import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.js';
-import { getBoundSettingId, readField } from '../library/library.js';
+import { getBoundSettingId, readField, listEntries } from '../library/library.js';
 import { pathOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { buildGuidance, buildStateBlock, timeText } from './build.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
@@ -47,6 +47,23 @@ function announce() {
     }
 }
 
+// When Scenario Builder has no canonical location or cast yet: what the
+// story says (its own prompted scene variables), else State Engine's Scene
+// Context, else the characters State Engine marks present.
+async function sceneFallbacks(chatId) {
+    const out = { locationId: '', castIds: [] };
+    try {
+        const v = await getRawValues(chatId, ['sb__scene_location', 'sb__scene_characters', 'se__scene_location', 'se__scene_characters']);
+        out.locationId = (typeof v.sb__scene_location === 'string' && v.sb__scene_location) || (typeof v.se__scene_location === 'string' && v.se__scene_location) || '';
+        const list = (x) => (Array.isArray(x) ? x.filter((id) => typeof id === 'string' && id) : []);
+        out.castIds = list(v.sb__scene_characters).length ? list(v.sb__scene_characters) : list(v.se__scene_characters);
+        if (!out.castIds.length) out.castIds = (await listObjects(chatId, 'character')).filter((o) => o.runtime?.present === true || o.present === true).map((o) => o.id);
+    } catch (err) {
+        console.debug(LOG_PREFIX, 'no scene fallbacks', err);
+    }
+    return out;
+}
+
 // Everything buildGuidance()/buildStateBlock() need, for one chat.
 export async function gatherInputs(chatId, chatKey) {
     const settings = getSettings();
@@ -62,10 +79,17 @@ export async function gatherInputs(chatId, chatKey) {
         return names.get(id);
     };
 
+    // Where the scene is: the canonical location; failing that, what the
+    // story says (sb__scene_location), or State Engine's own Scene Context.
+    const fallback = await sceneFallbacks(chatId);
+    const locationId = c.locationId || fallback.locationId;
+    const castIds = c.castIds.length ? c.castIds : fallback.castIds;
+    const sceneSource = c.locationId ? 'canonical' : (locationId ? 'from the story' : '');
+
     let location = null;
     let locationPath = [];
-    if (c.locationId) {
-        const obj = await getObject(chatId, c.locationId);
+    if (locationId) {
+        const obj = await getObject(chatId, locationId);
         if (obj) {
             names.set(obj.id, obj.name);
             for (const id of pathOf(parents, obj.id)) {
@@ -77,33 +101,57 @@ export async function gatherInputs(chatId, chatKey) {
             for (const [key, { value, from }] of Object.entries(inheritedEnvironment(parents, envById, obj.id))) {
                 environment[key] = { value, from: from === obj.id ? '' : await nameOf(from) };
             }
+            // What is here: places off it (rooms, streets), the place it is
+            // part of, and the items and creatures the library puts here.
+            const allLocations = await listEntries(chatId, settingId, 'location');
+            const short = (o) => ({ name: o.name, description: doc.narrative[o.id]?.text || o.description || '' });
+            const places = allLocations.filter((l) => parents[l.id] === obj.id).map(short);
+            const partOf = parents[obj.id] ? allLocations.find((l) => l.id === parents[obj.id]) : null;
+            const placedHere = async (typeId) => (await listEntries(chatId, settingId, typeId)).filter((o) => (o.base?.location ?? o.location) === obj.id).map(short);
             // The story's current description wins over the base one.
-            location = { path: locationPath, description: doc.narrative[obj.id]?.text || obj.description || '', environment, indoor: c.indoor };
+            location = {
+                path: locationPath,
+                description: doc.narrative[obj.id]?.text || obj.description || '',
+                conditions: await readField(chatId, obj.id, 'se__location.conditions', 'conditions'),
+                environment,
+                indoor: c.indoor,
+                places,
+                partOf: partOf ? short(partOf) : null,
+                items: await placedHere('item'),
+                creatures: await placedHere('creature'),
+                source: sceneSource,
+                id: obj.id,
+            };
         }
     }
 
     const cast = [];
-    for (const id of c.castIds) {
+    for (const id of castIds) {
         const obj = await getObject(chatId, id);
         if (!obj) continue;
         names.set(id, obj.name);
+        const base = obj.base ?? obj;
+        const text = (v) => (Array.isArray(v) ? v.join(', ') : (typeof v === 'string' ? v : ''));
         // Runtime values by field role (SB-441); GM notes are never read here (SB-123).
         cast.push({
             name: obj.name,
             role: await readField(chatId, id, 'se__character.role', 'role'),
             description: doc.narrative[id]?.text || obj.description || '',
+            personality: text(base.personality),
+            goals: text(base.goals),
             mood: await readField(chatId, id, 'se__character.mood', 'mood'),
             intent: await readField(chatId, id, 'se__character.intent', 'intent'),
+            thought: await readField(chatId, id, 'se__character.thought', 'thought'),
             relations: [],
             id,
-            why: 'canonically present',
+            why: c.castIds.length ? 'canonically present' : 'present in the story',
         });
     }
     // How the characters present relate to each other: the relationships
     // the user authored first, then the story's (Archivist) for pairs the
     // user has not written.
     if (cast.length > 1) {
-        const present = new Set(c.castIds);
+        const present = new Set(castIds);
         const nameById = new Map(cast.map((m) => [m.id, m.name]));
         const authored = settingId ? library.relations ?? [] : [];
         for (const member of cast) {
@@ -140,6 +188,9 @@ export async function gatherInputs(chatId, chatKey) {
     const time = { day: c.day, dayPart: c.dayPart };
     return {
         guidance: {
+            // The game master's briefing (src/director/), written before
+            // the reply; the rest is the scene it was written from.
+            director: settings.director.enabled ? doc.director.note : '',
             overview: library.overview,
             location,
             time,

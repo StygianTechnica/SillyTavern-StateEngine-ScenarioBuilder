@@ -49,6 +49,19 @@ These came after spec v0.5 and should be folded into its next revision.
   on Escape, and it keeps keystrokes away from SillyTavern's shortcuts. It can
   be minimised to a pill.
 
+- **Scenario Builder is the GM brain; the guidance is narrative.** Before
+  each reply a game master (src/director/) reads the recent chat and the
+  scene and writes the narrator a prose briefing: where things stand, what
+  the people present want and will likely do, what should probably happen
+  next, what to show. It leads sb__guidance; the rest of the guidance is the
+  scene written as prose, not lists. It adds the rooms, people and items the
+  scene needs (rooms under the current location, things placed in it) and
+  fleshes out a thin location or cast. The briefing is model output, so the
+  guidance is no longer byte-deterministic (SB-015 now covers everything
+  except the briefing). The reply waits for it up to a timeout, and the
+  previous briefing stands when it is late. The guidance is meant to replace
+  world-info entries, so the token budget default is now 2000.
+
 ## Catalog UI (iterating - "a fun place to do worldbuilding")
 
 - [x] **Graph view** - done (`ui/graph.js`, `ui/graph-layout.js`): a Graph
@@ -173,7 +186,13 @@ calls (one entry at a time, retry, and the entry text as a fallback).
 
 - [ ] Relevance scoring across the wider library (SB-400..402); guidance
   sections 5-7: knowledge boundaries, quests, factions/items/lore/events.
-- [ ] Archivist memories in the guidance (SB-440..444).
+- [x] Archivist memories feed the director's briefing (the location's and
+  the cast's top memories).
+- [ ] Director: a "think after each reply" mode (zero wait, written before
+  the player's next message), and per-character perspective briefings once
+  State Engine offers perspectives.
+- [ ] Director: add newly needed people to the canonical cast when they
+  enter, not only to the library.
 - [ ] Perspective and knowledge boundaries, POV modes (9.4, OPEN-5).
 - [x] Quests (9.5): made automatically from Archivist's quest seeds, goals,
   plans and hooks (plus a "Scan Archivist for quests" catch-up), objectives

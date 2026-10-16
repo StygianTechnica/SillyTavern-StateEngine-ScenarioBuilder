@@ -18,13 +18,14 @@ describe('guidance', () => {
     it('starts with the reference line and holds every section', () => {
         const { text, sections } = buildGuidance(input);
         expect(text.startsWith(`${REFERENCE_HEADER}\n`)).toBe(true);
-        expect(text).toContain('Location: Veylan > Old Quarter > Brass Market, outdoors.');
-        expect(text).toContain('Time: day 3, evening.');
-        expect(text).toContain('Weather: rainy, windy. Temperature: cool.');
-        expect(text).toContain('Climate: humid (Veylan).');
-        expect(text).toContain('- Mira (innkeeper): Sharp-eyed and tired. Mood: suspicious. Intends: stall for time.');
-        expect(text).toContain('- The scene is still at Brass Market, not the docks.');
-        expect(sections.filter((s) => s.key !== 'quests').every((s) => s.mode === 'full')).toBe(true);
+        expect(text).toContain('The scene is set in Brass Market, in Old Quarter, Veylan, out of doors.');
+        expect(text).toContain('It is evening on day 3;');
+        expect(text).toContain('the weather is rainy and windy; the air is cool.');
+        expect(text).toContain('The climate is humid.');
+        expect(text).toContain('Mira, the innkeeper, is here. Sharp-eyed and tired. Right now Mira feels suspicious and means to stall for time.');
+        expect(text).toContain('Hold to these: The scene is still at Brass Market, not the docks.');
+        expect(sections.filter((s) => s.key !== 'quests' && s.key !== 'director').every((s) => s.mode === 'full')).toBe(true);
+        expect(text).not.toMatch(/^\[/m);
     });
 
     it('never names the extension', () => {
@@ -37,7 +38,7 @@ describe('guidance', () => {
 
     it('is empty when there is nothing to say (SB-304)', () => {
         expect(buildGuidance({ budget: 600 }).text).toBe('');
-        expect(buildGuidance({ ...input, sections: { overview: false, location: false, scene: false, cast: false, corrections: false } }).text).toBe('');
+        expect(buildGuidance({ ...input, sections: { director: false, overview: false, location: false, scene: false, cast: false, corrections: false } }).text).toBe('');
     });
 
     it('marks sections switched off', () => {
@@ -87,14 +88,24 @@ describe('state block', () => {
 describe('relationships in the cast', () => {
     it('adds how present characters feel toward each other', () => {
         const { text } = buildGuidance({ cast: [{ name: 'Mira', role: 'innkeeper', relations: ['toward Tobin: debtor, wary, worsening'] }], budget: 600 });
-        expect(text).toContain('- Mira (innkeeper): Toward Tobin: debtor, wary, worsening.');
+        expect(text).toContain('Mira, the innkeeper, is here. Toward Tobin: debtor, wary, worsening.');
     });
 });
 
 describe('active quests in the guidance', () => {
     it('lists them with what is being worked on now', () => {
         const { text } = buildGuidance({ quests: [{ name: 'Recover the ledger', type: 'side', priority: 'high', current: 'break into the vault', progress: '1 of 2 objectives done', description: 'Tobin wants it back.' }], budget: 600 });
-        expect(text).toContain('[Active quests]');
-        expect(text).toContain('- Recover the ledger (side, high priority): now - break into the vault. Progress: 1 of 2 objectives done. Tobin wants it back.');
+        expect(text).toContain('The story is following these threads');
+        expect(text).toContain('Recover the ledger, a high-priority side quest: next, break into the vault. 1 of 2 objectives done. Tobin wants it back.');
+    });
+});
+
+describe('director note in the guidance', () => {
+    it('comes first, as prose, and is never dropped', () => {
+        const note = 'In this reply, Mira stalls for time while the collector looms.';
+        const { text, sections } = buildGuidance({ ...input, director: note, budget: 60 });
+        expect(text.startsWith(`${REFERENCE_HEADER}
+${note}`)).toBe(true);
+        expect(sections.find((s) => s.key === 'director').mode).toBe('full');
     });
 });

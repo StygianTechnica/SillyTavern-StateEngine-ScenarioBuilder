@@ -53,3 +53,9 @@ export function callModel(messages, maxTokens = 900) {
     chain = run.catch((err) => console.warn(LOG_PREFIX, 'generation failed', err));
     return run;
 }
+
+// The director's call (src/director/run.js): a reply is waiting on it, so
+// it does not queue behind background enrichment.
+export function callModelFirst(messages, maxTokens = 700) {
+    return callNow(messages, maxTokens);
+}

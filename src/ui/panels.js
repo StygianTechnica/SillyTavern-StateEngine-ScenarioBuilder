@@ -16,8 +16,11 @@ import { OBSERVED_NAMES } from '../preset/blueprint.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getLastBuild, syncNow } from '../guidance/sync.js';
 import { curatorStatus, curatorLine } from './status-model.js';
+import { activateForOpenChat } from './activate.js';
 import { enrichListed } from '../library/intake.js';
 import { getEnrichmentStatus, cancelEnrichment } from '../generate/enrich.js';
+import { runDirector, getDirectorStatus } from '../director/run.js';
+import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
 
 const ENRICH_LABELS = { queued: ['Detail queued', 'fa-clock'], running: ['Adding detail…', 'fa-spinner fa-spin'], done: ['Detail added', 'fa-wand-magic-sparkles'], failed: ['Detail failed', 'fa-triangle-exclamation'], held: ['Held while editing', 'fa-pause'], off: ['', ''] };
 
@@ -231,10 +234,32 @@ export async function renderPreview() {
     const build = getLastBuild();
     const curator = curatorLine(curatorStatus(SillyTavern.getContext().extensionSettings), getSettings().stateBlockEnabled);
     const modeLabel = { full: 'included', compact: 'shortened', dropped: 'dropped (over budget)', off: 'switched off', empty: 'nothing to say' };
+    // The game master's briefing: when it was written, what it added, why it failed.
+    const director = getSettings().director;
+    const running = getDirectorStatus().running;
+    const ref = getCurrentChatRef();
+    const record = ref ? getChatDoc(chatKeyFor(ref)).director : null;
+    const directorLine = !director.enabled ? null : h('small', { class: `sb-hint${record?.error ? ' sb-warn' : ''}` },
+        running ? 'The game master is thinking about the next reply…'
+            : record?.error ? `The last briefing failed (${record.error}); the previous one is used.`
+                : record?.note ? `Briefing written ${new Date(record.at).toLocaleTimeString()}.${record.created?.length ? ` It added: ${record.created.slice(-5).map((c) => c.name).join(', ')}.` : ''}`
+                    : 'No briefing yet: the game master writes one before the next reply, or press Rethink.');
     return h('div', { class: 'sb-preview' },
-        h('div', { class: 'sb-actions' }, button('Rebuild now', async () => { await syncNow(); rerender(); }, { iconName: 'fa-arrows-rotate' })),
+        h('div', { class: 'sb-actions' },
+            button('Rebuild now', async () => { await syncNow(); rerender(); }, { iconName: 'fa-arrows-rotate' }),
+            director.enabled ? button(running ? 'Thinking…' : 'Rethink the briefing', async () => {
+                const ref = getCurrentChatRef();
+                if (!ref) return;
+                const job = runDirector(ref.chatId, chatKeyFor(ref), { type: 'continue', force: true });
+                rerender();
+                await job;
+                await syncNow();
+                rerender();
+            }, { iconName: running ? 'fa-spinner fa-spin' : 'fa-chess-knight', disabled: running }) : null),
         h('small', { class: `sb-hint${curator.warn ? ' sb-warn' : ''}` }, curator.text),
-        build.inert ? h('div', { class: 'sb-callout sb-warn' }, icon('fa-circle-info'), h('span', {}, `The outputs are empty: ${build.reason}`)) : null,
+        directorLine,
+        build.inert ? h('div', { class: 'sb-callout sb-warn' }, icon('fa-circle-info'), h('span', {}, `The outputs are empty: ${build.reason}`),
+            /not active|missing/.test(build.reason) ? button('Activate Scenario State', async () => { if (await activateForOpenChat()) { await syncNow(); rerender(); } }, { iconName: 'fa-toggle-on', cls: 'sb-primary' }) : null) : null,
         h('h3', {}, `Narrative guidance - ~${build.guidance.tokens} of ${getSettings().tokenBudget} tokens`),
         h('pre', { class: 'sb-pre' }, build.guidance.text || '(empty)'),
         h('table', { class: 'sb-sections' },

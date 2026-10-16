@@ -326,6 +326,19 @@ function spark(fieldName, current) {
     });
 }
 
+// Opens edit mode with one field's input focused - editing from where the
+// value is shown.
+function editField(fieldName) {
+    ws.editing = true;
+    ws.focusField = fieldName;
+    rerender();
+    setTimeout(() => {
+        const el = document.querySelector(`.sb-sheet [data-field="${CSS.escape(fieldName)}"] :is(textarea, input, select)`);
+        if (el) { el.focus(); el.scrollIntoView({ block: 'center' }); }
+        ws.focusField = null;
+    }, 200);
+}
+
 // The sparkle in READ mode: switches to editing and writes (or enriches)
 // that one field, so the result can be checked before saving.
 function readSpark(fieldName, current) {
@@ -354,13 +367,13 @@ function overviewTab({ type, entry, isNew, defs, doc }) {
     const narrative = isNew ? '' : doc.narrative[entry.id]?.text ?? '';
     if (ws.editing) {
         return h('div', { class: 'sb-tabpane' },
-            fieldWithTools('Description', textArea('description', ws.draft.description, 5), [spark('description', ws.draft.description)], 'The setting\'s description - true in every chat on this setting.', genClass('description')),
+            h('div', { dataset: { field: 'description' } }, fieldWithTools('Description', textArea('description', ws.draft.description, 5), [spark('description', ws.draft.description)], 'The setting\'s description - true in every chat on this setting.', genClass('description'))),
             !isNew && type.scope === 'world' ? field('Current description (this chat)', textArea('narrative', ws.draft.narrative, 4, { placeholder: 'Only when the story has changed it - a forest after the fire. Replaces the description above in this chat.' }),
                 'Used instead of the description in this chat\'s guidance and image prompts. Leave empty to use the description.') : null);
     }
     const base = h('div', {},
         h('div', { class: 'sb-section-title' }, 'Description', h('span', { class: 'sb-spacer' }), readSpark('description', entry.description)),
-        entry.description ? h('div', { class: 'sb-prose' }, entry.description) : h('div', { class: 'sb-muted' }, 'No description yet - the sparkle writes one.'));
+        entry.description ? h('div', { class: 'sb-prose sb-editable', title: 'Click to edit', onclick: () => editField('description') }, entry.description) : h('div', { class: 'sb-muted sb-editable', onclick: () => editField('description') }, 'No description yet - click to write one, or let the sparkle do it.'));
     const glance = defs.filter((d) => !isEmpty(entry.base?.[d.name] ?? entry[d.name]) && d.kind !== 'refs' && d.kind !== 'ref').slice(0, 4);
     return h('div', { class: 'sb-tabpane' },
         narrative ? h('div', { class: 'sb-narrative' },
@@ -392,7 +405,7 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
         }
         return h('div', { class: 'sb-tabpane' },
             parentField,
-            defs.length ? h('div', { class: 'sb-fieldgrid' }, defs.map((d) => fieldWithTools(d.label, fieldControl(d, all), [d.kind === 'boolean' ? null : spark(d.name, ws.draft.fields[d.name])], null, genClass(d.name)))) : h('small', { class: 'sb-hint' }, 'This type has no extra fields in the setting.'),
+            defs.length ? h('div', { class: 'sb-fieldgrid' }, defs.map((d) => h('div', { dataset: { field: d.name } }, fieldWithTools(d.label, fieldControl(d, all), [d.kind === 'boolean' ? null : spark(d.name, ws.draft.fields[d.name])], null, genClass(d.name))))) : h('small', { class: 'sb-hint' }, 'This type has no extra fields in the setting.'),
             envCard);
     }
     // Every field, empty ones too - each with a sparkle to write or enrich it.
@@ -412,7 +425,11 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
         }
     }
     return h('div', { class: 'sb-tabpane' },
-        rows.length ? h('dl', { class: 'sb-details' }, rows.flatMap(([d, v, raw]) => [h('dt', {}, d.label), h('dd', { class: 'sb-dd' }, h('div', { class: 'sb-dd-value' }, v), d.kind === 'boolean' ? null : readSpark(d.name, raw))])) : h('div', { class: 'sb-muted' }, 'This type has no extra fields in the setting.'),
+        rows.length ? h('dl', { class: 'sb-details' }, rows.flatMap(([d, v, raw]) => [h('dt', {}, d.label), h('dd', { class: 'sb-dd' },
+            // Click a value (or the pencil) to edit it right here.
+            h('div', { class: 'sb-dd-value sb-editable', title: 'Click to edit', onclick: () => editField(d.name) }, v),
+            h('span', { class: 'sb-iconbtn sb-pencil', title: 'Edit', onclick: () => editField(d.name) }, icon('fa-pen')),
+            d.kind === 'boolean' ? null : readSpark(d.name, raw))])) : h('div', { class: 'sb-muted' }, 'This type has no extra fields in the setting.'),
         env);
 }
 
