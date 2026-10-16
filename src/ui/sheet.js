@@ -18,6 +18,7 @@ import { syncNow } from '../guidance/sync.js';
 import { safeImageSrc } from '../images/attach.js';
 import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
+import { renderQuestTab } from './quest-board.js';
 import { baselineFields } from '../library/fields.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
@@ -34,6 +35,7 @@ const SHEET_TABS = Object.freeze([
     ['story', 'Story', 'fa-book-open-reader'],
     ['image', 'Image', 'fa-image'],
     ['gm', 'GM notes', 'fa-user-secret'],
+    ['quest', 'Quest', 'fa-scroll'],
 ]);
 
 // ---- fields
@@ -89,6 +91,7 @@ function applyGenerated(values, task) {
         if (key === 'name') { if (take(d.name)) { d.name = value; ws.generatedFields.add('name'); } continue; }
         if (key === 'description') { if (take(d.description)) { d.description = value; ws.generatedFields.add(key); } continue; }
         if (key === 'aliases') { if (take(d.aliases)) { d.aliases = value; ws.generatedFields.add(key); } continue; }
+        if (key === 'relations') { d.pendingRelations = value; continue; }
         if (key in d.fields && take(d.fields[key])) { d.fields[key] = value; ws.generatedFields.add(key); }
     }
 }
@@ -227,7 +230,11 @@ export async function renderSheet(type, all) {
         h('input', { class: 'text_pole', value: ws.genBrief ?? '', placeholder: gate.ok ? 'Steer the writing (optional) - e.g. "make her secretly loyal to the Guild"' : gate.reason, disabled: !gate.ok, oninput: (e) => { ws.genBrief = e.target.value; } }),
         button(isNew && !draft.name ? 'Write it' : 'Fill empty', () => void runGen('fill'), { iconName: 'fa-fill-drip', disabled: !gate.ok || busy, title: 'Write only the fields that are still empty' }),
         isNew && !draft.name ? null : button('Enrich all', () => void runGen('enrich'), { iconName: 'fa-wand-magic-sparkles', disabled: !gate.ok || busy, title: 'Fill the empty fields and deepen the ones with content' }),
-        ws.generatedFields?.size ? h('small', { class: 'sb-hint' }, `${ws.generatedFields.size} field${ws.generatedFields.size === 1 ? '' : 's'} written - highlighted until you save`) : null) : null;
+        ws.generatedFields?.size ? h('small', { class: 'sb-hint' }, `${ws.generatedFields.size} field${ws.generatedFields.size === 1 ? '' : 's'} written - highlighted until you save`) : null,
+        draft?.pendingRelations?.length ? h('div', { class: 'sb-chips', style: 'flex-basis: 100%' },
+            h('small', { class: 'sb-hint' }, 'On save, also adds:'),
+            draft.pendingRelations.map((r, i) => h('span', { class: 'sb-chip' }, `${r.kind} ${r.name}`,
+                h('span', { class: 'sb-iconbtn', title: 'Leave this one out', onclick: () => { draft.pendingRelations.splice(i, 1); rerender({ force: true }); } }, icon('fa-xmark'))))) : null) : null;
 
     // ---- header
     const status = isNew ? 'unused' : chatStatusOf(entry.id, doc);
@@ -260,7 +267,12 @@ export async function renderSheet(type, all) {
             quick.length ? h('div', { class: 'sb-actions' }, quick) : null));
 
     // ---- tabs
-    const tabs = h('div', { class: 'sb-sheet-tabs' }, SHEET_TABS.map(([key, label, i]) => h('div', {
+    // The quest tab is for quests only, and opens first for them.
+    if (type.id === 'quest' && ws.sheetTab === 'overview' && !ws.questTabSeen?.has(entry.id ?? 'new') && !isNew) {
+        (ws.questTabSeen ??= new Set()).add(entry.id);
+        ws.sheetTab = 'quest';
+    }
+    const tabs = h('div', { class: 'sb-sheet-tabs' }, SHEET_TABS.filter(([key]) => key !== 'quest' || (type.id === 'quest' && !isNew)).map(([key, label, i]) => h('div', {
         class: `sb-sheet-tab${ws.sheetTab === key ? ' active' : ''}`,
         onclick: () => { ws.sheetTab = key; rerender(); },
     }, icon(i), h('span', {}, label))));
@@ -333,6 +345,7 @@ async function sheetBody(tab, c) {
         case 'story': return storyTab(c);
         case 'image': return imageTab(c);
         case 'gm': return gmTab(c);
+        case 'quest': return c.isNew ? overviewTab(c) : renderQuestTab(c.entry);
         default: return overviewTab(c);
     }
 }
@@ -611,6 +624,7 @@ async function saveSheet(type, entry, defs, isNew) {
             const created = await createEntry(chatId, settingId, type.id, patch, meta);
             if (!created) return toast('error', 'State Engine refused to create it - see the console.');
             if (type.id === 'location' && d.meta.parentId) setParent(settingId, created.id, d.meta.parentId);
+            for (const r of d.pendingRelations ?? []) addRelation(settingId, { from: created.id, to: r.otherId, kind: r.kind });
             ws.entryId = created.id;
         } else {
             if (!await updateEntry(chatId, settingId, entry.id, patch)) return toast('error', 'State Engine refused the change - see the console.');

@@ -22,6 +22,8 @@
 //         canonLocked,              never add generated detail to this entry
 //         generated: [field],       fields last filled by generation (SB-136)
 //         source,                   where an imported entry came from: "lorebook:<book>#<uid>" (SB-155)
+//         quest: { type, priority, status (user override), objectives: [{ text, status }],
+//                  completion, abandon, threadId }   quests only (src/quests/model.js)
 //         excluded,                 never selected for guidance (SB-401)
 //         environment: { climate, lighting, rules }   inherited down the tree (SB-142)
 //     } },
@@ -43,6 +45,8 @@
 //     canonical: { locationId, castIds, weather, temperature, indoor,
 //                  dayPart, day, sceneTitle, scenePremise },
 //     inPlay: [objectId],                   library entries used in this chat (SB-124)
+//     questLinks: { [archivistThreadId]: questId }   quests made from or linked to Archivist threads
+//     questsSeen: [questId] | null          quests already taken in (null until the first pass)
 //     narrative: { [objectId]: { text, updatedAt, previous } }
 //                                           the "current description": what the story
 //                                           has made of an object in this chat (a burnt
@@ -62,6 +66,7 @@
 //     turn }                                AI replies reconciled so far
 
 import { emptyMagic, emptyTech, normalizeMagic, normalizeTech } from '../library/world-options.js';
+import { emptyQuestMeta, normalizeQuestMeta } from '../quests/model.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
 export const CHAT_SCHEMA_VERSION = 1;
@@ -89,7 +94,7 @@ export function emptyOverview() {
 }
 
 export function emptyEntryMeta() {
-    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, generated: [], source: '', environment: { climate: '', lighting: '', rules: '' } };
+    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, generated: [], source: '', quest: emptyQuestMeta(), environment: { climate: '', lighting: '', rules: '' } };
 }
 
 export function normalizeEntryMeta(meta) {
@@ -105,6 +110,7 @@ export function normalizeEntryMeta(meta) {
         canonLocked: m.canonLocked === true,
         generated: strList(m.generated),
         source: str(m.source),
+        quest: normalizeQuestMeta(m.quest),
         environment: { climate: str(env.climate), lighting: str(env.lighting), rules: str(env.rules) },
     };
 }
@@ -185,6 +191,8 @@ export function emptyChatDoc() {
         canonical: emptyCanonical(),
         inPlay: [],
         narrative: {},
+        questLinks: {},
+        questsSeen: null,
         lastObserved: {},
         lastReply: '',
         drift: [],
@@ -205,6 +213,8 @@ export function normalizeChatDoc(doc) {
         canonical: normalizeCanonical(d.canonical),
         inPlay: strList(d.inPlay),
         narrative: normalizeNarrative(d.narrative),
+        questLinks: isObject(d.questLinks) ? d.questLinks : {},
+        questsSeen: Array.isArray(d.questsSeen) ? strList(d.questsSeen) : null,
         lastObserved: isObject(d.lastObserved) ? d.lastObserved : {},
         lastReply: str(d.lastReply),
         drift: Array.isArray(d.drift) ? d.drift.filter(isObject) : [],

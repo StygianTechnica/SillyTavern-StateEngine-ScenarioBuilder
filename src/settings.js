@@ -53,6 +53,9 @@ const DEFAULTS = {
     // Catalog browser preferences: view per chapter ('grid' | 'list' |
     // 'tree'), sort order.
     catalog: { views: {}, sort: 'name' },
+    // Quests (src/quests/): make quest objects from Archivist's quest seeds,
+    // goals and plans automatically; how many active quests are tracked.
+    quests: { autoCreate: true, tracked: 5 },
     // { [settingId]: library document } - src/store/setting-store.js.
     library: {},
     // { [chatKey]: chat document } - src/store/chat-store.js.
@@ -79,6 +82,9 @@ export function getSettings() {
     settings.generation.detail ??= 'standard';
     settings.generation.maxTokens ??= 1200;
     settings.generation.autoEnrich ??= true;
+    settings.quests ??= { autoCreate: true, tracked: 5 };
+    settings.quests.autoCreate ??= true;
+    settings.quests.tracked ??= 5;
     return settings;
 }
 

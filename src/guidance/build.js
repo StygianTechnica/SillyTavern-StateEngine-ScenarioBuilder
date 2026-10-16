@@ -25,6 +25,7 @@ export const SECTIONS = Object.freeze([
     { key: 'location', title: 'Where and when', priority: 5, keep: true },
     { key: 'scene', title: 'Scene', priority: 3, keep: false },
     { key: 'cast', title: 'Characters present', priority: 4, keep: false },
+    { key: 'quests', title: 'Active quests', priority: 2, keep: false },
     { key: 'corrections', title: 'Corrections', priority: 6, keep: true },
 ]);
 
@@ -138,6 +139,22 @@ function castSection(cast) {
     return { full: list.map((c) => castLine(c, false)).join('\n'), compact: list.map((c) => castLine(c, true)).join('\n') };
 }
 
+// Active quests, most important first (spec 9.2 item 6, SB-433): what
+// each is, where it stands, what is being worked on.
+function questsSection(quests) {
+    const list = (quests ?? []).filter((q) => clean(q.name));
+    if (!list.length) return null;
+    const line = (q, compact) => {
+        let text = `- ${clean(q.name)} (${[q.type, q.priority ? `${q.priority} priority` : ''].filter(Boolean).join(', ')})`;
+        if (q.current) text += `: now - ${sentence(truncate(q.current, 140))}`;
+        if (compact) return text;
+        if (q.progress) text += ` Progress: ${clean(q.progress)}.`;
+        if (q.description) text += ` ${sentence(truncate(q.description, 180))}`;
+        return text;
+    };
+    return { full: list.map((q) => line(q, false)).join('\n'), compact: list.map((q) => line(q, true)).join('\n') };
+}
+
 function correctionsSection(corrections) {
     const list = [...new Set((corrections ?? []).map(clean).filter(Boolean))];
     if (!list.length) return null;
@@ -149,6 +166,7 @@ const BUILDERS = {
     location: (input) => locationSection(input),
     scene: (input) => sceneSection(input.scene),
     cast: (input) => castSection(input.cast),
+    quests: (input) => questsSection(input.quests),
     corrections: (input) => correctionsSection(input.corrections),
 };
 
@@ -182,6 +200,7 @@ export function buildGuidance(input) {
         scene: 'The canonical scene title and premise.',
         cast: (input.cast ?? []).map((c) => `${c.name}: ${c.why ?? 'present'}`).join('; ') || 'Characters present.',
         corrections: 'Adjustments made by validation, kept for a few replies.',
+        quests: (input.quests ?? []).map((q) => `${q.name}: ${q.why ?? 'active'}`).join('; ') || 'Active quests.',
     };
     return {
         text,

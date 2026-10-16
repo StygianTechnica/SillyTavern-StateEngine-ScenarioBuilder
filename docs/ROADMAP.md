@@ -160,7 +160,11 @@ calls (one entry at a time, retry, and the entry text as a fallback).
   only fills blanks again).
 - [ ] Change an entry's kind in the plan (today: untick it, or fix the type
   after import).
-- [ ] Memories and relationships from lorebook text (SB-153/154, OPEN-14).
+- [x] Relationships from lorebook text: links to the names an entry gives
+  become authored relationships (undone with the import).
+- [x] Entries that list many things (a pantheon, a roster): split into one
+  object per named thing.
+- [ ] Memories from lorebook text (SB-153/154, OPEN-14).
 - [ ] Narrative and structured lorebook export with round trip (SB-160..164).
 - [ ] Lore-sourced memories for Archivist (SB-154, OPEN-14 - needs an
   Archivist design).
@@ -171,8 +175,16 @@ calls (one entry at a time, retry, and the entry text as a fallback).
   sections 5-7: knowledge boundaries, quests, factions/items/lore/events.
 - [ ] Archivist memories in the guidance (SB-440..444).
 - [ ] Perspective and knowledge boundaries, POV modes (9.4, OPEN-5).
-- [ ] Quests: creation from Archivist seeds, objectives and conditions, the
-  quest-only preset, type/priority (9.5).
+- [x] Quests (9.5): made automatically from Archivist's quest seeds, goals,
+  plans and hooks (plus a "Scan Archivist for quests" catch-up), objectives
+  kept in step with the plan's steps, type and base priority, effective
+  priority from the scene, status from the user / the story's runtime /
+  Archivist with disagreements shown, "Track progress" runtime fields,
+  active quests held in sb__quests so State Engine tracks them, a quest
+  board, and an Active quests section in the guidance.
+- [ ] Quests: a separate optional quest-only preset (SB-207) instead of
+  sb__quests in Scenario State; completion/abandon conditions checked
+  automatically (today they are shown to the user and the model only).
 - [ ] Events firing on deterministic conditions (SB-435).
 - [ ] Time advancing by rules; generated weather (SB-211); a calendar model
   (OPEN-10).

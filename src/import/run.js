@@ -22,11 +22,23 @@ import { getObject } from '../api/objects.js';
 import { getEntryMeta, getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { getObjectTypes, listEntries, createEntry, updateEntry, setEntryMeta, setParent, setCanonOnly, getParents, deleteEntry } from '../library/library.js';
 import { baselineFields } from '../library/fields.js';
+import { addRelation } from '../library/relations-edit.js';
 import { callModel } from '../generate/llm.js';
 import { askReliably } from '../generate/run.js';
 import { useStateEngineJsonParser } from '../generate/json.js';
-import { parseGenerationResponse } from '../generate/prompt.js';
-import { readEntries, matchEntry, buildClassifyPrompt, parseClassify, buildExtractPrompt, fallbackValues, blanksOnly, keepMentionedLinks } from './lorebook.js';
+import { parseGenerationResponse, extractJson } from '../generate/prompt.js';
+
+// Any JSON in an answer: an object, or a bare list wrapped as { items }.
+function extractAny(text) {
+    const obj = extractJson(text);
+    if (obj) return obj;
+    const t = String(text ?? '');
+    const start = t.indexOf('[');
+    const end = t.lastIndexOf(']');
+    if (start === -1 || end <= start) return null;
+    try { return { items: JSON.parse(t.slice(start, end + 1)) }; } catch { return null; }
+}
+import { readEntries, matchEntry, buildClassifyPrompt, parseClassify, buildExtractPrompt, fallbackValues, blanksOnly, keepMentionedLinks, buildManyPrompt, readManyItems, readRelations } from './lorebook.js';
 
 export const IMPORT_EVENT = 'scenario_builder_import';
 
@@ -129,7 +141,7 @@ export async function startAnalysis({ chatId, chatKey, settingId, books, options
             if (job.cancelled) break;
             job.current = entry.title || entry.keys[0] || `entry ${entry.uid}`;
             announce();
-            job.proposals.push(await analyseEntry(entry, { objects, types, typeLabels, fieldsFor, maxTokens }));
+            job.proposals.push(...await analyseEntry(entry, { objects, types, typeLabels, fieldsFor, maxTokens }));
             job.done += 1;
             announce();
         }
@@ -146,36 +158,67 @@ export async function startAnalysis({ chatId, chatKey, settingId, books, options
 
 let nextId = 0;
 
+// One entry -> one proposal, or several for an entry that lists many things.
 async function analyseEntry(entry, { objects, types, typeLabels, fieldsFor, maxTokens }) {
     const opts = job.options;
-    const proposal = { id: `p${++nextId}`, entry, action: 'skip', type: '', name: '', matchId: null, matchName: '', values: {}, locatedIn: '', include: false, note: '' };
-    if (entry.disabled && opts.skipDisabled) return { ...proposal, note: 'switched off in the lorebook' };
+    const proposal = { id: `p${++nextId}`, entry, action: 'skip', type: '', name: '', matchId: null, matchName: '', values: {}, locatedIn: '', relations: [], include: false, note: '' };
+    if (entry.disabled && opts.skipDisabled) return [{ ...proposal, note: 'switched off in the lorebook' }];
 
     const match = matchEntry(entry, objects);
     let type;
     let name;
     if (match) {
-        if (!opts.fill) return { ...proposal, type: match.type, name: match.name, matchId: match.id, matchName: match.name, note: 'already in the library (filling is off)' };
-        type = match.type;
-        name = match.name;
-    } else {
-        if (!opts.create) return { ...proposal, note: 'not in the library (creating is off)' };
-        const kind = await classify(entry, typeLabels, maxTokens);
-        if (kind.type === 'skip') return { ...proposal, note: 'not about one specific thing' };
-        type = kind.type;
-        name = kind.name;
-        if (kind.guessed) proposal.note = 'kind guessed - check it';
-        // The model's name may match an object the title did not.
-        const byName = objects.find((o) => o.type === type && [o.name, ...(o.aliases ?? [])].some((n) => lower(n) === lower(name)));
-        if (byName) return analyseMatched(entry, byName, proposal, { types, fieldsFor, maxTokens, objects });
+        if (!opts.fill) return [{ ...proposal, type: match.type, name: match.name, matchId: match.id, matchName: match.name, note: 'already in the library (filling is off)' }];
+        return [await analyseMatched(entry, match, proposal, { types, fieldsFor, maxTokens, objects })];
     }
-    if (match) return analyseMatched(entry, match, proposal, { types, fieldsFor, maxTokens, objects });
+    if (!opts.create) return [{ ...proposal, note: 'not in the library (creating is off)' }];
+    const kind = await classify(entry, typeLabels, maxTokens);
+    if (kind.type === 'skip') return [{ ...proposal, note: 'not about anything in the world' }];
+    if (kind.type === 'many') return analyseMany(entry, { objects, typeLabels, maxTokens });
+    type = kind.type;
+    name = kind.name;
+    if (kind.guessed) proposal.note = 'kind guessed - check it';
+    // The model's name may match an object the title did not.
+    const byName = objects.find((o) => o.type === type && [o.name, ...(o.aliases ?? [])].some((n) => lower(n) === lower(name)));
+    if (byName) return [await analyseMatched(entry, byName, proposal, { types, fieldsFor, maxTokens, objects })];
 
     const typeDef = types.find((t) => t.id === type);
-    const { values, note } = await extract(entry, { type: typeDef, name, existing: {}, fieldsFor, maxTokens, objects });
+    const { values, relations, note } = await extract(entry, { type: typeDef, name, existing: {}, fieldsFor, maxTokens, objects });
     const locatedIn = typeof values.located_in === 'string' ? values.located_in : '';
     delete values.located_in;
-    return { ...proposal, action: 'create', type, name, values, locatedIn, include: true, note: [proposal.note, note].filter(Boolean).join('; ') };
+    return [{ ...proposal, action: 'create', type, name, values, locatedIn, relations, include: true, note: [proposal.note, note].filter(Boolean).join('; ') }];
+}
+
+// An entry listing several things (a pantheon, a roster): each named thing
+// becomes its own proposal - filling an existing object's blanks, or a new
+// one - with what the entry says about it as its description.
+async function analyseMany(entry, { objects, typeLabels, maxTokens }) {
+    const prompt = buildManyPrompt(entry, typeLabels);
+    const read = (_p, text) => {
+        const items = readManyItems(extractAny(text), entry);
+        return items.length ? { values: { items }, dropped: [], error: null } : { values: {}, dropped: [], error: 'no items it names' };
+    };
+    let items = [];
+    try {
+        const result = await askReliably({ ...prompt, keys: ['items'], plain: false }, read, maxTokens);
+        if (!result.error) items = result.values.items;
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'reading a list entry failed', err);
+    }
+    if (!items.length) {
+        return [{ id: `p${++nextId}`, entry, action: 'create', type: 'lore', name: entry.title || entry.keys[0] || 'Untitled', matchId: null, matchName: '', values: fallbackValues(entry, entry.title), locatedIn: '', relations: [], include: true, note: 'a list the model could not split - kept as one lore entry' }];
+    }
+    return items.map((item) => {
+        const existing = objects.find((o) => [o.name, ...(o.aliases ?? [])].some((n) => lower(n) === lower(item.name)));
+        const base = { id: `p${++nextId}`, entry, locatedIn: '', relations: [], note: `one of several in "${entry.title || 'this entry'}"` };
+        if (existing) {
+            const b = existing.base ?? existing;
+            const patch = blanksOnly({ name: existing.name, aliases: b.aliases ?? [], description: b.description ?? '' }, { description: item.description });
+            const any = Object.keys(patch).length > 0;
+            return { ...base, action: any ? 'fill' : 'skip', type: existing.type, name: existing.name, matchId: existing.id, matchName: existing.name, values: patch, include: any, note: any ? base.note : 'already in the library' };
+        }
+        return { ...base, action: 'create', type: item.type, name: item.name, matchId: null, matchName: '', values: { description: item.description || '' }, include: true };
+    });
 }
 
 async function analyseMatched(entry, match, proposal, { types, fieldsFor, maxTokens, objects }) {
@@ -183,14 +226,14 @@ async function analyseMatched(entry, match, proposal, { types, fieldsFor, maxTok
     const typeDef = types.find((t) => t.id === match.type);
     const fields = await fieldsFor(match.type);
     const existing = { name: match.name, aliases: base.aliases ?? match.aliases ?? [], description: base.description ?? '', ...Object.fromEntries(fields.map((f) => [f.name, base[f.name]])) };
-    const { values, note } = await extract(entry, { type: typeDef, name: match.name, existing, fieldsFor, maxTokens, objects });
+    const { values, relations, note } = await extract(entry, { type: typeDef, name: match.name, existing, fieldsFor, maxTokens, objects });
     const locatedIn = typeof values.located_in === 'string' ? values.located_in : '';
     delete values.located_in;
     const patch = blanksOnly(existing, values);
-    const any = Object.keys(patch).length > 0 || (match.type === 'location' && locatedIn && !match.meta?.parentId);
+    const any = Object.keys(patch).length > 0 || relations.length > 0 || (match.type === 'location' && locatedIn && !match.meta?.parentId);
     return {
         ...proposal, action: any ? 'fill' : 'skip', type: match.type, name: match.name, matchId: match.id, matchName: match.name,
-        values: patch, locatedIn, include: any, note: any ? note : 'nothing new for it',
+        values: patch, locatedIn, relations, include: any, note: any ? note : 'nothing new for it',
     };
 }
 
@@ -201,20 +244,22 @@ async function extract(entry, { type, name, existing, fieldsFor, maxTokens, obje
     const locations = objects.filter((o) => o.type === 'location').map((o) => o.name);
     const prompt = buildExtractPrompt(entry, { typeNoun: type.noun, name, fields, refNames, locations, existing });
     const refLookup = (typeId, n) => objects.find((o) => o.type === typeId && [o.name, ...(o.aliases ?? [])].some((x) => lower(x) === lower(n)))?.id ?? null;
-    const parseFields = [...fields, { name: 'located_in', label: 'Located in', kind: 'text' }];
+    const parseFields = [...fields, { name: 'located_in', label: 'Located in', kind: 'text' }, { name: 'relations', label: 'Relations', kind: 'raw' }];
     const read = (p, text) => parseGenerationResponse(text, { fields: parseFields, keys: p.keys, refLookup });
     try {
         const result = await askReliably({ ...prompt, plain: false }, read, maxTokens);
         if (!result.error) {
+            const relations = readRelations(result.values.relations, entry, name);
+            delete result.values.relations;
             // Links survive only if the entry itself names the object.
             const { values, removed } = keepMentionedLinks(entry, result.values, fields, objects);
             if (!values.description && !existing.description) values.description = entry.content;
-            return { values, note: removed.length ? `left out links the entry does not name: ${removed.slice(0, 6).join(', ')}${removed.length > 6 ? '…' : ''}` : '' };
+            return { values, relations, note: removed.length ? `left out links the entry does not name: ${removed.slice(0, 6).join(', ')}${removed.length > 6 ? '…' : ''}` : '' };
         }
     } catch (err) {
         console.warn(LOG_PREFIX, 'extraction failed', err);
     }
-    return { values: fallbackValues(entry, name), note: 'used the entry text as it is' };
+    return { values: fallbackValues(entry, name), relations: [], note: 'used the entry text as it is' };
 }
 
 // The setting's recorded imports, newest first.
@@ -248,6 +293,10 @@ export async function undoImport(chatId, settingId, importId) {
             console.warn(LOG_PREFIX, `could not restore ${f.name}`, err);
             out.failed += 1;
         }
+    }
+    if (rec.relations?.length) {
+        const ids = new Set(rec.relations);
+        updateSettingDoc(settingId, (d) => { d.relations = d.relations.filter((r) => !ids.has(r.id)); });
     }
     updateSettingDoc(settingId, (d) => { d.imports = d.imports.filter((i) => i.id !== importId); });
     announce();
@@ -291,6 +340,7 @@ export async function applyImport() {
                     setEntryMeta(settingId, targetId, meta);
                     summary.filled += 1;
                     if (p.locatedIn && p.type === 'location') places.push([targetId, p.locatedIn]);
+                    p.appliedId = targetId;
                 } else {
                     const obj = await createEntry(chatId, settingId, p.type, { name: p.name, ...p.values }, { origin: 'import', source: p.entry.source, canonLocked: job.options.canonLock === true });
                     if (!obj) throw new Error('State Engine refused to create it');
@@ -298,6 +348,7 @@ export async function applyImport() {
                     record.created.push({ id: obj.id, type: p.type, name: p.name });
                     summary.created += 1;
                     if (p.locatedIn && p.type === 'location') places.push([obj.id, p.locatedIn]);
+                    p.appliedId = obj.id;
                 }
                 p.applied = true;
             } catch (err) {
@@ -316,8 +367,24 @@ export async function applyImport() {
                 if (parent && setParent(settingId, id, parent.id)) summary.placed += 1;
             }
         }
+        // Relationships last too: the other side may be new in this import.
+        const withRelations = kept.filter((p) => p.applied && p.relations?.length);
+        if (withRelations.length) {
+            const everything = await settingObjects(chatId, settingId);
+            for (const p of withRelations) {
+                for (const r of p.relations) {
+                    const other = everything.find((o) => o.id !== p.appliedId && [o.name, ...(o.aliases ?? [])].some((n) => lower(n) === lower(r.name)));
+                    if (!other) continue;
+                    const stored = addRelation(settingId, { from: p.appliedId, to: other.id, kind: r.kind, note: `from the lorebook entry "${p.entry.title}"` });
+                    if (stored) {
+                        record.relations = [...(record.relations ?? []), stored.id];
+                        summary.related = (summary.related ?? 0) + 1;
+                    }
+                }
+            }
+        }
         if (job.options.canonOnly) setCanonOnly(settingId, true);
-        if (record.created.length || record.filled.length) {
+        if (record.created.length || record.filled.length || record.relations?.length) {
             updateSettingDoc(settingId, (d) => { d.imports = [...d.imports, record]; });
             job.importId = record.id;
         }

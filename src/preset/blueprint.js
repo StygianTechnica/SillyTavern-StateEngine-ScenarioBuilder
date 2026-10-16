@@ -31,7 +31,8 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 
 // Raised whenever a definition below changes, so an existing install is
 // brought up to date once (SB-206).
-export const PRESET_VERSION = 1;
+// 2: sb__quests (the active quests, so State Engine tracks their runtime).
+export const PRESET_VERSION = 2;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -73,6 +74,18 @@ export const OBSERVED_VARIABLES = Object.freeze([
     }],
 ]);
 
+// The quests being pursued now. Scenario Builder writes the active ones
+// before each reply; holding them makes State Engine prompt their runtime
+// fields (status, and progress if tracking is on), and the story can add a
+// quest it starts (SB-432, SB-439a B).
+export const QUEST_VARIABLES = Object.freeze([
+    ['quests', {
+        label: 'Quests (story)', description: 'The quests the characters are pursuing now.',
+        type: 'array', itemType: 'object', itemObjectType: 'quest', unique: true, defaultValue: '[]', scope: 'chat', showInTracker: true,
+        ...prompted('The quests the characters are actively pursuing now. Keep every quest in the current value that is still being pursued. Add a quest only when the story clearly starts a new one. Remove a quest only when it is finished, failed or given up.'),
+    }],
+]);
+
 export const CANONICAL_VARIABLES = Object.freeze([
     ['canon_location', {
         label: 'Location', description: 'Where the scene canonically is - a location from the setting library.',
@@ -100,7 +113,7 @@ export const OUTPUT_VARIABLES = Object.freeze([
     ['state_block', text('Canonical scene state', 'The current scene\'s canonical state - location, time, weather and who is present - one line each. Not asked of the model.', { showInTracker: false })],
 ]);
 
-export const ALL_VARIABLES = Object.freeze([...OBSERVED_VARIABLES, ...CANONICAL_VARIABLES, ...OUTPUT_VARIABLES]);
+export const ALL_VARIABLES = Object.freeze([...OBSERVED_VARIABLES, ...QUEST_VARIABLES, ...CANONICAL_VARIABLES, ...OUTPUT_VARIABLES]);
 
 export const OBSERVED_NAMES = Object.freeze(OBSERVED_VARIABLES.map(([name]) => name));
 export const CANONICAL_NAMES = Object.freeze(CANONICAL_VARIABLES.map(([name]) => name));

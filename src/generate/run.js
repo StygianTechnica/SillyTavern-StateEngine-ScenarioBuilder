@@ -115,6 +115,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         detail: settings.generation.detail,
         parentName: parentForPrompt ? pathOf(parents, parentForPrompt).map((id) => nameOfId.get(id)).filter(Boolean).join(' › ') || nameOfId.get(parentForPrompt) : '',
         creating: task === 'create',
+        relationNames: allEntries.filter((e) => e.id !== entry?.id).map((e) => e.name).slice(0, 25),
     };
     const narrative = entry?.id ? getChatDoc(ctx.chatKey).narrative[entry.id]?.text ?? '' : '';
     const promptWith = (t, field, name, vals) => buildGenerationPrompt({ ...base, task: t, targetField: field, entry: { name, values: vals, narrative } });
@@ -126,7 +127,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         return hit?.id ?? null;
     };
     await useStateEngineJsonParser();
-    const read = (p, text) => parseGenerationResponse(text, { fields, keys: p.keys, refLookup, plain: p.plain });
+    const read = (p, text) => parseGenerationResponse(text, { fields: [...fields, { name: 'relations', label: 'Relations', kind: 'raw' }], keys: p.keys, refLookup, plain: p.plain });
     let result = await askReliably(prompt, read, settings.generation.maxTokens);
 
     // Several fields in one JSON answer failed even after a retry: write
@@ -138,7 +139,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         const vals = { ...values };
         const got = {};
         const dropped = [];
-        for (const key of prompt.keys) {
+        for (const key of prompt.keys.filter((k) => k !== 'relations')) {
             const p = promptWith('field', key, name, vals);
             const r = await askReliably(p, read, settings.generation.maxTokens);
             dropped.push(...r.dropped);
@@ -150,6 +151,15 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         result = Object.keys(got).length ? { values: got, dropped, error: null } : { values: {}, dropped, error: result.error };
     }
     if (result.error) throw new Error(`${result.error} (asked twice, then field by field - try a larger model in the drawer's Generation settings)`);
+    // Relationships to existing entries, by name (at most three).
+    if (result.values.relations !== undefined) {
+        const list = Array.isArray(result.values.relations) ? result.values.relations : [];
+        result.values.relations = list.map((r) => {
+            const name = typeof r === 'string' ? r : r?.name;
+            const other = allEntries.find((e) => e.id !== entry?.id && [e.name, ...(e.aliases ?? [])].some((n) => lower(n) === lower(name)));
+            return other ? { otherId: other.id, name: other.name, kind: String((typeof r === 'object' && r?.kind) || 'knows').toLowerCase().slice(0, 40) } : null;
+        }).filter(Boolean).slice(0, 3);
+    }
     return { values: result.values, dropped: result.dropped };
 }
 

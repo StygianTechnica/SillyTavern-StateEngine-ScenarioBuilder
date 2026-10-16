@@ -24,7 +24,7 @@ describe('guidance', () => {
         expect(text).toContain('Climate: humid (Veylan).');
         expect(text).toContain('- Mira (innkeeper): Sharp-eyed and tired. Mood: suspicious. Intends: stall for time.');
         expect(text).toContain('- The scene is still at Brass Market, not the docks.');
-        expect(sections.every((s) => s.mode === 'full')).toBe(true);
+        expect(sections.filter((s) => s.key !== 'quests').every((s) => s.mode === 'full')).toBe(true);
     });
 
     it('never names the extension', () => {
@@ -88,5 +88,13 @@ describe('relationships in the cast', () => {
     it('adds how present characters feel toward each other', () => {
         const { text } = buildGuidance({ cast: [{ name: 'Mira', role: 'innkeeper', relations: ['toward Tobin: debtor, wary, worsening'] }], budget: 600 });
         expect(text).toContain('- Mira (innkeeper): Toward Tobin: debtor, wary, worsening.');
+    });
+});
+
+describe('active quests in the guidance', () => {
+    it('lists them with what is being worked on now', () => {
+        const { text } = buildGuidance({ quests: [{ name: 'Recover the ledger', type: 'side', priority: 'high', current: 'break into the vault', progress: '1 of 2 objectives done', description: 'Tobin wants it back.' }], budget: 600 });
+        expect(text).toContain('[Active quests]');
+        expect(text).toContain('- Recover the ledger (side, high priority): now - break into the vault. Progress: 1 of 2 objectives done. Tobin wants it back.');
     });
 });

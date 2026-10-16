@@ -16,6 +16,7 @@ import { ensureBoundSetting, getSettingSummary, listAllSettings, switchSetting }
 import { DRIFT_CHANGED_EVENT } from '../validate/reconcile.js';
 import { syncNow, GUIDANCE_CHANGED_EVENT } from '../guidance/sync.js';
 import { setEditingCheck, ENRICH_EVENT } from '../generate/enrich.js';
+import { QUESTS_EVENT } from '../quests/sync.js';
 import { renderCatalog } from './catalog.js';
 import { renderGraph } from './graph.js';
 import { renderScene, renderReview, renderHistory, renderPreview } from './panels.js';
@@ -107,6 +108,7 @@ function listen() {
     for (const event of [SCENARIO_CHANGED_EVENT, LIBRARY_CHANGED_EVENT, DRIFT_CHANGED_EVENT]) eventSource.on(event, later);
     eventSource.on(GUIDANCE_CHANGED_EVENT, () => { if (ws.tab === 'preview') later(); });
     eventSource.on(ENRICH_EVENT, later);
+    eventSource.on(QUESTS_EVENT, later);
     // The import's progress redraws the Import tab (no unsaved input there).
     eventSource.on(IMPORT_EVENT, () => { if (ws.tab === 'import') rerender(); });
     // Background enrichment holds off an entry the user is editing.

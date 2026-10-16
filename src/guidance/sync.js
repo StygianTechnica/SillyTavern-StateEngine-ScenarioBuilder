@@ -27,6 +27,7 @@ import { pathOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { buildGuidance, buildStateBlock, timeText } from './build.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { relationsFor, pairCovered } from '../library/relations-edit.js';
+import { activeQuests } from '../quests/sync.js';
 
 export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
 
@@ -118,6 +119,24 @@ export async function gatherInputs(chatId, chatKey) {
         }
     }
 
+    // The active quests (most important first, a few at most).
+    let quests = [];
+    if (settingId) {
+        try {
+            quests = (await activeQuests(chatId, chatKey, settingId)).slice(0, 3).map((q) => ({
+                name: q.name,
+                type: q.type,
+                priority: q.priority.level,
+                current: q.runtime.current || q.current?.text || '',
+                progress: q.runtime.progress || (q.progress.total ? `${q.progress.done} of ${q.progress.total} objectives done` : ''),
+                description: q.description,
+                why: [q.priority.level, ...q.priority.reasons].join(', '),
+            }));
+        } catch (err) {
+            console.debug(LOG_PREFIX, 'no quests for the guidance', err);
+        }
+    }
+
     const time = { day: c.day, dayPart: c.dayPart };
     return {
         guidance: {
@@ -129,6 +148,7 @@ export async function gatherInputs(chatId, chatKey) {
             scene: { title: c.sceneTitle, premise: c.scenePremise },
             cast,
             corrections: doc.corrections.map((x) => x.text),
+            quests,
             sections: settings.sections,
             budget: settings.tokenBudget,
         },

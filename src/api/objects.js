@@ -107,6 +107,20 @@ export async function getObjectFields(settingId, type) {
     return stateEngine.getObjectFields(EXTENSION_ID, instanceId, settingId, type) ?? [];
 }
 
+// A setting's runtime (per-chat) fields for a type, as State Engine's
+// runtime-field view: [{ name, type, prompted, description, values?, builtIn }].
+export async function getObjectRuntimeFields(settingId, type) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.getObjectRuntimeFields(EXTENSION_ID, instanceId, settingId, type) ?? [];
+}
+
+// Replaces them (built-ins are kept by State Engine). Only on the user's
+// request (SB-102: Scenario Builder never adds fields on its own).
+export async function setObjectRuntimeFields(settingId, type, fields) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.setObjectRuntimeFields(EXTENSION_ID, instanceId, settingId, type, fields) ?? null;
+}
+
 // A field's value by field name or role id ("se__character.mood"), so user
 // renames do not break reading (spec SB-441). undefined when unknown.
 export async function getObjectField(chatId, id, fieldOrRole) {

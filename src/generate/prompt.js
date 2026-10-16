@@ -182,6 +182,14 @@ export function buildGenerationPrompt(input) {
         ...(task === 'create' ? ['- "name": its name'] : []),
         ...targets.map((f) => `- "${f.name}" (${f.label})${f.about ? `: ${f.about}` : ''}${isText(f) ? '' : ` - ${formOf(f, refNames).prose}`}`),
     ];
+    // A new entry may be tied into the setting: up to three relationships
+    // to entries that already exist.
+    const relationNames = task === 'create' ? (input.relationNames ?? []).slice(0, 25) : [];
+    if (relationNames.length) {
+        template.push(['relations', '[{"name": "...", "kind": "..."}]']);
+        needs.push(`- "relations": up to THREE existing entries it is connected to, and how ("kind" in a few words: ally, rival, serves, sibling, owes...). Choose only from: ${relationNames.join(', ')}. [] if none fits.`);
+        keys.push('relations');
+    }
     parts.push(`# Your task\n${job}`);
     parts.push(`# Reply\nReply with ONLY this JSON object, every "..." replaced by your writing. Keep exactly these keys:\n${jsonTemplate(template)}\nWhat each key needs:\n${needs.join('\n')}`);
     return { system: SYSTEM_BASE.join('\n'), user: parts.join('\n\n'), keys, plain: false };
@@ -423,6 +431,7 @@ export function parseGenerationResponse(text, { fields = [], keys = [], refLooku
 function coerce(def, raw, refLookup, dropped) {
     const asList = (v) => (Array.isArray(v) ? v.map(textOf) : textOf(v).split(/,|\n/)).map((x) => clean(x).replace(/^[-*•]\s*/, '')).filter(Boolean);
     switch (def.kind) {
+        case 'raw': return raw;
         case 'list': return asList(raw);
         case 'number': {
             const n = Number(String(textOf(raw)).match(/-?\d+(\.\d+)?/)?.[0]);

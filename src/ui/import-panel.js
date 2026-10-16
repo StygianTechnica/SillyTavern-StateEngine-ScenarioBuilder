@@ -108,7 +108,7 @@ async function reviewStep(job) {
                     p.action === 'create' ? h('small', { class: 'sb-hint' }, t?.noun ?? p.type) : null,
                     p.matchId ? h('span', { class: 'sb-iconbtn', title: 'Open its sheet', onclick: () => openSheet(p.matchId, p.type) }, icon('fa-arrow-up-right-from-square')) : null),
                 h('small', { class: 'sb-hint' }, `From "${p.entry.title || p.entry.keys[0] || p.entry.uid}" (${p.entry.book})`
-                    + `${fields.length ? ` · ${fields.join(', ')}` : ''}${p.locatedIn ? ` · inside ${p.locatedIn}` : ''}${p.note ? ` · ${p.note}` : ''}`),
+                    + `${fields.length ? ` · ${fields.join(', ')}` : ''}${p.locatedIn ? ` · inside ${p.locatedIn}` : ''}${p.relations?.length ? ` · ${p.relations.map((r) => `${r.kind} ${r.name}`).join(', ')}` : ''}${p.note ? ` · ${p.note}` : ''}`),
                 p.values.description && p.action === 'create' ? h('div', { class: 'sb-proposal-desc' }, String(p.values.description).slice(0, 220)) : null));
     };
     return h('div', { class: 'sb-import' },
@@ -135,6 +135,7 @@ function doneStep(job) {
             h('span', { class: 'sb-chip sb-chip-on' }, `${s.created ?? 0} created`),
             h('span', { class: 'sb-chip sb-chip-on' }, `${s.filled ?? 0} filled in`),
             s.placed ? h('span', { class: 'sb-chip' }, `${s.placed} placed in the tree`) : null,
+            s.related ? h('span', { class: 'sb-chip' }, `${s.related} relationships`) : null,
             s.failed ? h('span', { class: 'sb-chip sb-chip-absent' }, `${s.failed} failed`) : null),
         failed.length ? h('div', {}, failed.map((p) => h('div', { class: 'sb-hint' }, `${p.name}: ${p.error}`))) : null,
         h('small', { class: 'sb-hint' }, 'Find them in the Catalog. Imported entries are marked as imported, with the entry they came from.'),

@@ -20,6 +20,7 @@ import { VARIABLES_CHANGED_EVENT } from '../api/variables.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { ensureBoundSetting, getBoundSettingId } from '../library/library.js';
 import { runIntake } from '../library/intake.js';
+import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
 
@@ -31,7 +32,19 @@ let timer = null;
 async function intakeOpenChat() {
     const ref = getCurrentChatRef();
     if (!ref || !isActive()) return;
-    await runIntake(ref.chatId, chatKeyFor(ref), await getBoundSettingId(ref.chatId));
+    const settingId = await getBoundSettingId(ref.chatId);
+    await runIntake(ref.chatId, chatKeyFor(ref), settingId);
+    await runQuestSync(ref.chatId, chatKeyFor(ref), settingId);
+    hookArchivist();
+}
+
+// When Archivist finishes a compile, its story threads may hold new quests.
+let archivistHooked = false;
+function hookArchivist() {
+    const event = window.StateEngineArchivist?.COMPILED_CHANGED_EVENT;
+    if (archivistHooked || !event) return;
+    archivistHooked = true;
+    SillyTavern.getContext().eventSource.on(event, () => void intakeOpenChat().then(() => syncNow()));
 }
 
 function scheduleValidation(chatId) {
@@ -54,6 +67,7 @@ async function beforeGeneration(type, _options, dryRun) {
         if (!(await getPresetStatus(ref.chatId)).active) return;
         await reconcileOpenChat();
         await pushCanonicalToObserved(ref.chatId, chatKeyFor(ref));
+        await writeActiveQuests(ref.chatId, chatKeyFor(ref), await getBoundSettingId(ref.chatId));
         await syncNow();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not prepare the guidance before generation', err);

@@ -74,8 +74,8 @@ export function buildClassifyPrompt(entry, typeLabels = {}) {
     const choices = IMPORT_TYPES.map((t) => `- ${t}${typeLabels[t] ? `: ${typeLabels[t]}` : ''}`).join('\n');
     const user = [
         entryBlock(entry),
-        `# Your task\nDecide what ONE thing this entry is mainly about, and what that thing is called.\nKinds:\n${choices}\n- skip: the entry is not about one specific thing (writing rules, instructions to the AI, formatting, a list of many unrelated things)`,
-        '# Reply\nReply with ONE line, exactly in this form, and nothing else:\nkind | name\nFor example:\nlocation | The Brass Market',
+        `# Your task\nDecide what this entry is about.\nIf it is about ONE thing, say its kind and name. Kinds:\n${choices}\n- many: the entry describes SEVERAL separate things of note, each with its own name (a list of deities, a roster of guild members, a list of places)\n- skip: the entry is not about anything in the world (writing rules, instructions to the AI, formatting)`,
+        '# Reply\nReply with ONE line, exactly in this form, and nothing else:\nkind | name\nFor example:\nlocation | The Brass Market\nor, for a list of several things:\nmany | The Pantheon',
     ].join('\n\n');
     return { system: SYSTEM, user };
 }
@@ -83,11 +83,11 @@ export function buildClassifyPrompt(entry, typeLabels = {}) {
 // The kind and name from a classify answer. -> { type, name } ('skip' as type
 // to leave the entry out), or null when the answer is unreadable.
 export function parseClassify(text, entry) {
-    const line = String(text ?? '').split('\n').map((l) => l.replace(/[`*]/g, '').trim()).find((l) => l.includes('|') || IMPORT_TYPES.some((t) => l.toLowerCase().startsWith(t)) || l.toLowerCase().startsWith('skip'));
+    const line = String(text ?? '').split('\n').map((l) => l.replace(/[`*]/g, '').trim()).find((l) => l.includes('|') || IMPORT_TYPES.some((t) => l.toLowerCase().startsWith(t)) || /^(skip|many)/i.test(l));
     if (!line) return null;
     const [kindRaw, ...rest] = line.split('|');
     const kind = clean(kindRaw).toLowerCase().replace(/^kind\s*:\s*/, '');
-    const type = kind.startsWith('skip') ? 'skip' : IMPORT_TYPES.find((t) => kind.startsWith(t) || kind === `${t}s`);
+    const type = kind.startsWith('skip') ? 'skip' : kind.startsWith('many') || kind.startsWith('several') ? 'many' : IMPORT_TYPES.find((t) => kind.startsWith(t) || kind === `${t}s`);
     if (!type) return null;
     // The entry's own title is its name; the model's name is used only when
     // the entry has none (a model renaming entries merges or loses them).
@@ -113,12 +113,14 @@ export function buildExtractPrompt(entry, { typeNoun, name, fields, refNames = {
         return [f.name, value];
     });
     if (typeNoun === 'location') template.push(['located_in', '""']);
+    template.push(['relations', '[{"name": "...", "kind": "..."}]']);
     const needs = want.map((f) => {
         if (f.kind === 'ref') return `- "${f.name}" (${f.label}): the name of the one ${f.refType} the entry text itself names for this - or "" if it names none`;
         if (f.kind === 'refs') return `- "${f.name}" (${f.label}): only ${f.refType}s the entry text itself names for this - [] if it names none. Never add anyone the entry does not name.`;
         return `- "${f.name}" (${f.label})${f.about ? `: ${f.about}` : ''}`;
     });
     if (typeNoun === 'location') needs.push('- "located_in": the larger place the entry says it is inside, by name - or "" if it does not say');
+    needs.push('- "relations": the people, groups or places the entry says it is connected to, and how - "kind" in a few words (ally, rival, serves, sibling, worships, leads, member of, owes...). Only names written in the entry; [] if none.');
     const user = [
         entryBlock(entry),
         `# Your task\nThis entry is about the ${typeNoun} "${name}". Copy its facts into the fields below.\n- Use ONLY what the entry says. Do not invent anything.\n- Where the entry says nothing for a field, use "" (or [] for a list).\n- "description": what it is and what it is like, in a few sentences drawn from the entry.\n- "aliases": other names the entry gives it (its keywords may help).`,
@@ -162,6 +164,68 @@ export function keepMentionedLinks(entry, values, fields, objects) {
         delete out.located_in;
     }
     return { values: out, removed };
+}
+
+// "This entry lists several things - name them" (the deities case): a JSON
+// object { items: [{ kind, name, description }] }, from the entry alone.
+export function buildManyPrompt(entry, typeLabels = {}) {
+    const kinds = IMPORT_TYPES.map((t) => `${t}${typeLabels[t] ? ` (${typeLabels[t]})` : ''}`).join(', ');
+    const user = [
+        entryBlock(entry),
+        [
+            '# Your task',
+            'This entry describes several separate things. List each one that has its own name.',
+            `- "kind": one of ${IMPORT_TYPES.join(', ')} (a god or person is a character). Kinds: ${kinds}.`,
+            '- "name": its name, exactly as the entry writes it.',
+            '- "description": what the entry says about it, in one to three sentences. Use ONLY what the entry says.',
+        ].join('\n'),
+        [
+            '# Reply',
+            'Reply with ONLY this JSON object, one item per thing:',
+            '{',
+            '  "items": [',
+            '    {"kind": "...", "name": "...", "description": "..."},',
+            '    {"kind": "...", "name": "...", "description": "..."}',
+            '  ]',
+            '}',
+        ].join('\n'),
+    ].join('\n\n');
+    return { system: SYSTEM, user };
+}
+
+// The items of a "many" answer (a parsed object), kept only when the name
+// is really in the entry. -> [{ type, name, description }]
+export function readManyItems(json, entry) {
+    const raw = Array.isArray(json) ? json : (Array.isArray(json?.items) ? json.items : Object.values(json ?? {}).find(Array.isArray) ?? []);
+    const text = [entry.title, ...entry.keys, entry.content].join(' ');
+    const seen = new Set();
+    const out = [];
+    for (const item of raw) {
+        if (!item || typeof item !== 'object') continue;
+        const name = clean(item.name);
+        const key = nameKey(name);
+        if (!name || seen.has(key) || !mentions(text, name)) continue;
+        seen.add(key);
+        const kind = clean(item.kind).toLowerCase();
+        const type = IMPORT_TYPES.find((t) => kind.startsWith(t)) ?? (/god|deity|person|people/.test(kind) ? 'character' : 'lore');
+        out.push({ type, name, description: String(item.description ?? '').trim() });
+    }
+    return out;
+}
+
+// The relations an extraction found, kept only when the other side is named
+// in the entry. -> [{ name, kind }]
+export function readRelations(raw, entry, selfName) {
+    const text = [entry.title, ...entry.keys, entry.content].join(' ');
+    const list = Array.isArray(raw) ? raw : [];
+    const out = [];
+    for (const r of list) {
+        const name = clean(typeof r === 'string' ? r.split(/[:(-]/)[0] : r?.name);
+        const kind = clean(typeof r === 'string' ? (r.match(/[:(-]\s*(.+?)\)?$/)?.[1] ?? 'knows') : r?.kind) || 'knows';
+        if (!name || nameKey(name) === nameKey(selfName) || !mentions(text, name)) continue;
+        if (!out.some((x) => nameKey(x.name) === nameKey(name))) out.push({ name, kind: kind.toLowerCase().slice(0, 40) });
+    }
+    return out;
 }
 
 // When extraction fails: what the entry itself can always give - its text as

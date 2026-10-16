@@ -21,6 +21,7 @@ import {
 } from '../library/world-options.js';
 import { generateOverview, generateEntry } from '../generate/run.js';
 import { fieldDefs } from './sheet.js';
+import { renderQuestBoard } from './quest-board.js';
 
 const CHAPTER_BLURBS = Object.freeze({
     character: 'The people of the setting - allies, rivals, shopkeepers.',
@@ -37,7 +38,7 @@ const CHAPTER_BLURBS = Object.freeze({
 // Types whose entries sit somewhere (a "location" field), so "Within" applies.
 const PLACED = new Set(['location', 'item', 'creature', 'scene']);
 
-const viewOf = (typeId) => getSettings().catalog.views[typeId] ?? (typeId === 'location' ? 'tree' : 'grid');
+const viewOf = (typeId) => getSettings().catalog.views[typeId] ?? (typeId === 'location' ? 'tree' : typeId === 'quest' ? 'board' : 'grid');
 
 function setView(typeId, view) {
     getSettings().catalog.views[typeId] = view;
@@ -64,7 +65,9 @@ export async function renderCatalog() {
     } else if (ws.chapter === 'overview') {
         content = await frontPage(types, all);
     } else {
-        content = chapterPage(types.find((t) => t.id === ws.chapter), all, doc);
+        const type = types.find((t) => t.id === ws.chapter);
+        const board = type.id === 'quest' && viewOf('quest') === 'board' ? await renderQuestBoard(type) : null;
+        content = chapterPage(type, all, doc, board);
     }
     return h('div', { class: 'sb-catalog' }, rail, h('div', { class: 'sb-content' }, content));
 }
@@ -318,7 +321,7 @@ function canonCard(settingId) {
 
 // ---- a chapter
 
-function chapterPage(type, all, doc) {
+function chapterPage(type, all, doc, board = null) {
     const { settingId } = ws.ctx;
     const entries = all[type.id];
     const parents = getParents(settingId);
@@ -334,6 +337,7 @@ function chapterPage(type, all, doc) {
     const tags = tagsOf(entries);
     const views = [['grid', 'fa-grip', 'Cards'], ['list', 'fa-list', 'List']];
     if (type.id === 'location') views.unshift(['tree', 'fa-sitemap', 'Tree']);
+    if (type.id === 'quest') views.unshift(['board', 'fa-table-columns', 'Board']);
 
     const toolbar = h('div', { class: 'sb-toolbar' },
         h('div', { class: 'sb-search' }, icon('fa-magnifying-glass'), h('input', {
@@ -349,7 +353,10 @@ function chapterPage(type, all, doc) {
         button(`New ${type.noun}`, () => openSheet('new'), { iconName: 'fa-plus', cls: 'sb-primary' }));
 
     let body;
-    if (!entries.length) {
+    // The quest board has its own empty state (with the Scan button).
+    if (board && !filtering) {
+        body = board;
+    } else if (!entries.length) {
         body = h('div', { class: 'sb-callout sb-callout-big' },
             h('i', { class: `fa-solid ${type.icon}`, style: `color: ${type.color}` }),
             h('div', {}, h('b', {}, `No ${type.plural.toLowerCase()} yet.`), h('div', {}, CHAPTER_BLURBS[type.id] ?? '')),

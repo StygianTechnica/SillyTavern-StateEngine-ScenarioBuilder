@@ -1,4 +1,4 @@
-import { readEntries, matchEntry, buildClassifyPrompt, parseClassify, buildExtractPrompt, fallbackValues, blanksOnly, keepMentionedLinks, mentions } from '../src/import/lorebook.js';
+import { readEntries, matchEntry, buildClassifyPrompt, parseClassify, buildExtractPrompt, fallbackValues, blanksOnly, keepMentionedLinks, mentions, readManyItems, readRelations } from '../src/import/lorebook.js';
 
 const book = {
     entries: {
@@ -47,7 +47,7 @@ describe('classifying and extracting', () => {
     it('asks only for blank fields, from the entry alone', () => {
         const fields = [{ name: 'region', label: 'Region', kind: 'text' }];
         const { user, keys } = buildExtractPrompt(market, { typeNoun: 'location', name: 'Brass Market', fields, locations: ['Veylan'], existing: { description: 'Already written.' } });
-        expect(keys).toEqual(['aliases', 'region', 'located_in']);
+        expect(keys).toEqual(['aliases', 'region', 'located_in', 'relations']);
         expect(user).toContain('Use ONLY what the entry says');
         expect(user).toContain('Veylan');
     });
@@ -95,5 +95,32 @@ describe('links only to what the entry names', () => {
         const { user } = buildExtractPrompt(entry, { typeNoun: 'faction', name: 'Followers of Ferunox', fields, refNames: { character: ['Mira Vane', 'Ethloe'] } });
         expect(user).not.toContain('Mira Vane');
         expect(user).toContain('Never add anyone the entry does not name');
+    });
+});
+
+describe('entries that list many things, and relationships', () => {
+    const pantheon = { title: 'The Gods', keys: ['gods', 'pantheon'], content: 'Ferunox, god of death, commands the undead. Ethloe, goddess of light, fell to betrayal. Saris, the trickster, sides with whoever wins.' };
+
+    it('classifies a list entry as many', () => {
+        expect(parseClassify('many | The Pantheon', pantheon)).toEqual({ type: 'many', name: 'The Gods' });
+        expect(buildClassifyPrompt(pantheon).user).toContain('- many:');
+    });
+
+    it('splits a list into items it really names, gods as characters', () => {
+        const items = readManyItems({ items: [
+            { kind: 'deity', name: 'Ferunox', description: 'God of death.' },
+            { kind: 'character', name: 'Ethloe', description: 'Goddess of light.' },
+            { kind: 'character', name: 'Ethloe', description: 'duplicate' },
+            { kind: 'character', name: 'Morwen', description: 'invented by the model' },
+        ] }, pantheon);
+        expect(items.map((i) => [i.type, i.name])).toEqual([['character', 'Ferunox'], ['character', 'Ethloe']]);
+        expect(readManyItems([{ kind: 'lore', name: 'Saris' }], pantheon)).toHaveLength(1);
+    });
+
+    it('keeps relationships only to names the entry gives', () => {
+        const entry = { title: 'Ethloe', keys: [], content: "Ethloe's disciples serve her. She is Ferunox's sworn enemy." };
+        expect(readRelations([{ name: 'Ferunox', kind: 'Sworn enemy' }, { name: 'Mira', kind: 'friend' }, { name: 'Ethloe', kind: 'self' }], entry, 'Ethloe'))
+            .toEqual([{ name: 'Ferunox', kind: 'sworn enemy' }]);
+        expect(readRelations(['Ferunox (enemy)'], entry, 'Ethloe')).toEqual([{ name: 'Ferunox', kind: 'enemy' }]);
     });
 });
