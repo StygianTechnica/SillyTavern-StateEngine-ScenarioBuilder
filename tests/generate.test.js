@@ -1,4 +1,4 @@
-import { buildGenerationPrompt, parseGenerationResponse, extractJson, mergeGenerated } from '../src/generate/prompt.js';
+import { buildGenerationPrompt, parseGenerationResponse, extractJson, mergeGenerated, buildOverviewPrompt, parseOverviewResponse } from '../src/generate/prompt.js';
 import { randomFor, eraGroups, splitList, joinList, describeMagic, describeTech, normalizeMagic, techForEra } from '../src/library/world-options.js';
 import { normalizeSettingDoc } from '../src/store/schema.js';
 
@@ -16,15 +16,21 @@ describe('generation prompts', () => {
     it('asks only for the empty fields when filling', () => {
         const { user, keys } = buildGenerationPrompt({ task: 'fill', type, fields, entry: { name: 'Mira', values: { description: 'An innkeeper.', role: 'innkeeper' } }, overview });
         expect(keys).toEqual(['aliases', 'personality', 'mood', 'faction', 'traits']);
-        expect(user).toContain('Description (description): An innkeeper.');
+        expect(user).toContain('Description: An innkeeper.');
+        expect(user).toContain('"personality": "..."');
         expect(user).toContain('Premise: A drowned port city.');
         expect(user).not.toMatch(/- "role"/);
     });
 
     it('builds on existing text when enriching one field', () => {
-        const { user, keys } = buildGenerationPrompt({ task: 'field', targetField: 'description', type, fields, entry: { name: 'Mira', values: { description: 'An innkeeper.' } } });
+        const { user, keys, plain } = buildGenerationPrompt({ task: 'field', targetField: 'description', type, fields, entry: { name: 'Mira', values: { description: 'An innkeeper.' } } });
         expect(keys).toEqual(['description']);
-        expect(user).toContain('keep everything it already says');
+        expect(plain).toBe(true);
+        expect(user).toContain('Write the "Description" of the character "Mira"');
+        expect(user).toContain('It currently says:\n"""\nAn innkeeper.\n"""');
+        expect(user).toContain('keep every fact it already contains');
+        expect(user).toContain('Reply with ONLY the text for this field');
+        expect(user).not.toContain('JSON object');
     });
 
     it('creates from nothing, avoiding existing names', () => {
@@ -32,7 +38,8 @@ describe('generation prompts', () => {
         expect(keys[0]).toBe('name');
         expect(user).toContain('Surprise the user');
         expect(user).toContain('do not reuse their names: Mira, Tobin');
-        expect(user).toContain('"The Ledger Guild"');
+        expect(user).toContain('The Ledger Guild');
+        expect(user).toContain('"name": "..."');
         expect(user).toContain('located inside Veylan');
     });
 
@@ -41,6 +48,40 @@ describe('generation prompts', () => {
         expect(user).toContain('a smuggler with a conscience');
         expect(user).toContain('She hid the boy in the cellar.');
         expect(user).toContain('- Inside: Veylan (location) - A port.');
+    });
+});
+
+describe('reading what small models really send', () => {
+    it('reads a front-page answer with made-up keys and arrays of paragraphs', () => {
+        const stheno = '{\n"frontpage": ["The world of the living is fraught with danger.", "Yet hope persists."],\n"rules": ["Life is cheap.", "Alliances are fleeting."],\n"magic": {"type": "divine", "widespread": "uncommon"},\n"technology": {"level": "TL6 World Wars"}\n}';
+        const { values, error } = parseOverviewResponse(stheno, ['premise', 'rules', 'magicNotes', 'techNotes']);
+        expect(error).toBeNull();
+        expect(values.premise).toBe('The world of the living is fraught with danger.\n\nYet hope persists.');
+        expect(values.rules).toBe('Life is cheap.\n\nAlliances are fleeting.');
+        expect(values.magicNotes).toContain('divine');
+        expect(values.techNotes).toContain('TL6');
+    });
+
+    it('asks for one front-page section as plain text and reads it back', () => {
+        const prompt = buildOverviewPrompt({ fields: ['magicNotes'], overview: { magic: { kinds: ['divine'], notes: 'Gods grant power.' } } });
+        expect(prompt.plain).toBe(true);
+        expect(prompt.user).toContain('Write the "How magic works" section');
+        expect(prompt.user).toContain('Gods grant power.');
+        expect(parseOverviewResponse('Sure! Here is the section:\nHow magic works: Only priests can pray for miracles.', ['magicNotes']).values.magicNotes).toBe('Only priests can pray for miracles.');
+    });
+
+    it('reads one field from plain text, quotes, or a stray JSON object', () => {
+        const opts = { fields, keys: ['personality'], plain: true };
+        expect(parseGenerationResponse('"Wry and loyal."', opts).values.personality).toBe('Wry and loyal.');
+        expect(parseGenerationResponse('```\nWry and loyal.\n```', opts).values.personality).toBe('Wry and loyal.');
+        expect(parseGenerationResponse('{"Personality": "Wry and loyal."}', opts).values.personality).toBe('Wry and loyal.');
+        expect(parseGenerationResponse('Angry.', { fields, keys: ['mood'], plain: true }).values.mood).toBe('Angry');
+        expect(parseGenerationResponse('salt-cured, quiet\n- loyal', { fields, keys: ['traits'], plain: true }).values.traits).toEqual(['salt-cured', 'quiet', 'loyal']);
+    });
+
+    it('matches near-miss JSON keys to fields', () => {
+        const { values } = parseGenerationResponse('{"Name": "Kess", "Description": ["Tall.", "Scarred."], "personality_traits": "wry"}', { fields, keys: ['name', 'description', 'personality'] });
+        expect(values).toEqual({ name: 'Kess', description: 'Tall.\n\nScarred.', personality: 'wry' });
     });
 });
 
@@ -66,7 +107,7 @@ describe('parsing answers', () => {
     });
 
     it('fails clearly on a non-answer', () => {
-        expect(parseGenerationResponse('I cannot do that.', { fields, keys: ['role'] }).error).toMatch(/JSON/);
+        expect(parseGenerationResponse('I cannot do that.', { fields, keys: ['role', 'personality'] }).error).toMatch(/JSON/);
     });
 
     it('never overwrites content when filling', () => {

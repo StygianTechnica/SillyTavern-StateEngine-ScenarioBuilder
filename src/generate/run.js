@@ -109,7 +109,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         const hit = (all[typeId] ?? []).find((e) => [e.name, ...(e.aliases ?? [])].some((n) => lower(n) === lower(name)));
         return hit?.id ?? null;
     };
-    const parsed = parseGenerationResponse(text, { fields, keys: prompt.keys, refLookup });
+    const parsed = parseGenerationResponse(text, { fields, keys: prompt.keys, refLookup, plain: prompt.plain });
     if (parsed.error) throw new Error(parsed.error);
     return { values: parsed.values, dropped: parsed.dropped };
 }
@@ -122,7 +122,7 @@ export async function generateOverview({ ctx, fields, overview, all, brief = '' 
     const settings = getSettings();
     const prompt = buildOverviewPrompt({ fields, overview: overview ?? getOverview(ctx.settingId), contents, detail: settings.generation.detail, brief });
     const text = await callModel([{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }], settings.generation.maxTokens);
-    const parsed = parseOverviewResponse(text, prompt.keys);
+    const parsed = parseOverviewResponse(text, prompt.keys, { plain: prompt.plain });
     if (parsed.error) throw new Error(parsed.error);
     return { values: parsed.values };
 }

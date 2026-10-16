@@ -3,29 +3,28 @@
 // values that fit the object's fields (SB-132). No SillyTavern imports;
 // the runner is src/generate/run.js.
 //
-// Tasks:
-//   field   one field: fill it if empty, otherwise build on what is there
-//   fill    every empty field
-//   enrich  every field: fill the empty ones, deepen the ones with content
-//   create  a whole new entry, from a brief or from nothing (random)
-// Whatever already exists is treated as canon: kept, built on, never
-// contradicted (SB-139 "what the user supplies is fixed canon").
+// Written for small local models as much as big ones:
+//   - ONE field (a sparkle) is asked for as PLAIN TEXT: the prompt names
+//     the field, says what it is for, shows what it says now (keep it and
+//     build on it) or that it is empty (write it), and asks for the text
+//     alone. No JSON to get wrong.
+//   - SEVERAL fields (Fill empty, Enrich all, Generate, Write front page)
+//     are asked for as JSON, with a literal template to fill in.
+//   - Answers are read forgivingly: near-miss keys, arrays of paragraphs,
+//     chatter around the JSON, or plain text when one field was asked for.
+//
+// Tasks: field (one field), fill (empty fields), enrich (all fields),
+// create (a new entry, from a brief or a surprise). Whatever already exists
+// is canon: kept, built on, never contradicted (SB-139).
 
 import { describeMagic, describeTech } from '../library/world-options.js';
 
+// Length guidance, for one field and for each field of several.
 export const DETAIL_LEVELS = Object.freeze({
-    brief: 'Keep every text field short: one or two sentences.',
-    standard: 'Text fields: two to four vivid sentences.',
-    rich: 'Text fields: a full, evocative paragraph each, rich in concrete detail.',
+    brief: 'one or two sentences',
+    standard: 'two to four vivid sentences',
+    rich: 'a full, evocative paragraph rich in concrete detail',
 });
-
-// The setting's magic and technology: descriptive lines, and hard limits
-// (what does not exist) that every prompt states separately and firmly.
-function worldLines(o) {
-    const magic = describeMagic(o?.magic);
-    const tech = describeTech(o?.tech);
-    return { lines: [...magic.lines, ...tech.lines].map((l) => cut(l, 600)), limits: [...magic.limits, ...tech.limits] };
-}
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
@@ -33,30 +32,79 @@ const cut = (text, max) => {
     return t.length <= max ? t : `${t.slice(0, max - 1)}…`;
 };
 const isEmpty = (v) => v === undefined || v === null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && !v.length);
+const norm = (key) => String(key ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 // The pseudo-fields every entry has, ahead of its type's own fields.
 export const BASE_FIELDS = Object.freeze([
-    { name: 'description', label: 'Description', kind: 'longtext' },
-    { name: 'aliases', label: 'Other names', kind: 'list' },
+    { name: 'description', label: 'Description', kind: 'longtext', about: 'what it is and what it is like - appearance, character, the details a storyteller needs' },
+    { name: 'aliases', label: 'Other names', kind: 'list', about: 'other names, titles or nicknames it is known by' },
 ]);
 
-// How each field should be answered in JSON.
-function shapeOf(def, refNames) {
+const SYSTEM_BASE = [
+    'You are a worldbuilding collaborator for a tabletop-style roleplaying setting.',
+    'You write setting material: concrete, specific, playable details that give a storyteller hooks to use.',
+    'Everything the user has already decided is canon: keep it, build on it, never contradict it.',
+    'Match the setting\'s tone and era. Avoid clichés and generic filler.',
+];
+
+// The setting's magic and technology: descriptive lines, and hard limits.
+function worldLines(o) {
+    const magic = describeMagic(o?.magic);
+    const tech = describeTech(o?.tech);
+    return { lines: [...magic.lines, ...tech.lines].map((l) => cut(l, 600)), limits: [...magic.limits, ...tech.limits] };
+}
+
+// The world as the user has defined it, and its hard limits.
+function worldBlocks(o, { skip = [] } = {}) {
+    const facts = [
+        !skip.includes('premise') && o.premise ? `Premise: ${cut(o.premise, 700)}` : '',
+        o.worldType ? `World type: ${o.worldType.replace(/_/g, ' ')}` : '',
+        o.era ? `Era: ${o.era}` : '',
+        o.tone ? `Tone: ${o.tone}` : '',
+        o.themes ? `Themes: ${o.themes}` : '',
+        ...worldLines(o).lines,
+        !skip.includes('rules') && o.rules ? `Society and law: ${cut(o.rules, 500)}` : '',
+    ].filter(Boolean);
+    const limits = worldLines(o).limits;
+    return [
+        `# The world (decided by the user - treat these as facts)\n${facts.length ? facts.join('\n') : '(Nothing decided yet - invent freely, but keep everything consistent.)'}`,
+        limits.length ? `# Hard limits - never break these\n${limits.map((l) => `- ${l}`).join('\n')}` : '',
+    ].filter(Boolean);
+}
+
+// How a field's answer should look - in prose (one field) and as a JSON
+// template value (several).
+function formOf(def, refNames) {
+    const names = refNames[def.refType] ?? [];
     switch (def.kind) {
-        case 'list': return 'an array of short strings';
-        case 'number': return 'a number';
-        case 'boolean': return 'true or false';
-        case 'enum': return `exactly one of: ${def.values.map((v) => JSON.stringify(v)).join(', ')}`;
-        case 'ref': return refNames[def.refType]?.length ? `the name of one existing ${def.refType}: ${refNames[def.refType].map((n) => JSON.stringify(n)).join(', ')} (or "")` : `"" (no ${def.refType} exists yet)`;
-        case 'refs': return refNames[def.refType]?.length ? `an array of names of existing ${def.refType}s, chosen from: ${refNames[def.refType].map((n) => JSON.stringify(n)).join(', ')}` : '[]';
-        default: return 'a string';
+        case 'list': return { prose: 'Write a short comma-separated list.', json: '["...", "..."]' };
+        case 'number': return { prose: 'Answer with a number only.', json: '0' };
+        case 'boolean': return { prose: 'Answer yes or no.', json: 'true' };
+        case 'enum': return { prose: `Answer with exactly one of: ${def.values.join(', ')}.`, json: `"<one of: ${def.values.join(' | ')}>"` };
+        case 'ref': return names.length
+            ? { prose: `Answer with the name of one of these existing ${def.refType}s: ${names.join(', ')}.`, json: `"<one of: ${names.join(' | ')}>"` }
+            : { prose: `Answer with nothing - no ${def.refType} exists yet.`, json: '""' };
+        case 'refs': return names.length
+            ? { prose: `Answer with a comma-separated list of names chosen from these existing ${def.refType}s: ${names.join(', ')}.`, json: `["<names from: ${names.join(' | ')}>"]` }
+            : { prose: `Answer with nothing - no ${def.refType} exists yet.`, json: '[]' };
+        default: return { prose: '', json: '"..."' };
     }
 }
 
-function show(value) {
-    if (Array.isArray(value)) return value.join(', ');
-    return String(value);
+const isText = (def) => !def.kind || def.kind === 'text' || def.kind === 'longtext';
+
+function show(value, def, nameOf) {
+    if (def.kind === 'ref') return nameOf(value);
+    if (def.kind === 'refs') return value.map(nameOf).join(', ');
+    return Array.isArray(value) ? value.join(', ') : String(value);
 }
+
+// A JSON template for several keys: { key: templateValue }.
+function jsonTemplate(entries) {
+    return `{\n${entries.map(([key, value]) => `  "${key}": ${value}`).join(',\n')}\n}`;
+}
+
+const REPLY_PLAIN = '# Reply\nReply with ONLY the text for this field. No title, no field name, no quotation marks, no JSON, nothing before or after it.';
 
 // input: { task, type: { id, label, noun }, fields: [def] (type fields),
 //   targetField (name, for 'field'), entry: { name, values: { field: value },
@@ -64,92 +112,84 @@ function show(value) {
 //   description }], similarNames: [string], memories: [string], gmNotes,
 //   refNames: { typeId: [names] }, nameOf (id -> name, for showing refs),
 //   detail: 'brief' | 'standard' | 'rich', parentName }
-// -> { system, user, keys } (keys: the JSON keys the answer should have)
+// -> { system, user, keys, plain } (plain: one field, answered as text)
 export function buildGenerationPrompt(input) {
     const { task, type, entry = { values: {} } } = input;
     const allFields = [...BASE_FIELDS, ...(input.fields ?? [])];
     const nameOf = input.nameOf ?? ((id) => id);
     const refNames = input.refNames ?? {};
-    const detail = DETAIL_LEVELS[input.detail] ?? DETAIL_LEVELS.standard;
+    const length = DETAIL_LEVELS[input.detail] ?? DETAIL_LEVELS.standard;
 
     let targets;
     if (task === 'field') targets = allFields.filter((f) => f.name === input.targetField);
     else if (task === 'fill') targets = allFields.filter((f) => isEmpty(entry.values?.[f.name]));
     else targets = allFields;
+    const plain = task === 'field' && targets.length === 1;
     const keys = [...(task === 'create' ? ['name'] : []), ...targets.map((f) => f.name)];
+    const subject = entry.name ? `${type.noun} "${entry.name}"` : `new ${type.noun}`;
 
-    const system = [
-        'You are a worldbuilding collaborator for a tabletop-style roleplaying setting.',
-        'You write setting material: concrete, specific, playable details that give a storyteller hooks to use.',
-        'Everything already established is canon: keep it, build on it, never contradict it.',
-        'Match the setting\'s tone and era. Avoid clichés and generic filler.',
-        'Answer with ONE JSON object and nothing else - no commentary, no code fences.',
-    ].join('\n');
-
-    const parts = [];
-    const o = input.overview ?? {};
-    const setting = [
-        o.premise ? `Premise: ${cut(o.premise, 600)}` : '',
-        o.worldType ? `World type: ${o.worldType.replace(/_/g, ' ')}` : '',
-        o.tone ? `Tone: ${o.tone}` : '',
-        o.themes ? `Themes: ${o.themes}` : '',
-        o.era ? `Era: ${o.era}` : '',
-        ...worldLines(o).lines,
-        o.rules ? `How the world works: ${cut(o.rules, 500)}` : '',
-    ].filter(Boolean);
-    parts.push(`# The setting\n${setting.length ? setting.join('\n') : '(Nothing set yet - invent freely, but stay consistent.)'}`);
-    const limits = worldLines(o).limits;
-    if (limits.length) parts.push(`# Hard limits - never break these\n${limits.map((l) => `- ${l}`).join('\n')}`);
-
+    const parts = [...worldBlocks(input.overview ?? {})];
     if (input.neighbours?.length) {
         parts.push(`# Related entries already in the setting\n${input.neighbours.slice(0, 16).map((n) => `- ${n.relation ? `${n.relation}: ` : ''}${n.name} (${n.type})${n.description ? ` - ${cut(n.description, 160)}` : ''}`).join('\n')}`);
     }
-    if (input.memories?.length) {
-        parts.push(`# What the story so far says about it\n${input.memories.slice(0, 12).map((m) => `- ${cut(m, 220)}`).join('\n')}`);
-    }
-    if (input.gmNotes) parts.push(`# GM-only notes (secrets - may shape the entry, but write nothing that reveals them outright)\n${cut(input.gmNotes, 500)}`);
+    if (input.memories?.length) parts.push(`# What the story so far says about it\n${input.memories.slice(0, 12).map((m) => `- ${cut(m, 220)}`).join('\n')}`);
+    if (input.gmNotes) parts.push(`# Secret GM notes (let them shape what you write, but never reveal them outright)\n${cut(input.gmNotes, 500)}`);
 
     if (task !== 'create' || entry.name) {
-        const known = allFields.filter((f) => !isEmpty(entry.values?.[f.name])).map((f) => {
-            const v = entry.values[f.name];
-            const shown = f.kind === 'ref' ? nameOf(v) : f.kind === 'refs' ? v.map(nameOf).join(', ') : show(v);
-            return `${f.label} (${f.name}): ${cut(shown, 700)}`;
-        });
-        parts.push(`# The ${type.noun}${entry.name ? `: ${entry.name}` : ''}\n${known.length ? known.join('\n') : '(Nothing written yet.)'}${entry.narrative ? `\nNow, in the story: ${cut(entry.narrative, 400)}` : ''}${input.parentName ? `\nIt is inside: ${input.parentName}` : ''}`);
+        const others = allFields.filter((f) => !isEmpty(entry.values?.[f.name]) && !(plain && f.name === targets[0].name));
+        const known = others.map((f) => `${f.label}: ${cut(show(entry.values[f.name], f, nameOf), 700)}`);
+        parts.push(`# The ${subject} - what is written so far\n${known.length ? known.join('\n') : '(Nothing else written yet.)'}${entry.narrative ? `\nWhat has happened to it in the story: ${cut(entry.narrative, 400)}` : ''}${input.parentName ? `\nIt is located inside: ${input.parentName}` : ''}`);
     }
 
-    const shapes = targets.map((f) => `- "${f.name}" (${f.label}): ${shapeOf(f, refNames)}`);
+    if (plain) {
+        const f = targets[0];
+        const current = entry.values?.[f.name];
+        const form = formOf(f, refNames);
+        const job = [
+            `Write the "${f.label}" of the ${subject}${f.about ? ` - ${f.about}` : ''}.`,
+            isEmpty(current)
+                ? 'It is empty now: write it from scratch, consistent with everything above.'
+                : `It currently says:\n"""\n${cut(show(current, f, nameOf), 1500)}\n"""\nRewrite it: keep every fact it already contains, and add new, specific detail that fits everything above.`,
+            isText(f) ? `Length: ${length}.` : form.prose,
+            input.brief ? `The user's direction: ${cut(input.brief, 400)}` : '',
+        ].filter(Boolean).join('\n');
+        parts.push(`# Your task\n${job}`, REPLY_PLAIN);
+        return { system: SYSTEM_BASE.join('\n'), user: parts.join('\n\n'), keys, plain: true };
+    }
+
     let job;
     if (task === 'create') {
         job = [
             `Create a new ${type.noun} for this setting${input.parentName ? `, located inside ${input.parentName}` : ''}.`,
             input.brief ? `What the user wants: ${cut(input.brief, 600)}` : 'Surprise the user: something fresh that fits the setting and gives a storyteller something to play with.',
-            input.similarNames?.length ? `These ${type.noun === 'lore entry' ? 'lore entries' : `${type.noun}s`} already exist - make something different, and do not reuse their names: ${input.similarNames.slice(0, 40).join(', ')}.` : '',
-            `Give it a memorable, setting-appropriate name ("name": a string).`,
+            input.similarNames?.length ? `These already exist - make something different, and do not reuse their names: ${input.similarNames.slice(0, 40).join(', ')}.` : '',
+            'Give it a memorable, setting-appropriate name.',
         ].filter(Boolean).join('\n');
-    } else if (task === 'field') {
-        const f = targets[0];
-        const has = f && !isEmpty(entry.values?.[f.name]);
-        job = has
-            ? `Enrich the "${f.label}" field: keep everything it already says, and expand it with more specific, consistent detail.`
-            : `Write the "${f?.label}" field, consistent with everything above.`;
     } else if (task === 'fill') {
-        job = 'Fill in the empty fields listed below, consistent with everything already written.';
+        job = `Write the empty fields of the ${subject}, consistent with everything written above.`;
     } else {
-        job = 'Enrich this entry: fill the empty fields, and for fields that already have content, keep what they say and deepen it with more specific detail.';
+        job = `Enrich the ${subject}: write every field. Where a field already has text (shown above), keep every fact in it and add new, specific detail. Where it is empty, write it from scratch.`;
     }
-    if (input.brief && task !== 'create') job += `\nGuidance from the user: ${cut(input.brief, 400)}`;
-    parts.push(`# Your task\n${job}\n${detail}\nNames of people and places you invent should fit the setting.`);
-    parts.push(`# Answer format\nOne JSON object with exactly these keys:\n${task === 'create' ? '- "name": a string\n' : ''}${shapes.join('\n')}`);
+    if (input.brief && task !== 'create') job += `\nThe user's direction: ${cut(input.brief, 400)}`;
+    job += `\nEach text field: ${length}.`;
 
-    return { system, user: parts.join('\n\n'), keys };
+    const template = [...(task === 'create' ? [['name', '"..."']] : []), ...targets.map((f) => [f.name, formOf(f, refNames).json])];
+    const needs = [
+        ...(task === 'create' ? ['- "name": its name'] : []),
+        ...targets.map((f) => `- "${f.name}" (${f.label})${f.about ? `: ${f.about}` : ''}${isText(f) ? '' : ` - ${formOf(f, refNames).prose}`}`),
+    ];
+    parts.push(`# Your task\n${job}`);
+    parts.push(`# Reply\nReply with ONLY this JSON object, every "..." replaced by your writing. Keep exactly these keys:\n${jsonTemplate(template)}\nWhat each key needs:\n${needs.join('\n')}`);
+    return { system: SYSTEM_BASE.join('\n'), user: parts.join('\n\n'), keys, plain: false };
 }
 
-const OVERVIEW_TEXT = Object.freeze({
-    premise: { label: 'Premise', ask: 'the setting\'s premise: what this world is, what is at stake in it, and what kinds of stories happen there (one rich paragraph)' },
-    rules: { label: 'Society and law', ask: 'how society works: power, law, customs, taboos and their costs (a few concrete rules; magic and technology have their own fields)' },
-    magicNotes: { label: 'How magic works', ask: 'how magic works within the limits above: where it comes from, who can use it, what it costs, how common everyday versus great magic is' },
-    techNotes: { label: 'How technology works', ask: 'how technology works within the limits above: what exists, who makes and understands it, how it is spread, what it changes in daily life' },
+// ---- the front page
+
+export const OVERVIEW_TEXT = Object.freeze({
+    premise: { label: 'Premise', about: 'what this world is, what is at stake in it, and what kinds of stories happen there', aliases: ['frontpage', 'pitch', 'overview', 'summary', 'setting', 'world'] },
+    rules: { label: 'Society and law', about: 'how society works - who holds power, the laws, customs and taboos, and what breaking them costs (magic and technology have their own fields)', aliases: ['society', 'law', 'laws', 'societyandlaw', 'howtheworldworks', 'worldrules', 'customs'] },
+    magicNotes: { label: 'How magic works', about: 'how magic works within the hard limits: where it comes from, who can use it, what it costs, how everyday magic compares with great magic', aliases: ['magic', 'howmagicworks', 'magicsystem'] },
+    techNotes: { label: 'How technology works', about: 'how technology works at this tech level: what exists, who makes and understands it, how it is spread, what it changes in daily life', aliases: ['technology', 'tech', 'howtechnologyworks'] },
 });
 
 // A front-page field's current text (magicNotes/techNotes live in the
@@ -160,46 +200,54 @@ export function overviewValue(o, field) {
     return o?.[field] ?? '';
 }
 
-// The front page's text fields. input: { fields: ['premise' | 'rules'],
+// The front page's text fields. input: { fields: [OVERVIEW_TEXT keys],
 // overview, contents: [{ type, names }], detail, brief }
-// -> { system, user, keys }
+// -> { system, user, keys, plain }
 export function buildOverviewPrompt({ fields, overview = {}, contents = [], detail = 'standard', brief = '' }) {
     const o = overview;
-    const given = [
-        o.worldType ? `World type: ${o.worldType.replace(/_/g, ' ')}` : '',
-        o.tone ? `Tone: ${o.tone}` : '',
-        o.themes ? `Themes: ${o.themes}` : '',
-        o.era ? `Era: ${o.era}` : '',
-        o.premise ? `Premise: ${cut(o.premise, 900)}` : '',
-        ...worldLines(o).lines,
-        o.rules ? `How the world works: ${cut(o.rules, 700)}` : '',
-    ].filter(Boolean);
-    const limits = worldLines(o).limits;
+    const length = DETAIL_LEVELS[detail] ?? DETAIL_LEVELS.standard;
+    const plain = fields.length === 1;
+    const parts = [...worldBlocks(o, { skip: plain ? [fields[0]] : [] })];
     const known = contents.filter((c) => c.names.length).map((c) => `${c.type}: ${c.names.slice(0, 15).join(', ')}`);
-    const jobs = fields.map((f) => (overviewValue(o, f) ? `- "${f}": enrich ${OVERVIEW_TEXT[f].ask} - keep everything it already says and build on it` : `- "${f}": write ${OVERVIEW_TEXT[f].ask}`));
-    const system = [
-        'You are a worldbuilding collaborator for a tabletop-style roleplaying setting.',
-        'Everything already established is canon: keep it, build on it, never contradict it.',
-        'Answer with ONE JSON object and nothing else - no commentary, no code fences.',
-    ].join('\n');
-    const user = [
-        `# The setting so far\n${given.length ? given.join('\n') : '(Nothing chosen yet - invent a fresh, coherent world.)'}`,
-        limits.length ? `# Hard limits - never break these\n${limits.map((l) => `- ${l}`).join('\n')}` : '',
-        known.length ? `# Already in the setting\n${known.join('\n')}` : '',
-        `# Your task\nWrite the setting's front page.${brief ? `\nGuidance from the user: ${cut(brief, 400)}` : ''}\n${DETAIL_LEVELS[detail] ?? DETAIL_LEVELS.standard}`,
-        `# Answer format\nOne JSON object with exactly these keys (each a string):\n${jobs.join('\n')}`,
-    ].filter(Boolean).join('\n\n');
-    return { system, user, keys: [...fields] };
+    if (known.length) parts.push(`# Already in the setting\n${known.join('\n')}`);
+
+    if (plain) {
+        const f = fields[0];
+        const meta = OVERVIEW_TEXT[f];
+        const current = overviewValue(o, f);
+        parts.push(`# Your task\n${[
+            `Write the "${meta.label}" section of this setting's front page: ${meta.about}.`,
+            current ? `It currently says:\n"""\n${cut(current, 2000)}\n"""\nRewrite it: keep every fact it already contains, and add new, specific detail that fits the world above.` : 'It is empty now: write it from scratch, consistent with the world above.',
+            `Length: ${f === 'premise' ? 'one rich paragraph' : length}.`,
+            brief ? `The user's direction: ${cut(brief, 400)}` : '',
+        ].filter(Boolean).join('\n')}`, REPLY_PLAIN);
+        return { system: SYSTEM_BASE.join('\n'), user: parts.join('\n\n'), keys: [f], plain: true };
+    }
+
+    const needs = fields.map((f) => `- "${f}" (${OVERVIEW_TEXT[f].label}): ${OVERVIEW_TEXT[f].about}${overviewValue(o, f) ? ' - it already has text (above): keep every fact in it and add more' : ''}`);
+    parts.push(`# Your task\nWrite the sections of this setting's front page listed below, consistent with the world above.${brief ? `\nThe user's direction: ${cut(brief, 400)}` : ''}\nEach section: ${length}; the premise: one rich paragraph.`);
+    parts.push(`# Reply\nReply with ONLY this JSON object, every "..." replaced by your writing. Keep exactly these keys; each value is one string:\n${jsonTemplate(fields.map((f) => [f, '"..."']))}\nWhat each key needs:\n${needs.join('\n')}`);
+    return { system: SYSTEM_BASE.join('\n'), user: parts.join('\n\n'), keys: [...fields], plain: false };
 }
 
-// The overview answer: { values: { premise?, rules? }, error }.
-export function parseOverviewResponse(text, keys) {
+// The front-page answer: { values: { field: text }, error }.
+export function parseOverviewResponse(text, keys, { plain = keys.length === 1 } = {}) {
+    if (plain) {
+        const value = plainText(text, OVERVIEW_TEXT[keys[0]]?.label);
+        return value ? { values: { [keys[0]]: value }, error: null } : { values: {}, error: 'The model returned no text.' };
+    }
     const json = extractJson(text);
-    if (!json || typeof json !== 'object') return { values: {}, error: 'The model did not answer with a JSON object.' };
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return { values: {}, error: 'The model did not answer with the JSON it was asked for.' };
     const values = {};
-    for (const key of keys) if (typeof json[key] === 'string' && json[key].trim()) values[key] = json[key].trim();
+    for (const [rawKey, raw] of Object.entries(json)) {
+        const key = matchKey(rawKey, keys.map((k) => ({ name: k, label: OVERVIEW_TEXT[k]?.label, aliases: OVERVIEW_TEXT[k]?.aliases })));
+        const value = textOf(raw);
+        if (key && value && !values[key]) values[key] = value;
+    }
     return Object.keys(values).length ? { values, error: null } : { values, error: 'The answer had nothing usable in it.' };
 }
+
+// ---- reading answers
 
 // The first JSON object in a model's answer (tolerating code fences and
 // chatter around it), or null.
@@ -232,52 +280,105 @@ export function extractJson(text) {
     return null;
 }
 
+// A text value from whatever shape the model used: a string; an array of
+// paragraphs; an object of strings.
+function textOf(raw) {
+    if (typeof raw === 'string') return raw.trim();
+    if (Array.isArray(raw)) return raw.map(textOf).filter(Boolean).join('\n\n');
+    if (raw && typeof raw === 'object') return Object.values(raw).map(textOf).filter(Boolean).join('\n\n');
+    if (raw === null || raw === undefined) return '';
+    return String(raw);
+}
+
+// The wanted key a model's key means: exact, label, alias, or one
+// containing the other (e.g. "description_text").
+function matchKey(rawKey, wanted) {
+    const k = norm(rawKey);
+    if (!k) return null;
+    const exact = wanted.find((w) => norm(w.name) === k || norm(w.label) === k || (w.aliases ?? []).includes(k));
+    if (exact) return exact.name;
+    const loose = wanted.find((w) => (norm(w.name).length > 3 && (k.includes(norm(w.name)) || norm(w.name).includes(k))));
+    return loose?.name ?? null;
+}
+
+// The text a model gave for one field, without the wrapping models add:
+// code fences, "Sure, here is...", a "Label:" line, quotes, a one-value JSON
+// object.
+export function plainText(text, label = '') {
+    let t = String(text ?? '').replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').trim();
+    const json = t.startsWith('{') ? extractJson(t) : null;
+    if (json && typeof json === 'object') {
+        const values = Object.values(json).map(textOf).filter(Boolean);
+        if (values.length) t = values.join('\n\n');
+    }
+    t = t.replace(/^(sure|certainly|of course|okay|ok|here(?:'s| is| are))[^\n:]*[:.!]\s*\n?/i, '').trim();
+    if (label) t = t.replace(new RegExp(`^\\**\\s*${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\**\\s*[:\\-–]\\s*`, 'i'), '').trim();
+    t = t.replace(/^"""\s*|\s*"""$/g, '').trim();
+    if (/^["“].*["”]$/s.test(t) && !t.slice(1, -1).includes('"')) t = t.slice(1, -1).trim();
+    return t;
+}
+
 // The answer as field values that fit (SB-132): enum values matched
 // case-insensitively, references matched to existing names (unknown ones
 // dropped), lists as string arrays; unknown keys dropped. `refLookup(typeId,
 // name)` -> id or null. -> { values, dropped: [key or "key: value"], error }
-export function parseGenerationResponse(text, { fields = [], keys = [], refLookup = () => null } = {}) {
-    const json = extractJson(text);
-    if (!json || typeof json !== 'object' || Array.isArray(json)) return { values: {}, dropped: [], error: 'The model did not answer with a JSON object.' };
-    const defs = new Map([...BASE_FIELDS, ...fields].map((f) => [f.name, f]));
-    const wanted = new Set(keys);
-    const values = {};
+export function parseGenerationResponse(text, { fields = [], keys = [], refLookup = () => null, plain = false } = {}) {
+    const defs = [...BASE_FIELDS, ...fields];
+    const wanted = keys.map((k) => (k === 'name' ? { name: 'name', label: 'Name', aliases: ['title'] } : defs.find((d) => d.name === k))).filter(Boolean);
     const dropped = [];
-    for (const [key, raw] of Object.entries(json)) {
-        if (key === 'name' && wanted.has('name')) {
-            if (clean(raw)) values.name = clean(raw).slice(0, 120);
+
+    // One field: plain text (or whatever the model sent instead).
+    if (plain || (keys.length === 1 && !extractJson(text))) {
+        const def = wanted[0];
+        if (!def) return { values: {}, dropped, error: 'Nothing was asked for.' };
+        const raw = plainText(text, def.label);
+        const value = def.name === 'name' ? clean(raw).slice(0, 120) : coerce(def, raw, refLookup, dropped);
+        if (value === undefined || isEmpty(value)) return { values: {}, dropped, error: dropped.length ? `The answer did not fit: ${dropped.join('; ')}` : 'The model returned no text.' };
+        return { values: { [def.name]: value }, dropped, error: null };
+    }
+
+    const json = extractJson(text);
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return { values: {}, dropped, error: 'The model did not answer with the JSON it was asked for.' };
+    const values = {};
+    const entries = Object.entries(json);
+    for (const [rawKey, raw] of entries) {
+        let key = matchKey(rawKey, wanted);
+        if (!key && entries.length === 1 && wanted.length === 1) key = wanted[0].name;
+        if (!key || key in values) {
+            dropped.push(rawKey);
             continue;
         }
-        const def = defs.get(key);
-        if (!def || !wanted.has(key)) {
-            dropped.push(key);
+        if (key === 'name') {
+            if (clean(textOf(raw))) values.name = clean(textOf(raw)).slice(0, 120);
             continue;
         }
-        const value = coerce(def, raw, refLookup, dropped);
-        if (value !== undefined) values[key] = value;
+        const value = coerce(defs.find((d) => d.name === key), raw, refLookup, dropped);
+        if (value !== undefined && !isEmpty(value)) values[key] = value;
     }
     if (!Object.keys(values).length) return { values, dropped, error: 'The answer had nothing usable in it.' };
     return { values, dropped, error: null };
 }
 
 function coerce(def, raw, refLookup, dropped) {
-    const asList = (v) => (Array.isArray(v) ? v : String(v ?? '').split(',')).map((x) => clean(x)).filter(Boolean);
+    const asList = (v) => (Array.isArray(v) ? v.map(textOf) : textOf(v).split(/,|\n/)).map((x) => clean(x).replace(/^[-*•]\s*/, '')).filter(Boolean);
     switch (def.kind) {
         case 'list': return asList(raw);
         case 'number': {
-            const n = Number(raw);
+            const n = Number(String(textOf(raw)).match(/-?\d+(\.\d+)?/)?.[0]);
             return Number.isFinite(n) ? n : undefined;
         }
-        case 'boolean': return raw === true || String(raw).toLowerCase() === 'true';
+        case 'boolean': return raw === true || /^(true|yes)\b/i.test(clean(textOf(raw)));
         case 'enum': {
-            const hit = def.values.find((v) => v.toLowerCase() === clean(raw).toLowerCase());
-            if (!hit) dropped.push(`${def.name}: ${clean(raw)}`);
+            const text = clean(textOf(raw)).replace(/[.!]$/, '');
+            const hit = def.values.find((v) => v.toLowerCase() === text.toLowerCase()) ?? def.values.find((v) => text.toLowerCase().includes(v.toLowerCase()));
+            if (!hit) dropped.push(`${def.name}: ${text}`);
             return hit;
         }
         case 'ref': {
-            if (!clean(raw)) return undefined;
-            const id = refLookup(def.refType, clean(raw));
-            if (!id) dropped.push(`${def.name}: ${clean(raw)}`);
+            const name = clean(textOf(raw)).replace(/[.!]$/, '');
+            if (!name) return undefined;
+            const id = refLookup(def.refType, name);
+            if (!id) dropped.push(`${def.name}: ${name}`);
             return id ?? undefined;
         }
         case 'refs': {
@@ -289,10 +390,7 @@ function coerce(def, raw, refLookup, dropped) {
             }
             return [...new Set(ids)];
         }
-        default: {
-            const text = typeof raw === 'string' ? raw.trim() : (raw === null || raw === undefined ? '' : Array.isArray(raw) ? raw.join(', ') : String(raw));
-            return text || undefined;
-        }
+        default: return textOf(raw) || undefined;
     }
 }
 

@@ -127,7 +127,12 @@ function reviewCount() {
 async function render() {
     if (!overlay || ws.minimized) return;
     const token = ++renderToken;
-    const scroll = overlay.querySelector('.sb-ws-body')?.scrollTop ?? 0;
+    // Every scrolling area keeps its place across a redraw of the same view
+    // (a sparkle, a save, a background update) - and starts at the top when
+    // the view changes (another chapter, sheet or tab).
+    const view = [ws.tab, ws.chapter, ws.entryId, ws.sheetTab].join('|');
+    const scrolls = view === lastView ? SCROLLERS.map((sel) => overlay.querySelector(sel)?.scrollTop ?? 0) : null;
+    lastView = view;
     let body;
     try {
         body = await ({ graph: renderGraph, scene: renderScene, review: renderReview, history: renderHistory, preview: renderPreview }[ws.tab] ?? renderCatalog)();
@@ -161,9 +166,11 @@ async function render() {
             h('div', { class: 'sb-iconbtn', title: 'Close', onclick: () => void close() }, icon('fa-xmark'))));
 
     overlay.replaceChildren(h('div', { class: 'sb-ws-panel' }, header, h('div', { class: 'sb-ws-body' }, body)));
-    const newBody = overlay.querySelector('.sb-ws-body');
-    if (newBody) newBody.scrollTop = scroll;
+    if (scrolls) SCROLLERS.forEach((sel, i) => { const el = overlay.querySelector(sel); if (el) el.scrollTop = scrolls[i]; });
 }
+
+const SCROLLERS = Object.freeze(['.sb-ws-body', '.sb-content', '.sb-rail', '.sb-sheet-body']);
+let lastView = '';
 
 async function onSwitchSetting(settingId, el) {
     if (!settingId || settingId === ws.ctx.settingId) return;
