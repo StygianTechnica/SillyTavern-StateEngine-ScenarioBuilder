@@ -25,6 +25,7 @@ import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.
 import { getBoundSettingId, readField } from '../library/library.js';
 import { pathOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { buildGuidance, buildStateBlock, timeText } from './build.js';
+import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 
 export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
 
@@ -91,8 +92,19 @@ export async function gatherInputs(chatId, chatKey) {
             description: doc.narrative[id]?.text || obj.description || '',
             mood: await readField(chatId, id, 'se__character.mood', 'mood'),
             intent: await readField(chatId, id, 'se__character.intent', 'intent'),
+            relations: [],
+            id,
             why: 'canonically present',
         });
+    }
+    // How the characters present feel about each other (Archivist).
+    if (hasArchivist() && cast.length > 1) {
+        const present = new Set(c.castIds);
+        for (const member of cast) {
+            const rels = (await storyRelationships({ id: member.id, name: member.name })).filter((r) => r.direction === 'out' && present.has(r.otherId));
+            member.relations = rels.map((r) => `toward ${r.otherName}: ${[r.type, r.polarityLabel, r.trend].filter(Boolean).join(', ')}`).sort();
+            if (rels.length) member.why = 'canonically present; relationships from the story';
+        }
     }
 
     const time = { day: c.day, dayPart: c.dayPart };

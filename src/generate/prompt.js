@@ -115,7 +115,8 @@ const REPLY_PLAIN = '# Reply\nReply with ONLY the text for this field. No title,
 // -> { system, user, keys, plain } (plain: one field, answered as text)
 export function buildGenerationPrompt(input) {
     const { task, type, entry = { values: {} } } = input;
-    const allFields = [...BASE_FIELDS, ...(input.fields ?? [])];
+    const nameField = { name: 'name', label: 'Name', kind: 'text', about: 'a memorable name that fits the setting' };
+    const allFields = [...(task === 'field' && input.targetField === 'name' ? [nameField] : []), ...BASE_FIELDS, ...(input.fields ?? [])];
     const nameOf = input.nameOf ?? ((id) => id);
     const refNames = input.refNames ?? {};
     const length = DETAIL_LEVELS[input.detail] ?? DETAIL_LEVELS.standard;
@@ -150,8 +151,11 @@ export function buildGenerationPrompt(input) {
             isEmpty(current)
                 ? 'It is empty now: write it from scratch, consistent with everything above.'
                 : `It currently says:\n"""\n${cut(show(current, f, nameOf), 1500)}\n"""\nRewrite it: keep every fact it already contains, and add new, specific detail that fits everything above.`,
-            isText(f) ? `Length: ${length}.` : form.prose,
-            input.brief ? `The user's direction: ${cut(input.brief, 400)}` : '',
+            f.name === 'name'
+                ? `Reply with just the name.${input.similarNames?.length ? ` Do not reuse any of these existing names: ${input.similarNames.slice(0, 40).join(', ')}.` : ''}`
+                : (isText(f) ? `Length: ${length}.` : form.prose),
+            input.creating && !entry.name && f.name !== 'name' ? 'This is a brand-new entry being created now.' : '',
+            input.brief ? `${input.creating ? 'What the user wants' : "The user's direction"}: ${cut(input.brief, 400)}` : '',
         ].filter(Boolean).join('\n');
         parts.push(`# Your task\n${job}`, REPLY_PLAIN);
         return { system: SYSTEM_BASE.join('\n'), user: parts.join('\n\n'), keys, plain: true };
@@ -236,7 +240,7 @@ export function parseOverviewResponse(text, keys, { plain = keys.length === 1 } 
         const value = plainText(text, OVERVIEW_TEXT[keys[0]]?.label);
         return value ? { values: { [keys[0]]: value }, error: null } : { values: {}, error: 'The model returned no text.' };
     }
-    const json = extractJson(text);
+    const json = readJson(text);
     if (!json || typeof json !== 'object' || Array.isArray(json)) return { values: {}, error: 'The model did not answer with the JSON it was asked for.' };
     const values = {};
     for (const [rawKey, raw] of Object.entries(json)) {
@@ -249,13 +253,46 @@ export function parseOverviewResponse(text, keys, { plain = keys.length === 1 } 
 
 // ---- reading answers
 
-// The first JSON object in a model's answer (tolerating code fences and
-// chatter around it), or null.
+// A stronger JSON reader can be plugged in (src/generate/json.js plugs in
+// State Engine's parseModelJson); the local extractJson() is the fallback.
+let pluggedParser = null;
+
+export function setJsonParser(fn) {
+    pluggedParser = typeof fn === 'function' ? fn : null;
+}
+
+function readJson(text) {
+    if (pluggedParser) {
+        try {
+            const parsed = pluggedParser(text);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+        } catch {
+            // Fall back to the local reader.
+        }
+    }
+    return extractJson(text);
+}
+
+
+const tryParse = (s) => {
+    try {
+        return JSON.parse(s);
+    } catch {
+        try { return JSON.parse(s.replace(/,\s*([}\]])/g, '$1')); } catch { return undefined; }
+    }
+};
+
+// The first JSON object in a model's answer, or null. Tolerates code fences
+// and chatter around it, a trailing comma, and - small models do this - an
+// answer that stops before its closing brackets (they are added; a value
+// cut off mid-way is dropped). This is the fallback: when State Engine
+// offers its JSON API (parseModelJson), src/generate/json.js uses that
+// stronger repair instead.
 export function extractJson(text) {
     const t = String(text ?? '').replace(/```(?:json)?/gi, '');
     const start = t.indexOf('{');
     if (start === -1) return null;
-    let depth = 0;
+    const open = [];
     let inString = false;
     let escaped = false;
     for (let i = start; i < t.length; i++) {
@@ -267,15 +304,39 @@ export function extractJson(text) {
             continue;
         }
         if (c === '"') inString = true;
-        else if (c === '{') depth++;
-        else if (c === '}' && --depth === 0) {
-            try {
-                return JSON.parse(t.slice(start, i + 1));
-            } catch {
-                // Trailing commas are the commonest slip.
-                try { return JSON.parse(t.slice(start, i + 1).replace(/,\s*([}\]])/g, '$1')); } catch { return null; }
+        else if (c === '{' || c === '[') open.push(c === '{' ? '}' : ']');
+        else if (c === '}' || c === ']') {
+            open.pop();
+            if (!open.length) {
+                const parsed = tryParse(t.slice(start, i + 1));
+                return parsed && typeof parsed === 'object' ? parsed : null;
             }
         }
+    }
+    // Never closed: close what is open.
+    const close = (body, stack, quoted) => `${body}${quoted ? '"' : ''}${[...stack].reverse().join('')}`;
+    const body = t.slice(start).trimEnd();
+    // Ended after a finished value: just close it. Ended inside a string:
+    // that value was cut off - drop it below rather than keep half of it.
+    if (!inString) {
+        const whole = tryParse(close(body, open, false));
+        if (whole && typeof whole === 'object') return whole;
+    }
+    // Cut off mid-value: drop the unfinished last member and close.
+    const lastComma = body.lastIndexOf(',');
+    if (lastComma > 0) {
+        const head = body.slice(0, lastComma);
+        const stack = [];
+        let q = false;
+        let esc = false;
+        for (const c of head) {
+            if (q) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') q = false; continue; }
+            if (c === '"') q = true;
+            else if (c === '{' || c === '[') stack.push(c === '{' ? '}' : ']');
+            else if (c === '}' || c === ']') stack.pop();
+        }
+        const salvaged = tryParse(close(head, stack, q));
+        if (salvaged && typeof salvaged === 'object') return salvaged;
     }
     return null;
 }
@@ -306,7 +367,7 @@ function matchKey(rawKey, wanted) {
 // object.
 export function plainText(text, label = '') {
     let t = String(text ?? '').replace(/```[a-z]*\n?/gi, '').replace(/```/g, '').trim();
-    const json = t.startsWith('{') ? extractJson(t) : null;
+    const json = t.startsWith('{') ? readJson(t) : null;
     if (json && typeof json === 'object') {
         const values = Object.values(json).map(textOf).filter(Boolean);
         if (values.length) t = values.join('\n\n');
@@ -328,7 +389,7 @@ export function parseGenerationResponse(text, { fields = [], keys = [], refLooku
     const dropped = [];
 
     // One field: plain text (or whatever the model sent instead).
-    if (plain || (keys.length === 1 && !extractJson(text))) {
+    if (plain || (keys.length === 1 && !readJson(text))) {
         const def = wanted[0];
         if (!def) return { values: {}, dropped, error: 'Nothing was asked for.' };
         const raw = plainText(text, def.label);
@@ -337,7 +398,7 @@ export function parseGenerationResponse(text, { fields = [], keys = [], refLooku
         return { values: { [def.name]: value }, dropped, error: null };
     }
 
-    const json = extractJson(text);
+    const json = readJson(text);
     if (!json || typeof json !== 'object' || Array.isArray(json)) return { values: {}, dropped, error: 'The model did not answer with the JSON it was asked for.' };
     const values = {};
     const entries = Object.entries(json);

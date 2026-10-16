@@ -16,8 +16,8 @@ laid out, and [api.md](api.md) for the public API.
 - **Curator** (optional, recommended) injects the guidance into the prompt.
   Without it the guidance is still written to `sb__guidance`, usable through
   State Engine's macros (e.g. in a World Info entry).
-- **Archivist** (optional) - not used yet; memories feed the guidance in a
-  later phase.
+- **Archivist** (optional) - memories and relationships on each sheet and in
+  generation; relationships between characters present in the guidance.
 
 ## Getting started
 
@@ -42,6 +42,12 @@ laid out, and [api.md](api.md) for the public API.
      your own prose), and writes the text for you. You
      review everything before it is saved. Choose a separate (bigger) model
      in the drawer's *Generation* section.
+   - **Import** - read SillyTavern lorebooks into the library: entries
+     about objects you already have fill their blank fields, the rest become
+     new objects, using only the entries' own words. Review the plan, then
+     apply. Optionally canon-lock what it touches.
+   - **Relationships** (on a sheet) - links in the setting, plus the
+     relationships the story has formed, from Archivist.
    - **Image** (on a sheet) - a prompt written for Midjourney (or Stable
      Diffusion / natural language) in your chosen style, to copy out. Then
      upload, paste or link the picture, or generate one with SillyTavern's

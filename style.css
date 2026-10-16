@@ -270,6 +270,34 @@
 .sb-chip-on { background: color-mix(in srgb, var(--sb-gold) 25%, transparent); }
 .sb-chip-absent { background: rgba(224, 85, 85, 0.18); text-decoration: line-through; }
 .sb-chip-rule { background: rgba(120, 140, 220, 0.2); cursor: help; }
+
+/* import */
+.sb-import { display: flex; flex-direction: column; gap: 10px; max-width: 900px; }
+.sb-import h3 { margin: 0; display: flex; gap: 8px; align-items: center; }
+.sb-booklist { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
+.sb-book { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--sb-line); border-radius: 8px; cursor: pointer; }
+.sb-book.on { border-color: var(--sb-gold); background: color-mix(in srgb, var(--sb-gold) 10%, transparent); }
+.sb-option { align-items: flex-start; }
+.sb-progress { height: 8px; border-radius: 4px; background: var(--sb-softer); overflow: hidden; }
+.sb-progress-bar { height: 100%; background: var(--sb-gold); transition: width 0.3s; }
+.sb-proposals { display: flex; flex-direction: column; gap: 4px; }
+.sb-proposal { display: flex; gap: 10px; align-items: flex-start; padding: 6px 10px; border: 1px solid var(--sb-line); border-left: 4px solid var(--sb-accent); border-radius: 8px; background: var(--sb-soft); }
+.sb-proposal input { margin-top: 4px; }
+.sb-proposal-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.sb-proposal-main i { color: var(--sb-accent); }
+.sb-proposal-desc { font-size: 0.86em; opacity: 0.8; }
+.sb-off-row { opacity: 0.5; }
+.sb-act-create { background: rgba(76, 175, 80, 0.35); }
+.sb-act-fill { background: rgba(74, 144, 217, 0.35); }
+.sb-skipped summary { cursor: pointer; opacity: 0.75; }
+.sb-dd { display: flex; gap: 6px; align-items: flex-start; }
+.sb-dd-value { flex: 1; min-width: 0; }
+.sb-dd .sb-spark, .sb-section-title .sb-spark { opacity: 0.55; }
+.sb-dd:hover .sb-spark, .sb-section-title:hover .sb-spark { opacity: 1; }
+.sb-rel { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 8px; background: var(--sb-soft); }
+.sb-pol { font-weight: 600; }
+.sb-pol-neg { color: #e07a7a; }
+.sb-pol-pos { color: #7ac987; }
 .sb-chip-rule i { color: #9fb0ff; }
 .sb-chip-absent i { color: #e06060; }
 .sb-chipselect-absent .sb-chipopt.on { background: rgba(224, 85, 85, 0.25); border-color: #e06060; text-decoration: line-through; }

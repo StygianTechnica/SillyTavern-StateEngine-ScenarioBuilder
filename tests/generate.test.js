@@ -198,3 +198,35 @@ describe('world limits in prompts and guidance', () => {
         expect(tight.text).toContain('arcane');
     });
 });
+
+describe('reliability', () => {
+    it('reads an answer that stops before its closing brace (your Soul Reaver reply)', async () => {
+        const { parseGenerationResponse } = await import('../src/generate/prompt.js');
+        const creatureFields = [{ name: 'traits', label: 'Traits', kind: 'list' }, { name: 'danger_level', label: 'Danger level', kind: 'enum', values: ['Low', 'High'] }];
+        const reply = '{\n  "name": "Soul Reaver",\n  "description": "A grotesque creature.",\n  "traits": ["Immune to physical damage", "Silent"],\n  "danger_level": "High",\n  "location": "The Old Interstate"';
+        const { values, error } = parseGenerationResponse(reply, { fields: creatureFields, keys: ['name', 'description', 'traits', 'danger_level'] });
+        expect(error).toBeNull();
+        expect(values).toMatchObject({ name: 'Soul Reaver', description: 'A grotesque creature.', danger_level: 'High' });
+        expect(values.traits).toHaveLength(2);
+    });
+
+    it('keeps the finished values of an answer cut off mid-value', () => {
+        expect(extractJson('{"name": "Kess", "description": "A smug')).toEqual({ name: 'Kess' });
+    });
+
+    it('uses a plugged-in JSON reader first, falling back to its own', async () => {
+        const { setJsonParser, parseGenerationResponse } = await import('../src/generate/prompt.js');
+        setJsonParser(() => ({ role: 'from the plug' }));
+        expect(parseGenerationResponse('garbage', { fields, keys: ['role', 'personality'] }).values.role).toBe('from the plug');
+        setJsonParser(() => { throw new Error('boom'); });
+        expect(parseGenerationResponse('{"role": "local"}', { fields, keys: ['role', 'personality'] }).values.role).toBe('local');
+        setJsonParser(null);
+    });
+
+    it('can ask for just a name, avoiding existing ones', () => {
+        const { user, keys, plain } = buildGenerationPrompt({ task: 'field', targetField: 'name', type, fields, creating: true, brief: 'a ghost', similarNames: ['Mira'], entry: { name: '', values: {} } });
+        expect([keys, plain]).toEqual([['name'], true]);
+        expect(user).toContain('Reply with just the name. Do not reuse any of these existing names: Mira.');
+        expect(user).toContain('What the user wants: a ghost');
+    });
+});

@@ -21,6 +21,7 @@
 //         origin,                   '' | 'user' | 'story' | 'import' - where it came from
 //         canonLocked,              never add generated detail to this entry
 //         generated: [field],       fields last filled by generation (SB-136)
+//         source,                   where an imported entry came from: "lorebook:<book>#<uid>" (SB-155)
 //         excluded,                 never selected for guidance (SB-401)
 //         environment: { climate, lighting, rules }   inherited down the tree (SB-142)
 //     } },
@@ -80,7 +81,7 @@ export function emptyOverview() {
 }
 
 export function emptyEntryMeta() {
-    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, generated: [], environment: { climate: '', lighting: '', rules: '' } };
+    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, generated: [], source: '', environment: { climate: '', lighting: '', rules: '' } };
 }
 
 export function normalizeEntryMeta(meta) {
@@ -95,6 +96,7 @@ export function normalizeEntryMeta(meta) {
         origin: ['user', 'story', 'import'].includes(m.origin) ? m.origin : '',
         canonLocked: m.canonLocked === true,
         generated: strList(m.generated),
+        source: str(m.source),
         environment: { climate: str(env.climate), lighting: str(env.lighting), rules: str(env.rules) },
     };
 }

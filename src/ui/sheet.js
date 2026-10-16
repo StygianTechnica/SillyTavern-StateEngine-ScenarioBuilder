@@ -19,6 +19,7 @@ import { safeImageSrc } from '../images/attach.js';
 import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
 import { baselineFields } from '../library/fields.js';
+import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { sparkButton, fieldWithTools } from './controls.js';
 import { generateEntry, canGenerateFor } from '../generate/run.js';
 import { confirmAction } from './confirm.js';
@@ -187,9 +188,9 @@ export async function renderSheet(type, all) {
     const gate = canGenerateFor(settingId, isNew ? null : entry.id);
     const busy = ws.generating?.scope === 'sheet';
     if (ws.editing && ws.pendingGen) {
-        const task = ws.pendingGen;
+        const { task, field } = typeof ws.pendingGen === 'string' ? { task: ws.pendingGen, field: null } : ws.pendingGen;
         ws.pendingGen = null;
-        queueMicrotask(() => void runGen(task));
+        queueMicrotask(() => void runGen(task, field));
     }
     const topbar = h('div', { class: 'sb-sheet-top' },
         h('div', { class: 'sb-back', onclick: () => { if (ws.dirty) return void confirmAction('Leave without saving your changes?').then((ok) => ok && closeSheet()); closeSheet(); } },
@@ -301,6 +302,16 @@ function spark(fieldName, current) {
     });
 }
 
+// The sparkle in READ mode: switches to editing and writes (or enriches)
+// that one field, so the result can be checked before saving.
+function readSpark(fieldName, current) {
+    const gate = canGenerateFor(ws.ctx.settingId, genCtx?.isNew ? null : genCtx?.entry?.id);
+    return sparkButton(() => { ws.editing = true; ws.pendingGen = { task: 'field', field: fieldName }; rerender(); }, {
+        title: isEmpty(current) ? 'Write this field' : 'Enrich - keep it and add more',
+        disabledReason: gate.ok ? (ws.generating ? 'Writing…' : '') : gate.reason,
+    });
+}
+
 const genClass = (name) => (ws.generatedFields?.has(name) ? 'sb-generated' : '');
 
 async function sheetBody(tab, c) {
@@ -322,7 +333,9 @@ function overviewTab({ type, entry, isNew, defs, doc }) {
             !isNew && type.scope === 'world' ? field('Current description (this chat)', textArea('narrative', ws.draft.narrative, 4, { placeholder: 'Only when the story has changed it - a forest after the fire. Replaces the description above in this chat.' }),
                 'Used instead of the description in this chat\'s guidance and image prompts. Leave empty to use the description.') : null);
     }
-    const base = entry.description ? h('div', { class: 'sb-prose' }, entry.description) : h('div', { class: 'sb-muted' }, 'No description yet. Click Edit to write one.');
+    const base = h('div', {},
+        h('div', { class: 'sb-section-title' }, 'Description', h('span', { class: 'sb-spacer' }), readSpark('description', entry.description)),
+        entry.description ? h('div', { class: 'sb-prose' }, entry.description) : h('div', { class: 'sb-muted' }, 'No description yet - the sparkle writes one.'));
     const glance = defs.filter((d) => !isEmpty(entry.base?.[d.name] ?? entry[d.name]) && d.kind !== 'refs' && d.kind !== 'ref').slice(0, 4);
     return h('div', { class: 'sb-tabpane' },
         narrative ? h('div', { class: 'sb-narrative' },
@@ -357,7 +370,11 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
             defs.length ? h('div', { class: 'sb-fieldgrid' }, defs.map((d) => fieldWithTools(d.label, fieldControl(d, all), [d.kind === 'boolean' ? null : spark(d.name, ws.draft.fields[d.name])], null, genClass(d.name)))) : h('small', { class: 'sb-hint' }, 'This type has no extra fields in the setting.'),
             envCard);
     }
-    const rows = defs.map((d) => [d, fieldDisplay(d, entry.base?.[d.name] ?? entry[d.name], names)]).filter(([, v]) => v !== null);
+    // Every field, empty ones too - each with a sparkle to write or enrich it.
+    const rows = defs.map((d) => {
+        const value = entry.base?.[d.name] ?? entry[d.name];
+        return [d, fieldDisplay(d, value, names) ?? h('span', { class: 'sb-muted' }, 'not written yet'), value];
+    });
     let env = null;
     if (type.id === 'location' && !isNew) {
         const envById = Object.fromEntries(Object.entries(getSettingDoc(settingId).entries).map(([id, m]) => [id, m.environment]));
@@ -370,11 +387,11 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
         }
     }
     return h('div', { class: 'sb-tabpane' },
-        rows.length ? h('dl', { class: 'sb-details' }, rows.flatMap(([d, v]) => [h('dt', {}, d.label), h('dd', {}, v)])) : h('div', { class: 'sb-muted' }, 'Nothing filled in yet. Click Edit to add details.'),
+        rows.length ? h('dl', { class: 'sb-details' }, rows.flatMap(([d, v, raw]) => [h('dt', {}, d.label), h('dd', { class: 'sb-dd' }, h('div', { class: 'sb-dd-value' }, v), d.kind === 'boolean' ? null : readSpark(d.name, raw))])) : h('div', { class: 'sb-muted' }, 'This type has no extra fields in the setting.'),
         env);
 }
 
-function relationsTab({ entry, isNew, allEntries, names, parents, defs }) {
+async function relationsTab({ entry, isNew, allEntries, names, parents, defs }) {
     if (isNew) return h('div', { class: 'sb-muted' }, 'Save the entry first.');
     const labels = new Map(defs.map((d) => [d.name, d.label]));
     const rel = relationsOf(entry, allEntries, parents, (typeId, f) => (typeId === entry.type ? labels.get(f) : null) ?? f.replace(/_/g, ' '));
@@ -391,9 +408,29 @@ function relationsTab({ entry, isNew, allEntries, names, parents, defs }) {
         ...rel.outgoing.map((o) => group(o.label, o.ids)),
         ...[...incoming.values()].map((g) => group(`Linked as "${g.label}" by`, g.ids)),
     ].filter(Boolean);
+    // What the story has made of it (Archivist's compiled relationships).
+    let story;
+    if (!hasArchivist()) {
+        story = h('div', { class: 'sb-muted' }, 'Install Archivist to see the relationships the story has formed.');
+    } else {
+        const rels = await storyRelationships(entry);
+        story = rels.length ? h('div', { class: 'sb-relgroup' }, rels.map((r) => {
+            const other = r.otherId && names.get(r.otherId) ? chip(r.otherId, names) : h('b', {}, r.otherName);
+            return h('div', { class: 'sb-rel' },
+                h('span', { title: r.direction === 'out' ? `How ${entry.name} sees them` : `How they see ${entry.name}` }, icon(r.direction === 'out' ? 'fa-arrow-right' : 'fa-arrow-left')),
+                other,
+                r.type ? h('span', { class: 'sb-chip' }, r.type) : null,
+                h('span', { class: `sb-pol ${r.polarity < 0 ? 'sb-pol-neg' : r.polarity > 0 ? 'sb-pol-pos' : ''}` }, `${r.polarityLabel} (${r.polarity > 0 ? '+' : ''}${r.polarity})`),
+                r.intensity ? h('small', { class: 'sb-hint' }, `${r.intensity} intensity`) : null,
+                r.trend ? h('small', { class: 'sb-hint' }, r.trend) : null,
+                r.text ? h('div', { class: 'sb-hint', style: 'flex-basis: 100%' }, r.text) : null);
+        })) : h('div', { class: 'sb-muted' }, 'No relationships compiled for it yet in this chat.');
+    }
     return h('div', { class: 'sb-tabpane' },
+        h('div', { class: 'sb-section-title' }, icon('fa-link'), ' In the setting'),
         sections.length ? sections : h('div', { class: 'sb-muted' }, 'No links yet. Reference fields (owner, members, location…) in Details create them.'),
-        h('small', { class: 'sb-hint' }, 'Allies, rivals and family from the story will appear here once memories are linked in (roadmap).'));
+        h('div', { class: 'sb-section-title' }, icon('fa-heart-crack'), ' From the story'),
+        story);
 }
 
 async function storyTab({ entry, isNew, doc }) {

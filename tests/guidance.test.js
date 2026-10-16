@@ -83,3 +83,10 @@ describe('state block', () => {
         expect(buildStateBlock({})).toBe('');
     });
 });
+
+describe('relationships in the cast', () => {
+    it('adds how present characters feel toward each other', () => {
+        const { text } = buildGuidance({ cast: [{ name: 'Mira', role: 'innkeeper', relations: ['toward Tobin: debtor, wary, worsening'] }], budget: 600 });
+        expect(text).toContain('- Mira (innkeeper): Toward Tobin: debtor, wary, worsening.');
+    });
+});

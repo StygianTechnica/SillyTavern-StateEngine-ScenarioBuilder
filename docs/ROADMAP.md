@@ -61,8 +61,9 @@ These came after spec v0.5 and should be folded into its next revision.
 - [ ] Relationship authoring on the sheet: add allies, rivals, family and
   employer as typed links (Scenario Builder metadata where State Engine has no
   field, SB-110), plus starting relationships (SB-112).
-- [ ] Relationships from Archivist's compiled memory (`getRelationship`,
-  dossiers): type, polarity, intensity, trend.
+- [x] Relationships from Archivist's compiled memory (dossiers): shown on the
+  sheet, given to generation, and - between the characters present - in the
+  guidance's cast lines.
 - [ ] Image gallery per entry, perhaps using State Engine object *variants*
   (each variant can carry its own image), so a place can have "before" and
   "after the fire" pictures.
@@ -109,6 +110,9 @@ Done: per-field write/enrich, Fill empty, Enrich all, Generate a new entry
 dice for world type / magic / era / tone / themes, automatic enrichment of
 newly confirmed objects, a separate generation connection profile.
 
+- [x] **State Engine change (done, uncommitted in that repo):** a public JSON
+  API, `parseModelJson` / `parseModelJsonArray` (spec section 25), so
+  Scenario Builder reads answers with State Engine's own repair.
 - [ ] **State Engine change:** expose its background-LLM call (with the
   per-connection queue) through the API, so generation shares State Engine's
   queue instead of running beside it. Today `src/generate/llm.js` calls the
@@ -133,13 +137,22 @@ newly confirmed objects, a separate generation connection profile.
 
 ## Lorebooks (spec 6.6, 6.7 - phase 0.4)
 
-- [ ] World Info import into objects, through an Archivist-style pipeline
-  (SB-150..157, OPEN-12) - on State Engine **independent presets** (chunked,
-  resumable, background, status), unlike interactive generation.
-- [ ] **Import option: no added detail.** When reading a lorebook, the user can
-  turn off enrichment for what it creates: mark the setting canon-only and/or
-  canon-lock every imported entry, so a published canon is not embellished
-  with invented details. Imported entries get `origin: 'import'`.
+Done: the Import tab - choose books, entries matched to existing objects
+(title, keys, aliases, or an earlier import of the same entry) fill their
+BLANK fields; unmatched entries are classified and created; extraction uses
+only the entry's words; a plan to review before anything changes; options
+to canon-lock what the import touches and mark the setting canon-only;
+places put inside the place an entry names; `origin: 'import'` and the
+source entry recorded (SB-155). It runs on Scenario Builder's own model
+calls (one entry at a time, retry, and the entry text as a fallback).
+
+- [ ] Run large books on State Engine independent presets (resumable across
+  reloads, SB-157) instead of in-page.
+- [ ] Re-import that updates entries an earlier import created (today it
+  only fills blanks again).
+- [ ] Change an entry's kind in the plan (today: untick it, or fix the type
+  after import).
+- [ ] Memories and relationships from lorebook text (SB-153/154, OPEN-14).
 - [ ] Narrative and structured lorebook export with round trip (SB-160..164).
 - [ ] Lore-sourced memories for Archivist (SB-154, OPEN-14 - needs an
   Archivist design).

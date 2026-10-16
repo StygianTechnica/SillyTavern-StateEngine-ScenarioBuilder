@@ -21,6 +21,9 @@ src/
   guidance/                  budget.js, build.js (pure), sync.js (gather + write outputs)
   generate/                  prompt.js (pure: generation prompts, answer parsing/validation),
                              run.js (context gathering), llm.js (the one model call), enrich.js (background queue)
+  import/                    lorebook.js (pure: read entries, match, classify/extract prompts), run.js (analyse -> plan -> apply)
+  generate/json.js           plugs in State Engine's parseModelJson when available
+  library/story-relations.js relationships from Archivist dossiers
   library/intake.js          takes newly confirmed objects into the library; library/fields.js, world-options.js
   images/                    prompt.js (pure: Midjourney / SD / natural prompts), attach.js (upload, paste, Image Generation hand-off)
   state/narrative.js         the per-chat "current description" of an object

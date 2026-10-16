@@ -19,6 +19,8 @@ import { setEditingCheck, ENRICH_EVENT } from '../generate/enrich.js';
 import { renderCatalog } from './catalog.js';
 import { renderGraph } from './graph.js';
 import { renderScene, renderReview, renderHistory, renderPreview } from './panels.js';
+import { renderImport } from './import-panel.js';
+import { IMPORT_EVENT } from '../import/run.js';
 import { confirmAction } from './confirm.js';
 import { ws, setRedraw, rerender } from './ws.js';
 import { h, icon, select, toast } from './dom.js';
@@ -29,6 +31,7 @@ const TABS = Object.freeze([
     ['scene', 'Scene', 'fa-clapperboard'],
     ['review', 'Review', 'fa-seedling'],
     ['history', 'History', 'fa-clock-rotate-left'],
+    ['import', 'Import', 'fa-file-import'],
     ['preview', 'Preview', 'fa-eye'],
 ]);
 
@@ -105,6 +108,8 @@ function listen() {
     for (const event of [SCENARIO_CHANGED_EVENT, LIBRARY_CHANGED_EVENT, DRIFT_CHANGED_EVENT]) eventSource.on(event, later);
     eventSource.on(GUIDANCE_CHANGED_EVENT, () => { if (ws.tab === 'preview') later(); });
     eventSource.on(ENRICH_EVENT, later);
+    // The import's progress redraws the Import tab (no unsaved input there).
+    eventSource.on(IMPORT_EVENT, () => { if (ws.tab === 'import') rerender(); });
     // Background enrichment holds off an entry the user is editing.
     setEditingCheck((id) => ws.open && ws.editing && ws.entryId === id);
     eventSource.on(eventTypes.CHAT_CHANGED, async () => {
@@ -135,7 +140,7 @@ async function render() {
     lastView = view;
     let body;
     try {
-        body = await ({ graph: renderGraph, scene: renderScene, review: renderReview, history: renderHistory, preview: renderPreview }[ws.tab] ?? renderCatalog)();
+        body = await ({ graph: renderGraph, import: renderImport, scene: renderScene, review: renderReview, history: renderHistory, preview: renderPreview }[ws.tab] ?? renderCatalog)();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not render the workspace', err);
         body = h('div', { class: 'sb-error' }, `Something went wrong: ${err?.message ?? err}`);

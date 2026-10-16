@@ -127,6 +127,7 @@ function castLine(c, compact) {
     if (clean(c.mood)) bits.push(`Mood: ${lower(c.mood)}.`);
     if (clean(c.intent)) bits.push(`Intends: ${sentence(truncate(c.intent, 120))}`);
     if (clean(c.condition)) bits.push(`Condition: ${sentence(truncate(c.condition, 120))}`);
+    if (c.relations?.length) bits.push(`${c.relations.map((r) => sentence(truncate(r, 120))).join(' ')}`.replace(/^toward/, 'Toward'));
     if (bits.length) line += `: ${bits.join(' ')}`;
     return line;
 }
