@@ -7,6 +7,7 @@
 // docs/how-to-extend.md for where everything else actually goes once
 // you start building.
 
+import { EXTENSION_ID, NAMESPACE, LOG_PREFIX } from './constants.js';
 import { ensureStateEngineAvailable, warnStateEngineMissing } from './api/dependency-check.js';
 import { claimNamespace } from './api/namespace.js';
 import { registerWithStateEngine } from './api/registration.js';
@@ -16,18 +17,6 @@ import { declareCapabilities } from './api/capabilities.js';
 // EXTENSION IDENTITY - rename these before building on this template.
 // See docs/README.md, "Renaming the namespace".
 // ---------------------------------------------------------------------
-
-// Must be unique across every extension that talks to the State Engine
-// API on this SillyTavern install - it is how the State Engine tells
-// your extension's calls apart from anyone else's. Convention: match
-// your extension's own folder/repo name.
-const EXTENSION_ID = 'ScenarioBuilder';
-
-// Prefixes every variable and preset your extension creates through the
-// State Engine (e.g. a variable named "mood" is stored as
-// "myExtension__mood"). Letters and digits only, starting with a
-// letter - see the State Engine API Reference, "Namespace Model".
-const NAMESPACE = 'sb';
 
 // Plain strings describing what your extension provides, e.g.
 // "ui.panel" or "data.inventory" - leave empty until you actually
