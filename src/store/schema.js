@@ -6,7 +6,10 @@
 // (spec SB-601). Object data is NOT here (SB-011): only ids plus
 // Scenario Builder's own metadata.
 //   { schemaVersion,
-//     overview: { premise, worldType, magicLevel, tone, themes, era, rules },
+//     overview: { premise, worldType, tone, themes, era, rules,
+//                 magic: { presence, power, kinds, absent, restrictions, notes },
+//                 tech: { level, levelFromEra, flavors, spread, absent, notes } },
+//                 (src/library/world-options.js; the old single magicLevel migrates)
 //     canonOnly,                    the setting is fixed canon (e.g. from a published
 //                                   lorebook): nothing generated is added to its
 //                                   entries, and story inventions wait for review
@@ -23,7 +26,8 @@
 //     } },
 //     groups: [{ id, name, entryIds: [] }],
 //     tracked: [objectId],          objects Scenario Builder has taken in (src/library/intake.js)
-//     trackedReady }                false until the first intake pass has seeded `tracked`
+//     trackedReady,                 false until the first intake pass has seeded `tracked`
+//     graph: { positions: { [objectId]: { x, y } } } }   where the user dragged nodes in the graph view
 //
 // CHAT DOCUMENT - per-chat state (spec SB-603), keyed by chat key.
 //   { schemaVersion, settingId,
@@ -48,6 +52,8 @@
 //     history: [historyEntry],              every automated or manual change (SB-226)
 //     turn }                                AI replies reconciled so far
 
+import { emptyMagic, emptyTech, normalizeMagic, normalizeTech } from '../library/world-options.js';
+
 export const SETTING_SCHEMA_VERSION = 1;
 export const CHAT_SCHEMA_VERSION = 1;
 
@@ -67,8 +73,10 @@ const isObject = (value) => !!value && typeof value === 'object' && !Array.isArr
 const str = (value) => (typeof value === 'string' ? value : '');
 const strList = (value) => (Array.isArray(value) ? [...new Set(value.filter((v) => typeof v === 'string' && v))] : []);
 
+const OVERVIEW_TEXT_KEYS = Object.freeze(['premise', 'worldType', 'tone', 'themes', 'era', 'rules']);
+
 export function emptyOverview() {
-    return { premise: '', worldType: '', magicLevel: '', tone: '', themes: '', era: '', rules: '' };
+    return { premise: '', worldType: '', tone: '', themes: '', era: '', rules: '', magic: emptyMagic(), tech: emptyTech() };
 }
 
 export function emptyEntryMeta() {
@@ -92,20 +100,32 @@ export function normalizeEntryMeta(meta) {
 }
 
 export function emptySettingDoc() {
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, graph: { positions: {} } };
 }
 
 // Brings any stored setting document (or nothing) to the current shape.
+function normalizePositions(value) {
+    const out = {};
+    if (!isObject(value)) return out;
+    for (const [id, p] of Object.entries(value)) {
+        if (isObject(p) && Number.isFinite(p.x) && Number.isFinite(p.y)) out[id] = { x: p.x, y: p.y };
+    }
+    return out;
+}
+
 export function normalizeSettingDoc(doc) {
     const d = isObject(doc) ? doc : {};
-    const overview = { ...emptyOverview() };
-    if (isObject(d.overview)) for (const key of Object.keys(overview)) overview[key] = str(d.overview[key]);
+    const o = isObject(d.overview) ? d.overview : {};
+    const overview = emptyOverview();
+    for (const key of OVERVIEW_TEXT_KEYS) overview[key] = str(o[key]);
+    overview.magic = normalizeMagic(o.magic, str(o.magicLevel));
+    overview.tech = normalizeTech(o.tech);
     const entries = {};
     if (isObject(d.entries)) for (const [id, meta] of Object.entries(d.entries)) entries[id] = normalizeEntryMeta(meta);
     const groups = Array.isArray(d.groups)
         ? d.groups.filter(isObject).filter((g) => typeof g.id === 'string' && g.id).map((g) => ({ id: g.id, name: str(g.name) || 'Group', entryIds: strList(g.entryIds) }))
         : [];
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true, graph: { positions: normalizePositions(d.graph?.positions) } };
 }
 
 export function emptyCanonical() {

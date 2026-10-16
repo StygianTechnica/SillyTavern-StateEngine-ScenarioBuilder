@@ -11,11 +11,21 @@
 // Whatever already exists is treated as canon: kept, built on, never
 // contradicted (SB-139 "what the user supplies is fixed canon").
 
+import { describeMagic, describeTech } from '../library/world-options.js';
+
 export const DETAIL_LEVELS = Object.freeze({
     brief: 'Keep every text field short: one or two sentences.',
     standard: 'Text fields: two to four vivid sentences.',
     rich: 'Text fields: a full, evocative paragraph each, rich in concrete detail.',
 });
+
+// The setting's magic and technology: descriptive lines, and hard limits
+// (what does not exist) that every prompt states separately and firmly.
+function worldLines(o) {
+    const magic = describeMagic(o?.magic);
+    const tech = describeTech(o?.tech);
+    return { lines: [...magic.lines, ...tech.lines].map((l) => cut(l, 600)), limits: [...magic.limits, ...tech.limits] };
+}
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
@@ -81,13 +91,15 @@ export function buildGenerationPrompt(input) {
     const setting = [
         o.premise ? `Premise: ${cut(o.premise, 600)}` : '',
         o.worldType ? `World type: ${o.worldType.replace(/_/g, ' ')}` : '',
-        o.magicLevel ? `Magic/technology level: ${o.magicLevel}` : '',
         o.tone ? `Tone: ${o.tone}` : '',
         o.themes ? `Themes: ${o.themes}` : '',
         o.era ? `Era: ${o.era}` : '',
+        ...worldLines(o).lines,
         o.rules ? `How the world works: ${cut(o.rules, 500)}` : '',
     ].filter(Boolean);
     parts.push(`# The setting\n${setting.length ? setting.join('\n') : '(Nothing set yet - invent freely, but stay consistent.)'}`);
+    const limits = worldLines(o).limits;
+    if (limits.length) parts.push(`# Hard limits - never break these\n${limits.map((l) => `- ${l}`).join('\n')}`);
 
     if (input.neighbours?.length) {
         parts.push(`# Related entries already in the setting\n${input.neighbours.slice(0, 16).map((n) => `- ${n.relation ? `${n.relation}: ` : ''}${n.name} (${n.type})${n.description ? ` - ${cut(n.description, 160)}` : ''}`).join('\n')}`);
@@ -135,8 +147,18 @@ export function buildGenerationPrompt(input) {
 
 const OVERVIEW_TEXT = Object.freeze({
     premise: { label: 'Premise', ask: 'the setting\'s premise: what this world is, what is at stake in it, and what kinds of stories happen there (one rich paragraph)' },
-    rules: { label: 'How the world works', ask: 'how the world works: magic, technology, power, law, taboos and their costs (a few concrete rules)' },
+    rules: { label: 'Society and law', ask: 'how society works: power, law, customs, taboos and their costs (a few concrete rules; magic and technology have their own fields)' },
+    magicNotes: { label: 'How magic works', ask: 'how magic works within the limits above: where it comes from, who can use it, what it costs, how common everyday versus great magic is' },
+    techNotes: { label: 'How technology works', ask: 'how technology works within the limits above: what exists, who makes and understands it, how it is spread, what it changes in daily life' },
 });
+
+// A front-page field's current text (magicNotes/techNotes live in the
+// overview's magic/tech objects).
+export function overviewValue(o, field) {
+    if (field === 'magicNotes') return o?.magic?.notes ?? '';
+    if (field === 'techNotes') return o?.tech?.notes ?? '';
+    return o?.[field] ?? '';
+}
 
 // The front page's text fields. input: { fields: ['premise' | 'rules'],
 // overview, contents: [{ type, names }], detail, brief }
@@ -145,15 +167,16 @@ export function buildOverviewPrompt({ fields, overview = {}, contents = [], deta
     const o = overview;
     const given = [
         o.worldType ? `World type: ${o.worldType.replace(/_/g, ' ')}` : '',
-        o.magicLevel ? `Magic/technology level: ${o.magicLevel}` : '',
         o.tone ? `Tone: ${o.tone}` : '',
         o.themes ? `Themes: ${o.themes}` : '',
         o.era ? `Era: ${o.era}` : '',
         o.premise ? `Premise: ${cut(o.premise, 900)}` : '',
+        ...worldLines(o).lines,
         o.rules ? `How the world works: ${cut(o.rules, 700)}` : '',
     ].filter(Boolean);
+    const limits = worldLines(o).limits;
     const known = contents.filter((c) => c.names.length).map((c) => `${c.type}: ${c.names.slice(0, 15).join(', ')}`);
-    const jobs = fields.map((f) => (o[f] ? `- "${f}": enrich ${OVERVIEW_TEXT[f].ask} - keep everything it already says and build on it` : `- "${f}": write ${OVERVIEW_TEXT[f].ask}`));
+    const jobs = fields.map((f) => (overviewValue(o, f) ? `- "${f}": enrich ${OVERVIEW_TEXT[f].ask} - keep everything it already says and build on it` : `- "${f}": write ${OVERVIEW_TEXT[f].ask}`));
     const system = [
         'You are a worldbuilding collaborator for a tabletop-style roleplaying setting.',
         'Everything already established is canon: keep it, build on it, never contradict it.',
@@ -161,6 +184,7 @@ export function buildOverviewPrompt({ fields, overview = {}, contents = [], deta
     ].join('\n');
     const user = [
         `# The setting so far\n${given.length ? given.join('\n') : '(Nothing chosen yet - invent a fresh, coherent world.)'}`,
+        limits.length ? `# Hard limits - never break these\n${limits.map((l) => `- ${l}`).join('\n')}` : '',
         known.length ? `# Already in the setting\n${known.join('\n')}` : '',
         `# Your task\nWrite the setting's front page.${brief ? `\nGuidance from the user: ${cut(brief, 400)}` : ''}\n${DETAIL_LEVELS[detail] ?? DETAIL_LEVELS.standard}`,
         `# Answer format\nOne JSON object with exactly these keys (each a string):\n${jobs.join('\n')}`,

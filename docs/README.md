@@ -36,14 +36,20 @@ laid out, and [api.md](api.md) for the public API.
    - **Generate** - every field on a sheet has a sparkle to write it (or
      enrich what is there); *Fill empty* and *Enrich all* do the whole entry;
      a chapter's *Generate* writes a new entry from your idea or as a
-     surprise. The front page has dropdowns and dice for world type, magic,
-     era, tone and themes, and writes the premise and rules for you. You
+     surprise. The front page has dropdowns and dice for world type, era, tone and
+     themes, separate Magic and Technology cards (what exists, what does
+     NOT exist, how common, how strong, the technology level from the era,
+     your own prose), and writes the text for you. You
      review everything before it is saved. Choose a separate (bigger) model
      in the drawer's *Generation* section.
    - **Image** (on a sheet) - a prompt written for Midjourney (or Stable
      Diffusion / natural language) in your chosen style, to copy out. Then
      upload, paste or link the picture, or generate one with SillyTavern's
      Image Generation extension.
+   - **Graph** - the whole setting as a map of who and what connects:
+     places nested in places, owners, members, related entries. Filter by
+     type or to what is in play; drag nodes where you want them (they stay);
+     click one to open its sheet. Also on the front page's Book/Graph toggle.
    - **Scene** - set the canonical location, who is present, time, weather,
      the scene title and premise.
    - **Preview** - the exact guidance text, its token count and why each

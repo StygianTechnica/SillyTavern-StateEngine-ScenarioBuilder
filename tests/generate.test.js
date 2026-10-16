@@ -1,5 +1,6 @@
 import { buildGenerationPrompt, parseGenerationResponse, extractJson, mergeGenerated } from '../src/generate/prompt.js';
-import { randomFor, eraGroups, splitList, joinList } from '../src/library/world-options.js';
+import { randomFor, eraGroups, splitList, joinList, describeMagic, describeTech, normalizeMagic, techForEra } from '../src/library/world-options.js';
+import { normalizeSettingDoc } from '../src/store/schema.js';
 
 const type = { id: 'character', label: 'Character', noun: 'character' };
 const fields = [
@@ -78,13 +79,81 @@ describe('world options', () => {
     it('rolls values constrained by what is set', () => {
         const zero = () => 0;
         expect(randomFor('era', { worldType: 'science_fiction' }, zero)).toBe('near future');
-        expect(randomFor('magicLevel', { worldType: 'fantasy' }, zero)).toBe('low');
-        expect(randomFor('magicLevel', { worldType: 'historical' }, zero)).toBe('none');
+        expect(randomFor('magic.presence', { worldType: 'fantasy' }, zero)).toBe('lost');
+        expect(randomFor('magic.presence', { worldType: 'historical' }, zero)).toBe('none');
+        expect(randomFor('tech.level', { era: 'victorian' }, zero)).toBe('tl5');
+        expect(randomFor('magic.kinds', { magic: { absent: ['divine'] } }, zero)).toEqual(['arcane']);
         expect(splitList(randomFor('tone', {}, zero))).toHaveLength(2);
     });
 
     it('orders era groups by world type and joins lists', () => {
         expect(eraGroups('modern')[0].key).toBe('modern');
         expect(joinList(['dark', ' dark', 'heroic'])).toBe('dark, heroic');
+    });
+});
+
+describe('magic and technology', () => {
+    it('states what exists and, as hard limits, what does not', () => {
+        const { lines, limits } = describeMagic({ presence: 'rare', power: 'worldbreaking', kinds: ['divine'], absent: ['arcane'], notes: 'Granted by gods at war.' });
+        expect(lines[0]).toBe('Magic - kinds that exist: divine; how widespread: rare; how strong it gets: world-breaking.');
+        expect(lines[1]).toBe('How magic works: Granted by gods at war.');
+        expect(limits.join(' ')).toContain('The only magic that exists is: divine');
+        expect(limits.join(' ')).toContain('do NOT exist in this world: arcane');
+    });
+
+    it('turns restriction rules into hard limits, with their meaning', () => {
+        const { limits } = describeMagic({ presence: 'uncommon', restrictions: ['Ritual required', 'Social limits', 'only on the full moon'] });
+        const rules = limits.find((l) => l.startsWith('Magic obeys these rules'));
+        expect(rules).toContain('ritual required (no spell can be cast without a ritual');
+        expect(rules).toContain('social limits (only a privileged group');
+        expect(rules).toContain('only on the full moon');
+    });
+
+    it('forbids magic entirely when there is none', () => {
+        expect(describeMagic({ presence: 'none' }).limits[0]).toContain('NO magic of any kind');
+    });
+
+    it('describes technology and how it is understood', () => {
+        const { lines, limits } = describeTech({ level: 'tl5', flavors: ['steampunk'], spread: 'imported', absent: ['gunpowder'] });
+        expect(lines[0]).toBe('Technology - level: TL5 Industrial Revolution (mass production, steam power, the telegraph); flavour: steampunk; spread: adopted from outside - used, not understood.');
+        expect(limits[0]).toBe('Technology stays at TL5 Industrial Revolution: nothing from a later tech level beyond the imported or relic technology described.');
+        expect(limits.join(' ')).toContain('gunpowder');
+        expect(techForEra('Age of Sail')).toBe('tl4');
+        expect(techForEra('present day')).toBe('tl8');
+    });
+
+    it('moves older tech levels onto the TL scale', async () => {
+        const { normalizeTech } = await import('../src/library/world-options.js');
+        expect(normalizeTech({ level: 'gunpowder' }).level).toBe('tl4');
+        expect(normalizeTech({ level: 'information' }).level).toBe('tl8');
+        expect(normalizeTech({ level: 'tl12' }).level).toBe('tl12');
+    });
+
+    it('migrates the old single magic/technology level', () => {
+        expect(normalizeMagic(undefined, 'high')).toMatchObject({ presence: 'common', power: 'mighty' });
+        const doc = normalizeSettingDoc({ overview: { premise: 'x', magicLevel: 'none' } });
+        expect(doc.overview.magic.presence).toBe('none');
+        expect('magicLevel' in doc.overview).toBe(false);
+    });
+});
+
+describe('world limits in prompts and guidance', () => {
+    const godWar = { premise: 'Gods at war.', magic: { presence: 'rare', kinds: ['divine'], absent: ['arcane'] }, tech: { level: 'tl3', absent: ['gunpowder'] } };
+
+    it('states hard limits in every generation prompt', () => {
+        const { user } = buildGenerationPrompt({ task: 'create', type, fields, overview: godWar });
+        expect(user).toContain('# Hard limits - never break these');
+        expect(user).toContain('do NOT exist in this world: arcane');
+        expect(user).toContain('gunpowder');
+    });
+
+    it('keeps the limits in the guidance even when the overview is shortened', async () => {
+        const { buildGuidance } = await import('../src/guidance/build.js');
+        const full = buildGuidance({ overview: godWar, budget: 2000 }).text;
+        expect(full).toContain('World limits:');
+        expect(full).toContain('arcane');
+        const tight = buildGuidance({ overview: { ...godWar, premise: 'x'.repeat(900), rules: 'y'.repeat(900) }, location: { path: ['Keep'] }, budget: 160 });
+        expect(tight.sections.find((s) => s.key === 'overview').mode).toBe('compact');
+        expect(tight.text).toContain('arcane');
     });
 });

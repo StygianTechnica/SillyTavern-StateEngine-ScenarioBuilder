@@ -213,8 +213,29 @@ export async function deleteEntry(chatId, settingId, id) {
             if (meta.parentId === id) meta.parentId = next[childId] ?? null;
         }
         for (const group of doc.groups) group.entryIds = group.entryIds.filter((e) => e !== id);
+        delete doc.graph.positions[id];
     });
     return true;
+}
+
+// ---- the graph view
+
+// Where the user dragged nodes: { [id]: { x, y } }.
+export function getGraphPositions(settingId) {
+    return getSettingDoc(settingId).graph.positions;
+}
+
+// Pins a node (null unpins it).
+export function setGraphPosition(settingId, id, position) {
+    updateSettingDoc(settingId, (doc) => {
+        if (position) doc.graph.positions[id] = { x: Math.round(position.x), y: Math.round(position.y) };
+        else delete doc.graph.positions[id];
+    });
+}
+
+// Forgets every dragged position, so the layout starts fresh.
+export function clearGraphPositions(settingId) {
+    updateSettingDoc(settingId, (doc) => { doc.graph.positions = {}; });
 }
 
 // ---- overview

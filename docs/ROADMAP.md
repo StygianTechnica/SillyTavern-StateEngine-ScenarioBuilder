@@ -22,6 +22,17 @@ These came after spec v0.5 and should be folded into its next revision.
   in the setting*, and **auto-enriched** (empty fields only) when that is on.
   Scenario Builder's own State Engine notification covers only that list and
   any open questions; its button opens the Review tab.
+- **Magic and technology are described separately** (replaces one "tech or
+  magic level", SB-139a). Magic: which kinds exist, which kinds do NOT exist,
+  how widespread, how powerful, **rules that restrict it** (after GURPS
+  Magic's restrictions: low mana, ritual or ceremony required, power ceiling,
+  social limits, outlawed, costly... plus the user's own), and free prose. Technology: level on a GURPS-style
+  TL0-TL15 scale (TL8 added for the information age; suggested from the era
+  until the user picks one; each level's defining examples go to the model), flavour, how it is spread and
+  understood (e.g. adopted from outside and not understood), what does not
+  exist, and prose. What does not exist is a **hard limit**: stated
+  separately in every generation prompt and kept in the guidance even when
+  the overview is shortened.
 - **Canon only.** A setting can be marked canon-only (front page switch) for
   fixed, published canon. Then no generated detail is added to its entries,
   and the story's inventions wait in Review instead of being adopted. Single
@@ -40,12 +51,13 @@ These came after spec v0.5 and should be folded into its next revision.
 
 ## Catalog UI (iterating - "a fun place to do worldbuilding")
 
-- [ ] **Graph view** (wanted). Nodes are entries, edges are relationships
-  (reference fields, related ids, the location tree, later Archivist
-  relationships). Click a node to open its sheet; drag to arrange; optionally
-  draw an edge to create a reference. Likely an SVG force layout with no
-  dependency; filters by type and by "in play". Builds on
-  `library/relations.js`.
+- [x] **Graph view** - done (`ui/graph.js`, `ui/graph-layout.js`): a Graph
+  workspace tab and a Book/Graph toggle on the front page; type and "in play
+  only" filters; drag to pin (saved per setting), pan, zoom, hover to light
+  up neighbours, click to open a sheet.
+- [ ] Graph, next: draw an edge between two nodes to create a reference;
+  Archivist relationships (allies, rivals, family) as edges; edge labels on
+  the canvas; pinch-zoom on touch screens; group/cluster by region.
 - [ ] Relationship authoring on the sheet: add allies, rivals, family and
   employer as typed links (Scenario Builder metadata where State Engine has no
   field, SB-110), plus starting relationships (SB-112).
@@ -64,6 +76,15 @@ These came after spec v0.5 and should be folded into its next revision.
 - [ ] Keyboard navigation (arrows through cards, Enter to open, E to edit).
 - [ ] Remember the window's last tab/chapter/sheet across reloads.
 - [ ] Map-like outline for locations (SB-141).
+
+## World definition
+
+- [ ] Per-region or per-faction magic and technology (a technologically
+  advanced empire next to a backward one; magic only in one land) - the
+  location tree's inherited environment is the natural place.
+- [ ] Image prompts that respect world limits (e.g. Midjourney `--no` with
+  absent magic or technology).
+- [ ] Final enumerations and custom values (OPEN-15).
 
 ## Images
 

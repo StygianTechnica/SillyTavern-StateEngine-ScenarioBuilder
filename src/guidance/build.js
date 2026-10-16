@@ -11,7 +11,7 @@
 
 import { REFERENCE_HEADER } from '../constants.js';
 import { fitToBudget, estimateTokens } from './budget.js';
-import { WORLD_TYPES, CAPABILITY_LEVELS } from '../library/world-options.js';
+import { WORLD_TYPES, describeMagic, describeTech } from '../library/world-options.js';
 
 const labelOf = (list, id) => list.find(([key]) => key === id)?.[1] ?? id;
 
@@ -68,13 +68,21 @@ function overviewSection(overview) {
     if (clean(o.premise)) lines.push(sentence(truncate(o.premise, 400)));
     const meta = [
         ['World', o.worldType ? labelOf(WORLD_TYPES, o.worldType).toLowerCase() : ''],
-        ['Magic/technology', o.magicLevel ? labelOf(CAPABILITY_LEVELS, o.magicLevel).toLowerCase() : ''],
         ['Tone', o.tone], ['Themes', o.themes], ['Era', o.era],
     ].filter(([, v]) => clean(v)).map(([k, v]) => `${k}: ${clean(v)}`);
     if (meta.length) lines.push(`${meta.join('. ')}.`);
-    if (clean(o.rules)) lines.push(`World rules: ${sentence(truncate(o.rules, 400))}`);
+    const magic = describeMagic(o.magic);
+    const tech = describeTech(o.tech);
+    for (const line of [...magic.lines, ...tech.lines]) lines.push(sentence(truncate(line, 360)));
+    if (clean(o.rules)) lines.push(`Society and law: ${sentence(truncate(o.rules, 400))}`);
+    // Hard limits (what does not exist) survive shortening: they are what
+    // keeps the model from slipping arcane magic into a divine-only world.
+    const limits = [...magic.limits, ...tech.limits].map((l) => `- ${l}`);
+    const limitText = limits.length ? `World limits:\n${limits.join('\n')}` : '';
+    if (limitText) lines.push(limitText);
     if (!lines.length) return null;
-    return { full: lines.join('\n'), compact: clean(o.premise) ? sentence(truncate(o.premise, 160)) : '' };
+    const compact = [clean(o.premise) ? sentence(truncate(o.premise, 160)) : '', limitText].filter(Boolean).join('\n');
+    return { full: lines.join('\n'), compact };
 }
 
 function locationSection(input) {

@@ -5,8 +5,8 @@
 //   - keys typed inside it never reach SillyTavern's own shortcuts;
 //   - Minimise folds it into a small pill so the chat can be read, and
 //     brings it back exactly where it was.
-// Tabs: Catalog (catalog.js + sheet.js), Scene, Review, History, Preview
-// (panels.js).
+// Tabs: Catalog (catalog.js + sheet.js), Graph (graph.js), Scene, Review,
+// History, Preview (panels.js).
 
 import { LOG_PREFIX } from '../constants.js';
 import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
@@ -17,6 +17,7 @@ import { DRIFT_CHANGED_EVENT } from '../validate/reconcile.js';
 import { syncNow, GUIDANCE_CHANGED_EVENT } from '../guidance/sync.js';
 import { setEditingCheck, ENRICH_EVENT } from '../generate/enrich.js';
 import { renderCatalog } from './catalog.js';
+import { renderGraph } from './graph.js';
 import { renderScene, renderReview, renderHistory, renderPreview } from './panels.js';
 import { confirmAction } from './confirm.js';
 import { ws, setRedraw, rerender } from './ws.js';
@@ -24,6 +25,7 @@ import { h, icon, select, toast } from './dom.js';
 
 const TABS = Object.freeze([
     ['catalog', 'Catalog', 'fa-book-atlas'],
+    ['graph', 'Graph', 'fa-diagram-project'],
     ['scene', 'Scene', 'fa-clapperboard'],
     ['review', 'Review', 'fa-seedling'],
     ['history', 'History', 'fa-clock-rotate-left'],
@@ -128,7 +130,7 @@ async function render() {
     const scroll = overlay.querySelector('.sb-ws-body')?.scrollTop ?? 0;
     let body;
     try {
-        body = await ({ scene: renderScene, review: renderReview, history: renderHistory, preview: renderPreview }[ws.tab] ?? renderCatalog)();
+        body = await ({ graph: renderGraph, scene: renderScene, review: renderReview, history: renderHistory, preview: renderPreview }[ws.tab] ?? renderCatalog)();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not render the workspace', err);
         body = h('div', { class: 'sb-error' }, `Something went wrong: ${err?.message ?? err}`);

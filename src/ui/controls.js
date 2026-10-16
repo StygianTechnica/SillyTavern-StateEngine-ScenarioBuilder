@@ -7,14 +7,15 @@ import { splitList, joinList } from '../library/world-options.js';
 
 // Toggleable chips for `options`, plus any custom values already chosen and
 // an input to add more. value/onChange use ", "-joined text.
-export function chipSelect({ options, value, onChange, placeholder = 'Add your own…' }) {
+export function chipSelect({ options, value, onChange, placeholder = 'Add your own…', cls = '', titles = {} }) {
     const chosen = new Set(splitList(value));
     const custom = [...chosen].filter((v) => !options.includes(v));
     const emit = () => onChange(joinList([...chosen]));
-    const wrap = h('div', { class: 'sb-chipselect' });
+    const wrap = h('div', { class: `sb-chipselect ${cls}`.trim() });
     const draw = () => {
         const chip = (opt) => h('span', {
             class: `sb-chipopt${chosen.has(opt) ? ' on' : ''}`,
+            title: titles[opt] ?? null,
             onclick: () => { if (chosen.has(opt)) chosen.delete(opt); else chosen.add(opt); emit(); draw(); },
         }, opt);
         const input = h('input', {

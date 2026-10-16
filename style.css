@@ -265,9 +265,56 @@
 .sb-genstrip input { flex: 1 1 260px; margin: 0; }
 .sb-genpanel { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--sb-line); border-left: 4px solid var(--sb-accent); border-radius: var(--sb-radius); background: var(--sb-soft); }
 .sb-genpanel .sb-card-title i { color: var(--sb-gold); }
+.sb-systems-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.sb-systems .sb-card-title i { color: var(--sb-gold); }
+.sb-chip-on { background: color-mix(in srgb, var(--sb-gold) 25%, transparent); }
+.sb-chip-absent { background: rgba(224, 85, 85, 0.18); text-decoration: line-through; }
+.sb-chip-rule { background: rgba(120, 140, 220, 0.2); cursor: help; }
+.sb-chip-rule i { color: #9fb0ff; }
+.sb-chip-absent i { color: #e06060; }
+.sb-chipselect-absent .sb-chipopt.on { background: rgba(224, 85, 85, 0.25); border-color: #e06060; text-decoration: line-through; }
 .sb-enrich-done { background: color-mix(in srgb, var(--sb-gold) 30%, transparent); }
 .sb-enrich-failed { background: rgba(224, 85, 85, 0.35); }
 .sb-enrich-running, .sb-enrich-queued, .sb-enrich-held { background: var(--sb-softer); }
+
+/* ---- the relationship graph */
+
+.sb-graph { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 420px; }
+.sb-graph-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sb-graph-types { display: flex; flex-wrap: wrap; gap: 5px; }
+.sb-typechip i { color: var(--sb-accent); }
+.sb-typechip.on { background: color-mix(in srgb, var(--sb-accent) 22%, transparent); border-color: var(--sb-accent); }
+.sb-viewbtn { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.sb-graph-stage { flex: 1; min-height: 360px; border: 1px solid var(--sb-line); border-radius: 12px; overflow: hidden; position: relative;
+    background: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.05), transparent 70%), rgba(0, 0, 0, 0.18); }
+.sb-graph-svg { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; user-select: none; }
+.sb-graph-svg.sb-panning { cursor: grabbing; }
+.sb-gedge { stroke: var(--SmartThemeBodyColor, #ddd); stroke-opacity: 0.35; stroke-width: 1.5; transition: stroke-opacity 0.15s; }
+.sb-gedge-parent { stroke-width: 3; stroke-opacity: 0.25; }
+.sb-gedge-related { stroke-dasharray: 5 4; }
+.sb-gedge-hit { stroke: transparent; stroke-width: 12; }
+.sb-gnode { cursor: pointer; transition: opacity 0.15s; }
+.sb-gnode:focus { outline: none; }
+.sb-gnode-disc { fill: var(--SmartThemeBlurTintColor, #1c1c22); stroke: var(--sb-accent); stroke-width: 3; }
+.sb-gnode:hover .sb-gnode-disc, .sb-gnode:focus .sb-gnode-disc { stroke-width: 4.5; }
+.sb-gnode-halo { fill: none; stroke: rgba(76, 175, 80, 0.75); stroke-width: 2.5; stroke-dasharray: 4 3; }
+.sb-gnode-play .sb-gnode-disc { stroke-dasharray: none; filter: drop-shadow(0 0 4px color-mix(in srgb, var(--sb-accent) 60%, transparent)); }
+.sb-gnode-pinned .sb-gnode-disc { stroke: var(--sb-gold); }
+.sb-gnode-icon { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--sb-accent); font-size: 18px; pointer-events: none; }
+.sb-gnode image { pointer-events: none; }
+.sb-gnode-label { fill: var(--SmartThemeBodyColor, #ddd); font-size: 12px; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.75); stroke-width: 3px; stroke-linejoin: round; pointer-events: none; }
+.sb-graph-focus .sb-gnode:not(.sb-lit) { opacity: 0.25; }
+.sb-graph-focus .sb-gedge:not(.sb-lit) { stroke-opacity: 0.08; }
+.sb-gedge.sb-lit { stroke: var(--sb-gold); stroke-opacity: 0.9; }
+.sb-graph-legend { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 0.85em; opacity: 0.85; }
+.sb-graph-legend svg { vertical-align: middle; }
+.sb-graph-legend .fa-thumbtack { color: var(--sb-gold); }
+.sb-graph-legend .sb-hint { margin-left: auto; }
+
+@media (max-width: 900px) {
+    .sb-graph-stage { min-height: 60vh; }
+    .sb-graph-legend .sb-hint { margin-left: 0; }
+}
 
 @media (max-width: 900px) {
     .sb-ws-panel { height: 100dvh; width: 100vw; border-radius: 0; }
@@ -279,6 +326,6 @@
     .sb-rail-item { white-space: nowrap; }
     .sb-sheet-head { flex-direction: column; align-items: center; text-align: center; }
     .sb-sheet-title { align-items: center; }
-    .sb-image-tab, .sb-scene-cols { grid-template-columns: 1fr; }
+    .sb-image-tab, .sb-scene-cols, .sb-systems-row { grid-template-columns: 1fr; }
     .sb-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 }

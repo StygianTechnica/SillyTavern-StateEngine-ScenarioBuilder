@@ -27,7 +27,8 @@ src/
   library/relations.js       (pure) relationships from reference fields and the tree
   ui/                        settings-drawer.js; workspace.js (window shell), ws.js (shared state),
                              catalog.js (front page, chapters), sheet.js (entity sheet), image-panel.js,
-                             panels.js (Scene, Review, History, Preview); catalog-model.js, status-model.js (pure)
+                             panels.js (Scene, Review, History, Preview), graph.js (relationship graph);
+                             catalog-model.js, graph-layout.js, status-model.js (pure)
   public-api.js              window.StateEngineScenarioBuilder
 ```
 
