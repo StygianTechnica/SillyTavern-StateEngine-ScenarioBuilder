@@ -134,3 +134,13 @@ describe('people the story describes but has not named', () => {
         expect(renamePlan([{ from: 'Graxx', to: 'Korrin' }], characters, provisional, 'Korrin')).toEqual([]);
     });
 });
+
+describe('the director and agendas', () => {
+    it('asks for the people present to act on their own aims, and for off-screen plans', () => {
+        const { system, prompt } = buildDirectorPrompt({ cast: [{ name: 'Remus', player: true }, { name: 'Graxx' }], overview: { gmStyle: 'Keep danger real.' } });
+        expect(prompt).toContain('at least one of them takes the initiative');
+        expect(prompt).toContain('what they are doing about it off-screen');
+        expect(prompt).toContain('driven by what the other characters want');
+        expect(system).toContain('How the user wants this story run - follow it: Keep danger real.');
+    });
+});

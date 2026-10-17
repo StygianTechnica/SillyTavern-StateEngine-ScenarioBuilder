@@ -303,7 +303,8 @@ export function buildDirectorPrompt(input) {
         'Your job is to brief that narrator before it writes, in plain narrative prose, so its reply is grounded in the actual state of the scene and moves the story forward sensibly.',
         `${userName} is the player character, played by a human. Never decide or suggest what ${userName} says, does, thinks, feels or will do next, and do not describe the scene through ${userName}'s eyes; brief the narrator on the other characters and the world, which react to ${userName}.`,
         'Never contradict the facts you are given. Only use what fits the world\'s rules.',
-    ].join(' ');
+        clean(input.overview?.gmStyle) ? `How the user wants this story run - follow it: ${cut(input.overview.gmStyle, 800)}` : '',
+    ].filter(Boolean).join(' ');
 
     // General to immediate: the world, the scene, then the latest chat and
     // the last briefing, then what to write.
@@ -317,12 +318,13 @@ export function buildDirectorPrompt(input) {
     const alone = !input.othersTracked && castHere.some((c) => c.player) && castHere.every((c) => c.player);
     const people = alone
         ? 'No NPCs are present, so the reply is not empty: the world itself reacts. Brief the narrator ONLY on the environment, the weather, sounds, smells, distant movement, creatures acting independently (the ones here, or ones the latest chat shows coming) and divine or supernatural forces - including what they do in answer to the latest message. Do not describe or suggest anything the player character does, thinks or feels. If the chat shows creatures or people arriving that are not listed as here, name them with an ENTERS line below. Someone may turn up only if the story calls for it - do not invent a companion just to have someone to talk to.'
-        : `what the people around ${userName} want, feel toward one another and are likely to do about it - woven together, not person by person.`;
+        : `what the people around ${userName} want, feel toward one another and are likely to do about it - woven together, not person by person. Give each of them an agenda of their own and show it moving: in this reply at least one of them takes the initiative - starts something, presses their own plan, pursues what they want, or acts on someone else - without waiting to be asked. They answer ${userName} only as far as it serves their own aims.`;
     parts.push(
         '',
         'WRITE THE BRIEFING',
         `In a few paragraphs of natural prose (no headings, lists or tables), tell the narrator where things stand now that ${userName} has spoken${alone ? `. ${people}` : `, and ${people}`} Let the place come through in a few concrete details of what can be seen, heard or smelled, and anything here that matters now. Draw on everything above that bears on this moment - factions, lore, events, threads and the other entries - but fold each into the narrative in a few words where it matters; never list them, and leave out what does not touch this moment. Vary how you open; do not start with a stock phrase.`,
-        'End with a paragraph that begins "Next:" saying where this reply should probably go - one or two natural developments, as direction rather than a script, leaning toward an open thread when it fits.',
+        'If someone not here (OTHERS WHO COULD TURN UP) has a plan that will matter soon, say in a sentence what they are doing about it off-screen.',
+        'End with a paragraph that begins "Next:" saying where this reply should probably go - one or two natural developments driven by what the other characters want, as direction rather than a script, leaning toward an open thread when it fits.',
         'Keep it under 400 words in all.',
     );
     if (input.askNow) {

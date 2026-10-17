@@ -128,6 +128,7 @@ async function frontPage(types, all) {
                     meta.length ? h('div', { class: 'sb-chips' }, meta.map(([k, v]) => h('span', { class: 'sb-chip' }, h('b', {}, `${k}: `), v))) : null,
                     systemsRead(overview),
                     overview.rules ? h('div', { class: 'sb-front-rules' }, h('h4', {}, 'Society and law'), h('p', { class: 'sb-prose' }, overview.rules)) : null,
+                    overview.gmStyle ? h('div', { class: 'sb-front-rules' }, h('h4', {}, 'How the game master runs this story'), h('p', { class: 'sb-prose' }, overview.gmStyle)) : null,
                 ],
             canonCard(settingId),
             h('h4', {}, 'Contents'),
@@ -259,6 +260,8 @@ async function frontPage(types, all) {
         h('div', { class: 'sb-card' },
             fieldWithTools('Premise', textArea('premise', 5), [spark('premise')], 'The pitch: what this world is and what stories happen in it.'),
             fieldWithTools('Society and law', textArea('rules', 4), [spark('rules')], 'Power, law, customs, taboos. Kept short in the guidance.'),
+            field('How the game master runs this story', textArea('gmStyle', 3, 'e.g. "NPCs pursue their own agendas and act without waiting for Remus. Keep danger real; consequences stick."'),
+                'Your standing instructions, in your own words: given to the game master (the director) and the narrator before every reply.'),
             field('Steer the writing (optional)', h('input', { class: 'text_pole', value: ws.overviewBrief ?? '', placeholder: 'e.g. "a coastal trading republic sinking into the sea"', oninput: (e) => { ws.overviewBrief = e.target.value; } }))),
         h('div', { class: 'sb-savebar' },
             button('Save', () => {

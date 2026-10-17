@@ -24,7 +24,7 @@ describe('guidance', () => {
         expect(text).toContain('The climate is humid.');
         expect(text).not.toContain('Mira, the innkeeper');
         expect(text).toContain('Hold to these: The scene is still at Brass Market, not the docks.');
-        expect(sections.filter((s) => !['quests', 'summary', 'direction', 'lore', 'limits', 'absent', 'alone'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
+        expect(sections.filter((s) => !['quests', 'summary', 'direction', 'lore', 'limits', 'absent', 'alone', 'style'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
         expect(text).not.toMatch(/^\[/m);
     });
 
@@ -206,5 +206,17 @@ describe('how the world looks', () => {
     });
     it('says nothing of castles in a fantasy world', () => {
         expect(buildGuidance({ overview: { worldType: 'fantasy', tech: { level: 'tl3' } } }).text).not.toContain('suits of armour');
+    });
+});
+
+describe('people with agendas of their own', () => {
+    it('are told to take the initiative, not only react', () => {
+        const text = buildCast({ cast: [{ name: 'Remus', player: true }, { name: 'Graxx' }, { name: 'Niamh' }] });
+        expect(text).toContain('Each pursues their own aims: in this reply at least one of them takes the initiative');
+        expect(buildCast({ cast: [{ name: 'Remus', player: true }, { name: 'Graxx' }] })).toContain('They pursue their own aims: in this reply they take the initiative');
+    });
+    it('follow the user\'s own instructions for running the story', () => {
+        const built = buildGuidance({ overview: { gmStyle: 'NPCs act without waiting for Remus' }, director: { summary: 'S.', direction: 'D.' }, budget: 600 });
+        expect(guidanceParts(built).guidance_direction).toContain('How this story is run: NPCs act without waiting for Remus.\n\nD.');
     });
 });

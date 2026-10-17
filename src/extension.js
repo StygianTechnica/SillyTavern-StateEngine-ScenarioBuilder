@@ -8,6 +8,7 @@
 // reached, this shows one popup and returns.
 
 import { GUIDANCE_PARTS } from './guidance/build.js';
+import { installOverflowTooltips } from './ui/overflow-tooltips.js';
 import { EXTENSION_ID, NAMESPACE, LOG_PREFIX } from './constants.js';
 import { ensureStateEngineAvailable, warnStateEngineMissing } from './api/dependency-check.js';
 import { claimNamespace } from './api/namespace.js';
@@ -39,6 +40,8 @@ const CAPABILITIES = [
 ];
 
 export async function initExtension() {
+    // Cut-off text shows in full on hover (src/ui/overflow-tooltips.js).
+    installOverflowTooltips();
     const available = await ensureStateEngineAvailable();
     if (!available) {
         warnStateEngineMissing();

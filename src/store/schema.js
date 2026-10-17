@@ -100,10 +100,10 @@ const isObject = (value) => !!value && typeof value === 'object' && !Array.isArr
 const str = (value) => (typeof value === 'string' ? value : '');
 const strList = (value) => (Array.isArray(value) ? [...new Set(value.filter((v) => typeof v === 'string' && v))] : []);
 
-const OVERVIEW_TEXT_KEYS = Object.freeze(['premise', 'worldType', 'tone', 'themes', 'era', 'rules']);
+const OVERVIEW_TEXT_KEYS = Object.freeze(['premise', 'worldType', 'tone', 'themes', 'era', 'rules', 'gmStyle']);
 
 export function emptyOverview() {
-    return { premise: '', worldType: '', tone: '', themes: '', era: '', rules: '', magic: emptyMagic(), tech: emptyTech() };
+    return { premise: '', worldType: '', tone: '', themes: '', era: '', rules: '', gmStyle: '', magic: emptyMagic(), tech: emptyTech() };
 }
 
 export function emptyRealm() {

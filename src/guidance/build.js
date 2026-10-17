@@ -31,6 +31,7 @@ export const SECTIONS = Object.freeze([
     { key: 'lore', title: 'Lore', priority: 2, keep: false },
     { key: 'corrections', title: 'Corrections', priority: 6, keep: true },
     { key: 'summary', title: 'Where things stand', priority: 7, keep: true },
+    { key: 'style', title: 'How the story is run', priority: 8, keep: true },
     { key: 'direction', title: 'Where it should go', priority: 8, keep: true },
     { key: 'absent', title: 'Not in this scene', priority: 9, keep: true },
     { key: 'alone', title: 'No one else here', priority: 9, keep: true },
@@ -251,7 +252,7 @@ export function buildCast(input) {
     const lines = ['Additional Context-Characters present:', ...list.map(castLine)];
     const absent = (input.absent ?? []).map(clean).filter(Boolean);
     if (absent.length) lines.push(`Not here: ${andList(absent)}. ${absent.length === 1 ? 'They are' : 'They are'} elsewhere now; do not write ${absent.length === 1 ? 'them' : 'them'} into this reply.`);
-    if (others.length) lines.push(`Write ${others.length === 1 ? clean(others[0].name) : 'each of them'} true to what they want and how they feel; they act on their own intentions.${player ? ` Never write ${clean(player.name)}'s words, actions, thoughts or feelings.` : ''}`);
+    if (others.length) lines.push(`Write ${others.length === 1 ? clean(others[0].name) : 'each of them'} true to what they want and how they feel. ${others.length === 1 ? 'They pursue their' : 'Each pursues their'} own aims: in this reply ${others.length === 1 ? 'they take' : 'at least one of them takes'} the initiative - starting something, pressing a plan, acting on someone - instead of only reacting.${player ? ` Never write ${clean(player.name)}'s words, actions, thoughts or feelings.` : ''}`);
     else if (player) lines.push(aloneText(input));
     return `${REFERENCE_HEADER}\n${lines.join('\n')}`;
 }
@@ -314,6 +315,8 @@ const BUILDERS = {
     absent: (input) => absentSection(input.absent),
     alone: (input) => aloneSection(input),
     direction: (input) => directorPart(input.director, 'direction'),
+    // The user's own standing instructions (the front page).
+    style: (input) => (clean(input.overview?.gmStyle) ? { full: `How this story is run: ${sentence(truncate(input.overview.gmStyle, 800))}`, compact: '' } : null),
     limits: (input) => limitsSection(input.overview),
     overview: (input) => overviewSection(input.overview),
     location: (input) => locationSection(input),
@@ -353,6 +356,7 @@ export function buildGuidance(input) {
         limits: 'The world\'s magic and technology limits.',
         summary: "The game master's summary of where things stand, written before this reply from the recent chat and the scene.",
         direction: "The game master's direction: what should probably happen in this reply.",
+        style: 'Your own instructions for running the story (the front page: How the game master runs this story).',
         absent: 'People you took out of the scene by hand, for the next few replies.',
         alone: 'Shown when the player character is the only one present: the world, its creatures and the consequences carry the reply.',
         location: input.location?.path?.length ? `Canonical location, its path and inherited environment; canonical time and weather.` : 'Canonical time and weather.',
@@ -382,7 +386,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
     ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'corrections']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
-    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['direction', 'absent', 'alone']],
+    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'absent', 'alone']],
 ]);
 
 // buildGuidance()'s result -> { [variable]: text } ('' for an empty part).
