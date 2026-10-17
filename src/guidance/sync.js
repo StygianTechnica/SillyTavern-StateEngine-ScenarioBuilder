@@ -28,6 +28,10 @@ import { buildGuidance, buildStateBlock, timeText } from './build.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { relationsFor, pairCovered } from '../library/relations-edit.js';
 import { activeQuests } from '../quests/sync.js';
+import { momentAt } from '../calendar/clock.js';
+import { weatherText } from '../calendar/weather.js';
+import { assignCalendarToVariable } from '../api/calendar.js';
+import { getVariable } from '../api/variables.js';
 
 export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
 
@@ -107,7 +111,6 @@ export async function gatherInputs(chatId, chatKey) {
             const short = (o) => ({ name: o.name, description: doc.narrative[o.id]?.text || o.description || '' });
             const places = allLocations.filter((l) => parents[l.id] === obj.id).map(short);
             const partOf = parents[obj.id] ? allLocations.find((l) => l.id === parents[obj.id]) : null;
-            const placedHere = async (typeId) => (await listEntries(chatId, settingId, typeId)).filter((o) => (o.base?.location ?? o.location) === obj.id).map(short);
             // The story's current description wins over the base one.
             location = {
                 path: locationPath,
@@ -117,8 +120,10 @@ export async function gatherInputs(chatId, chatKey) {
                 indoor: c.indoor,
                 places,
                 partOf: partOf ? short(partOf) : null,
-                items: await placedHere('item'),
-                creatures: await placedHere('creature'),
+                items: (await listEntries(chatId, settingId, 'item'))
+                    .filter((o) => (o.base?.location ?? o.location) === obj.id || castIds.includes(o.base?.owner ?? o.owner))
+                    .map((o) => ({ ...short(o), id: o.id, carriedBy: (o.base?.location ?? o.location) === obj.id ? '' : (o.base?.owner ?? o.owner) })),
+                creatures: (await listEntries(chatId, settingId, 'creature')).filter((o) => (o.base?.location ?? o.location) === obj.id).map((o) => ({ ...short(o), id: o.id })),
                 source: sceneSource,
                 id: obj.id,
             };
@@ -186,6 +191,57 @@ export async function gatherInputs(chatId, chatKey) {
     }
 
     const time = { day: c.day, dayPart: c.dayPart };
+
+    // The clock (src/calendar/clock.js): the date, the sky, what people
+    // feel at this hour, holidays.
+    let moment = null;
+    if (settings.time.enabled && Number.isFinite(c.time)) {
+        try {
+            moment = await momentAt(settingId, c.time, { locationId, indoor: c.indoor });
+        } catch (err) {
+            console.debug(LOG_PREFIX, 'no clock for the guidance', err);
+        }
+    }
+    const clock = moment ? {
+        words: moment.dateWords,
+        clock: moment.timeText,
+        dayPart: c.dayPart,
+        season: moment.season,
+        sky: moment.sky.text,
+        needs: moment.needs,
+        holiday: moment.holidayText,
+        open: moment.place.open,
+    } : null;
+    const events = moment ? [
+        ...moment.holidays.today.map((t) => t.holiday.name),
+        ...moment.holidays.soon.map((x) => `${x.holiday.name} (${x.inDays === 1 ? 'tomorrow' : `in ${x.inDays} days`})`),
+    ] : [];
+
+    // Lore that matters here: tied to this place, the places it is in or the
+    // people present, or named in the last few messages.
+    let lore = [];
+    if (settingId) {
+        try {
+            const sceneIds = new Set([...(locationId ? [locationId, ...pathOf(parents, locationId)] : []), ...castIds]);
+            const recent = (SillyTavern.getContext().chat ?? []).slice(-6).map((m) => String(m?.mes ?? '')).join('\n').toLowerCase();
+            const named = (o) => [o.name, ...(o.aliases ?? o.base?.aliases ?? [])].some((n) => n && n.length > 3 && recent.includes(String(n).toLowerCase()));
+            lore = (await listEntries(chatId, settingId, 'lore'))
+                .filter((o) => (o.related_entity_ids ?? o.base?.related_entity_ids ?? []).some((id) => sceneIds.has(id)) || named(o))
+                .slice(0, 8)
+                .map((o) => ({ id: o.id, name: o.name, description: doc.narrative[o.id]?.text || o.description || '' }));
+        } catch (err) {
+            console.debug(LOG_PREFIX, 'no lore for the guidance', err);
+        }
+    }
+    let questIds = [];
+    if (settingId) {
+        try {
+            questIds = (await activeQuests(chatId, chatKey, settingId)).map((q) => q.id);
+        } catch {
+            questIds = [];
+        }
+    }
+
     return {
         guidance: {
             // The game master's briefing (src/director/), written before
@@ -194,10 +250,13 @@ export async function gatherInputs(chatId, chatKey) {
             overview: library.overview,
             location,
             time,
+            clock,
             weather: c.weather,
             temperature: c.temperature,
+            weatherText: weatherText({ weather: c.weather, temperature: c.temperature }, { indoor: c.indoor === true, open: clock?.open !== false }),
             scene: { title: c.sceneTitle, premise: c.scenePremise },
             cast,
+            lore,
             corrections: doc.corrections.map((x) => x.text),
             quests,
             sections: settings.sections,
@@ -220,9 +279,34 @@ export async function gatherInputs(chatId, chatKey) {
             canon_setting: c.indoor === true ? 'indoors' : (c.indoor === false ? 'outdoors' : ''),
             canon_time: timeText(time),
             canon_scene: c.sceneTitle || '',
+            canon_datetime: Number.isFinite(c.time) ? c.time : 0,
+            canon_date: moment?.dateWords || moment?.dateText || '',
+            canon_clock: moment?.timeText || '',
+            canon_daypart: c.dayPart || '',
+            canon_season: moment?.season || '',
+            canon_sky: moment?.sky.text || '',
+            canon_holiday: moment ? moment.holidays.today.map((t) => t.holiday.name).join(', ') : '',
+            canon_items: (location?.items ?? []).map((x) => x.id).filter(Boolean),
+            canon_creatures: (location?.creatures ?? []).map((x) => x.id).filter(Boolean),
+            canon_quests: questIds,
+            canon_lore: lore.map((x) => x.id),
+            canon_events: events,
         },
         settingId,
+        calendarId: moment?.calendarId ?? '',
     };
+}
+
+// canon_datetime reads its value through the setting's calendar: re-point
+// it when this chat's setting uses another one.
+async function followCalendar(calendarId) {
+    if (!calendarId) return;
+    try {
+        const def = await getVariable(PRESET_NAME, 'canon_datetime');
+        if (def && def.calendar !== calendarId) await assignCalendarToVariable({ namespace: 'sb', presetName: PRESET_NAME, variableName: 'canon_datetime' }, calendarId);
+    } catch (err) {
+        console.debug(LOG_PREFIX, 'could not point the date at the setting calendar', err);
+    }
 }
 
 async function writeIfChanged(chatId, values) {
@@ -261,6 +345,7 @@ export async function syncGuidance() {
         const inputs = await gatherInputs(ref.chatId, chatKey);
         const guidance = buildGuidance(inputs.guidance);
         const stateBlock = getSettings().stateBlockEnabled ? buildStateBlock(inputs.stateBlock) : '';
+        await followCalendar(inputs.calendarId);
         await writeIfChanged(ref.chatId, { ...inputs.canonicalValues, guidance: guidance.text, state_block: stateBlock });
 
         const doc = getChatDoc(chatKey);

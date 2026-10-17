@@ -26,6 +26,7 @@ export const SECTIONS = Object.freeze([
     { key: 'cast', title: 'Characters present', priority: 4, keep: false },
     { key: 'scene', title: 'Scene', priority: 3, keep: false },
     { key: 'quests', title: 'Active quests', priority: 2, keep: false },
+    { key: 'lore', title: 'Lore', priority: 2, keep: false },
     { key: 'overview', title: 'Setting', priority: 1, keep: false },
     { key: 'corrections', title: 'Corrections', priority: 6, keep: true },
 ]);
@@ -101,12 +102,22 @@ function locationSection(input) {
         const inOut = loc.indoor === true ? ', indoors' : (loc.indoor === false ? ', out of doors' : '');
         head.push(`The scene is set in ${here}${up.length ? `, in ${up.join(', ')}` : ''}${inOut}.`);
     }
-    const when = [
-        time ? `it is ${input.time.dayPart && input.time.day ? `${input.time.dayPart} on day ${input.time.day}` : time}` : '',
-        input.weather?.length ? `the weather is ${andList(input.weather.map(lower))}` : '',
-        input.temperature ? `the air is ${lower(input.temperature)}` : '',
-    ].filter(Boolean);
-    if (when.length) head.push(`${firstUpper(when.join('; '))}.`);
+    const ck = input.clock;
+    if (ck) {
+        // The clock: part of day, the hour, the date and the season, then the
+        // weather as one sentence.
+        const hour = ck.dayPart ? `${ck.dayPart}${ck.clock ? ` (about ${ck.clock})` : ''}` : ck.clock;
+        const date = [ck.words, ck.season ? `in ${ck.season}` : ''].filter(Boolean).join(', ');
+        if (hour || date) head.push(`It is ${[hour, date].filter(Boolean).join(' on ')}.`);
+        if (input.weatherText) head.push(input.weatherText);
+    } else {
+        const when = [
+            time ? `it is ${input.time.dayPart && input.time.day ? `${input.time.dayPart} on day ${input.time.day}` : time}` : '',
+            input.weather?.length ? `the weather is ${andList(input.weather.map(lower))}` : '',
+            input.temperature ? `the air is ${lower(input.temperature)}` : '',
+        ].filter(Boolean);
+        if (when.length) head.push(`${firstUpper(when.join('; '))}.`);
+    }
     if (!head.length) return null;
 
     const lines = [head.join(' ')];
@@ -118,16 +129,32 @@ function locationSection(input) {
     if (env.climate?.value) body.push(`The climate is ${sentence(lower(env.climate.value))}`);
     if (env.rules?.value) body.push(`Local custom here: ${sentence(env.rules.value)}`);
     if (body.length) lines.push(body.join(' '));
+    // The sky, the hour's needs and the calendar's occasions.
+    const hourLines = [ck?.sky, ck?.needs, ck?.holiday].filter((x) => clean(x));
+    if (hourLines.length) lines.push(hourLines.map(sentence).join(' '));
     // What is here and where one can go from here.
     const named = (list, max) => (list ?? []).slice(0, max).map((x) => `${clean(x.name)}${clean(x.description) ? ` (${unstop(truncate(x.description, 110))})` : ''}`);
     const around = [];
-    if (loc?.items?.length) around.push(`Things here that can come into play: ${andList(named(loc.items, 8))}.`);
+    const lying = (loc?.items ?? []).filter((x) => !x.carriedBy);
+    const carried = (loc?.items ?? []).filter((x) => x.carriedBy);
+    if (lying.length) around.push(`Things here that can come into play: ${andList(named(lying, 8))}.`);
+    if (carried.length) around.push(`Carried by those present: ${andList(named(carried, 8))}.`);
     if (loc?.creatures?.length) around.push(`Also here: ${andList(named(loc.creatures, 6))}.`);
     const ways = [...named(loc?.places, 8), ...(loc?.partOf ? [`back out to ${clean(loc.partOf.name)}`] : [])];
     if (ways.length) around.push(`From here one can go to ${orList(ways)}.`);
     if (around.length) lines.push(around.join(' '));
     if (loc?.path?.length) lines.push('Let what the characters see, hear and smell here colour the reply, and keep them in this place unless the story moves them.');
     return { full: lines.join('\n'), compact: [head.join(' '), loc?.description ? sentence(truncate(loc.description, 200)) : ''].filter(Boolean).join(' ') };
+}
+
+function loreSection(lore) {
+    const list = (lore ?? []).filter((l) => clean(l?.name));
+    if (!list.length) return null;
+    const line = (l) => `${clean(l.name)}${clean(l.description) ? `: ${unstop(truncate(l.description, 220))}` : ''}.`;
+    return {
+        full: ['Worth remembering here:', ...list.slice(0, 6).map(line)].join(' '),
+        compact: `Worth remembering here: ${andList(list.slice(0, 6).map((l) => clean(l.name)))}.`,
+    };
 }
 
 function sceneSection(scene) {
@@ -198,6 +225,7 @@ const BUILDERS = {
     scene: (input) => sceneSection(input.scene),
     cast: (input) => castSection(input.cast),
     quests: (input) => questsSection(input.quests),
+    lore: (input) => loreSection(input.lore),
     corrections: (input) => correctionsSection(input.corrections),
 };
 
@@ -233,6 +261,7 @@ export function buildGuidance(input) {
         cast: (input.cast ?? []).map((c) => `${c.name}: ${c.why ?? 'present'}`).join('; ') || 'Characters present.',
         corrections: 'Adjustments made by validation, kept for a few replies.',
         quests: (input.quests ?? []).map((q) => `${q.name}: ${q.why ?? 'active'}`).join('; ') || 'Active quests.',
+        lore: 'Lore tied to this place or the people present, or named in the last few messages.',
     };
     return {
         text,

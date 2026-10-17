@@ -70,3 +70,24 @@ describe('director note parsing', () => {
         expect(parseDirectorNote('```\n## Notes\nIn this reply...\n```').note).toBe('Notes\nIn this reply...');
     });
 });
+
+describe('director scene keeping', () => {
+    it('reads how much time passes and who arrives or leaves', () => {
+        const raw = 'In this reply they ride north.\nTIME | 3 hours | the ride to the ford\nENTERS | Old Bram\nLEAVES | Tobin\n- LEAVES | Tobin';
+        const parsed = parseDirectorNote(raw);
+        expect(parsed.note).toBe('In this reply they ride north.');
+        expect(parsed.time).toEqual({ text: '3 hours', why: 'the ride to the ford' });
+        expect(parsed.enters).toEqual(['Old Bram']);
+        expect(parsed.leaves).toEqual(['Tobin']);
+        expect(parseDirectorNote('Just prose.').time).toBeNull();
+    });
+
+    it('asks for a TIME line and lists who could turn up', () => {
+        const { prompt } = buildDirectorPrompt({ ...input, nearby: [{ name: 'Tobin', role: 'debt collector', why: 'seen earlier in this story' }], clock: { dayPart: 'evening', clock: '18:40', words: 'Thursday, day 4 of Stormfall', season: 'spring', sky: 'Dusk is falling.' } });
+        expect(prompt).toContain('TIME | 5 minutes | why');
+        expect(prompt).toContain('OTHERS WHO COULD TURN UP');
+        expect(prompt).toContain('- Tobin (debt collector) - seen earlier in this story');
+        expect(prompt).toContain('TIME: evening (18:40), Thursday, day 4 of Stormfall, in spring');
+        expect(buildDirectorPrompt({ ...input, timeKeeping: false }).prompt).not.toContain('TIME | 5 minutes');
+    });
+});

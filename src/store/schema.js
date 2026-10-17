@@ -52,6 +52,7 @@
 //                                           has made of an object in this chat (a burnt
 //                                           forest), used instead of its base description
 //     director: { note, key, at, created: [{ id, kind, name }], error }
+//     clock: { planned: { from, to, text } | null, override: { until, weather, temperature } | null }
 //                                           the game master's latest briefing (src/director/)
 //     lastObserved: { [field]: value },     what State Engine extracted last time
 //     lastReply: source message id of the newest AI reply reconciled
@@ -96,7 +97,7 @@ export function emptyOverview() {
 }
 
 export function emptyEntryMeta() {
-    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, generated: [], source: '', quest: emptyQuestMeta(), environment: { climate: '', lighting: '', rules: '' } };
+    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, generated: [], source: '', quest: emptyQuestMeta(), environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '' };
 }
 
 export function normalizeEntryMeta(meta) {
@@ -108,12 +109,17 @@ export function normalizeEntryMeta(meta) {
         tags: strList(m.tags),
         pinned: m.pinned === true,
         excluded: m.excluded === true,
-        origin: ['user', 'story', 'import'].includes(m.origin) ? m.origin : '',
+        origin: ['user', 'story', 'import', 'director'].includes(m.origin) ? m.origin : '',
         canonLocked: m.canonLocked === true,
         generated: strList(m.generated),
         source: str(m.source),
         quest: normalizeQuestMeta(m.quest),
         environment: { climate: str(env.climate), lighting: str(env.lighting), rules: str(env.rules) },
+        // Locations: the climate zone the weather follows (src/calendar/
+        // weather.js CLIMATES; '' = inherit from the place it is in) and
+        // whether the sky can be seen ('' inherit, 'open', 'none').
+        climate: str(m.climate),
+        sky: ['open', 'none'].includes(m.sky) ? m.sky : '',
     };
 }
 
@@ -126,8 +132,43 @@ function normalizeRelations(value) {
         .map((r) => ({ id: str(r.id) || newLocalId('r'), from: r.from, to: r.to, kind: str(r.kind) || 'knows', note: str(r.note), mutual: r.mutual === true }));
 }
 
+// The setting's calendar and sky (src/calendar/): which State Engine
+// calendar its dates are on ('' = the built-in gregorian), where a new
+// chat's clock starts (scalar seconds, null = the calendar's first morning),
+// how the day length swings (sky.js LATITUDES), the suns and moons (either
+// list may be empty), the holidays, and the climate where no place says.
+export function emptyCalendar() {
+    return {
+        calendarId: '', start: null, latitude: 'temperate', climate: 'temperate',
+        suns: [{ name: 'the sun', offset: 0 }],
+        moons: [{ name: 'the moon', cycle: 29.5, offset: 0 }],
+        holidays: [],
+    };
+}
+
+const num = (value, fallback) => (Number.isFinite(Number(value)) && value !== '' && value !== null ? Number(value) : fallback);
+
+export function normalizeCalendar(value) {
+    const c = isObject(value) ? value : {};
+    const base = emptyCalendar();
+    return {
+        calendarId: str(c.calendarId),
+        start: Number.isFinite(c.start) ? c.start : null,
+        latitude: ['equatorial', 'temperate', 'polar'].includes(c.latitude) ? c.latitude : base.latitude,
+        climate: str(c.climate) || base.climate,
+        suns: Array.isArray(c.suns) ? c.suns.filter(isObject).slice(0, 4).map((x) => ({ name: str(x.name) || 'the sun', offset: num(x.offset, 0) })) : base.suns,
+        moons: Array.isArray(c.moons) ? c.moons.filter(isObject).slice(0, 6).map((x) => ({ name: str(x.name) || 'the moon', cycle: Math.max(1, num(x.cycle, 29.5)), offset: num(x.offset, 0) })) : base.moons,
+        holidays: Array.isArray(c.holidays) ? c.holidays.filter((h) => isObject(h) && str(h.name) && Number.isInteger(h.month) && Number.isInteger(h.day)).map((h) => ({
+            id: str(h.id) || `h_${str(h.name).toLowerCase().replace(/\W+/g, '_')}`,
+            name: str(h.name), month: h.month, day: h.day,
+            days: Math.max(1, Math.round(num(h.days, 1))), prepDays: Math.max(0, Math.round(num(h.prepDays, 2))),
+            description: str(h.description),
+        })) : [],
+    };
+}
+
 export function emptySettingDoc() {
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {} } };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {} }, calendar: emptyCalendar() };
 }
 
 // Brings any stored setting document (or nothing) to the current shape.
@@ -154,11 +195,14 @@ export function normalizeSettingDoc(doc) {
         : [];
     return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true,
         imports: Array.isArray(d.imports) ? d.imports.filter(isObject).slice(-IMPORTS_KEPT) : [],
-        relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions) } };
+        relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions) }, calendar: normalizeCalendar(d.calendar) };
 }
 
 export function emptyCanonical() {
-    return { locationId: '', castIds: [], weather: [], temperature: '', indoor: null, dayPart: '', day: 1, sceneTitle: '', scenePremise: '' };
+    // time: the canonical moment, scalar seconds on the setting's calendar
+    // (src/calendar/clock.js); null until the clock starts. dayPart and day
+    // follow it whenever it is set.
+    return { locationId: '', castIds: [], weather: [], temperature: '', indoor: null, dayPart: '', day: 1, time: null, sceneTitle: '', scenePremise: '' };
 }
 
 export function normalizeCanonical(value) {
@@ -171,6 +215,7 @@ export function normalizeCanonical(value) {
         indoor: typeof c.indoor === 'boolean' ? c.indoor : null,
         dayPart: DAY_PARTS.includes(c.dayPart) ? c.dayPart : '',
         day: Number.isInteger(c.day) && c.day > 0 ? c.day : 1,
+        time: Number.isFinite(c.time) ? c.time : null,
         sceneTitle: str(c.sceneTitle),
         scenePremise: str(c.scenePremise),
     };
@@ -186,8 +231,23 @@ function normalizeNarrative(value) {
     return out;
 }
 
+// The clock's bookkeeping (src/calendar/clock.js): the advance made before
+// the reply being written (to compare with how much time the story says
+// passed), and a weather the story set, kept until a later watch.
+export function emptyClock() {
+    return { planned: null, override: null };
+}
+
+function normalizeClock(value) {
+    const c = isObject(value) ? value : {};
+    const planned = isObject(c.planned) && Number.isFinite(c.planned.from) && Number.isFinite(c.planned.to) ? { from: c.planned.from, to: c.planned.to, text: str(c.planned.text) } : null;
+    const o = c.override;
+    const override = isObject(o) && Number.isFinite(o.until) ? { until: o.until, weather: strList(o.weather).filter((w) => WEATHER_VALUES.includes(w)), temperature: TEMPERATURES.includes(o.temperature) ? o.temperature : '' } : null;
+    return { planned, override };
+}
+
 export function emptyDirector() {
-    return { note: '', key: '', at: '', created: [], error: '' };
+    return { note: '', key: '', at: '', created: [], error: '', time: '', moves: { in: [], out: [] } };
 }
 
 function normalizeDirector(value) {
@@ -198,6 +258,8 @@ function normalizeDirector(value) {
         at: str(value.at),
         created: Array.isArray(value.created) ? value.created.filter((c) => isObject(c) && str(c.id)).slice(-20) : [],
         error: str(value.error),
+        time: str(value.time),
+        moves: isObject(value.moves) ? { in: strList(value.moves.in), out: strList(value.moves.out) } : { in: [], out: [] },
     };
 }
 
@@ -209,6 +271,7 @@ export function emptyChatDoc() {
         inPlay: [],
         narrative: {},
         director: emptyDirector(),
+        clock: emptyClock(),
         questLinks: {},
         questsSeen: null,
         lastObserved: {},
@@ -232,6 +295,7 @@ export function normalizeChatDoc(doc) {
         inPlay: strList(d.inPlay),
         narrative: normalizeNarrative(d.narrative),
         director: normalizeDirector(d.director),
+        clock: normalizeClock(d.clock),
         questLinks: isObject(d.questLinks) ? d.questLinks : {},
         questsSeen: Array.isArray(d.questsSeen) ? strList(d.questsSeen) : null,
         lastObserved: isObject(d.lastObserved) ? d.lastObserved : {},

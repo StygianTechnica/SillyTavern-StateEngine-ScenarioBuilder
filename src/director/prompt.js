@@ -48,8 +48,17 @@ export function dossierText(input) {
     } else {
         lines.push('', 'LOCATION: not known yet.');
     }
-    const when = [input.time?.day ? `day ${input.time.day}` : '', input.time?.dayPart ?? '', ...(input.weather ?? []), input.temperature ?? ''].map(clean).filter(Boolean);
-    if (when.length) lines.push(`Time and weather: ${when.join(', ')}`);
+    const ck = input.clock;
+    if (ck) {
+        lines.push(`TIME: ${[ck.dayPart && `${ck.dayPart}${ck.clock ? ` (${ck.clock})` : ''}`, ck.words, ck.season && `in ${ck.season}`].filter(Boolean).join(', ')}`);
+        if (clean(input.weatherText)) lines.push(`Weather: ${clean(input.weatherText)}`);
+        if (clean(ck.sky)) lines.push(`Sky: ${clean(ck.sky)}`);
+        if (clean(ck.needs)) lines.push(clean(ck.needs));
+        if (clean(ck.holiday)) lines.push(`Calendar: ${clean(ck.holiday)}`);
+    } else {
+        const when = [input.time?.day ? `day ${input.time.day}` : '', input.time?.dayPart ?? '', ...(input.weather ?? []), input.temperature ?? ''].map(clean).filter(Boolean);
+        if (when.length) lines.push(`Time and weather: ${when.join(', ')}`);
+    }
     if (clean(input.scene?.title) || clean(input.scene?.premise)) lines.push(`Scene: ${[clean(input.scene?.title), cut(input.scene?.premise, 300)].filter(Boolean).join(' - ')}`);
 
     const cast = (input.cast ?? []).filter((c) => clean(c?.name));
@@ -65,6 +74,11 @@ export function dossierText(input) {
             ...(c.relations ?? []).map((r) => cut(r, 140)),
         ].filter(Boolean).map(bare);
         lines.push(`- ${clean(c.name)}${bits.length ? `: ${bits.join('; ')}` : ''}`);
+    }
+    const others = (input.nearby ?? []).filter((c) => clean(c?.name));
+    if (others.length) {
+        lines.push('', 'OTHERS WHO COULD TURN UP (not here now):');
+        for (const c of others.slice(0, 12)) lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${clean(c.why) ? ` - ${clean(c.why)}` : ''}`);
     }
     const quests = (input.quests ?? []).filter((q) => clean(q.name));
     if (quests.length) {
@@ -112,7 +126,21 @@ export function buildDirectorPrompt(input) {
         '2. The people present: what each one wants at this moment, how they feel about the others, and how they are likely to react to what just happened. Weave this together; do not list them.',
         '3. What should probably happen next: one or two natural developments the reply could move toward, offered as direction rather than a script, nudging gently toward an open quest when it fits.',
         '4. What to show: a few concrete sensory details of this place (what can be seen, heard, smelled) and any item or feature that matters now.',
-        'Keep it under 400 words. Write only the briefing.',
+        'Keep it under 400 words.',
+    );
+    if (input.timeKeeping !== false) {
+        parts.push(
+            '',
+            'Then, on its own line, say how much in-story time this reply will cover, from the latest message on:',
+            'TIME | 5 minutes | why',
+            'A few minutes for talk; longer when people travel, wait, work or sleep, or when the scene moves on (use a duration like "2 hours" or "3 days", or a time of day like "the next morning"). Follow any time skip the latest message asks for.',
+        );
+    }
+    parts.push(
+        '',
+        'If someone known arrives or leaves in this reply, add a line for each:',
+        'ENTERS | Name',
+        'LEAVES | Name',
     );
     if (creating) {
         parts.push(
@@ -129,7 +157,8 @@ export function buildDirectorPrompt(input) {
     return { system, prompt: parts.join('\n') };
 }
 
-// The model's reply -> { note, created: [{ kind, name, description, here }] }.
+// The model's reply -> { note, created: [{ kind, name, description, here }],
+//   time: { text, why } | null, enters: [name], leaves: [name] }.
 // Lenient: strips fences, headings and preambles; NEW lines may appear
 // anywhere and are removed from the note.
 export function parseDirectorNote(raw) {
@@ -137,7 +166,21 @@ export function parseDirectorNote(raw) {
     const created = [];
     const seen = new Set();
     const keep = [];
+    let time = null;
+    const enters = [];
+    const leaves = [];
     for (const line of text.split('\n')) {
+        const t = line.match(/^\s*(?:[-*]\s*)?\**TIME\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
+        if (t) {
+            if (!time) time = { text: clean(t[1]).replace(/^["']|["']$/g, ''), why: clean(t[2]) };
+            continue;
+        }
+        const move = line.match(/^\s*(?:[-*]\s*)?\**(ENTERS|LEAVES)\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|.*)?$/i);
+        if (move) {
+            const name = clean(move[2]).replace(/^["'*]+|["'*]+$/g, '');
+            if (name) (move[1].toUpperCase() === 'ENTERS' ? enters : leaves).push(name);
+            continue;
+        }
         const m = line.match(/^\s*(?:[-*]\s*)?\**NEW\**\s*:?\s*([a-z]+)\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?$/i);
         if (m) {
             const kind = NEW_KINDS[m[1].toLowerCase()];
@@ -156,5 +199,5 @@ export function parseDirectorNote(raw) {
         .replace(/^\s*#+\s+/gm, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-    return { note: text, created };
+    return { note: text, created, time, enters: [...new Set(enters)], leaves: [...new Set(leaves)] };
 }

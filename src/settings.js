@@ -62,6 +62,10 @@ const DEFAULTS = {
     // used when it is late); allowCreate: it may add the rooms, people and
     // items the scene needs to the library (never in a canon-only setting).
     director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700 },
+    // The clock (src/calendar/clock.js): on = Scenario Builder keeps the
+    // time and weather; perTurn = how much time a reply covers when the
+    // director does not say.
+    time: { enabled: true, perTurn: '5 minutes' },
     // Settings migrations already applied.
     migrated: [],
     // { [settingId]: library document } - src/store/setting-store.js.
@@ -84,6 +88,7 @@ export function getSettings() {
     // New sections/policies added by an update get their defaults.
     for (const [key, value] of Object.entries(DEFAULT_SECTIONS)) settings.sections[key] ??= value;
     for (const [key, value] of Object.entries(DEFAULTS.director)) settings.director[key] ??= value;
+    for (const [key, value] of Object.entries(DEFAULTS.time)) settings.time[key] ??= value;
     // The old 600-token default was far too small for a narrative briefing.
     if (!settings.migrated.includes('budget-2000')) {
         if (settings.tokenBudget === 600) settings.tokenBudget = DEFAULTS.tokenBudget;

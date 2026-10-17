@@ -12,7 +12,10 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { getObjectType, getBoundSettingId, createEntry, findSimilar, setParent, setEntryMeta, isCanonOnly, mayAddGeneratedDetail, getOverview } from '../library/library.js';
+import { getObjectType, getBoundSettingId, createEntry, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, listEntries } from '../library/library.js';
+import { listRelations, relationsFor } from '../library/relations-edit.js';
+import { setCanonical } from '../state/canonical.js';
+import { advanceBy, perTurnDefault } from '../calendar/clock.js';
 import { baselineFields } from '../library/fields.js';
 import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
@@ -137,6 +140,33 @@ function enrichThin(chatId, chatKey, settingId, guidance) {
     }
 }
 
+const isNewTurn = (type) => !type || type === 'normal';
+
+// People who are not here but could turn up: those seen earlier in this
+// chat, and those the people present have ties to.
+function nearbyPeople(characters, castIds, inPlay, relations) {
+    const present = new Set(castIds);
+    const why = new Map();
+    for (const id of inPlay) if (!present.has(id)) why.set(id, 'seen earlier in this story');
+    for (const id of castIds) {
+        for (const r of relationsFor(id, relations)) if (!present.has(r.otherId) && !why.has(r.otherId)) why.set(r.otherId, `tied to someone here (${r.kind})`);
+    }
+    return characters.filter((c) => why.has(c.id)).map((c) => ({ id: c.id, name: c.name, role: c.base?.role ?? c.role ?? '', why: why.get(c.id) }));
+}
+
+// Who arrives and leaves, by name (and the new people who are here).
+function castAfter(characters, castIds, { enters, leaves }, made) {
+    const byName = new Map();
+    for (const c of characters) for (const n of [c.name, ...(c.aliases ?? c.base?.aliases ?? [])]) if (n) byName.set(String(n).toLowerCase(), c.id);
+    const idOf = (name) => byName.get(String(name).toLowerCase()) ?? characters.find((c) => c.name.toLowerCase().includes(String(name).toLowerCase()))?.id ?? null;
+    const next = new Set(castIds);
+    const names = { in: [], out: [] };
+    for (const name of enters) { const id = idOf(name); if (id && !next.has(id)) { next.add(id); names.in.push(name); } }
+    for (const m of made) if (m.kind === 'character' && m.here && !next.has(m.id)) { next.add(m.id); names.in.push(m.name); }
+    for (const name of leaves) { const id = idOf(name); if (id && next.has(id)) { next.delete(id); names.out.push(name); } }
+    return { castIds: [...next], names };
+}
+
 async function run(chatId, chatKey, type, force) {
     const settings = getSettings();
     const settingId = await getBoundSettingId(chatId);
@@ -147,6 +177,9 @@ async function run(chatId, chatKey, type, force) {
     const doc = getChatDoc(chatKey);
     if (!force && doc.director.key === key && doc.director.note) return doc.director;
 
+    const characters = settingId ? await listEntries(chatId, settingId, 'character') : [];
+    const castIds = (guidance.cast ?? []).map((c) => c.id).filter(Boolean);
+    const nearby = nearbyPeople(characters, castIds, doc.inPlay, settingId ? listRelations(settingId) : []);
     const overview = settingId ? getOverview(settingId) : {};
     const limits = [...describeMagic(overview.magic).limits, ...describeTech(overview.tech).limits];
     const canonOnly = settingId ? isCanonOnly(settingId) : true;
@@ -159,9 +192,12 @@ async function run(chatId, chatKey, type, force) {
         limits,
         allowCreate: settings.director.allowCreate && !!settingId,
         canonOnly,
+        nearby,
+        timeKeeping: settings.time.enabled && !!settingId,
     });
     const raw = await callModelFirst([{ role: 'system', content: system }, { role: 'user', content: prompt }], settings.director.maxTokens);
-    const { note, created } = parseDirectorNote(raw);
+    const parsed = parseDirectorNote(raw);
+    const { note, created } = parsed;
     if (!note) throw new Error('The model wrote no briefing.');
 
     const made = settingId && settings.director.allowCreate && !canonOnly
@@ -169,7 +205,26 @@ async function run(chatId, chatKey, type, force) {
         : [];
     if (settingId) enrichThin(chatId, chatKey, settingId, guidance);
 
-    const result = { note, key, at: new Date().toISOString(), created: [...doc.director.created, ...made].slice(-20), error: '' };
+    // The game master keeps the scene: who arrives and leaves, and how much
+    // time the reply covers.
+    let moves = { in: [], out: [] };
+    let timeText = '';
+    if (isNewTurn(type) && settingId) {
+        const after = castAfter(characters, castIds, parsed, made.map((m) => ({ ...m, here: created.find((c) => c.name === m.name)?.here })));
+        moves = after.names;
+        if (moves.in.length || moves.out.length) {
+            const note2 = [moves.in.length ? `${moves.in.join(', ')} arrive${moves.in.length === 1 ? 's' : ''}` : '', moves.out.length ? `${moves.out.join(', ')} leave${moves.out.length === 1 ? 's' : ''}` : ''].filter(Boolean).join('; ');
+            setCanonical(chatKey, { castIds: after.castIds }, { chatId, source: 'director', note: note2 });
+        }
+        if (settings.time.enabled) {
+            const wanted = parsed.time?.text || perTurnDefault();
+            const moved = await advanceBy(chatId, chatKey, settingId, wanted, { planned: true, source: 'director', note: `Time passes: ${wanted}${parsed.time?.why ? ` (${parsed.time.why})` : ''}` })
+                ?? await advanceBy(chatId, chatKey, settingId, perTurnDefault(), { planned: true, source: 'director', note: `Time passes: ${perTurnDefault()}` });
+            if (moved) timeText = wanted;
+        }
+    }
+
+    const result = { note, key, at: new Date().toISOString(), created: [...doc.director.created, ...made].slice(-20), error: '', time: timeText, moves };
     updateChatDoc(chatKey, (d) => { d.director = result; });
     return result;
 }
@@ -189,6 +244,9 @@ export async function runDirector(chatId, chatKey, { type = 'normal', force = fa
             const error = String(err?.message ?? err);
             updateChatDoc(chatKey, (d) => { d.director = { ...d.director, error }; });
             status = { ...status, error };
+            if (isNewTurn(type) && getSettings().time.enabled) {
+                void getBoundSettingId(chatId).then((settingId) => settingId && advanceBy(chatId, chatKey, settingId, perTurnDefault(), { planned: true, note: 'A reply\'s worth of time' })).catch(() => {});
+            }
             return getChatDoc(chatKey).director;
         })
         .finally(() => {

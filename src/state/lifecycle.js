@@ -15,7 +15,7 @@
 // rest of the generation hook costs milliseconds (SB-801).
 
 import { LOG_PREFIX } from '../constants.js';
-import { isActive } from '../settings.js';
+import { isActive, getSettings } from '../settings.js';
 import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
 import { VARIABLES_CHANGED_EVENT } from '../api/variables.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
@@ -25,6 +25,8 @@ import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
 import { directBeforeReply } from '../director/run.js';
+import { ensureClock, advanceBy, setTime, perTurnDefault } from '../calendar/clock.js';
+import { getChatDoc } from '../store/chat-store.js';
 
 const VALIDATE_DEBOUNCE_MS = 1000;
 let timer = null;
@@ -69,10 +71,23 @@ async function beforeGeneration(type, _options, dryRun) {
         if (!(await getPresetStatus(ref.chatId)).active) return;
         await reconcileOpenChat();
         await pushCanonicalToObserved(ref.chatId, chatKeyFor(ref));
-        await writeActiveQuests(ref.chatId, chatKeyFor(ref), await getBoundSettingId(ref.chatId));
+        const chatKey = chatKeyFor(ref);
+        const settingId = await getBoundSettingId(ref.chatId);
+        await writeActiveQuests(ref.chatId, chatKey, settingId);
+        const settings = getSettings();
+        const newTurn = !type || type === 'normal';
+        if (settings.time.enabled && settingId) await ensureClock(ref.chatId, chatKey, settingId);
         // The game master thinks before the reply (src/director/): the one
-        // step here that waits on a model, bounded by its timeout.
-        if (type !== 'impersonate') await directBeforeReply(ref.chatId, chatKeyFor(ref), type);
+        // step here that waits on a model, bounded by its timeout. It also
+        // moves the clock on by what the reply will cover.
+        if (type !== 'impersonate') await directBeforeReply(ref.chatId, chatKey, type);
+        if (settings.time.enabled && settingId) {
+            // Without the director, each new reply covers the per-turn default.
+            if (newTurn && !settings.director.enabled) await advanceBy(ref.chatId, chatKey, settingId, perTurnDefault(), { planned: true, note: 'A reply\'s worth of time' });
+            // The weather and sky for where the scene is now.
+            const now = getChatDoc(chatKey).canonical.time;
+            if (Number.isFinite(now)) await setTime(ref.chatId, chatKey, settingId, now, { note: 'The scene moved' });
+        }
         await syncNow();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not prepare the guidance before generation', err);

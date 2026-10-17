@@ -32,7 +32,11 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 // Raised whenever a definition below changes, so an existing install is
 // brought up to date once (SB-206).
 // 2: sb__quests (the active quests, so State Engine tracks their runtime).
-export const PRESET_VERSION = 2;
+// 3: self-contained, so Scene Context can be switched off: the clock
+//    (sb__scene_deltatime observed; canonical datetime, date, clock, part of
+//    day, season, sky, holiday), what is present in the scene (items,
+//    creatures, quests, lore, events) and calculated weather/time flags.
+export const PRESET_VERSION = 3;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -67,6 +71,9 @@ export const OBSERVED_VARIABLES = Object.freeze([
         type: 'enum', enumValues: [...TEMPERATURES], defaultValue: '', scope: 'chat', showInTracker: true,
         ...prompted('The temperature value closest to what the characters experience. Keep the current value unless the messages say otherwise.'),
     }],
+    ['scene_deltatime', text('Time passed (story)', 'How much in-story time the last turn covered, as the story tells it - the clock catches up when it is more than was planned.', prompted(
+        'How much in-story time passed across the whole Latest turn - every message in it, the user’s included. Count everything that takes time: talking (a few minutes), travel, waiting, work, sleep, and any skip the story makes (“hours later”, “the next day”). Answer a duration (“5 minutes”, “2 hours”, “3 days”) or, when the story moves on to a time of day, that time of day (“the next morning”, “that evening”, “tomorrow afternoon”, “until dawn”). Drop hedging words (“about half an hour” → “30 minutes”). Answer “” only if no time passed at all.',
+    ))],
     ['scene_isindoor', {
         label: 'Indoors (story)', description: 'Whether the story puts the scene indoors.',
         type: 'boolean', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -85,6 +92,11 @@ export const QUEST_VARIABLES = Object.freeze([
         ...prompted('The quests the characters are actively pursuing now. Keep every quest in the current value that is still being pursued. Add a quest only when the story clearly starts a new one. Remove a quest only when it is finished, failed or given up.'),
     }],
 ]);
+
+const objects = (label, description, objectType) => ({
+    label, description, type: 'array', itemType: 'object', itemObjectType: objectType, unique: true, defaultValue: '[]', scope: 'chat', showInTracker: true,
+    behaviors: { prompted: false, increment: false },
+});
 
 export const CANONICAL_VARIABLES = Object.freeze([
     ['canon_location', {
@@ -106,6 +118,57 @@ export const CANONICAL_VARIABLES = Object.freeze([
     ['canon_setting', text('Indoors / outdoors', 'Whether the scene is canonically indoors or outdoors.')],
     ['canon_time', text('Time', 'The canonical day and time of day.')],
     ['canon_scene', text('Scene', 'The canonical scene title.')],
+    // The clock (src/calendar/clock.js). canon_datetime is on the bound
+    // setting's calendar (re-pointed when the chat's setting uses another).
+    ['canon_datetime', {
+        label: 'Date and time', description: 'The canonical moment, on the setting\'s calendar.',
+        type: 'datetime', calendar: 'gregorian', unit: 'seconds', datetimeMode: 'full', timeSemanticMode: 'none', deltaSource: '',
+        defaultValue: 0, scope: 'chat', showInTracker: true, behaviors: { prompted: false, increment: false },
+    }],
+    ['canon_date', text('Date', 'The canonical date, written out.')],
+    ['canon_clock', text('Clock', 'The canonical time of day on the clock.')],
+    ['canon_daypart', text('Part of day', 'dawn, morning, midday, afternoon, evening, night or late night.')],
+    ['canon_season', text('Season', 'The season.')],
+    ['canon_sky', text('Sky', 'Where the sun(s) and moon(s) are, as seen from the scene.')],
+    ['canon_holiday', text('Holiday', 'A holiday that is on today or coming soon.')],
+    // What is in the scene, beyond the location and cast.
+    ['canon_items', objects('Items present', 'Items here or carried by someone present.', 'item')],
+    ['canon_creatures', objects('Creatures present', 'Creatures here.', 'creature')],
+    ['canon_quests', objects('Active quests', 'The quests being pursued, most important first.', 'quest')],
+    ['canon_lore', objects('Relevant lore', 'Lore tied to this place or these people, or just mentioned.', 'lore')],
+    ['canon_events', {
+        label: 'Events', description: 'Holidays and happenings on today or coming soon.',
+        type: 'array', itemType: 'string', unique: true, defaultValue: '[]', scope: 'chat', showInTracker: true,
+        behaviors: { prompted: false, increment: false },
+    }],
+]);
+
+// Flags worked out by State Engine from the canonical values, for displays
+// and conditions (Pretty Panels atmosphere, conditional world info) - the
+// same kind Scene Context offers, so Scene Context can be switched off.
+const flag = (label, expression, dependencies) => ({
+    label, description: '', type: 'calculated', expression, dependencies, defaultValue: 0,
+    scope: 'chat', showInTracker: false, behaviors: { prompted: false, increment: false },
+});
+const W = 'sb__canon_weather';
+const has = (value) => `${W}.contains("${value}")`;
+export const CALCULATED_VARIABLES = Object.freeze([
+    ['is_raining', flag('Is raining', has('Rainy'), [W])],
+    ['is_drizzle', flag('Is drizzling', has('Drizzle'), [W])],
+    ['is_snowy', flag('Is snowing', has('Snowy'), [W])],
+    ['is_stormy', flag('Is stormy', `${has('Stormy')} || ${has('Thunderstorm')}`, [W])],
+    ['is_hailing', flag('Is hailing', has('Hailing'), [W])],
+    ['is_foggy', flag('Is foggy', has('Foggy'), [W])],
+    ['is_windy', flag('Is windy', has('Windy'), [W])],
+    ['is_dry', flag('Is dry', has('Dry'), [W])],
+    ['is_hazy', flag('Is hazy', has('Hazy'), [W])],
+    ['is_burning', flag('Is scorching', 'sb__canon_temperature == "Scorching"', ['sb__canon_temperature'])],
+    ['is_freezing', flag('Is freezing', 'sb__canon_temperature == "Freezing"', ['sb__canon_temperature'])],
+    ['is_night', flag('Is night', 'sb__canon_daypart == "night" || sb__canon_daypart == "late night"', ['sb__canon_daypart'])],
+    ['is_dawn', flag('Is dawn', 'sb__canon_daypart == "dawn"', ['sb__canon_daypart'])],
+    ['is_evening', flag('Is evening', 'sb__canon_daypart == "evening"', ['sb__canon_daypart'])],
+    ['is_indoors', flag('Is indoors', 'sb__canon_setting == "indoors"', ['sb__canon_setting'])],
+    ['has_holiday', flag('Holiday today', 'sb__canon_holiday != ""', ['sb__canon_holiday'])],
 ]);
 
 export const OUTPUT_VARIABLES = Object.freeze([
@@ -113,7 +176,8 @@ export const OUTPUT_VARIABLES = Object.freeze([
     ['state_block', text('Canonical scene state', 'The current scene\'s canonical state - location, time, weather and who is present - one line each. Not asked of the model.', { showInTracker: false })],
 ]);
 
-export const ALL_VARIABLES = Object.freeze([...OBSERVED_VARIABLES, ...QUEST_VARIABLES, ...CANONICAL_VARIABLES, ...OUTPUT_VARIABLES]);
+// Calculated variables last: their dependencies must exist first.
+export const ALL_VARIABLES = Object.freeze([...OBSERVED_VARIABLES, ...QUEST_VARIABLES, ...CANONICAL_VARIABLES, ...OUTPUT_VARIABLES, ...CALCULATED_VARIABLES]);
 
 export const OBSERVED_NAMES = Object.freeze(OBSERVED_VARIABLES.map(([name]) => name));
 export const CANONICAL_NAMES = Object.freeze(CANONICAL_VARIABLES.map(([name]) => name));

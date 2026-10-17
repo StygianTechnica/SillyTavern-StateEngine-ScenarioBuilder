@@ -24,6 +24,7 @@ import { PRESET_NAME, OBSERVED_NAMES } from '../preset/blueprint.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
+import { catchUpWithStory, holdStoryWeather } from '../calendar/clock.js';
 import { detectDrift, readObserved, applyAccepted, correctionText, describeItem, OBSERVED_FIELDS } from './drift.js';
 
 export const DRIFT_CHANGED_EVENT = 'scenario_builder_drift_changed';
@@ -165,6 +166,7 @@ async function reconcileOnce() {
     const { nameOf, placeOf } = await namers(chatId, settingId, objects);
     let canonical = doc.canonical;
     const accepted = [];
+    const acceptedFields = new Set();
     const restore = new Set();
     const corrections = [];
     const driftLog = [];
@@ -184,6 +186,7 @@ async function reconcileOnce() {
             case 'accept':
                 canonical = applyAccepted(canonical, item);
                 accepted.push(record.text);
+                acceptedFields.add(item.field);
                 record.resolution = 'accepted';
                 break;
             case 'adjust': {
@@ -231,6 +234,12 @@ async function reconcileOnce() {
     // One save: the canonical change (if any) plus the queue/log updates,
     // which setCanonical applies even when no canonical value changed.
     setCanonical(chatKey, patch, { source: 'validation', note: accepted.join('; '), sourceMessage: replySource, chatId, alsoMutate: mutate });
+    if (settings.time.enabled && settingId) {
+        // The story's weather holds a while before the simulation resumes;
+        // a time skip the story made is caught up with (sb__scene_deltatime).
+        if (acceptedFields.has('weather') || acceptedFields.has('temperature')) await holdStoryWeather(chatKey, settingId, canonical.weather, canonical.temperature);
+        if (newReply) await catchUpWithStory(chatId, chatKey, settingId, raw.scene_deltatime);
+    }
     if (restore.size) await pushCanonicalToObserved(chatId, chatKey, { fields: [...restore] });
     if (items.length) announce(chatKey);
 }
