@@ -24,7 +24,7 @@ import { PRESET_NAME, OBSERVED_NAMES } from '../preset/blueprint.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
-import { catchUpWithStory, holdStoryWeather } from '../calendar/clock.js';
+import { catchUpWithStory, holdStoryWeather, travelAlong } from '../calendar/clock.js';
 import { detectDrift, readObserved, applyAccepted, correctionText, describeItem, OBSERVED_FIELDS } from './drift.js';
 
 export const DRIFT_CHANGED_EVENT = 'scenario_builder_drift_changed';
@@ -238,6 +238,8 @@ async function reconcileOnce() {
         // The story's weather holds a while before the simulation resumes;
         // a time skip the story made is caught up with (sb__scene_deltatime).
         if (acceptedFields.has('weather') || acceptedFields.has('temperature')) await holdStoryWeather(chatKey, settingId, canonical.weather, canonical.temperature);
+        // A move along a route takes its travel time.
+        if (acceptedFields.has('location') && canonical.locationId !== doc.canonical.locationId) await travelAlong(chatId, chatKey, settingId, doc.canonical.locationId, canonical.locationId, replySource);
         if (newReply) await catchUpWithStory(chatId, chatKey, settingId, raw.scene_deltatime, replySource);
     }
     if (restore.size) await pushCanonicalToObserved(chatId, chatKey, { fields: [...restore] });

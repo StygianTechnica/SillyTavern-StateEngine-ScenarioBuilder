@@ -18,6 +18,8 @@ import { getDateTimeParts, formatDateTime, formatDateTimePartial, advanceDateTim
 import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance } from './moment.js';
 import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.js';
 import { weatherAt } from './weather.js';
+import { routeForMove } from '../library/routes.js';
+import { pathOf } from '../library/hierarchy.js';
 
 const FALLBACK_CALENDAR = Object.freeze({
     id: 'gregorian', label: 'Gregorian', unit: 'seconds', secondsPerMinute: 60, minutesPerHour: 60, hoursPerDay: 24, leapYearRule: 'gregorian',
@@ -250,4 +252,20 @@ export async function monthAt(settingId, scalar, offset = 0) {
     while (y > year || (y === year && m > month)) { m -= 1; if (m < 1) { m = count; y -= 1; } dayIndex -= daysIn(y, m); }
     const first = await partsOf(calendarId, def, dayIndex * perDay + perDay / 2);
     return { dayIndex, parts: first, days: daysIn(year, month), year, month, monthName: def.months?.[month - 1]?.name ?? `Month ${month}`, weekdays: def.weekdayShortNames ?? def.weekdayNames ?? null };
+}
+
+// The scene moved from one place to another: when a route connects them
+// (or the places they are in), the clock catches up to its travel time,
+// counted from before the reply. -> the history entry, or null.
+export async function travelAlong(chatId, chatKey, settingId, fromId, toId, sourceMessage = '') {
+    const doc = getChatDoc(chatKey);
+    const now = doc.canonical.time;
+    if (!settingId || !Number.isFinite(now)) return null;
+    const settingDoc = getSettingDoc(settingId);
+    const parents = Object.fromEntries(Object.entries(settingDoc.entries).filter(([, m]) => m.parentId).map(([id, m]) => [id, m.parentId]));
+    const route = routeForMove(fromId, toId, settingDoc.routes, (id) => [...pathOf(parents, id)].reverse());
+    if (!route?.travel) return null;
+    const target = await advanceFrom(settingId, doc.clock.planned?.from ?? now, route.travel);
+    if (target === null || target <= now) return null;
+    return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The journey took ${route.travel}`, sourceMessage });
 }

@@ -1,4 +1,4 @@
-import { buildImagePrompt, stripNames } from '../src/images/prompt.js';
+import { buildImagePrompt, stripNames, worldExclusions } from '../src/images/prompt.js';
 
 const mira = { type: 'character', name: 'Mira Vane', aliases: ['Mira'], description: 'Mira is a tired innkeeper with ink-stained fingers. Mira\'s apron is patched.', role: 'innkeeper' };
 const forest = { type: 'location', name: 'Ironwood', aliases: [], description: 'An ancient forest of black-barked trees.' };
@@ -52,5 +52,24 @@ describe('image prompts', () => {
 
     it('can keep names when asked', () => {
         expect(buildImagePrompt({ entry: mira, options: { includeNames: true } }).prompt.startsWith('Mira Vane, portrait')).toBe(true);
+    });
+});
+
+describe('world limits in image prompts', () => {
+    const overview = { magic: { presence: 'rare', kinds: ['divine'], absent: ['arcane'] }, tech: { level: 'tl3', absent: ['clockwork'] } };
+    const entry = { type: 'location', name: 'The Drowned Lantern', description: 'A crooked inn.' };
+    it('lists what the world rules out', () => {
+        const no = worldExclusions(overview);
+        expect(no).toEqual(expect.arrayContaining(['arcane magic', 'clockwork', 'firearms', 'cars']));
+        expect(worldExclusions({ magic: { presence: 'none' } })).toContain('magic');
+        expect(worldExclusions({ tech: { level: 'tl8' } })).not.toContain('cars');
+        expect(worldExclusions({ tech: { level: 'tl3', spread: 'relic' } })).not.toContain('firearms');
+    });
+    it('puts them in --no and the negative prompt, unless switched off', () => {
+        const mj = buildImagePrompt({ entry, overview, options: { provider: 'midjourney', midjourney: { no: 'text' } } }).prompt;
+        expect(mj).toMatch(/--no text, arcane magic, clockwork, firearms/);
+        const sd = buildImagePrompt({ entry, overview, options: { provider: 'stable_diffusion' } }).negative;
+        expect(sd).toContain('arcane magic');
+        expect(buildImagePrompt({ entry, overview, options: { provider: 'midjourney', respectLimits: false, midjourney: { no: '' } } }).prompt).not.toContain('--no');
     });
 });

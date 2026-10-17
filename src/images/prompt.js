@@ -42,6 +42,8 @@ export const DEFAULT_IMAGE_OPTIONS = Object.freeze({
     style: 'painterly',
     customStyle: '',
     includeNames: false,
+    // Leave out of the picture what the world's limits rule out.
+    respectLimits: true,
     midjourney: Object.freeze({
         version: '7',
         stylize: 250,
@@ -54,7 +56,37 @@ export const DEFAULT_IMAGE_OPTIONS = Object.freeze({
     negative: 'text, watermark, signature, blurry, lowres, deformed, extra limbs',
 });
 
+import { normalizeMagic, normalizeTech } from '../library/world-options.js';
+
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
+
+// What the world's limits rule out of a picture: kinds of magic that do not
+// exist (or all magic), technologies it does not have, and anything from a
+// later age than its tech level - for Midjourney's --no and Stable
+// Diffusion's negative prompt, so an image never shows what the guidance
+// tells the model does not exist.
+const LATER_TECH = [
+    ['tl4', ['firearms', 'gunpowder weapons']],
+    ['tl5', ['steam engines', 'factories']],
+    ['tl6', ['cars', 'electric lights', 'telephones']],
+    ['tl7', ['computers', 'screens', 'modern clothing']],
+    ['tl8', ['smartphones', 'drones']],
+    ['tl9', ['spaceships', 'cybernetic implants']],
+];
+export function worldExclusions(overview) {
+    const o = overview ?? {};
+    const magic = normalizeMagic(o.magic);
+    const tech = normalizeTech(o.tech);
+    const out = [];
+    if (magic.presence === 'none') out.push('magic', 'glowing spell effects');
+    for (const kind of magic.absent) out.push(/magic|sorcery|craft/i.test(kind) ? kind : `${kind} magic`);
+    out.push(...tech.absent);
+    const level = Number(String(tech.level).replace(/^tl/, ''));
+    if (Number.isFinite(level) && tech.level && tech.spread !== 'imported' && tech.spread !== 'relic') {
+        for (const [tl, things] of LATER_TECH) if (Number(tl.slice(2)) > level) out.push(...things);
+    }
+    return [...new Set(out.map((x) => clean(x).toLowerCase()).filter(Boolean))].slice(0, 12);
+}
 const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Shortens to about `words` words.
@@ -131,14 +163,16 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
         if (Number.isFinite(Number(mj.stylize)) && Number(mj.stylize) !== 100) params.push(`--stylize ${Math.round(Number(mj.stylize))}`);
         if (Number(mj.chaos) > 0) params.push(`--chaos ${Math.round(Number(mj.chaos))}`);
         if (mj.raw) params.push('--style raw');
-        if (clean(mj.no)) params.push(`--no ${clean(mj.no)}`);
+        const no = [...new Set([...clean(mj.no).split(',').map(clean).filter(Boolean), ...(opts.respectLimits === false ? [] : worldExclusions(overview))])];
+        if (no.length) params.push(`--no ${no.join(', ')}`);
         if (clean(mj.sref)) params.push(`--sref ${clean(mj.sref)}`);
         if (clean(mj.extra)) params.push(clean(mj.extra));
         // Midjourney reads "--" as a parameter anywhere in the prompt.
         return { provider: 'midjourney', prompt: `${subject.replace(/--+/g, '-')} ${params.join(' ')}`, negative: '' };
     }
     if (opts.provider === 'stable_diffusion') {
-        return { provider: 'stable_diffusion', prompt: `${subject}, highly detailed`, negative: clean(opts.negative) };
+        const negative = [clean(opts.negative), ...(opts.respectLimits === false ? [] : worldExclusions(overview))].filter(Boolean).join(', ');
+        return { provider: 'stable_diffusion', prompt: `${subject}, highly detailed`, negative };
     }
     const body = parts.slice(opts.includeNames && entry.type === 'character' ? 1 : 0).filter((p) => p !== styleOf(opts)).join(', ');
     const lead = styleOf(opts) ? `${styleOf(opts).split(',')[0]} of ` : 'An image of ';

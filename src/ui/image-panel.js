@@ -144,6 +144,8 @@ export function renderImagePanel({ type, entry, narrative, environment, overview
             field('Style', select(STYLES.map((s) => ({ value: s.id, label: s.label })), opts.style, { onchange: (e) => { opts.style = e.target.value; save(); } }))),
         field('Your style words', text(opts, 'customStyle', 'e.g. muted autumn palette, by candlelight')),
         h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: opts.includeNames, onchange: (e) => { opts.includeNames = e.target.checked; save(); } }), h('span', {}, 'Include the name')),
+        h('label', { class: 'checkbox_label', title: 'Adds what the world\'s magic and technology limits rule out (arcane magic, firearms, cars...) to --no or the negative prompt.' },
+            h('input', { type: 'checkbox', checked: opts.respectLimits !== false, onchange: (e) => { opts.respectLimits = e.target.checked; save(); } }), h('span', {}, 'Leave out what the world rules out')),
         mjWrap,
         promptBox,
         negativeWrap,

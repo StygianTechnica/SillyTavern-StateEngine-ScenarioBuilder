@@ -133,8 +133,8 @@ describe('weather', () => {
         expect(days[0]).toHaveProperty('high');
         expect(bandOf(-10)).toBe('Freezing');
         expect(bandOf(40)).toBe('Scorching');
-        expect(weatherText({ weather: ['Rainy', 'Windy'], temperature: 'Cool' })).toBe('The weather is rainy and windy, and it is cool.');
-        expect(weatherText({ weather: ['Rainy'], temperature: 'Cool' }, { indoor: true })).toBe('Outside, the weather is rainy, and it is cool.');
+        expect(weatherText({ weather: ['Thunderstorm', 'Windy'], temperature: 'Cool' })).toBe('A thunderstorm is raging, the wind is up and it is cool.');
+        expect(weatherText({ weather: ['Rainy'], temperature: 'Cool' }, { indoor: true })).toBe('Outside, it is raining and it is cool.');
         expect(CLIMATES.length).toBeGreaterThan(10);
     });
 });

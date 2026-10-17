@@ -15,13 +15,13 @@ import { newLocalId } from '../store/schema.js';
 import { getObjectType, getBoundSettingId, createEntry, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, listEntries } from '../library/library.js';
 import { listRelations, relationsFor } from '../library/relations-edit.js';
 import { setCanonical } from '../state/canonical.js';
-import { advanceBy, perTurnDefault } from '../calendar/clock.js';
+import { advanceBy, perTurnDefault, holdStoryWeather, setTime } from '../calendar/clock.js';
 import { baselineFields } from '../library/fields.js';
 import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import { callModelFirst } from '../generate/llm.js';
 import { gatherInputs } from '../guidance/sync.js';
-import { buildDirectorPrompt, parseDirectorNote, mentionedIn } from './prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, mentionedIn, itemMatters } from './prompt.js';
 
 export const DIRECTOR_EVENT = 'scenario_builder_director';
 
@@ -204,8 +204,12 @@ async function run(chatId, chatKey, type, force) {
 
     // Only what the recent chat brought up (the last few messages).
     const recentText = messages.slice(-4).map((m) => m.text).join('\n');
-    const wanted = created.filter((c) => mentionedIn(c.name, recentText) || mentionedIn(c.description, recentText) && c.kind === 'location');
-    if (wanted.length < created.length) console.info(LOG_PREFIX, `the director left out ${created.length - wanted.length} new thing(s) the chat has not brought up`);
+    const latestUserText = [...messages].reverse().find((m) => m.isUser)?.text ?? '';
+    const wanted = created.filter((c) => (c.kind === 'item'
+        // Items only for plot points and open threads - never flavour.
+        ? itemMatters(c, { quests: guidance.quests, latestUserText })
+        : mentionedIn(c.name, recentText) || (c.kind === 'location' && mentionedIn(c.description, recentText))));
+    if (wanted.length < created.length) console.info(LOG_PREFIX, `the director left out ${created.length - wanted.length} new thing(s): not brought up by the chat, or an item that is only flavour`);
     const made = settingId && settings.director.allowCreate && !canonOnly
         ? await createNeeded(chatId, chatKey, settingId, wanted, guidance.location?.id ?? null)
         : [];
@@ -227,10 +231,17 @@ async function run(chatId, chatKey, type, force) {
             const moved = await advanceBy(chatId, chatKey, settingId, wanted, { planned: true, source: 'director', note: `Time passes: ${wanted}${parsed.time?.why ? ` (${parsed.time.why})` : ''}` })
                 ?? await advanceBy(chatId, chatKey, settingId, perTurnDefault(), { planned: true, source: 'director', note: `Time passes: ${perTurnDefault()}` });
             if (moved) timeText = wanted;
+            // A change of weather the plot calls for: held a while, like the
+            // story's own, then the simulation takes over again.
+            if (parsed.weather) {
+                await holdStoryWeather(chatKey, settingId, parsed.weather.values, undefined);
+                const now = getChatDoc(chatKey).canonical.time;
+                if (Number.isFinite(now)) await setTime(chatId, chatKey, settingId, now, { source: 'director', note: `The weather turns: ${parsed.weather.values.join(', ')}${parsed.weather.why ? ` (${parsed.weather.why})` : ''}` });
+            }
         }
     }
 
-    const result = { note, key, at: new Date().toISOString(), created: [...doc.director.created, ...made].slice(-20), error: '', time: timeText, moves };
+    const result = { note, summary: parsed.summary, direction: parsed.direction, key, at: new Date().toISOString(), created: [...doc.director.created, ...made].slice(-20), error: '', time: timeText, moves };
     updateChatDoc(chatKey, (d) => { d.director = result; });
     return result;
 }

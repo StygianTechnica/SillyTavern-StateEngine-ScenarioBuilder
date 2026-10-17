@@ -18,16 +18,20 @@ const labelOf = (list, id) => list.find(([key]) => key === id)?.[1] ?? id;
 // The sections, in display order, with their budget priority (higher =
 // kept longer) and whether they are never dropped (SB-305). The text is
 // NARRATIVE: prose addressed to the narrator, not lists of people, places
-// and things. The director's note (the GM brain, src/director/) comes
-// first; the rest is the scene written out so the reply stays true to it.
+// and things. From the general to the immediate: the setting, its rules,
+// the threads being followed, the scene as it is, then the game master's
+// summary of where things stand and, last, where the reply should go
+// (src/director/) - closest to the reply, where it weighs most.
 export const SECTIONS = Object.freeze([
-    { key: 'director', title: 'Game master', priority: 7, keep: true },
-    { key: 'location', title: 'Where and when', priority: 5, keep: true },
-    { key: 'scene', title: 'Scene', priority: 3, keep: false },
-    { key: 'quests', title: 'Active quests', priority: 2, keep: false },
-    { key: 'lore', title: 'Lore', priority: 2, keep: false },
     { key: 'overview', title: 'Setting', priority: 1, keep: false },
+    { key: 'limits', title: 'World rules', priority: 6, keep: true },
+    { key: 'quests', title: 'Threads followed', priority: 2, keep: false },
+    { key: 'location', title: 'Scene', priority: 5, keep: true },
+    { key: 'scene', title: 'Scene premise', priority: 3, keep: false },
+    { key: 'lore', title: 'Lore', priority: 2, keep: false },
     { key: 'corrections', title: 'Corrections', priority: 6, keep: true },
+    { key: 'summary', title: 'Where things stand', priority: 7, keep: true },
+    { key: 'direction', title: 'Where it should go', priority: 8, keep: true },
 ]);
 
 export const DEFAULT_SECTIONS = Object.freeze(Object.fromEntries(SECTIONS.map((s) => [s.key, true])));
@@ -64,9 +68,20 @@ export function timeText(time) {
     return parts.join(', ');
 }
 
-function directorSection(note) {
-    const text = String(note ?? '').trim();
+// The director's briefing, in its two parts. `director` is { summary,
+// direction } (or, from an older record, one text: the summary).
+function directorPart(director, part) {
+    const d = typeof director === 'string' ? { summary: director, direction: '' } : (director ?? {});
+    const text = String(d[part] ?? '').trim();
     return text ? { full: text, compact: '' } : null;
+}
+
+// The world's hard limits (what does not exist), its own section so it
+// stands right after the setting and is never dropped.
+function limitsSection(overview) {
+    const o = overview ?? {};
+    const limits = [...describeMagic(o.magic).limits, ...describeTech(o.tech).limits].map((l) => sentence(l));
+    return limits.length ? { full: `Never break the world's limits. ${limits.join(' ')}`, compact: '' } : null;
 }
 
 function overviewSection(overview) {
@@ -82,14 +97,8 @@ function overviewSection(overview) {
     const how = [...magic.lines, ...tech.lines].map((l) => sentence(truncate(l, 360)));
     if (how.length) lines.push(how.join(' '));
     if (clean(o.rules)) lines.push(`Society and law: ${sentence(truncate(o.rules, 400))}`);
-    // Hard limits (what does not exist) survive shortening: they are what
-    // keeps the model from slipping arcane magic into a divine-only world.
-    const limits = [...magic.limits, ...tech.limits].map((l) => sentence(l));
-    const limitText = limits.length ? `Never break the world's limits. ${limits.join(' ')}` : '';
-    if (limitText) lines.push(limitText);
     if (!lines.length) return null;
-    const compact = [clean(o.premise) ? sentence(truncate(o.premise, 160)) : '', limitText].filter(Boolean).join('\n');
-    return { full: lines.join('\n'), compact };
+    return { full: lines.join('\n'), compact: clean(o.premise) ? sentence(truncate(o.premise, 160)) : '' };
 }
 
 function locationSection(input) {
@@ -136,10 +145,13 @@ function locationSection(input) {
     const around = [];
     const lying = (loc?.items ?? []).filter((x) => !x.carriedBy);
     const carried = (loc?.items ?? []).filter((x) => x.carriedBy);
-    if (lying.length) around.push(`Things here that can come into play: ${andList(named(lying, 8))}.`);
+    // Named items carry weight with the model; offered as what is here,
+    // not as things the reply should reach for.
+    if (lying.length) around.push(`Also here, should the scene turn to them: ${andList(named(lying, 8))}.`);
     if (carried.length) around.push(`Carried by those present: ${andList(named(carried, 8))}.`);
     if (loc?.creatures?.length) around.push(`Also here: ${andList(named(loc.creatures, 6))}.`);
-    const ways = named(loc?.places, 8);
+    const roads = (loc?.routes ?? []).slice(0, 8).map((r) => `${clean(r.name)} (${[clean(r.travel), clean(r.note)].filter(Boolean).join(', ')})`);
+    const ways = [...named(loc?.places, 8), ...roads];
     const out = loc?.partOf ? `back out to ${clean(loc.partOf.name)}` : '';
     if (ways.length) around.push(`From here one can go to ${orList(ways)}${out ? `, or ${out}` : ''}.`);
     else if (out) around.push(`From here one can go ${out}.`);
@@ -253,7 +265,9 @@ function correctionsSection(corrections) {
 }
 
 const BUILDERS = {
-    director: (input) => directorSection(input.director),
+    summary: (input) => directorPart(input.director, 'summary'),
+    direction: (input) => directorPart(input.director, 'direction'),
+    limits: (input) => limitsSection(input.overview),
     overview: (input) => overviewSection(input.overview),
     location: (input) => locationSection(input),
     scene: (input) => sceneSection(input.scene),
@@ -289,6 +303,9 @@ export function buildGuidance(input) {
 
     const why = {
         overview: 'The setting overview.',
+        limits: 'The world\'s magic and technology limits.',
+        summary: "The game master's summary of where things stand, written before this reply from the recent chat and the scene.",
+        direction: "The game master's direction: what should probably happen in this reply.",
         location: input.location?.path?.length ? `Canonical location, its path and inherited environment; canonical time and weather.` : 'Canonical time and weather.',
         scene: 'The canonical scene title and premise.',
         corrections: 'Adjustments made by validation, kept for a few replies.',

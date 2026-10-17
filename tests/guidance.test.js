@@ -24,7 +24,7 @@ describe('guidance', () => {
         expect(text).toContain('The climate is humid.');
         expect(text).not.toContain('Mira, the innkeeper');
         expect(text).toContain('Hold to these: The scene is still at Brass Market, not the docks.');
-        expect(sections.filter((s) => !['quests', 'director', 'lore'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
+        expect(sections.filter((s) => !['quests', 'summary', 'direction', 'lore', 'limits'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
         expect(text).not.toMatch(/^\[/m);
     });
 
@@ -101,12 +101,21 @@ describe('active quests in the guidance', () => {
 });
 
 describe('director note in the guidance', () => {
-    it('comes first, as prose, and is never dropped', () => {
-        const note = 'In this reply, Mira stalls for time while the collector looms.';
-        const { text, sections } = buildGuidance({ ...input, director: note, budget: 60 });
-        expect(text.startsWith(`${REFERENCE_HEADER}
-${note}`)).toBe(true);
-        expect(sections.find((s) => s.key === 'director').mode).toBe('full');
+    it('comes last - summary, then direction - and is never dropped', () => {
+        const director = { summary: 'Mira stalls for time while the collector looms.', direction: 'Tobin loses patience.' };
+        const { text, sections } = buildGuidance({ ...input, director, budget: 60 });
+        expect(text.endsWith(`${director.summary}\n\n${director.direction}`)).toBe(true);
+        expect(sections.find((s) => s.key === 'summary').mode).toBe('full');
+        expect(sections.find((s) => s.key === 'direction').mode).toBe('full');
+    });
+
+    it('goes from the general to the immediate', () => {
+        const overview = { premise: 'A port city where the old gods are waking.', magic: { presence: 'none' } };
+        const { text } = buildGuidance({ ...input, overview, quests: [{ name: 'Recover the ledger' }], director: { summary: 'SUMMARY.', direction: 'DIRECTION.' }, budget: 4000 });
+        const at = (bit) => text.indexOf(bit);
+        const order = ['A port city', "Never break the world's limits", 'Recover the ledger', 'The scene is set in', 'SUMMARY.', 'DIRECTION.'].map(at);
+        expect(order.every((x) => x >= 0)).toBe(true);
+        expect([...order].sort((a, b) => a - b)).toEqual(order);
     });
 });
 

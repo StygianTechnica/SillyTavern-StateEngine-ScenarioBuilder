@@ -29,6 +29,7 @@ import { hasArchivist, storyRelationships } from '../library/story-relations.js'
 import { relationsFor, pairCovered } from '../library/relations-edit.js';
 import { activeQuests } from '../quests/sync.js';
 import { momentAt } from '../calendar/clock.js';
+import { routesFrom } from '../library/routes.js';
 import { weatherText } from '../calendar/weather.js';
 import { assignCalendarToVariable } from '../api/calendar.js';
 import { getVariable } from '../api/variables.js';
@@ -120,6 +121,8 @@ export async function gatherInputs(chatId, chatKey) {
                 indoor: c.indoor,
                 places,
                 partOf: partOf ? short(partOf) : null,
+                // Routes to other places, with their travel time.
+                routes: routesFrom(obj.id, library.routes).map(({ route, otherId }) => ({ name: allLocations.find((l) => l.id === otherId)?.name ?? '', travel: route.travel, note: route.note })).filter((r) => r.name),
                 items: (await listEntries(chatId, settingId, 'item'))
                     .filter((o) => (o.base?.location ?? o.location) === obj.id || castIds.includes(o.base?.owner ?? o.owner))
                     .map((o) => ({ ...short(o), id: o.id, carriedBy: (o.base?.location ?? o.location) === obj.id ? '' : (o.base?.owner ?? o.owner) })),
@@ -249,7 +252,9 @@ export async function gatherInputs(chatId, chatKey) {
         guidance: {
             // The game master's briefing (src/director/), written before
             // the reply; the rest is the scene it was written from.
-            director: settings.director.enabled ? doc.director.note : '',
+            director: settings.director.enabled
+                ? (doc.director.summary || doc.director.direction ? { summary: doc.director.summary, direction: doc.director.direction } : doc.director.note)
+                : '',
             overview: library.overview,
             location,
             time,

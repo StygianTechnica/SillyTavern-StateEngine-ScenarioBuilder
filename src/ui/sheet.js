@@ -21,6 +21,7 @@ import { renderImagePanel } from './image-panel.js';
 import { renderQuestTab } from './quest-board.js';
 import { baselineFields } from '../library/fields.js';
 import { CLIMATES } from '../calendar/weather.js';
+import { listRoutes, routesFrom, addRoute, removeRoute } from '../library/routes.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
 import { sparkButton, fieldWithTools } from './controls.js';
@@ -446,7 +447,35 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
             h('div', { class: 'sb-dd-value sb-editable', title: 'Click to edit', onclick: () => editField(d.name) }, v),
             h('span', { class: 'sb-iconbtn sb-pencil', title: 'Edit', onclick: () => editField(d.name) }, icon('fa-pen')),
             d.kind === 'boolean' ? null : readSpark(d.name, raw))])) : h('div', { class: 'sb-muted' }, 'This type has no extra fields in the setting.'),
-        env);
+        env,
+        type.id === 'location' && !isNew ? routesCard(entry, names) : null);
+}
+
+// Routes from this place to others, with how long the journey takes - the
+// clock skips ahead by it when the scene moves along a route.
+function routesCard(entry, names) {
+    const { settingId } = ws.ctx;
+    const routes = routesFrom(entry.id, listRoutes(settingId));
+    const draft = ws.routeDraft?.for === entry.id ? ws.routeDraft : (ws.routeDraft = { for: entry.id, to: '', travel: '', note: '' });
+    const places = [...names.entries()].filter(([id, n]) => n.type === 'location' && id !== entry.id).map(([id, n]) => ({ value: id, label: n.name })).sort((a, b) => a.label.localeCompare(b.label));
+    const add = () => {
+        if (!draft.to || !draft.travel.trim()) return toast('warning', 'Pick a place and say how long the journey takes.');
+        addRoute(settingId, { from: entry.id, to: draft.to, travel: draft.travel, note: draft.note });
+        ws.routeDraft = null;
+        void syncNow().then(() => rerender());
+    };
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-route'), ' Routes', h('small', { class: 'sb-hint' }, ' - when the scene moves along one, the clock moves on by its travel time')),
+        routes.length ? h('div', { class: 'sb-routes' }, routes.map(({ route, otherId }) => h('div', { class: 'sb-route' },
+            h('span', { class: 'sb-linkchip', onclick: () => openSheet(otherId) }, icon('fa-location-dot'), ` ${names.get(otherId)?.name ?? 'a place no longer in the library'}`),
+            h('span', {}, ` ${route.travel}`),
+            route.note ? h('small', { class: 'sb-hint' }, ` - ${route.note}`) : null,
+            h('span', { class: 'sb-iconbtn', title: 'Remove this route', onclick: () => { removeRoute(settingId, route.id); void syncNow().then(() => rerender()); } }, icon('fa-xmark'))))) : h('small', { class: 'sb-muted' }, 'No routes yet.'),
+        h('div', { class: 'sb-row' },
+            select([{ value: '', label: 'To…' }, ...places], draft.to, { onchange: (e) => { draft.to = e.target.value; } }),
+            h('input', { class: 'text_pole', placeholder: 'Travel time - "2 hours", "half a day"', value: draft.travel, oninput: (e) => { draft.travel = e.target.value; } }),
+            h('input', { class: 'text_pole', placeholder: 'Note - the coast road, a hidden passage', value: draft.note, oninput: (e) => { draft.note = e.target.value; } }),
+            button('Add route', add, { iconName: 'fa-plus' })));
 }
 
 async function relationsTab({ entry, isNew, allEntries, names, parents, defs }) {

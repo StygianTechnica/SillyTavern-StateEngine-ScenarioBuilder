@@ -169,12 +169,20 @@ export function forecast({ seed, climateId, fromDay, days, dayOfYear, yearLength
 }
 
 // A sentence for the narrator.
+// Each weather value as a phrase that reads in a sentence.
+const WEATHER_PHRASES = {
+    Clear: 'the sky is clear', Sunny: 'the sun is out', 'Partly Cloudy': 'clouds drift across the sky', Overcast: 'the sky is overcast',
+    Rainy: 'it is raining', Drizzle: 'a light drizzle is falling', Stormy: 'a storm is blowing', Thunderstorm: 'a thunderstorm is raging',
+    Snowy: 'it is snowing', Hailing: 'hail is falling', Windy: 'the wind is up', Foggy: 'fog hangs in the air',
+    Hazy: 'the air is hazy', Humid: 'the air is humid', Dry: 'the air is dry',
+};
+
 export function weatherText({ weather, temperature }, { indoor = false, open = true } = {}) {
-    const w = (weather ?? []).map((x) => x.toLowerCase());
-    if (!open && !w.length) return temperature ? `The air here is ${temperature.toLowerCase()}.` : '';
-    const sky = w.length ? `the weather is ${w.length > 1 ? `${w.slice(0, -1).join(', ')} and ${w.at(-1)}` : w[0]}` : '';
-    const air = temperature ? `it is ${temperature.toLowerCase()}` : '';
-    if (!sky && !air) return '';
-    const text = `${indoor ? 'Outside, ' : ''}${[sky, air].filter(Boolean).join(', and ')}.`;
+    const phrases = (weather ?? []).map((x) => WEATHER_PHRASES[x] ?? `it is ${String(x).toLowerCase()}`);
+    if (!open && !phrases.length) return temperature ? `The air here is ${temperature.toLowerCase()}.` : '';
+    if (temperature) phrases.push(`it is ${temperature.toLowerCase()}`);
+    if (!phrases.length) return '';
+    const joined = phrases.length > 1 ? `${phrases.slice(0, -1).join(', ')} and ${phrases.at(-1)}` : phrases[0];
+    const text = `${indoor ? 'Outside, ' : ''}${joined}.`;
     return text.charAt(0).toUpperCase() + text.slice(1);
 }

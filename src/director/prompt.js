@@ -11,6 +11,8 @@
 // NOT deterministic (a recorded exception to SB-015); everything around it
 // is.
 
+import { WEATHER_VALUES } from '../store/schema.js';
+
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
     const t = clean(text);
@@ -26,6 +28,20 @@ export const MAX_NEW = 2;
 // Words too common to tie a new thing to the chat.
 const STOP = new Set(['the', 'and', 'old', 'new', 'with', 'from', 'that', 'this', 'room', 'place', 'great', 'little', 'small', 'large', 'house', 'hall']);
 
+// Whether a new item matters enough to become a library entry: an item
+// takes on weight with the model and pulls the scene toward it, so flavour
+// stays in the prose. It must serve an open thread (its stated purpose or
+// its name ties to one), or be something the player named outright in
+// their latest message (every distinctive word of its name there).
+export function itemMatters(item, { quests = [], latestUserText = '' } = {}) {
+    const threads = (quests ?? []).map((q) => [q.name, q.current, q.description].filter(Boolean).join(' ')).filter(Boolean);
+    if (clean(item.why) && threads.some((t) => mentionedIn(t, item.why) || mentionedIn(item.why, t))) return true;
+    if (threads.some((t) => mentionedIn(item.name, t))) return true;
+    const words = String(item.name ?? '').toLowerCase().split(/[^a-z0-9'\u00c0-\u024f]+/).filter((w) => w.length >= 4 && !STOP.has(w));
+    const said = String(latestUserText ?? '').toLowerCase();
+    return words.length > 0 && words.every((w) => said.includes(w) || (w.endsWith('s') && said.includes(w.slice(0, -1))));
+}
+
 // Whether a new thing's name is tied to the recent chat: one of its
 // distinctive words (4+ letters) appears there. The director may only add
 // what the story has brought up - never something invented for colour.
@@ -36,45 +52,64 @@ export function mentionedIn(name, recentText) {
 }
 
 // The dossier as plain facts for the director (not for the roleplay
-// model): the director needs everything, compactly.
+// model), from the general to the immediate - the same order the guidance
+// takes: the setting, its rules, the threads being followed, what has
+// happened, then the scene as it is right now and the people in it. The
+// director reads its way into the moment, and writes from there.
 export function dossierText(input) {
     const lines = [];
-    const o = input.overview ?? {};
-    if (clean(o.premise)) lines.push(`Premise: ${cut(o.premise, 400)}`);
-    const meta = [['Tone', o.tone], ['Themes', o.themes], ['Era', o.era]].filter(([, v]) => clean(v)).map(([k, v]) => `${k}: ${clean(v)}`);
-    if (meta.length) lines.push(meta.join('. '));
-    if (input.limits?.length) lines.push(`World limits (never break these): ${input.limits.map(bare).join('; ')}.`);
+    const section = (title) => { if (lines.length) lines.push(''); lines.push(title); };
 
-    const loc = input.location;
-    if (loc?.path?.length) {
-        lines.push('', `LOCATION: ${loc.path.join(' > ')}${loc.indoor === true ? ' (indoors)' : loc.indoor === false ? ' (outdoors)' : ''}`);
-        if (clean(loc.description)) lines.push(cut(loc.description, 700));
-        if (clean(loc.conditions)) lines.push(`Conditions now: ${cut(loc.conditions, 200)}`);
-        const env = Object.entries(loc.environment ?? {}).filter(([, e]) => e?.value).map(([k, e]) => `${k}: ${clean(e.value)}`);
-        if (env.length) lines.push(env.join('. '));
-        const list = (label, xs) => { if (xs?.length) lines.push(`${label}: ${xs.slice(0, 10).map((x) => `${clean(x.name)}${clean(x.description) ? ` (${cut(x.description, 90)})` : ''}`).join('; ')}`); };
-        list('Items here', loc.items);
-        list('Creatures here', loc.creatures);
-        list('Places off it', loc.places);
-        if (loc.partOf) lines.push(`Part of: ${clean(loc.partOf.name)}`);
-    } else {
-        lines.push('', 'LOCATION: not known yet.');
+    // The setting and its rules.
+    const o = input.overview ?? {};
+    const setting = [clean(o.premise) && cut(o.premise, 400), ...[['Tone', o.tone], ['Themes', o.themes], ['Era', o.era]].filter(([, v]) => clean(v)).map(([k, v]) => `${k}: ${clean(v)}.`)].filter(Boolean);
+    if (setting.length) { section('THE SETTING'); lines.push(setting.join(' ')); }
+    if (input.limits?.length) { section('ITS RULES (never break these)'); lines.push(`${input.limits.map(bare).join('; ')}.`); }
+
+    // The threads, and what has happened.
+    const quests = (input.quests ?? []).filter((q) => clean(q.name));
+    if (quests.length) {
+        section('THREADS BEING FOLLOWED (most important first)');
+        for (const q of quests) lines.push(`- ${clean(q.name)}${q.priority ? ` [${q.priority}]` : ''}${clean(q.current) ? `: now - ${cut(q.current, 160)}` : ''}`);
     }
+    if (input.memories?.length) {
+        section('WHAT HAS HAPPENED BEFORE');
+        for (const m of input.memories.slice(0, 12)) lines.push(`- ${cut(m, 220)}`);
+    }
+
+    // The scene now: when, where, what is around.
+    section('THE SCENE NOW');
     const ck = input.clock;
     if (ck) {
-        lines.push(`TIME: ${[ck.dayPart && `${ck.dayPart}${ck.clock ? ` (${ck.clock})` : ''}`, ck.words, ck.season && `in ${ck.season}`].filter(Boolean).join(', ')}`);
-        if (clean(input.weatherText)) lines.push(`Weather: ${clean(input.weatherText)}`);
-        if (clean(ck.sky)) lines.push(`Sky: ${clean(ck.sky)}`);
+        lines.push(`When: ${[ck.dayPart && `${ck.dayPart}${ck.clock ? ` (${ck.clock})` : ''}`, ck.words, ck.season && `in ${ck.season}`].filter(Boolean).join(', ')}.`);
+        if (clean(input.weatherText)) lines.push(clean(input.weatherText));
+        if (clean(ck.sky)) lines.push(clean(ck.sky));
+        if (clean(ck.holiday)) lines.push(clean(ck.holiday));
         if (clean(ck.needs)) lines.push(clean(ck.needs));
-        if (clean(ck.holiday)) lines.push(`Calendar: ${clean(ck.holiday)}`);
     } else {
         const when = [input.time?.day ? `day ${input.time.day}` : '', input.time?.dayPart ?? '', ...(input.weather ?? []), input.temperature ?? ''].map(clean).filter(Boolean);
-        if (when.length) lines.push(`Time and weather: ${when.join(', ')}`);
+        if (when.length) lines.push(`When: ${when.join(', ')}.`);
     }
-    if (clean(input.scene?.title) || clean(input.scene?.premise)) lines.push(`Scene: ${[clean(input.scene?.title), cut(input.scene?.premise, 300)].filter(Boolean).join(' - ')}`);
+    const loc = input.location;
+    if (loc?.path?.length) {
+        lines.push(`Where: ${loc.path.join(' > ')}${loc.indoor === true ? ' (indoors)' : loc.indoor === false ? ' (outdoors)' : ''}.`);
+        if (clean(loc.description)) lines.push(cut(loc.description, 700));
+        if (clean(loc.conditions)) lines.push(`Right now: ${cut(loc.conditions, 200)}`);
+        const env = Object.entries(loc.environment ?? {}).filter(([, e]) => e?.value).map(([k, e]) => `${k}: ${clean(e.value)}`);
+        if (env.length) lines.push(`${env.join('. ')}.`);
+        const list = (label, xs) => { if (xs?.length) lines.push(`${label}: ${xs.slice(0, 10).map((x) => `${clean(x.name)}${clean(x.description) ? ` (${cut(x.description, 90)})` : ''}`).join('; ')}.`); };
+        list('Here', loc.items);
+        list('Creatures here', loc.creatures);
+        list('Ways on', [...(loc.places ?? []), ...(loc.routes ?? []).map((r) => ({ name: r.name, description: [r.travel && `${r.travel} away`, r.note].filter(Boolean).join(', ') })), ...(loc.partOf ? [{ name: `back out to ${clean(loc.partOf.name)}` }] : [])]);
+    } else {
+        lines.push('Where: not known yet.');
+    }
+    if (clean(input.scene?.title) || clean(input.scene?.premise)) lines.push(`The scene: ${[clean(input.scene?.title), cut(input.scene?.premise, 300)].filter(Boolean).join(' - ')}`);
+    if (input.corrections?.length) lines.push(`Hold to these (the story recently got them wrong): ${input.corrections.map((t) => bare(t)).join('; ')}.`);
 
+    // The people: who is here, then who could turn up.
     const cast = (input.cast ?? []).filter((c) => clean(c?.name));
-    lines.push('', cast.length ? 'PEOPLE PRESENT:' : 'PEOPLE PRESENT: not known yet.');
+    section(cast.length ? 'WHO IS HERE' : 'WHO IS HERE: not known yet.');
     for (const c of cast) {
         if (c.player) {
             lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}: the player character, played by the human - never write for them.`);
@@ -93,21 +128,8 @@ export function dossierText(input) {
     }
     const others = (input.nearby ?? []).filter((c) => clean(c?.name));
     if (others.length) {
-        lines.push('', 'OTHERS WHO COULD TURN UP (not here now):');
+        section('OTHERS WHO COULD TURN UP (not here now)');
         for (const c of others.slice(0, 12)) lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${clean(c.why) ? ` - ${clean(c.why)}` : ''}`);
-    }
-    const quests = (input.quests ?? []).filter((q) => clean(q.name));
-    if (quests.length) {
-        lines.push('', 'OPEN QUESTS (most important first):');
-        for (const q of quests) lines.push(`- ${clean(q.name)}${q.priority ? ` [${q.priority}]` : ''}${clean(q.current) ? `: now - ${cut(q.current, 160)}` : ''}`);
-    }
-    if (input.memories?.length) {
-        lines.push('', 'WHAT HAS HAPPENED BEFORE (memories):');
-        for (const m of input.memories.slice(0, 12)) lines.push(`- ${cut(m, 220)}`);
-    }
-    if (input.corrections?.length) {
-        lines.push('', 'FACTS THE STORY RECENTLY GOT WRONG (hold to the correction):');
-        for (const t of input.corrections) lines.push(`- ${clean(t)}`);
     }
     return lines.join('\n').trim();
 }
@@ -122,49 +144,46 @@ export function buildDirectorPrompt(input) {
         'You are the game master of an ongoing roleplay. You do not write the story yourself: another writer (the narrator) writes the next reply.',
         'Your job is to brief that narrator before it writes, in plain narrative prose, so its reply is grounded in the actual state of the scene and moves the story forward sensibly.',
         `${userName} is the player character, played by a human. Never decide or suggest what ${userName} says, does, thinks, feels or will do next, and do not describe the scene through ${userName}'s eyes; brief the narrator on the other characters and the world, which react to ${userName}.`,
-        'Never contradict the facts you are given. Only use what fits the world limits.',
+        'Never contradict the facts you are given. Only use what fits the world\'s rules.',
     ].join(' ');
 
+    // General to immediate: the world, the scene, then the latest chat and
+    // the last briefing, then what to write.
     const recent = (input.messages ?? []).slice(-8).map((m) => `${clean(m.name) || (m.isUser ? userName : 'Narrator')}: ${cut(m.text, 900)}`).join('\n\n');
-    const parts = [
-        'THE SCENE AS IT STANDS',
-        dossierText(input),
-        '',
-        'THE LATEST CHAT',
-        recent || '(the story has not started yet)',
-    ];
-    if (clean(input.previousNote)) parts.push('', 'YOUR PREVIOUS BRIEFING (update it; do not repeat what has already happened)', cut(input.previousNote, 1200));
+    const parts = [dossierText(input), '', 'THE LATEST CHAT', recent || '(the story has not started yet)'];
+    if (clean(input.previousNote)) parts.push('', 'YOUR LAST BRIEFING (move on from it; do not repeat what has already happened)', cut(input.previousNote, 1200));
     parts.push(
         '',
         'WRITE THE BRIEFING',
-        `Address the narrator directly ("In this reply..."), in three to five paragraphs of flowing prose - no headings, no bullet lists, no tables. Cover, in this order:`,
-        `1. Where things stand right now, in a sentence or two, picking up from ${userName}'s latest message.`,
-        `2. The other people present (not ${userName}): what each one wants at this moment, how they feel about the others, and how they are likely to react to what ${userName} just did. Weave this together; do not list them.`,
-        '3. What should probably happen next: one or two natural developments the reply could move toward, offered as direction rather than a script, nudging gently toward an open quest when it fits.',
-        '4. What to show: a few concrete sensory details of this place (what can be seen, heard, smelled) and any item or feature that matters now.',
-        'Keep it under 400 words.',
+        `In a few paragraphs of natural prose (no headings, lists or tables), tell the narrator where things stand now that ${userName} has spoken, and what the people around ${userName} want, feel toward one another and are likely to do about it - woven together, not person by person. Let the place come through in a few concrete details of what can be seen, heard or smelled, and anything here that matters now. Vary how you open; do not start with a stock phrase.`,
+        'End with a paragraph that begins "Next:" saying where this reply should probably go - one or two natural developments, as direction rather than a script, leaning toward an open thread when it fits.',
+        'Keep it under 400 words in all.',
     );
     if (input.timeKeeping !== false) {
         parts.push(
             '',
-            'Then, on its own line, say how much in-story time this reply will cover, from the latest message on:',
+            'After the briefing, on its own line, how much in-story time this reply will cover from the latest message on:',
             'TIME | 5 minutes | why',
-            'A few minutes for talk; longer when people travel, wait, work or sleep, or when the scene moves on (use a duration like "2 hours" or "3 days", or a time of day like "the next morning"). Follow any time skip the latest message asks for.',
+            'A few minutes for talk; longer when people travel, wait, work or sleep, or when the scene moves on (a duration like "2 hours" or "3 days", or a time of day like "the next morning"). A journey along one of the ways on takes its travel time. Follow any time skip the latest message asks for.',
+            '',
+            `Only if the story needs the weather to change now (a storm rolling in that the plot calls for), a line naming the new weather from these: ${WEATHER_VALUES.join(', ')}.`,
+            'WEATHER | Rainy, Windy | why',
         );
     }
     parts.push(
         '',
-        'If someone known arrives or leaves in this reply, add a line for each:',
+        'If someone known arrives or leaves in this reply, a line for each:',
         'ENTERS | Name',
         'LEAVES | Name',
     );
     if (creating) {
         parts.push(
             '',
-            'Only if the latest messages name or clearly call for something the facts above do not have - a place the characters are about to go to, a person the chat has mentioned who is about to appear, an item someone is about to use - give it its details, mention it in the briefing, and add one line per thing (at most two):',
+            'Only if the latest messages name or clearly call for something the facts above do not have - a place the characters are about to go to, a person the chat has mentioned who is about to appear - give it its details, mention it in the briefing, and add one line per thing (at most two):',
             'NEW location | Name | one-sentence description',
             'NEW character | Name | one-sentence description | here (or nearby)',
-            'NEW item | Name | one-sentence description',
+            'Items are different: a named item takes on weight and pulls the story toward it. Describe ordinary objects in the prose only. Add an item only when it is a real plot point or something an open thread needs, and say which:',
+            'NEW item | Name | one-sentence description | the thread or plot point it serves',
             'Most replies need no NEW lines. Never invent something the chat has not brought up, never add something just for colour, and never add something that already exists above.',
         );
     } else {
@@ -173,7 +192,22 @@ export function buildDirectorPrompt(input) {
     return { system, prompt: parts.join('\n') };
 }
 
-// The model's reply -> { note, created: [{ kind, name, description, here }],
+// The briefing's two parts: the summary (where things stand, the people,
+// what to show) and the direction (the "Next:" paragraph). Without the
+// marker, a last paragraph of several is taken as the direction.
+export function splitNote(note) {
+    const text = String(note ?? '').trim();
+    const m = text.match(/(^|\n)[ \t]*\**(?:next|what (?:should )?happens? next)\**[ \t]*[:\-\u2013\u2014]\**[ \t]*/i);
+    if (m) {
+        const direction = text.slice(m.index + m[0].length).trim();
+        return { summary: text.slice(0, m.index).trim(), direction: direction.charAt(0).toUpperCase() + direction.slice(1) };
+    }
+    const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+    if (paragraphs.length >= 3) return { summary: paragraphs.slice(0, -1).join('\n\n'), direction: paragraphs.at(-1) };
+    return { summary: text, direction: '' };
+}
+
+// The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
 // Lenient: strips fences, headings and preambles; NEW lines may appear
 // anywhere and are removed from the note.
@@ -183,12 +217,19 @@ export function parseDirectorNote(raw) {
     const seen = new Set();
     const keep = [];
     let time = null;
+    let weather = null;
     const enters = [];
     const leaves = [];
     for (const line of text.split('\n')) {
         const t = line.match(/^\s*(?:[-*]\s*)?\**TIME\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
         if (t) {
             if (!time) time = { text: clean(t[1]).replace(/^["']|["']$/g, ''), why: clean(t[2]) };
+            continue;
+        }
+        const wx = line.match(/^\s*(?:[-*]\s*)?\**WEATHER\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
+        if (wx) {
+            const values = wx[1].split(/[,/]| and /i).map((v) => clean(v).toLowerCase()).map((v) => WEATHER_VALUES.find((w) => w.toLowerCase() === v)).filter(Boolean);
+            if (!weather && values.length) weather = { values: [...new Set(values)], why: clean(wx[2]) };
             continue;
         }
         const move = line.match(/^\s*(?:[-*]\s*)?\**(ENTERS|LEAVES)\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|.*)?$/i);
@@ -203,7 +244,7 @@ export function parseDirectorNote(raw) {
             const name = clean(m[2]).replace(/^["'*]+|["'*]+$/g, '');
             if (kind && name && !seen.has(name.toLowerCase()) && created.length < MAX_NEW) {
                 seen.add(name.toLowerCase());
-                created.push({ kind, name, description: clean(m[3]), here: kind === 'character' ? !/nearby|elsewhere|later/i.test(m[4] ?? '') : true });
+                created.push({ kind, name, description: clean(m[3]), here: kind === 'character' ? !/nearby|elsewhere|later/i.test(m[4] ?? '') : true, ...(kind === 'item' ? { why: clean(m[4]) } : {}) });
             }
             continue;
         }
@@ -215,5 +256,5 @@ export function parseDirectorNote(raw) {
         .replace(/^\s*#+\s+/gm, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-    return { note: text, created, time, enters: [...new Set(enters)], leaves: [...new Set(leaves)] };
+    return { note: text, ...splitNote(text), created, time, weather, enters: [...new Set(enters)], leaves: [...new Set(leaves)] };
 }

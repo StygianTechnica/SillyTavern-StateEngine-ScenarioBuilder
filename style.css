@@ -93,6 +93,8 @@
 .sb-badge-scene { background: rgba(76, 175, 80, 0.35); }
 .sb-badge-play { background: rgba(74, 144, 217, 0.35); }
 .sb-badge-contradiction { background: rgba(224, 85, 85, 0.4); }
+.sb-routes { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.sb-route { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .sb-badge-player { background: rgba(214, 160, 50, 0.45); }
 .sb-badge-candidate { background: rgba(212, 176, 60, 0.4); }
 .sb-count { opacity: 0.6; font-size: 0.82em; }
@@ -352,6 +354,7 @@
 .sb-gedge { stroke: var(--SmartThemeBodyColor, #ddd); stroke-opacity: 0.35; stroke-width: 1.5; transition: stroke-opacity 0.15s; }
 .sb-gedge-parent { stroke-width: 3; stroke-opacity: 0.25; }
 .sb-gedge-related { stroke-dasharray: 5 4; }
+.sb-gedge-route { stroke: #5fa8a0; stroke-opacity: 0.6; stroke-width: 2; stroke-dasharray: 2 4; stroke-linecap: round; }
 .sb-gedge-bond { stroke: #c97b9b; stroke-opacity: 0.6; stroke-width: 2; }
 .sb-gedge-hit { stroke: transparent; stroke-width: 12; }
 .sb-gnode { cursor: pointer; transition: opacity 0.15s; }

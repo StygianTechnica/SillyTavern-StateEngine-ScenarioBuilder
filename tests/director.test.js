@@ -1,4 +1,4 @@
-import { buildDirectorPrompt, parseDirectorNote, dossierText, mentionedIn, MAX_NEW } from '../src/director/prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, dossierText, mentionedIn, splitNote, itemMatters, MAX_NEW } from '../src/director/prompt.js';
 
 const input = {
     overview: { premise: 'A port city where the old gods are waking.', tone: 'gritty' },
@@ -18,11 +18,11 @@ describe('director prompt', () => {
     it('gives the director the whole scene and the latest chat', () => {
         const { system, prompt } = buildDirectorPrompt({ ...input, allowCreate: true });
         expect(system).toContain('Never decide or suggest what Ash says, does, thinks, feels or will do next');
-        for (const bit of ['Veylan > Gilded Gull (indoors)', 'Items here: Ledger (The debt book.)', 'Places off it: Cellar', 'wants: keep the inn', 'toward Tobin: debtor',
+        for (const bit of ['Veylan > Gilded Gull (indoors)', 'Here: Ledger (The debt book.)', 'Ways on: Cellar; back out to Veylan', 'wants: keep the inn', 'toward Tobin: debtor',
             'Recover the ledger [high]: now - find the key', 'Tobin borrowed forty crowns.', 'There is NO gunpowder.', 'Ash: I lean on the bar']) {
             expect(prompt).toContain(bit);
         }
-        expect(prompt).toContain('flowing prose');
+        expect(prompt).toContain('natural prose');
         expect(prompt).toContain('NEW location | Name');
     });
 
@@ -33,8 +33,8 @@ describe('director prompt', () => {
 
     it('says when the location and people are not known', () => {
         const text = dossierText({});
-        expect(text).toContain('LOCATION: not known yet.');
-        expect(text).toContain('PEOPLE PRESENT: not known yet.');
+        expect(text).toContain('Where: not known yet.');
+        expect(text).toContain('WHO IS HERE: not known yet.');
     });
 });
 
@@ -86,7 +86,7 @@ describe('director scene keeping', () => {
         expect(prompt).toContain('TIME | 5 minutes | why');
         expect(prompt).toContain('OTHERS WHO COULD TURN UP');
         expect(prompt).toContain('- Tobin (debt collector) - seen earlier in this story');
-        expect(prompt).toContain('TIME: evening (18:40), Thursday, day 4 of Stormfall, in spring');
+        expect(prompt).toContain('When: evening (18:40), Thursday, day 4 of Stormfall, in spring.');
         expect(buildDirectorPrompt({ ...input, timeKeeping: false }).prompt).not.toContain('TIME | 5 minutes');
     });
 });
@@ -98,7 +98,7 @@ describe('director perspective and restraint', () => {
         expect(system).toContain('Ash is the player character');
         expect(prompt).toContain('- Ash (sellsword): the player character, played by the human - never write for them.');
         expect(prompt).not.toContain('stab Tobin');
-        expect(prompt).toContain('The other people present (not Ash)');
+        expect(prompt).toContain('what the people around Ash want');
     });
 
     it('only lets in new things the recent chat brought up', () => {
@@ -107,5 +107,50 @@ describe('director perspective and restraint', () => {
         expect(mentionedIn('Iron trapdoor ring', chat)).toBe(true);
         expect(mentionedIn('Old Bram', chat)).toBe(false);
         expect(mentionedIn('The Great Hall', chat)).toBe(false);
+    });
+});
+
+describe('director briefing parts', () => {
+    it('splits the summary from the Next: paragraph', () => {
+        expect(splitNote('Mira is wary.\n\nThe rain drums.\n\nNext: Tobin knocks.')).toEqual({ summary: 'Mira is wary.\n\nThe rain drums.', direction: 'Tobin knocks.' });
+        expect(splitNote('One.\n\nTwo.\n\nThree.')).toEqual({ summary: 'One.\n\nTwo.', direction: 'Three.' });
+        expect(splitNote('Just one.')).toEqual({ summary: 'Just one.', direction: '' });
+        expect(parseDirectorNote('Mira is wary.\n**Next:** Tobin knocks.\nTIME | 5 minutes').direction).toBe('Tobin knocks.');
+    });
+
+    it('feeds the director general to immediate', () => {
+        const { prompt } = buildDirectorPrompt({ ...input, allowCreate: false });
+        const order = ['THE SETTING', 'ITS RULES', 'THREADS BEING FOLLOWED', 'WHAT HAS HAPPENED BEFORE', 'THE SCENE NOW', 'WHO IS HERE', 'THE LATEST CHAT', 'WRITE THE BRIEFING'].map((x) => prompt.indexOf(x));
+        expect(order.every((x) => x >= 0)).toBe(true);
+        expect([...order].sort((a, b) => a - b)).toEqual(order);
+        expect(prompt).not.toMatch(/^1\. /m);
+    });
+});
+
+describe('director weather', () => {
+    it('reads a weather change from the allowed values only', () => {
+        const parsed = parseDirectorNote('Prose.\nWEATHER | Thunderstorm, windy, purple rain | the storm the plot needs');
+        expect(parsed.weather).toEqual({ values: ['Thunderstorm', 'Windy'], why: 'the storm the plot needs' });
+        expect(parsed.note).toBe('Prose.');
+        expect(parseDirectorNote('Prose.').weather).toBeNull();
+        expect(parseDirectorNote('Prose.\nWEATHER | nonsense').weather).toBeNull();
+    });
+});
+
+describe('items only when they matter', () => {
+    const quests = [{ name: 'Recover the ledger', current: 'find the vault key' }];
+    it('keeps items an open thread needs or the player named outright', () => {
+        expect(itemMatters({ name: 'Vault key', why: 'opens the vault for Recover the ledger' }, { quests })).toBe(true);
+        expect(itemMatters({ name: 'The Ledger', why: '' }, { quests })).toBe(true);
+        expect(itemMatters({ name: 'Silver locket', why: '' }, { quests, latestUserText: 'I pick up the silver locket from the floor.' })).toBe(true);
+    });
+    it('leaves flavour out', () => {
+        expect(itemMatters({ name: 'Iron trapdoor ring', why: 'atmosphere' }, { quests, latestUserText: 'What is under the trapdoor?' })).toBe(false);
+        expect(itemMatters({ name: 'Chipped mug', why: '' }, { quests: [], latestUserText: 'I sit down.' })).toBe(false);
+    });
+    it('reads what the item serves and asks for it', () => {
+        const parsed = parseDirectorNote('Prose.\nNEW item | Vault key | A heavy brass key. | Recover the ledger');
+        expect(parsed.created[0]).toMatchObject({ kind: 'item', name: 'Vault key', why: 'Recover the ledger' });
+        expect(buildDirectorPrompt({ ...input, allowCreate: true }).prompt).toContain('Describe ordinary objects in the prose only.');
     });
 });

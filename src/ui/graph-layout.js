@@ -13,9 +13,10 @@ import { chatStatusOf } from './catalog-model.js';
 // filters: { types: Set | null (null = every type), inPlayOnly }
 // -> { nodes: [{ id, type, name, image, status }],
 //      edges: [{ source, target, kind: 'parent' | 'ref' | 'related' | 'bond', label }] }
-// relations: the relationships the user wrote (setting doc), drawn as 'bond'.
+// relations: the relationships the user wrote (setting doc), drawn as 'bond';
+// routes: the routes between places, drawn as 'route'.
 // Edges are only drawn between shown nodes, and each pair/kind/label once.
-export function buildGraph({ entries, parents = {}, doc = null, filters = {}, relations = [], labelOf = (_t, f) => f.replace(/_/g, ' ') }) {
+export function buildGraph({ entries, parents = {}, doc = null, filters = {}, relations = [], routes = [], labelOf = (_t, f) => f.replace(/_/g, ' ') }) {
     const shown = entries.filter((e) => (!filters.types || filters.types.has(e.type))
         && (!filters.inPlayOnly || chatStatusOf(e.id, doc) !== 'unused'));
     const ids = new Set(shown.map((e) => e.id));
@@ -39,6 +40,7 @@ export function buildGraph({ entries, parents = {}, doc = null, filters = {}, re
         }
     }
     for (const r of relations ?? []) add(r.from, r.to, 'bond', r.note ? `${r.kind} (${r.note})` : r.kind);
+    for (const r of routes ?? []) add(r.from, r.to, 'route', [r.travel, r.note].filter(Boolean).join(', ') || 'route');
     return { nodes, edges };
 }
 

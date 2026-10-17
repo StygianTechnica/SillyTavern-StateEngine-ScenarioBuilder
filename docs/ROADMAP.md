@@ -84,6 +84,17 @@ These came after spec v0.5 and should be folded into its next revision.
   placed above the guidance in Curator.
 - **The director adds only what the chat brought up** - enforced in code: a
   new thing's name must share a distinctive word with the last few messages.
+- **The guidance runs from the general to the immediate:** setting, world
+  rules, threads followed, the scene, then the game master's summary and,
+  last, where the reply should go (the briefing's "Next:" paragraph). The
+  director's own input is ordered the same way, and its instructions are
+  prose, not a numbered list, so the briefing does not come out formulaic.
+- **Items only when they matter.** A named item takes on weight with the
+  model and pulls the scene toward it, so the director describes ordinary
+  objects in prose and adds an item only for a plot point or an open thread
+  (it must say which; enforced in code: the item ties to an active quest, or
+  the player named it outright). The guidance lists items here as "should the
+  scene turn to them", not as things to reach for.
 - **No wait before the message is taken.** For a send, the work before a
   reply runs on USER_MESSAGE_RENDERED (after SillyTavern posts the message,
   before it builds the prompt) instead of GENERATION_STARTED.
@@ -113,7 +124,12 @@ These came after spec v0.5 and should be folded into its next revision.
 - [ ] Groups (SB-122: "Act I", "Harbor District"), multi-select bulk
   operations (SB-125), an "in play / recently used" view (SB-121).
 - [ ] Drag-and-drop re-parenting in card/list views (only the tree has it now).
-- [ ] Location connections: adjacency, travel time, locked/hidden (SB-111).
+- [x] Location connections with travel time (SB-111): routes on a location's
+  Details tab, in the guidance, the director's dossier and the graph; a move
+  along a route (or between the places the ends are in) moves the clock on
+  by its travel time.
+- [ ] Routes: locked or hidden ones, and travel time by means (on foot, by
+  cart, by ship).
 - [ ] Merge two entries from the catalog (SB-113 merge path).
 - [ ] Undo for deletes (SB-127; needs a tombstone, since State Engine ids
   cannot be recreated).
@@ -126,7 +142,7 @@ These came after spec v0.5 and should be folded into its next revision.
 - [ ] Per-region or per-faction magic and technology (a technologically
   advanced empire next to a backward one; magic only in one land) - the
   location tree's inherited environment is the natural place.
-- [ ] Image prompts that respect world limits (e.g. Midjourney `--no` with
+- [x] Image prompts that respect world limits (e.g. Midjourney `--no` with
   absent magic or technology).
 - [ ] Final enumerations and custom values (OPEN-15).
 
@@ -234,8 +250,8 @@ calls (one entry at a time, retry, and the entry text as a fallback).
 - [x] Time advancing by rules; generated weather (SB-211); a calendar model
   (OPEN-10): the clock, weather simulation, sky (suns, moons), holidays and
   the Calendar tab.
-- [ ] Weather the director may call for (a storm the plot needs), and
-  magical weather; per-season climate overrides per region.
+- [x] Weather the director may call for (a WEATHER line, held two watches).
+- [ ] Magical weather; per-season climate overrides per region.
 - [ ] Hunger and tiredness tracked per character from hours awake and meals
   (today: by the hour only).
 - [ ] Status line in the chat (SB-702).

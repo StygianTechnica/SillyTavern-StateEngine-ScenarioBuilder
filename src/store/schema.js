@@ -170,7 +170,7 @@ export function normalizeCalendar(value) {
 export function emptySettingDoc() {
     // playerId: the character the user plays ('' = the one named like the
     // SillyTavern persona, if any) - the guidance never writes for them.
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {} }, calendar: emptyCalendar(), playerId: '' };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {} }, calendar: emptyCalendar(), playerId: '', routes: [] };
 }
 
 // Brings any stored setting document (or nothing) to the current shape.
@@ -197,7 +197,9 @@ export function normalizeSettingDoc(doc) {
         : [];
     return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true,
         imports: Array.isArray(d.imports) ? d.imports.filter(isObject).slice(-IMPORTS_KEPT) : [],
-        relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions) }, calendar: normalizeCalendar(d.calendar), playerId: str(d.playerId) };
+        relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions) }, calendar: normalizeCalendar(d.calendar), playerId: str(d.playerId),
+        // Routes between places: { id, from, to, travel, note } (src/library/routes.js).
+        routes: Array.isArray(d.routes) ? d.routes.filter((r) => isObject(r) && str(r.id) && str(r.from) && str(r.to) && r.from !== r.to).map((r) => ({ id: r.id, from: r.from, to: r.to, travel: str(r.travel), note: str(r.note) })) : [] };
 }
 
 export function emptyCanonical() {
@@ -249,13 +251,15 @@ function normalizeClock(value) {
 }
 
 export function emptyDirector() {
-    return { note: '', key: '', at: '', created: [], error: '', time: '', moves: { in: [], out: [] } };
+    return { note: '', summary: '', direction: '', key: '', at: '', created: [], error: '', time: '', moves: { in: [], out: [] } };
 }
 
 function normalizeDirector(value) {
     if (!isObject(value)) return emptyDirector();
     return {
         note: str(value.note),
+        summary: str(value.summary),
+        direction: str(value.direction),
         key: str(value.key),
         at: str(value.at),
         created: Array.isArray(value.created) ? value.created.filter((c) => isObject(c) && str(c.id)).slice(-20) : [],
