@@ -11,7 +11,7 @@
 
 import { REFERENCE_HEADER } from '../constants.js';
 import { fitToBudget, estimateTokens } from './budget.js';
-import { WORLD_TYPES, describeMagic, describeTech } from '../library/world-options.js';
+import { WORLD_TYPES, describeMagic, describeTech, lookLines } from '../library/world-options.js';
 
 const labelOf = (list, id) => list.find(([key]) => key === id)?.[1] ?? id;
 
@@ -120,7 +120,11 @@ function aloneSection(input) {
 function limitsSection(overview) {
     const o = overview ?? {};
     const limits = [...describeMagic(o.magic).limits, ...describeTech(o.tech).limits].map((l) => sentence(l));
-    return limits.length ? { full: `Never break the world's limits. ${limits.join(' ')}`, compact: '' } : null;
+    // How the world looks - kept with the limits, which are never dropped,
+    // so a post-apocalyptic "fortress" is never a storybook castle.
+    const look = lookLines(o).map((l) => sentence(l));
+    const text = [limits.length ? `Never break the world's limits. ${limits.join(' ')}` : '', look.join(' ')].filter(Boolean).join(' ');
+    return text ? { full: text, compact: '' } : null;
 }
 
 function overviewSection(overview) {

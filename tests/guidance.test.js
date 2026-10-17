@@ -194,3 +194,17 @@ describe('the player character alone in the scene', () => {
         expect(buildCast({ ...solo, cast: [...solo.cast, { name: 'Varyn' }] })).not.toContain('No one else');
     });
 });
+
+describe('how the world looks', () => {
+    const wasteland = { worldType: 'post_apocalyptic', era: 'early 2000s', tech: { level: 'tl6', flavors: ['salvaged / scavenged'] } };
+    it('is in the world rules, which are never dropped', () => {
+        const built = buildGuidance({ overview: wasteland, budget: 150 });
+        const rules = built.sections.find((s) => s.key === 'limits');
+        expect(rules.mode).toBe('full');
+        expect(rules.text).toContain('How this world looks: post-apocalyptic wasteland');
+        expect(rules.text).toContain('no suits of armour on display');
+    });
+    it('says nothing of castles in a fantasy world', () => {
+        expect(buildGuidance({ overview: { worldType: 'fantasy', tech: { level: 'tl3' } } }).text).not.toContain('suits of armour');
+    });
+});

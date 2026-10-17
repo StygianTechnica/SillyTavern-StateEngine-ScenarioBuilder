@@ -106,8 +106,17 @@ export function emptyOverview() {
     return { premise: '', worldType: '', tone: '', themes: '', era: '', rules: '', magic: emptyMagic(), tech: emptyTech() };
 }
 
+export function emptyRealm() {
+    return { worldType: '', magic: '', tech: '', notes: '' };
+}
+
+export function normalizeRealm(r) {
+    const x = isObject(r) ? r : {};
+    return { worldType: str(x.worldType), magic: str(x.magic), tech: str(x.tech), notes: str(x.notes) };
+}
+
 export function emptyEntryMeta() {
-    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, provisional: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '' };
+    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, provisional: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '', realm: emptyRealm() };
 }
 
 export function normalizeEntryMeta(meta) {
@@ -136,6 +145,10 @@ export function normalizeEntryMeta(meta) {
         // whether the sky can be seen ('' inherit, 'open', 'none').
         climate: str(m.climate),
         sky: ['open', 'none'].includes(m.sky) ? m.sky : '',
+        // Locations: how the world differs here - its kind, magic and
+        // technology - for the places inside too (a planet, a realm, a
+        // dead-magic zone; '' = inherit). See world-options.js placeOverview.
+        realm: normalizeRealm(m.realm),
     };
 }
 

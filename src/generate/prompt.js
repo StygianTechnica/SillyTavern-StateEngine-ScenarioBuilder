@@ -17,7 +17,7 @@
 // create (a new entry, from a brief or a surprise). Whatever already exists
 // is canon: kept, built on, never contradicted (SB-139).
 
-import { describeMagic, describeTech } from '../library/world-options.js';
+import { describeMagic, describeTech, lookLines } from '../library/world-options.js';
 
 // Length guidance, for one field and for each field of several.
 export const DETAIL_LEVELS = Object.freeze({
@@ -59,6 +59,7 @@ function worldBlocks(o, { skip = [] } = {}) {
     const facts = [
         !skip.includes('premise') && o.premise ? `Premise: ${cut(o.premise, 700)}` : '',
         o.worldType ? `World type: ${o.worldType.replace(/_/g, ' ')}` : '',
+        ...lookLines(o),
         o.era ? `Era: ${o.era}` : '',
         o.tone ? `Tone: ${o.tone}` : '',
         o.themes ? `Themes: ${o.themes}` : '',

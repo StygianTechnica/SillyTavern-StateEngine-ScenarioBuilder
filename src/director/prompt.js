@@ -14,6 +14,7 @@
 // is.
 
 import { WEATHER_VALUES } from '../store/schema.js';
+import { lookLines } from '../library/world-options.js';
 import { shortTitle } from '../validate/drift.js';
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
@@ -183,7 +184,7 @@ export function dossierText(input) {
 
     // The setting and its rules.
     const o = input.overview ?? {};
-    const setting = [clean(o.premise) && cut(o.premise, 400), ...[['Tone', o.tone], ['Themes', o.themes], ['Era', o.era]].filter(([, v]) => clean(v)).map(([k, v]) => `${k}: ${clean(v)}.`)].filter(Boolean);
+    const setting = [clean(o.premise) && cut(o.premise, 400), ...[['Tone', o.tone], ['Themes', o.themes], ['Era', o.era]].filter(([, v]) => clean(v)).map(([k, v]) => `${k}: ${clean(v)}.`), ...lookLines(o)].filter(Boolean);
     if (setting.length) { section('THE SETTING'); lines.push(setting.join(' ')); }
     if (input.limits?.length) { section('ITS RULES (never break these)'); lines.push(`${input.limits.map(bare).join('; ')}.`); }
 

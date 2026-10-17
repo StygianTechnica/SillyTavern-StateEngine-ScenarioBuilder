@@ -241,3 +241,11 @@ describe('aliases', () => {
         expect(mergeGenerated({ aliases: ['Elyon'] }, { aliases: ['Sovereign of Dawn'] }, 'enrich').aliases).toEqual(['Elyon', 'Sovereign of Dawn']);
     });
 });
+
+describe('generation knows how the world looks', () => {
+    it('describes a later-age world as it builds things', () => {
+        const p = buildGenerationPrompt({ task: 'fill', type: { id: 'location', label: 'Location', noun: 'location' }, fields: [{ name: 'description', label: 'Description', kind: 'longtext' }], entry: { name: "Niamh's Fortress", values: {} }, overview: { worldType: 'post_apocalyptic', tech: { level: 'tl6', flavors: [] } }, refNames: {}, nameOf: (x) => x });
+        expect(p.user).toContain('How this world looks: post-apocalyptic wasteland');
+        expect(p.user).toContain('not a medieval castle - no suits of armour on display');
+    });
+});

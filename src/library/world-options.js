@@ -230,6 +230,104 @@ export function describeMagic(magic) {
     return { lines, limits };
 }
 
+// ---- how the world looks
+//
+// What a world's things look like, from its kind and its technology - so a
+// "fortress" in a post-apocalyptic world is built from scrap and ruins, not
+// stone turrets. Shared by text generation, the guidance, the director and
+// image prompts (src/images/prompt.js).
+
+export const WORLD_LOOKS = Object.freeze({
+    post_apocalyptic: 'post-apocalyptic wasteland, ruins of the modern world, rusted twisted metal, scrap and salvage, makeshift barricades, dust and decay',
+    modern: 'contemporary modern world',
+    science_fiction: 'science fiction, futuristic technology',
+    urban_fantasy: 'modern city with hidden magic',
+    cosmic_horror: 'cosmic horror, eerie and unsettling',
+    historical: '',
+    fantasy: '',
+    multiverse: '',
+});
+// Technology flavours as they look.
+export const FLAVOUR_LOOKS = Object.freeze({
+    'salvaged / scavenged': 'scavenged scrap-built gear and vehicles',
+    'atompunk / retro-future': 'atompunk retro-future',
+    'ancient precursor tech': 'ancient precursor technology',
+    'alien-derived': 'alien technology',
+});
+const LATER_WORLDS = new Set(['modern', 'post_apocalyptic', 'science_fiction', 'urban_fantasy']);
+
+// A world of a later age than the castle: modern, post-apocalyptic, science
+// fiction - or technology at TL6 (cars, radio) and up.
+export function isLaterAge(overview) {
+    const o = overview ?? {};
+    const level = Number(String(normalizeTech(o.tech).level).replace(/^tl/, ''));
+    return LATER_WORLDS.has(o.worldType) || (Number.isFinite(level) && level >= 6);
+}
+
+// -> { look: 'post-apocalyptic wasteland, ...' (may be ''), laterAge }
+export function describeLook(overview) {
+    const o = overview ?? {};
+    const tech = normalizeTech(o.tech);
+    const look = [WORLD_LOOKS[o.worldType] ?? '', ...tech.flavors.map((f) => FLAVOUR_LOOKS[f] ?? f)].map((x) => String(x ?? '').trim()).filter(Boolean).join(', ');
+    return { look, laterAge: isLaterAge(o) };
+}
+
+// ---- how the world differs in a place
+//
+// A location may set how the world is THERE - its kind of world (a fantasy
+// realm in a multiverse), its magic (none, rare, everywhere) and its
+// technology level (a planet at TL12) - and a note; the places inside it
+// inherit what they do not set themselves (like the environment). The
+// result is the overview as it holds in that place: what the guidance, the
+// director, generation and image prompts work from.
+
+// The realm settings that hold at `placeId`: each key from the nearest
+// place up the tree that sets it. metaById: { [id]: { realm } }.
+// -> { worldType, magic, tech, notes, from: { [key]: placeId } }
+export function inheritedRealm(parents, metaById, placeId) {
+    const out = { worldType: '', magic: '', tech: '', notes: '', from: {} };
+    const seen = new Set();
+    for (let at = placeId; at && !seen.has(at); at = parents?.[at]) {
+        seen.add(at);
+        const realm = metaById?.[at]?.realm ?? {};
+        for (const key of ['worldType', 'magic', 'tech', 'notes']) {
+            const value = String(realm[key] ?? '').trim();
+            if (value && !out[key]) { out[key] = value; out.from[key] = at; }
+        }
+    }
+    return out;
+}
+
+// The overview as it holds in a place: the realm's kind of world, magic
+// presence and tech level in place of the setting's (a level set here
+// drops the setting's own "absent" list, which was for the rest of the
+// world), and its note as `placeNotes`. The overview itself without one.
+export function placeOverview(overview, parents, metaById, placeId) {
+    const o = overview ?? {};
+    if (!placeId) return o;
+    const realm = inheritedRealm(parents, metaById, placeId);
+    if (!realm.worldType && !realm.magic && !realm.tech && !realm.notes) return o;
+    const out = { ...o };
+    if (realm.worldType && WORLD_TYPES.some(([id]) => id === realm.worldType)) out.worldType = realm.worldType;
+    if (realm.magic && MAGIC_PRESENCE.some(([id]) => id === realm.magic)) out.magic = { ...normalizeMagic(o.magic), presence: realm.magic, absent: realm.magic === 'none' ? [] : normalizeMagic(o.magic).absent };
+    if (realm.tech && TECH_LEVELS.some(([id]) => id === realm.tech)) out.tech = { ...normalizeTech(o.tech), level: realm.tech, levelFromEra: false, absent: [] };
+    if (realm.notes) out.placeNotes = realm.notes;
+    return out;
+}
+
+// The look as instructions for a writer (a generation model, the narrator,
+// the director): what things look like, and - in a later age - that
+// "fortress", "gate" or "hall" are this world's, not a medieval tale's.
+// -> [line]
+export function lookLines(overview) {
+    const { look, laterAge } = describeLook(overview);
+    const lines = [];
+    if (String(overview?.placeNotes ?? '').trim()) lines.push(`Here, the world is different: ${String(overview.placeNotes).trim().replace(/[.!]?$/, '.')}`);
+    if (look) lines.push(`How this world looks: ${look}.`);
+    if (laterAge) lines.push('Describe places, people and things as this world builds and wears them: a "fortress", "gate" or "hall" here is made of what this world has, not a medieval castle - no suits of armour on display, tapestries, torch sconces or other storybook trappings, unless the story itself shows a relic of an older age.');
+    return lines;
+}
+
 // A setting's technology as prose for the model. -> { lines, limits }
 export function describeTech(tech) {
     const t = normalizeTech(tech);

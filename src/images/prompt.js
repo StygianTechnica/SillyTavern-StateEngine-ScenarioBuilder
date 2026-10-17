@@ -56,7 +56,8 @@ export const DEFAULT_IMAGE_OPTIONS = Object.freeze({
     negative: 'text, watermark, signature, blurry, lowres, deformed, extra limbs',
 });
 
-import { normalizeMagic, normalizeTech } from '../library/world-options.js';
+import { normalizeMagic, normalizeTech, describeLook, isLaterAge } from '../library/world-options.js';
+export { isLaterAge, WORLD_LOOKS } from '../library/world-options.js';
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 
@@ -77,12 +78,6 @@ const LATER_TECH = [
 // fiction - or tech level TL6 and up): the storybook look a generator
 // falls back on for "fortress", "gate" or "keep" is left out.
 const STORYBOOK = ['medieval castle', 'stone turrets', 'fairytale'];
-const LATER_WORLDS = new Set(['modern', 'post_apocalyptic', 'science_fiction', 'urban_fantasy']);
-export function isLaterAge(overview) {
-    const o = overview ?? {};
-    const level = Number(String(normalizeTech(o.tech).level).replace(/^tl/, ''));
-    return LATER_WORLDS.has(o.worldType) || (Number.isFinite(level) && level >= 6);
-}
 
 export function worldExclusions(overview) {
     const o = overview ?? {};
@@ -154,26 +149,6 @@ function subjectOf(entry, description) {
     }
 }
 
-// How each kind of world looks - so a "fortress" in a post-apocalyptic
-// world is built from scrap and ruins, not stone turrets.
-export const WORLD_LOOKS = Object.freeze({
-    post_apocalyptic: 'post-apocalyptic wasteland, ruins of the modern world, rusted twisted metal, scrap and salvage, makeshift barricades, dust and decay',
-    modern: 'contemporary modern world',
-    science_fiction: 'science fiction, futuristic technology',
-    urban_fantasy: 'modern city with hidden magic',
-    cosmic_horror: 'cosmic horror, eerie and unsettling',
-    historical: '',
-    fantasy: '',
-    multiverse: '',
-});
-// Technology flavours as they look.
-const FLAVOUR_LOOKS = Object.freeze({
-    'salvaged / scavenged': 'scavenged scrap-built gear and vehicles',
-    'atompunk / retro-future': 'atompunk retro-future',
-    'ancient precursor tech': 'ancient precursor technology',
-    'alien-derived': 'alien technology',
-});
-
 // The genre word a style preset's "fantasy" stands for in this world.
 const GENRES = Object.freeze({ post_apocalyptic: 'post-apocalyptic', modern: 'modern', science_fiction: 'science fiction', urban_fantasy: 'urban fantasy', cosmic_horror: 'cosmic horror', historical: 'historical' });
 
@@ -181,10 +156,8 @@ const GENRES = Object.freeze({ post_apocalyptic: 'post-apocalyptic', modern: 'mo
 // picture is set in), then its era and tone.
 export function flavourOf(overview) {
     const o = overview ?? {};
-    const tech = normalizeTech(o.tech);
     return [
-        WORLD_LOOKS[o.worldType] ?? '',
-        ...tech.flavors.map((f) => FLAVOUR_LOOKS[f] ?? f),
+        describeLook(o).look,
         clean(o.era),
         clean(o.tone) ? `${clean(o.tone)} mood` : '',
     ].map(clean).filter(Boolean).join(', ');
