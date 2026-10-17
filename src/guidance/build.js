@@ -88,21 +88,26 @@ function absentSection(absent) {
 
 // When the player character has no one else in the scene (everyone left,
 // or the dead have not been put in it yet), a reply that only answers
-// other people has nothing to say. Here the world answers instead: what
-// follows from the player's actions, the place, and whatever creatures are
-// about. -> the text, or '' when someone else is present.
+// other people has nothing to say. Here the world answers instead. The
+// text never names the player character: naming them invites the model
+// to write for them. -> the text, or '' when someone else is present.
 export function aloneText(input) {
     const list = (input.cast ?? []).filter((c) => clean(c?.name));
-    const player = list.find((c) => c.player);
-    if (!player || list.some((c) => !c.player)) return '';
-    const name = clean(player.name);
+    if (!list.some((c) => c.player) || list.some((c) => !c.player)) return '';
+    // State Engine's tracker has someone else here: the cast is behind, not empty.
+    if (input.othersTracked) return '';
     const creatures = (input.location?.creatures ?? []).map((x) => clean(x.name)).filter(Boolean);
-    return [
-        `No one else is with ${name} right now, but the reply is not empty: the world answers.`,
-        `Show what follows from what ${name} just did, how the place around ${name} changes, and what can be seen, heard and smelled.`,
-        creatures.length ? `Also here: ${andList(creatures)}. They act by their own nature - describe what they do.` : 'Any creature, danger or force already in the story acts by its own nature - describe what it does.',
-        `Someone may arrive only if the story calls for it. Never write ${name}'s words, actions, thoughts or feelings.`,
-    ].join(' ');
+    const lines = [
+        'When no NPCs are present, the reply is not empty. The world itself reacts. Describe ONLY:',
+        '- the environment',
+        '- the weather',
+        '- sounds',
+        '- smells',
+        '- distant movement',
+        `- creatures acting independently${creatures.length ? ` (here: ${andList(creatures)})` : ''}`,
+        '- divine or supernatural forces',
+    ];
+    return lines.join('\n');
 }
 
 function aloneSection(input) {

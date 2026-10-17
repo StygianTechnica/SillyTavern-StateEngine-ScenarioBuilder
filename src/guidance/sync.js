@@ -188,6 +188,19 @@ export async function gatherInputs(chatId, chatKey) {
         if (name) absent.push(name);
     }
 
+    // Whether State Engine's own scene tracker has anyone here besides the
+    // player character (and those taken out by hand): then the "no one
+    // else is here" guidance is never given, even when the canonical cast
+    // lags behind.
+    let othersTracked = false;
+    try {
+        const heldOut = new Set(doc.held.filter((x) => x.field === 'cast' && x.op === 'remove' && x.until > doc.turn).map((x) => x.objectId));
+        const tracked = (await getRawValues(chatId, ['se__scene_characters'])).se__scene_characters;
+        othersTracked = Array.isArray(tracked) && tracked.some((id) => typeof id === 'string' && id !== playerId && !heldOut.has(id));
+    } catch (err) {
+        console.debug(LOG_PREFIX, "could not read State Engine's scene tracker", err);
+    }
+
     // The active quests (most important first, a few at most).
     let quests = [];
     if (settingId) {
@@ -281,6 +294,7 @@ export async function gatherInputs(chatId, chatKey) {
             cast,
             // Taken out of the scene by hand, while that holds.
             absent,
+            othersTracked,
             lore,
             corrections: doc.corrections.map((x) => x.text),
             quests,

@@ -206,9 +206,10 @@ export function buildDirectorPrompt(input) {
     // With no one but the player present there are no people to brief on:
     // the world itself must answer, or the reply has nothing to do.
     const castHere = (input.cast ?? []).filter((c) => clean(c?.name));
-    const alone = castHere.some((c) => c.player) && castHere.every((c) => c.player);
+    // State Engine's tracker having someone else here means the cast is behind, not empty.
+    const alone = !input.othersTracked && castHere.some((c) => c.player) && castHere.every((c) => c.player);
     const people = alone
-        ? `No one else is with ${userName} right now, so brief the narrator on how the world answers instead: what follows from what ${userName} just did, how the place changes around ${userName}, and what any creatures, dangers or forces in the story (the ones here, or ones the latest chat shows coming) are doing and are likely to do next. If the chat shows creatures or people arriving that are not listed as here, name them with an ENTERS line below. Someone may turn up only if the story calls for it - do not invent a companion just to have someone to talk to.`
+        ? 'No NPCs are present, so the reply is not empty: the world itself reacts. Brief the narrator ONLY on the environment, the weather, sounds, smells, distant movement, creatures acting independently (the ones here, or ones the latest chat shows coming) and divine or supernatural forces - including what they do in answer to the latest message. Do not describe or suggest anything the player character does, thinks or feels. If the chat shows creatures or people arriving that are not listed as here, name them with an ENTERS line below. Someone may turn up only if the story calls for it - do not invent a companion just to have someone to talk to.'
         : `what the people around ${userName} want, feel toward one another and are likely to do about it - woven together, not person by person.`;
     parts.push(
         '',

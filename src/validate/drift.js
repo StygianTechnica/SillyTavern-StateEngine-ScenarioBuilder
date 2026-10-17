@@ -98,16 +98,14 @@ export function readObserved(raw) {
 export const SE_CAST = 'se__scene_characters';
 
 // Folds State Engine's scene tracker into the story's reading of who is
-// here: someone it has newly listed (not in its list last time) and the
-// story's reading lacks counts as arrived - a model asked to start from
-// the current list often leaves out someone who came back. Removals stay
-// the story's reading's call. `seCast`: the tracker's ids, or null.
-// -> observed, with `seCast` kept for next time.
-export function withStateEngineCast(observed, seCast, lastObserved = {}) {
+// here: a character is present while EITHER lists them, and gone only once
+// both have dropped them. The story's reading starts from the canonical
+// cast and often leaves out someone who came back (Niamh, God War); State
+// Engine's tracker keeps its own list. Removals the user made by hand
+// still hold (applyHolds). `seCast`: the tracker's ids, or null.
+export function withStateEngineCast(observed, seCast) {
     if (!Array.isArray(seCast)) return observed;
-    const before = new Set(Array.isArray(lastObserved?.seCast) ? lastObserved.seCast : []);
-    const added = seCast.filter((id) => !before.has(id) && !observed.cast.includes(id));
-    return { ...observed, cast: [...observed.cast, ...added], seCast: [...seCast] };
+    return { ...observed, cast: [...new Set([...observed.cast, ...seCast])] };
 }
 
 // Scene titles are kept short: at most this many words.

@@ -1,4 +1,4 @@
-import { buildGuidance, buildStateBlock, buildCast, guidanceParts, truncate } from '../src/guidance/build.js';
+import { buildGuidance, buildStateBlock, buildCast, guidanceParts, truncate, aloneText } from '../src/guidance/build.js';
 import { fitToBudget, estimateTokens } from '../src/guidance/budget.js';
 import { REFERENCE_HEADER } from '../src/constants.js';
 
@@ -173,14 +173,20 @@ describe('the player character alone in the scene', () => {
     const solo = { cast: [{ name: 'Remus', player: true }], location: { path: ['Gatehouse'], creatures: [{ name: 'Zombies' }] }, budget: 600 };
     it('tells the reply to let the world answer, naming the creatures here', () => {
         const text = buildCast(solo);
-        expect(text).toContain('No one else is with Remus right now, but the reply is not empty: the world answers.');
-        expect(text).toContain('Also here: Zombies. They act by their own nature');
-        expect(text).toContain("Never write Remus's words, actions, thoughts or feelings.");
+        expect(text).toContain('When no NPCs are present, the reply is not empty. The world itself reacts. Describe ONLY:');
+        expect(text).toContain('- creatures acting independently (here: Zombies)');
+        // The world's part names nobody: naming the player character invites the model to write for them.
+        expect(aloneText(solo)).not.toContain('Remus');
     });
     it('closes the direction part of the guidance', () => {
         const built = buildGuidance(solo);
         expect(built.sections.find((s) => s.key === 'alone').mode).toBe('full');
-        expect(guidanceParts(built).guidance_direction).toContain('Show what follows from what Remus just did');
+        expect(guidanceParts(built).guidance_direction).toContain('- divine or supernatural forces');
+        expect(guidanceParts(built).guidance_direction).not.toContain('Remus');
+    });
+    it("says nothing while State Engine's tracker has someone else here", () => {
+        expect(aloneText({ ...solo, othersTracked: true })).toBe('');
+        expect(buildGuidance({ ...solo, othersTracked: true }).sections.find((s) => s.key === 'alone').mode).toBe('empty');
     });
     it('says nothing when someone else is present', () => {
         const built = buildGuidance({ ...solo, cast: [...solo.cast, { name: 'Varyn' }] });

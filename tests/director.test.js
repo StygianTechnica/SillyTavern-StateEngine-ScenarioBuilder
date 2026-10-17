@@ -41,7 +41,8 @@ describe('director prompt', () => {
         const alone = { cast: [{ name: 'Remus', player: true }] };
         expect(dossierText(alone)).toContain('- No one else is here.');
         const { prompt } = buildDirectorPrompt(alone);
-        expect(prompt).toContain('No one else is with Remus right now, so brief the narrator on how the world answers instead');
+        expect(prompt).toContain('No NPCs are present, so the reply is not empty: the world itself reacts.');
+        expect(buildDirectorPrompt({ ...alone, othersTracked: true }).prompt).not.toContain('No NPCs are present');
         expect(prompt).not.toContain('what the people around Remus want');
         expect(buildDirectorPrompt({ cast: [...alone.cast, { name: 'Varyn' }] }).prompt).toContain('what the people around Remus want');
     });

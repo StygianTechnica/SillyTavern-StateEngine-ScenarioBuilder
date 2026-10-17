@@ -145,13 +145,14 @@ describe('changes made by hand hold', () => {
 
 describe("State Engine's own scene tracker", () => {
     const observed = { cast: ['remus'], location: '' };
-    it('adds someone it newly lists that the story reading lacks', () => {
-        expect(withStateEngineCast(observed, ['remus', 'niamh'], {}).cast).toEqual(['remus', 'niamh']);
+    it('keeps someone present while either reading lists them', () => {
+        expect(withStateEngineCast(observed, ['remus', 'niamh']).cast).toEqual(['remus', 'niamh']);
+        expect(withStateEngineCast({ ...observed, cast: ['remus', 'varyn'] }, ['remus']).cast).toEqual(['remus', 'varyn']);
     });
-    it('does not re-add someone it has listed all along, or undo a removal', () => {
-        expect(withStateEngineCast(observed, ['remus', 'niamh'], { seCast: ['remus', 'niamh'] }).cast).toEqual(['remus']);
+    it('lets someone go once both have dropped them', () => {
+        expect(withStateEngineCast(observed, ['remus']).cast).toEqual(['remus']);
     });
     it('changes nothing without the tracker', () => {
-        expect(withStateEngineCast(observed, null, {})).toBe(observed);
+        expect(withStateEngineCast(observed, null)).toBe(observed);
     });
 });
