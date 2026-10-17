@@ -29,3 +29,12 @@ describe('things detected in the story join the scene', () => {
         expect(state.calls).toHaveLength(0);
     });
 });
+
+describe('descriptive names', () => {
+    it('mark a person known only by a description', async () => {
+        const { isDescriptiveName } = await import('../src/library/intake.js');
+        expect(isDescriptiveName('the eyepatched man')).toBe(true);
+        expect(isDescriptiveName('A hooded woman')).toBe(true);
+        expect(isDescriptiveName('Graxx')).toBe(false);
+    });
+});

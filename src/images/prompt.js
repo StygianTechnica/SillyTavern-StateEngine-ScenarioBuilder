@@ -73,17 +73,33 @@ const LATER_TECH = [
     ['tl8', ['smartphones', 'drones']],
     ['tl9', ['spaceships', 'cybernetic implants']],
 ];
+// A world of a later age than the castle (modern, post-apocalyptic, science
+// fiction - or tech level TL6 and up): the storybook look a generator
+// falls back on for "fortress", "gate" or "keep" is left out.
+const STORYBOOK = ['medieval castle', 'stone turrets', 'fairytale'];
+const LATER_WORLDS = new Set(['modern', 'post_apocalyptic', 'science_fiction', 'urban_fantasy']);
+export function isLaterAge(overview) {
+    const o = overview ?? {};
+    const level = Number(String(normalizeTech(o.tech).level).replace(/^tl/, ''));
+    return LATER_WORLDS.has(o.worldType) || (Number.isFinite(level) && level >= 6);
+}
+
 export function worldExclusions(overview) {
     const o = overview ?? {};
     const magic = normalizeMagic(o.magic);
     const tech = normalizeTech(o.tech);
     const out = [];
+    if (isLaterAge(o)) out.push(...STORYBOOK);
     if (magic.presence === 'none') out.push('magic', 'glowing spell effects');
     for (const kind of magic.absent) out.push(/magic|sorcery|craft/i.test(kind) ? kind : `${kind} magic`);
     out.push(...tech.absent);
     const level = Number(String(tech.level).replace(/^tl/, ''));
     if (Number.isFinite(level) && tech.level && tech.spread !== 'imported' && tech.spread !== 'relic') {
-        for (const [tl, things] of LATER_TECH) if (Number(tl.slice(2)) > level) out.push(...things);
+        // A post-apocalyptic world is the ruin of a more advanced one: dead
+        // screens and modern rags belong in its pictures, so only what lies
+        // beyond the information age is ruled out by its level.
+        const floor = o.worldType === 'post_apocalyptic' ? Math.max(level, 8) : level;
+        for (const [tl, things] of LATER_TECH) if (Number(tl.slice(2)) > floor) out.push(...things);
     }
     return [...new Set(out.map((x) => clean(x).toLowerCase()).filter(Boolean))].slice(0, 12);
 }
@@ -95,13 +111,26 @@ function words(text, max) {
     return list.length <= max ? list.join(' ') : `${list.slice(0, max).join(' ')}`;
 }
 
-// The entry's own names taken out of a text, so they don't reach the prompt.
-export function stripNames(text, names) {
+// What a named thing is, from the last word of its name: "Niamh's
+// Fortress" is a fortress, "The Blackened Bridge" a bridge. '' for a name
+// with nothing generic in it.
+export function kindWord(name) {
+    const last = clean(name).split(/\s+/).pop()?.toLowerCase().replace(/[^a-z'-]/g, '') ?? '';
+    return last.length >= 3 && /^[a-z]/.test(last) && !/['’]s$/.test(last) && clean(name).split(/\s+/).length > 1 ? last : '';
+}
+
+// The entry's own names taken out of a text, so they don't reach the
+// prompt - replaced by `kind` ("the fortress") when given.
+export function stripNames(text, names, kind = '') {
     let out = clean(text);
     for (const name of [...names].filter((n) => clean(n).length > 1).sort((a, b) => b.length - a.length)) {
-        out = out.replace(new RegExp(`\\b${escapeRe(clean(name))}(['’]s)?\\b`, 'gi'), '');
+        out = out.replace(new RegExp(`\\b${escapeRe(clean(name))}(['’]s)?\\b`, 'gi'), (_m, poss) => {
+            if (!kind) return '';
+            return `the ${kind}${poss ?? ''}`;
+        });
     }
-    return out.replace(/\s+([,.;:])/g, '$1').replace(/([,.;:]){2,}/g, '$1').replace(/^[\s,.;:]+/, '').replace(/\s+/g, ' ').trim();
+    out = out.replace(/\s+([,.;:])/g, '$1').replace(/([,.;:]){2,}/g, '$1').replace(/^[\s,.;:]+/, '').replace(/\s+/g, ' ').trim();
+    return kind ? out.charAt(0).toUpperCase() + out.slice(1) : out;
 }
 
 const field = (entry, name) => {
@@ -125,15 +154,49 @@ function subjectOf(entry, description) {
     }
 }
 
-// The setting's flavour: era and tone from the overview.
-function flavourOf(overview) {
+// How each kind of world looks - so a "fortress" in a post-apocalyptic
+// world is built from scrap and ruins, not stone turrets.
+export const WORLD_LOOKS = Object.freeze({
+    post_apocalyptic: 'post-apocalyptic wasteland, ruins of the modern world, rusted twisted metal, scrap and salvage, makeshift barricades, dust and decay',
+    modern: 'contemporary modern world',
+    science_fiction: 'science fiction, futuristic technology',
+    urban_fantasy: 'modern city with hidden magic',
+    cosmic_horror: 'cosmic horror, eerie and unsettling',
+    historical: '',
+    fantasy: '',
+    multiverse: '',
+});
+// Technology flavours as they look.
+const FLAVOUR_LOOKS = Object.freeze({
+    'salvaged / scavenged': 'scavenged scrap-built gear and vehicles',
+    'atompunk / retro-future': 'atompunk retro-future',
+    'ancient precursor tech': 'ancient precursor technology',
+    'alien-derived': 'alien technology',
+});
+
+// The genre word a style preset's "fantasy" stands for in this world.
+const GENRES = Object.freeze({ post_apocalyptic: 'post-apocalyptic', modern: 'modern', science_fiction: 'science fiction', urban_fantasy: 'urban fantasy', cosmic_horror: 'cosmic horror', historical: 'historical' });
+
+// The setting's look: its kind of world and technology first (what the
+// picture is set in), then its era and tone.
+export function flavourOf(overview) {
     const o = overview ?? {};
-    return [clean(o.era), clean(o.tone) ? `${clean(o.tone)} mood` : ''].filter(Boolean).join(', ');
+    const tech = normalizeTech(o.tech);
+    return [
+        WORLD_LOOKS[o.worldType] ?? '',
+        ...tech.flavors.map((f) => FLAVOUR_LOOKS[f] ?? f),
+        clean(o.era),
+        clean(o.tone) ? `${clean(o.tone)} mood` : '',
+    ].map(clean).filter(Boolean).join(', ');
 }
 
-function styleOf(options) {
+// The style's words - its "fantasy" made this world's genre ("dark fantasy
+// oil painting" is "dark post-apocalyptic oil painting" in a wasteland).
+export function styleOf(options, overview = {}) {
     const preset = STYLES.find((s) => s.id === options.style);
-    return [preset?.text ?? '', clean(options.customStyle)].filter(Boolean).join(', ');
+    const genre = GENRES[overview?.worldType];
+    const text = genre ? (preset?.text ?? '').replace(/\bfantasy\b/gi, genre) : (preset?.text ?? '');
+    return [text, clean(options.customStyle)].filter(Boolean).join(', ');
 }
 
 // Inputs: entry (State Engine object: type, name, aliases, description,
@@ -144,14 +207,19 @@ function styleOf(options) {
 export function buildImagePrompt({ entry, narrative = '', environment = {}, overview = {}, options = {} }) {
     const opts = { ...DEFAULT_IMAGE_OPTIONS, ...options, midjourney: { ...DEFAULT_IMAGE_OPTIONS.midjourney, ...(options.midjourney ?? {}) } };
     const names = opts.includeNames ? [] : [entry.name, ...(entry.aliases ?? [])];
-    const description = stripNames(words(narrative || entry.description || '', 60), names);
+    // A place's (or thing's) name taken out leaves its kind in its stead
+    // ("Niamh's Fortress looms" - "The fortress looms"), so the picture
+    // still knows what it is of. People's names just go.
+    const description = entry.type === 'character'
+        ? stripNames(words(narrative || entry.description || '', 60), names)
+        : stripNames(words(narrative || entry.description || '', 60), names, kindWord(entry.name));
     const env = [clean(environment.climate), clean(environment.lighting)].filter(Boolean).join(', ');
     const parts = [
         opts.includeNames && entry.type === 'character' ? clean(entry.name) : '',
         ...subjectOf(entry, description),
         entry.type === 'location' || entry.type === 'scene' ? env : '',
         flavourOf(overview),
-        styleOf(opts),
+        styleOf(opts, overview),
     ].map(clean).filter(Boolean);
     const subject = parts.join(', ').replace(/\.\s*,/g, ',').replace(/\.+$/, '');
 
@@ -174,8 +242,9 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
         const negative = [clean(opts.negative), ...(opts.respectLimits === false ? [] : worldExclusions(overview))].filter(Boolean).join(', ');
         return { provider: 'stable_diffusion', prompt: `${subject}, highly detailed`, negative };
     }
-    const body = parts.slice(opts.includeNames && entry.type === 'character' ? 1 : 0).filter((p) => p !== styleOf(opts)).join(', ');
-    const lead = styleOf(opts) ? `${styleOf(opts).split(',')[0]} of ` : 'An image of ';
+    const style = styleOf(opts, overview);
+    const body = parts.slice(opts.includeNames && entry.type === 'character' ? 1 : 0).filter((p) => p !== style).join(', ');
+    const lead = style ? `${style.split(',')[0]} of ` : 'An image of ';
     const sentence = `${lead}${body.charAt(0).toLowerCase()}${body.slice(1)}.`;
     return { provider: 'natural', prompt: sentence.charAt(0).toUpperCase() + sentence.slice(1), negative: '' };
 }

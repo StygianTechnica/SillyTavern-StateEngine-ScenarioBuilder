@@ -94,8 +94,17 @@ export function relevance(item, { recentText = '', latestUserText = '', quests =
     const tiedIds = tie ? (known ?? []).filter((e) => [e.name, ...(e.aliases ?? e.base?.aliases ?? [])].some((n) => clean(n).length >= 3 && mentionedWhole(tie, n))).map((e) => e.id) : [];
     const threadTie = !!tie && (quests ?? []).some((q) => clean(q.name) && (mentionedWhole(tie, q.name) || mentionedIn(q.name, tie)));
     if (item.kind === 'item') return { ok: itemMatters(item, { quests, latestUserText }) || tiedIds.length > 0 && threadTie, tiedIds };
-    const named = mentionedIn(item.name, recentText) || (item.kind === 'location' && mentionedIn(item.description, recentText));
+    const named = mentionedIn(item.name, recentText) || (item.kind === 'location' && mentionedIn(item.description, recentText))
+        || (item.provisional === true && echoes(item.name, recentText));
     return { ok: named || tiedIds.length > 0 || threadTie, tiedIds };
+}
+
+// Whether a descriptive name ("The Eyepatched Man") echoes the text ("a
+// man with an eyepatch"): one of its distinctive words, or its stem, is there.
+export function echoes(name, text) {
+    const t = String(text ?? '').toLowerCase();
+    const words = String(name ?? '').toLowerCase().split(/[^a-z0-9'\u00c0-\u024f]+/).filter((w) => w.length >= 4 && !['the', 'man', 'woman', 'person', 'figure', 'with'].includes(w));
+    return words.some((w) => t.includes(w) || (w.length >= 6 && t.includes(w.slice(0, w.length - 2))) || (w.length >= 7 && t.includes(w.slice(0, w.length - 3))));
 }
 
 // `name` in `text` as whole words, case aside.
@@ -266,7 +275,7 @@ export function dossierText(input) {
             clean(c.thought) && `thinking: ${cut(c.thought, 160)}`,
             ...(c.relations ?? []).map((r) => cut(r, 140)),
         ].filter(Boolean).map(bare);
-        lines.push(`- ${clean(c.name)}${bits.length ? `: ${bits.join('; ')}` : ''}`);
+        lines.push(`- ${clean(c.name)}${c.provisional ? ' (no name yet - known by this description)' : ''}${bits.length ? `: ${bits.join('; ')}` : ''}`);
     }
     if (cast.length && cast.every((c) => c.player)) lines.push('- No one else is here.');
     if (input.absent?.length) {
@@ -346,6 +355,9 @@ export function buildDirectorPrompt(input) {
         'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along):',
         'ENTERS | Name',
         'LEAVES | Name',
+        '',
+        'If the latest chat gives a name to someone listed with "no name yet", a line for each (only the name the story gives - never one of your own):',
+        'RENAME | The Eyepatched Man | Korrin',
     );
     if (creating) {
         parts.push(
@@ -353,6 +365,8 @@ export function buildDirectorPrompt(input) {
             'Anything your briefing relies on that the facts above do not have - a place the characters are about to go to, a person, creature or group about to matter, a piece of lore or history, an event that is happening or coming - give it its details, mention it in the briefing, and add one line per thing (at most two). The last part says what it is TIED to: a person, place, faction or thread named above (by name), or the message that brought it up:',
             'NEW location | Name | one-sentence description | tied to',
             'NEW character | Name | one-sentence description | here (or nearby) | tied to',
+            'Someone who takes part in the scene - speaks, acts, is spoken to, or is singled out by a description - but has no name yet is a character too: give them a short descriptive name from how the story describes them ("The Eyepatched Man", "The Heavyset Man") and add the word unnamed as the last part. Background crowds ("several others", "the guards") are not.',
+            'NEW character | The Eyepatched Man | a man with crooked teeth and an eyepatch | here | unnamed',
             'NEW creature | Name | one-sentence description | tied to',
             'NEW faction | Name | one-sentence description | tied to',
             'NEW lore | Name | one-sentence description | tied to',
@@ -420,6 +434,7 @@ export function parseDirectorNote(raw) {
     let situation = '';
     let move = null;
     let now = '';
+    const renames = [];
     const enters = [];
     const leaves = [];
     for (const line of text.split('\n')) {
@@ -459,6 +474,13 @@ export function parseDirectorNote(raw) {
             }
             continue;
         }
+        const rn = line.match(/^\s*(?:[-*]\s*)?\**RENAME\**\s*:?\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*$/i);
+        if (rn) {
+            const from = clean(rn[1]).replace(/^["'*]+|["'*.]+$/g, '');
+            const to = clean(rn[2]).replace(/^["'*]+|["'*.]+$/g, '');
+            if (from && to && from.toLowerCase() !== to.toLowerCase()) renames.push({ from, to });
+            continue;
+        }
         const step = line.match(/^\s*(?:[-*]\s*)?\**(ENTERS|LEAVES)\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|.*)?$/i);
         if (step) {
             const name = clean(step[2]).replace(/^["'*]+|["'*]+$/g, '');
@@ -476,7 +498,9 @@ export function parseDirectorNote(raw) {
                 const isPerson = kind === 'character';
                 const where = isPerson && /^(here|nearby|elsewhere|later|present|away)\b/i.test(clean(m[4])) ? clean(m[4]) : '';
                 const why = clean(isPerson ? (where ? m[5] : m[4]) : m[4]);
-                created.push({ kind, name, description: clean(m[3]), here: isPerson ? !/nearby|elsewhere|later|away/i.test(where) : true, why });
+                // "unnamed": known by a description until the story names them.
+                const provisional = isPerson && /^(unnamed|no name|nameless|provisional)\b/i.test(why);
+                created.push({ kind, name, description: clean(m[3]), here: isPerson ? !/nearby|elsewhere|later|away/i.test(where) : true, why: provisional ? '' : why, ...(provisional ? { provisional: true } : {}) });
             }
             continue;
         }
@@ -488,5 +512,5 @@ export function parseDirectorNote(raw) {
         .replace(/^\s*#+\s+/gm, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-    return { note: text, ...splitNote(text), created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)] };
+    return { note: text, ...splitNote(text), created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames };
 }

@@ -93,6 +93,12 @@ These came after spec v0.5 and should be folded into its next revision.
   names or that is tied to the place or the people present ("Also
   relevant") - one short line each, which the briefing folds into its
   narrative in a few words rather than listing.
+- **People known only by a description** ("a man with an eyepatch") who
+  take part in the scene are added under a descriptive name ("The
+  Eyepatched Man"), marked provisional; when the story names them the
+  director's RENAME line renames the same entry, keeping the description as
+  an alias, so what they did and said stays theirs. State Engine's detection
+  also brings such people in by a short description.
 - **The guidance runs from the general to the immediate:** setting, world
   rules, threads followed, the scene, then the game master's summary and,
   last, where the reply should go (the briefing's "Next:" paragraph). The

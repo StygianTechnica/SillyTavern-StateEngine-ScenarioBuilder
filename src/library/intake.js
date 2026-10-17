@@ -50,6 +50,12 @@ export function sceneArrivals(chatId, chatKey, arrived, names = new Map()) {
     return setCanonical(chatKey, patch, { source: 'review', note: `Detected in the story, now in the scene: ${joined.join(', ')}`, chatId });
 }
 
+// A person the story knows only by a description ("the eyepatched man",
+// "a hooded woman"): provisional until it names them (src/director/ RENAME).
+export function isDescriptiveName(name) {
+    return /^(the|a|an)\s+\S/i.test(String(name ?? '').trim());
+}
+
 let running = false;
 
 // One intake pass for a chat's setting. Never throws.
@@ -77,7 +83,7 @@ export async function runIntake(chatId, chatKey, settingId) {
         const arrived = { creatureIds: [], castIds: [] };
         for (const obj of fresh) {
             const fromStory = !obj.meta?.origin || obj.meta.origin === 'story';
-            if (!obj.meta?.origin) setEntryMeta(settingId, obj.id, { origin: 'story' });
+            if (!obj.meta?.origin) setEntryMeta(settingId, obj.id, { origin: 'story', ...(obj.type === 'character' && isDescriptiveName(obj.name) ? { provisional: true } : {}) });
             if (fromStory && obj.type === 'creature') arrived.creatureIds.push(obj.id);
             if (fromStory && obj.type === 'character' && (obj.runtime?.present === true || obj.present === true)) arrived.castIds.push(obj.id);
             let placedUnder = '';

@@ -107,7 +107,7 @@ export function emptyOverview() {
 }
 
 export function emptyEntryMeta() {
-    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '' };
+    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, provisional: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '' };
 }
 
 export function normalizeEntryMeta(meta) {
@@ -121,6 +121,9 @@ export function normalizeEntryMeta(meta) {
         excluded: m.excluded === true,
         origin: ['user', 'story', 'import', 'director'].includes(m.origin) ? m.origin : '',
         canonLocked: m.canonLocked === true,
+        // Known only by a description ("The Eyepatched Man") until the
+        // story names them (src/director/: RENAME).
+        provisional: m.provisional === true,
         generated: strList(m.generated),
         source: str(m.source),
         quest: normalizeQuestMeta(m.quest),

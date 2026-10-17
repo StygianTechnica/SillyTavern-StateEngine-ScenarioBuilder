@@ -1,5 +1,5 @@
-import { parseDirectorNote, relevance, dossierText, buildDirectorPrompt, alsoRelevant, newKind } from '../src/director/prompt.js';
-import { factionsAtPlay } from '../src/director/run.js';
+import { parseDirectorNote, relevance, dossierText, buildDirectorPrompt, alsoRelevant, newKind, echoes } from '../src/director/prompt.js';
+import { factionsAtPlay, renamePlan } from '../src/director/run.js';
 
 const known = [
     { id: 'chr_remus', name: 'Remus Watt', aliases: [] },
@@ -110,5 +110,27 @@ describe('everything that bears on the moment', () => {
         expect(newKind('Mission')).toBe('quest');
         expect(newKind('scenes')).toBe('scene');
         expect(parseDirectorNote('x\nNEW quest | Return the Seal | bring it to the shrine | Seal of Elyon').created[0]).toMatchObject({ kind: 'quest', why: 'Seal of Elyon' });
+    });
+});
+
+describe('people the story describes but has not named', () => {
+    const recent = 'A tall man with thick eyebrows and a weirdly twisted smile. Another with crooked teeth and an eyepatch. The third was heavyset.';
+    it('are added under a descriptive name, marked unnamed', () => {
+        const c = parseDirectorNote('x\nNEW character | The Eyepatched Man | crooked teeth, an eyepatch | here | unnamed').created[0];
+        expect(c).toMatchObject({ kind: 'character', name: 'The Eyepatched Man', here: true, why: '', provisional: true });
+        expect(relevance(c, { recentText: recent, quests: [], known: [] }).ok).toBe(true);
+        expect(relevance({ ...c, name: 'The Hooded Woman' }, { recentText: recent, quests: [], known: [] }).ok).toBe(false);
+        expect(echoes('The Heavyset Man', recent)).toBe(true);
+    });
+    it('are listed as having no name yet, and renamed only to a name the chat gives', () => {
+        expect(dossierText({ cast: [{ name: 'The Eyepatched Man', provisional: true }] })).toContain('- The Eyepatched Man (no name yet - known by this description)');
+        expect(parseDirectorNote('x\nRENAME | The Eyepatched Man | Korrin').renames).toEqual([{ from: 'The Eyepatched Man', to: 'Korrin' }]);
+        const characters = [{ id: 'chr_e', name: 'The Eyepatched Man', aliases: [] }, { id: 'chr_g', name: 'Graxx' }];
+        const provisional = (id) => id === 'chr_e';
+        expect(renamePlan([{ from: 'The Eyepatched Man', to: 'Korrin' }], characters, provisional, '"Korrin, sit down," Graxx barked.'))
+            .toEqual([{ id: 'chr_e', from: 'The Eyepatched Man', to: 'Korrin', aliases: ['The Eyepatched Man'] }]);
+        // A name the chat has not given, or someone already named, is left alone.
+        expect(renamePlan([{ from: 'The Eyepatched Man', to: 'Bartholomew' }], characters, provisional, 'Graxx barked.')).toEqual([]);
+        expect(renamePlan([{ from: 'Graxx', to: 'Korrin' }], characters, provisional, 'Korrin')).toEqual([]);
     });
 });

@@ -157,6 +157,7 @@ export async function gatherInputs(chatId, chatKey) {
             relations: [],
             id,
             player: id === playerId,
+            provisional: settingId ? (library.entries?.[id]?.provisional === true) : false,
             why: c.castIds.length ? 'canonically present' : 'present in the story',
         });
     }

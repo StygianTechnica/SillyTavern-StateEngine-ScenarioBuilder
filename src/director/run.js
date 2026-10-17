@@ -14,7 +14,7 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, listEntries, getParents, playerIdOf } from '../library/library.js';
+import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, listEntries, getParents, playerIdOf } from '../library/library.js';
 import { routesFrom, listRoutes } from '../library/routes.js';
 import { pathOf } from '../library/hierarchy.js';
 import { listRelations, relationsFor } from '../library/relations-edit.js';
@@ -27,7 +27,7 @@ import { callModelFirst } from '../generate/llm.js';
 import { gatherInputs } from '../guidance/sync.js';
 import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
-import { getSettingDoc } from '../store/setting-store.js';
+import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
 
 export const DIRECTOR_EVENT = 'scenario_builder_director';
 
@@ -136,7 +136,7 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId) {
                 const field = await locationFieldOf(settingId, item.kind);
                 if (field) data[field] = locationId;
             }
-            const obj = await createEntry(chatId, settingId, item.kind, data, { origin: 'director' });
+            const obj = await createEntry(chatId, settingId, item.kind, data, { origin: 'director', ...(item.provisional ? { provisional: true } : {}) });
             if (!obj) continue;
             if (item.kind === 'location' && locationId) setParent(settingId, obj.id, locationId);
             made.push({ id: obj.id, kind: item.kind, name: obj.name });
@@ -155,6 +155,36 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId) {
         for (const a of adopted) enqueueEnrichment({ settingId, chatId, chatKey, objectId: a.objectId, name: a.name, adoptedId: a.id });
     }
     return made;
+}
+
+// Someone known only by a description has been named by the story: the
+// entry takes the name and keeps the description as an alias, so what was
+// remembered about them stays theirs and later mentions still find them.
+// Only provisional entries, and only to a name the recent chat gives.
+export function renamePlan(renames, characters, isProvisional, recentText) {
+    const out = [];
+    for (const r of renames ?? []) {
+        const key = r.from.toLowerCase();
+        const c = (characters ?? []).find((x) => isProvisional(x.id) && [x.name, ...(x.aliases ?? x.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === key));
+        if (!c || !mentionedIn(r.to, recentText)) continue;
+        if ((characters ?? []).some((x) => x.id !== c.id && String(x.name).toLowerCase() === r.to.toLowerCase())) continue;
+        const aliases = [...new Set([...(c.aliases ?? c.base?.aliases ?? []), c.name])];
+        out.push({ id: c.id, from: c.name, to: r.to, aliases });
+    }
+    return out;
+}
+
+async function renameNamed(chatId, chatKey, settingId, renames, characters, recentText) {
+    const plan = renamePlan(renames, characters, (id) => getEntryMeta(settingId, id).provisional === true, recentText);
+    for (const r of plan) {
+        try {
+            if (!await updateEntry(chatId, settingId, r.id, { name: r.to, aliases: r.aliases })) continue;
+            setEntryMeta(settingId, r.id, { provisional: false });
+            console.info(LOG_PREFIX, `${r.from} is named: ${r.to}`);
+        } catch (err) {
+            console.warn(LOG_PREFIX, `could not rename ${r.from}`, err);
+        }
+    }
 }
 
 // The current location and the people present get fleshed out when they
@@ -319,6 +349,7 @@ async function run(chatId, chatKey, type, force) {
         ? await createNeeded(chatId, chatKey, settingId, wanted, guidance.location?.id ?? null)
         : [];
     if (settingId) enrichThin(chatId, chatKey, settingId, guidance);
+    if (settingId && isNewTurn(type)) await renameNamed(chatId, chatKey, settingId, parsed.renames, characters, recentText);
 
     // The scene's title: the game master names it, and renames it when the
     // scene moves on (sb__canon_scene; also written into sb__scene_title).
