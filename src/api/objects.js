@@ -113,6 +113,13 @@ export async function getObjectFields(settingId, type) {
     return stateEngine.getObjectFields(EXTENSION_ID, instanceId, settingId, type) ?? [];
 }
 
+// Replaces a setting's fields for a type with `defs` (full definitions -
+// State Engine validates them). Only on the user's request (SB-102).
+export async function setObjectFields(settingId, type, defs) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.setObjectFields(EXTENSION_ID, instanceId, settingId, type, defs) ?? null;
+}
+
 // A setting's runtime (per-chat) fields for a type, as State Engine's
 // runtime-field view: [{ name, type, prompted, description, values?, builtIn }].
 export async function getObjectRuntimeFields(settingId, type) {

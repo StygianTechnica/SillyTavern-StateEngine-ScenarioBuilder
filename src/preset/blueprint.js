@@ -41,7 +41,8 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 // 6: the guidance in six parts (guidance_setting ... guidance_direction).
 // 7: sb__scene_creatures (the creatures the story has in the scene).
 // 8: sb__canon_summary; scene summary and title instructions tightened.
-export const PRESET_VERSION = 8;
+// 9: sb__scene_characters adds who the messages show here but the list lacks.
+export const PRESET_VERSION = 9;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -64,7 +65,7 @@ export const OBSERVED_VARIABLES = Object.freeze([
     ['scene_characters', {
         label: 'Characters (story)', description: 'The characters the story says are present - checked against the canonical cast.',
         type: 'array', itemType: 'object', itemObjectType: 'character', unique: true, defaultValue: '[]', scope: 'chat', showInTracker: true,
-        ...prompted('Who is present in the scene now. Keep characters who remain, add characters who arrive, remove characters who leave. Start from the current value - it is who is meant to be here.'),
+        ...prompted('Who is present in the scene now, from the latest messages. Start from the current value: keep characters who remain, remove those who have left, and ADD every character the messages show here who is missing from it - someone who came back, or who was there all along.'),
     }],
     ['scene_creatures', {
         label: 'Creatures (story)', description: 'The creatures the story says are in the scene - checked against the canonical ones.',

@@ -69,6 +69,33 @@ export function mentionedIn(name, recentText) {
     return words.some((w) => text.includes(w) || (w.endsWith('s') && text.includes(w.slice(0, -1))));
 }
 
+// Words that are titles, not names ("High Seer Maren" is Maren).
+const TITLE_WORDS = new Set(['high', 'seer', 'lord', 'lady', 'sir', 'dame', 'king', 'queen', 'prince', 'princess', 'captain', 'father', 'mother', 'brother', 'sister', 'master', 'mistress', 'angel', 'saint', 'elder', 'the', 'old', 'young', 'great', 'doctor', 'general']);
+
+// The ways a character is named in prose: their name, aliases, the part
+// before a comma ("Lucen, Angel of Loyalty"), and their first and last
+// names unless those are titles.
+export function callNames(c) {
+    const names = new Set();
+    for (const raw of [c?.name, ...(c?.aliases ?? c?.base?.aliases ?? [])]) {
+        const n = clean(raw);
+        if (!n) continue;
+        names.add(n);
+        const head = clean(n.split(',')[0]);
+        names.add(head);
+        const words = head.split(/\s+/);
+        for (const w of [words[0], words.at(-1)]) if (w && w.length >= 4 && !TITLE_WORDS.has(w.toLowerCase())) names.add(w);
+    }
+    return [...names].filter((n) => n.length >= 3);
+}
+
+// The characters `text` names, by whole words. -> [character]
+export function peopleNamedIn(text, characters) {
+    const t = String(text ?? '');
+    const has = (n) => new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'iu').test(t);
+    return (characters ?? []).filter((c) => callNames(c).some(has));
+}
+
 // The dossier as plain facts for the director (not for the roleplay
 // model), from the general to the immediate - the same order the guidance
 // takes: the setting, its rules, the threads being followed, what has
@@ -218,7 +245,7 @@ export function buildDirectorPrompt(input) {
         `The scene always follows ${userName}. If the latest message takes ${userName} somewhere else - leaving the room, walking out, going to another place - never write LEAVES for ${userName}; write a line naming where the scene is now (one of the ways on when it fits), who goes along with ${userName} (or "none"), and whether it is indoors or outdoors. Everyone else stays behind.`,
         'MOVE | Place name | Name, Name | outdoors',
         '',
-        'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each:',
+        'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along):',
         'ENTERS | Name',
         'LEAVES | Name',
     );

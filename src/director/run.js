@@ -22,7 +22,7 @@ import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import { callModelFirst } from '../generate/llm.js';
 import { gatherInputs } from '../guidance/sync.js';
-import { buildDirectorPrompt, parseDirectorNote, mentionedIn, itemMatters, matchPlace } from './prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, mentionedIn, itemMatters, matchPlace, peopleNamedIn, callNames } from './prompt.js';
 
 export const DIRECTOR_EVENT = 'scenario_builder_director';
 
@@ -285,6 +285,14 @@ async function run(chatId, chatKey, type, force) {
     }
 
     if (isNewTurn(type) && settingId) {
+        // Whoever the SITUATION line has doing something is in the scene -
+        // the game master does not always write ENTERS for someone who was
+        // already there or came back - unless the user took them out by hand.
+        const doc = getChatDoc(chatKey);
+        const heldOut = new Set(doc.held.filter((h) => h.field === 'cast' && h.op === 'remove' && h.until > doc.turn).map((h) => h.objectId));
+        const left = new Set(parsed.leaves.map((n) => String(n).toLowerCase()));
+        const seen = peopleNamedIn(parsed.situation, characters).filter((c) => !baseCast.includes(c.id) && !heldOut.has(c.id) && !callNames(c).some((n) => left.has(n.toLowerCase())));
+        if (seen.length) parsed.enters = [...new Set([...parsed.enters, ...seen.map((c) => c.name)])];
         const after = castAfter(characters, baseCast, parsed, made.map((m) => ({ ...m, here: created.find((c) => c.name === m.name)?.here })), playerIdOf(settingId, characters));
         // ENTERS and LEAVES that name creatures (the zombies) change the
         // creatures in the scene.

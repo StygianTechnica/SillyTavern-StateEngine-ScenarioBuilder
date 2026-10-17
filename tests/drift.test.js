@@ -1,4 +1,4 @@
-import { followPlayer, applyHolds, detectDrift, readObserved, applyAccepted, correctionText, describeItem, DEFAULT_POLICIES } from '../src/validate/drift.js';
+import { followPlayer, applyHolds, detectDrift, readObserved, applyAccepted, correctionText, describeItem, DEFAULT_POLICIES, withStateEngineCast } from '../src/validate/drift.js';
 import { emptyCanonical } from '../src/store/schema.js';
 
 const parents = { market: 'city', docks: 'city', stall: 'market' };
@@ -140,5 +140,18 @@ describe('changes made by hand hold', () => {
             { field: 'location', observed: 'wall', action: 'accept' },
         ], held);
         expect(items.map((i) => i.action)).toEqual(['adjust', 'accept', 'adjust', 'accept']);
+    });
+});
+
+describe("State Engine's own scene tracker", () => {
+    const observed = { cast: ['remus'], location: '' };
+    it('adds someone it newly lists that the story reading lacks', () => {
+        expect(withStateEngineCast(observed, ['remus', 'niamh'], {}).cast).toEqual(['remus', 'niamh']);
+    });
+    it('does not re-add someone it has listed all along, or undo a removal', () => {
+        expect(withStateEngineCast(observed, ['remus', 'niamh'], { seCast: ['remus', 'niamh'] }).cast).toEqual(['remus']);
+    });
+    it('changes nothing without the tracker', () => {
+        expect(withStateEngineCast(observed, null, {})).toBe(observed);
     });
 });

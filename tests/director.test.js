@@ -1,4 +1,4 @@
-import { buildDirectorPrompt, parseDirectorNote, dossierText, mentionedIn, splitNote, itemMatters, matchPlace, MAX_NEW } from '../src/director/prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, dossierText, mentionedIn, splitNote, itemMatters, matchPlace, MAX_NEW, peopleNamedIn, callNames } from '../src/director/prompt.js';
 
 const input = {
     overview: { premise: 'A port city where the old gods are waking.', tone: 'gritty' },
@@ -240,5 +240,22 @@ describe('director and people taken out by hand', () => {
         expect(prompt).toContain('- Varyn');
         expect(prompt).not.toContain('- Varyn - seen earlier');
         expect(prompt).toContain('- Tobin');
+    });
+});
+
+describe('who the situation names', () => {
+    const characters = [
+        { id: 'n', name: 'Niamh' },
+        { id: 'm', name: 'High Seer Maren' },
+        { id: 'l', name: 'Lucen, Angel of Loyalty' },
+        { id: 'r', name: 'Remus Watt' },
+    ];
+    it('finds people by name, last name past a title, and the part before a comma', () => {
+        const found = peopleNamedIn('Remus holds the wall while Niamh and Maren watch; Lucen hovers above.', characters).map((c) => c.id);
+        expect(found).toEqual(['n', 'm', 'l', 'r']);
+    });
+    it('matches whole words only, and never a title alone', () => {
+        expect(peopleNamedIn('The High priest and Niamhs cousin wait.', characters)).toEqual([]);
+        expect(callNames({ name: 'High Seer Maren' })).not.toContain('High');
     });
 });

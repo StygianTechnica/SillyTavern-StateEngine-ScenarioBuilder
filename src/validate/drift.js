@@ -94,6 +94,22 @@ export function readObserved(raw) {
     };
 }
 
+// State Engine's own scene tracker: who it says is present.
+export const SE_CAST = 'se__scene_characters';
+
+// Folds State Engine's scene tracker into the story's reading of who is
+// here: someone it has newly listed (not in its list last time) and the
+// story's reading lacks counts as arrived - a model asked to start from
+// the current list often leaves out someone who came back. Removals stay
+// the story's reading's call. `seCast`: the tracker's ids, or null.
+// -> observed, with `seCast` kept for next time.
+export function withStateEngineCast(observed, seCast, lastObserved = {}) {
+    if (!Array.isArray(seCast)) return observed;
+    const before = new Set(Array.isArray(lastObserved?.seCast) ? lastObserved.seCast : []);
+    const added = seCast.filter((id) => !before.has(id) && !observed.cast.includes(id));
+    return { ...observed, cast: [...observed.cast, ...added], seCast: [...seCast] };
+}
+
 // Scene titles are kept short: at most this many words.
 export const TITLE_MAX_WORDS = 6;
 const wordCount = (text) => String(text ?? '').trim().split(/\s+/).filter(Boolean).length;

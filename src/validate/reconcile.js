@@ -18,9 +18,10 @@ import { getSettings, isActive } from '../settings.js';
 import { getCurrentChatRef, chatKeyFor, sourceMessageId, sourceIndex } from '../store/chat-ref.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId, DRIFT_LIMIT } from '../store/schema.js';
-import { getVariableValues, setVariableValue } from '../api/variables.js';
+import { getVariableValues, setVariableValue, getRawValues } from '../api/variables.js';
 import { getObject, confirmObject, resolveObject } from '../api/objects.js';
 import { PRESET_NAME, OBSERVED_NAMES } from '../preset/blueprint.js';
+import { withStateEngineCast, SE_CAST } from './drift.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry, playerIdOf, listEntries } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
@@ -140,6 +141,16 @@ export async function reconcileOpenChat() {
     }
 }
 
+// State Engine's own scene tracker (se__scene_characters), or null.
+async function stateEngineCast(chatId) {
+    try {
+        const value = (await getRawValues(chatId, [SE_CAST]))?.[SE_CAST];
+        return Array.isArray(value) ? value.filter((x) => typeof x === 'string' && x) : null;
+    } catch {
+        return null;
+    }
+}
+
 async function reconcileOnce() {
     const ref = getCurrentChatRef();
     if (!ref || !isActive()) return;
@@ -153,7 +164,7 @@ async function reconcileOnce() {
     const doc = getChatDoc(chatKey);
     // The player character never leaves the scene: the scene goes with them.
     const playerId = settingId ? playerIdOf(settingId, await listEntries(chatId, settingId, 'character')) : '';
-    const observed = followPlayer(readObserved(raw), doc.canonical, playerId);
+    const observed = followPlayer(withStateEngineCast(readObserved(raw), await stateEngineCast(chatId), doc.lastObserved), doc.canonical, playerId);
     const replySource = latestReplySource(chatId);
     const newReply = !!replySource && replySource !== doc.lastReply;
 
