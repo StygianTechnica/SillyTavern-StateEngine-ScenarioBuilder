@@ -21,6 +21,12 @@ export async function listSettings() {
     return stateEngine.listSettings(EXTENSION_ID, instanceId) ?? [];
 }
 
+// patch: { name?, autoConfirm?, calendarId? } -> the setting summary, or null.
+export async function updateSetting(settingId, patch) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.updateSetting(EXTENSION_ID, instanceId, settingId, patch) ?? null;
+}
+
 export async function getSetting(settingId) {
     const { stateEngine, instanceId } = await getStateEngine();
     return stateEngine.getSetting(EXTENSION_ID, instanceId, settingId) ?? null;

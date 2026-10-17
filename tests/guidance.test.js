@@ -1,4 +1,4 @@
-import { buildGuidance, buildStateBlock, buildCast, truncate } from '../src/guidance/build.js';
+import { buildGuidance, buildStateBlock, buildCast, guidanceParts, truncate } from '../src/guidance/build.js';
 import { fitToBudget, estimateTokens } from '../src/guidance/budget.js';
 import { REFERENCE_HEADER } from '../src/constants.js';
 
@@ -134,5 +134,25 @@ describe('characters present (sb__cast)', () => {
     });
     it('is empty with nobody present', () => {
         expect(buildCast({ cast: [] })).toBe('');
+    });
+});
+
+describe('guidance in parts', () => {
+    it('splits the same text into six variables, each with its header', () => {
+        const overview = { premise: 'A port city where the old gods are waking.', magic: { presence: 'none' } };
+        const built = buildGuidance({ ...input, overview, quests: [{ name: 'Recover the ledger' }], director: { summary: 'SUMMARY.', direction: 'DIRECTION.' }, budget: 4000 });
+        const parts = guidanceParts(built);
+        expect(Object.keys(parts)).toEqual(['guidance_setting', 'guidance_rules', 'guidance_threads', 'guidance_scene', 'guidance_summary', 'guidance_direction']);
+        expect(parts.guidance_setting).toMatch(/^THE SETTING \(reference only - do not continue\)\nA port city/);
+        expect(parts.guidance_rules).toContain("Never break the world's limits");
+        expect(parts.guidance_threads).toContain('Recover the ledger');
+        expect(parts.guidance_scene).toContain('The scene is set in Brass Market');
+        expect(parts.guidance_scene).toContain('Hold to these');
+        expect(parts.guidance_summary).toBe('WHERE THINGS STAND (reference only - do not continue)\nSUMMARY.');
+        expect(parts.guidance_direction).toBe('WHERE THIS REPLY SHOULD GO (reference only - do not continue)\nDIRECTION.');
+    });
+
+    it('leaves an empty part empty', () => {
+        expect(guidanceParts(buildGuidance({ budget: 600 })).guidance_threads).toBe('');
     });
 });

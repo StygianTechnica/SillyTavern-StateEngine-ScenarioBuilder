@@ -11,8 +11,9 @@
 import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
-import { getSettingDoc } from '../store/setting-store.js';
+import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { emptyCalendar } from '../store/schema.js';
+import { getSetting, updateSetting } from '../api/objects.js';
 import { setCanonical } from '../state/canonical.js';
 import { getDateTimeParts, formatDateTime, formatDateTimePartial, advanceDateTime, getCalendarDefinition } from '../api/calendar.js';
 import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance } from './moment.js';
@@ -27,10 +28,39 @@ const FALLBACK_CALENDAR = Object.freeze({
     weekdayNames: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
 });
 
+// Which calendar a setting's dates are on is kept on the State Engine
+// setting itself (so its datetime variables follow it, "@setting"); the
+// setting document keeps a copy for older State Engines. -> id or ''.
+async function settingCalendarId(settingId, options) {
+    if (!settingId) return '';
+    try {
+        const setting = await getSetting(settingId);
+        if (setting && 'calendarId' in setting) {
+            // An older choice made before State Engine kept it: moved over once.
+            if (!setting.calendarId && options.calendarId) await updateSetting(settingId, { calendarId: options.calendarId });
+            return setting.calendarId || options.calendarId || '';
+        }
+    } catch {
+        // State Engine without setting calendars.
+    }
+    return options.calendarId || '';
+}
+
+// Sets the calendar a setting's dates are on ('' = the default): on the
+// State Engine setting, and in the setting document.
+export async function chooseCalendar(settingId, calendarId) {
+    updateSettingDoc(settingId, (doc) => { doc.calendar.calendarId = calendarId || ''; });
+    try {
+        await updateSetting(settingId, { calendarId: calendarId || null });
+    } catch (err) {
+        console.debug(LOG_PREFIX, 'State Engine could not keep the setting calendar', err);
+    }
+}
+
 // The setting's calendar: { calendarId, def, options }.
 export async function calendarFor(settingId) {
     const options = settingId ? getSettingDoc(settingId).calendar : emptyCalendar();
-    const calendarId = options.calendarId || 'gregorian';
+    const calendarId = (await settingCalendarId(settingId, options)) || 'gregorian';
     let def = null;
     try {
         def = await getCalendarDefinition(calendarId);

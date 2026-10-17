@@ -215,6 +215,13 @@ async function run(chatId, chatKey, type, force) {
         : [];
     if (settingId) enrichThin(chatId, chatKey, settingId, guidance);
 
+    // The scene's title: the game master names it, and renames it when the
+    // scene moves on (sb__canon_scene; also written into sb__scene_title).
+    const currentTitle = getChatDoc(chatKey).canonical.sceneTitle;
+    if (parsed.scene && parsed.scene !== currentTitle && (isNewTurn(type) || !currentTitle)) {
+        setCanonical(chatKey, { sceneTitle: parsed.scene }, { chatId, source: 'director', note: `Scene: ${parsed.scene}` });
+    }
+
     // The game master keeps the scene: who arrives and leaves, and how much
     // time the reply covers.
     let moves = { in: [], out: [] };

@@ -15,6 +15,7 @@ import { readObserved, FIELD_LABELS } from '../validate/drift.js';
 import { OBSERVED_NAMES } from '../preset/blueprint.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getLastBuild, syncNow } from '../guidance/sync.js';
+import { GUIDANCE_PARTS } from '../guidance/build.js';
 import { curatorStatus, curatorLine } from './status-model.js';
 import { activateForOpenChat } from './activate.js';
 import { enrichListed } from '../library/intake.js';
@@ -290,6 +291,11 @@ export async function renderPreview() {
         h('pre', { class: 'sb-pre' }, build.cast || '(empty)'),
         h('h3', {}, `Narrative guidance - ~${build.guidance.tokens} of ${getSettings().tokenBudget} tokens`),
         h('pre', { class: 'sb-pre' }, build.guidance.text || '(empty)'),
+        h('h3', {}, 'The same guidance, in parts'),
+        h('small', { class: 'sb-hint' }, 'Each part is its own variable too - place them separately in Curator to read and tune them one by one.'),
+        GUIDANCE_PARTS.map(([name, header]) => h('details', { class: 'sb-part' },
+            h('summary', {}, `sb__${name}`, h('small', { class: 'sb-hint' }, ` - ${header.toLowerCase()}${build.parts?.[name] ? ` (~${Math.ceil(build.parts[name].length / 4)} tokens)` : ' (empty)'}`)),
+            h('pre', { class: 'sb-pre' }, build.parts?.[name] || '(empty)'))),
         h('table', { class: 'sb-sections' },
             h('tr', {}, h('th', {}, 'Section'), h('th', {}, 'Status'), h('th', {}, 'Tokens'), h('th', {}, 'Why')),
             build.guidance.sections.map((s) => h('tr', {}, h('td', {}, s.title), h('td', {}, modeLabel[s.mode] ?? s.mode), h('td', {}, String(s.tokens)), h('td', {}, s.why ?? '')))),

@@ -29,6 +29,7 @@ import { syncNow } from '../guidance/sync.js';
 import { directBeforeReply } from '../director/run.js';
 import { ensureClock, advanceBy, setTime, perTurnDefault } from '../calendar/clock.js';
 import { getChatDoc } from '../store/chat-store.js';
+import { fillRoles } from '../preset/role-fill.js';
 
 const VALIDATE_DEBOUNCE_MS = 1000;
 let timer = null;
@@ -121,6 +122,9 @@ async function prepareReply(ref, type) {
             const now = getChatDoc(chatKey).canonical.time;
             if (Number.isFinite(now)) await setTime(ref.chatId, chatKey, settingId, now, { note: 'The scene moved' });
         }
+        // What the director and the clock just set (scene title, cast,
+        // weather) is what the story's next reading starts from.
+        await pushCanonicalToObserved(ref.chatId, chatKey);
         await syncNow();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not prepare the guidance before generation', err);
@@ -133,13 +137,17 @@ async function onChatChanged() {
     if (!ref) return;
     // The setting is State Engine's to choose (SB-600): only when the
     // scenario is in use here does State Engine ask, once.
+    let active = false;
     try {
-        if ((await getPresetStatus(ref.chatId)).active) await ensureBoundSetting(ref.chatId);
+        active = (await getPresetStatus(ref.chatId)).active;
+        if (active) await ensureBoundSetting(ref.chatId);
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not bind the chat\'s setting', err);
     }
     await intakeOpenChat();
     await syncNow();
+    // Displays bound to familiar roles show the canonical state here.
+    if (active) await fillRoles(ref.chatId);
 }
 
 const safely = (fn) => (...args) => void Promise.resolve(fn(...args)).catch((err) => console.warn(LOG_PREFIX, err));

@@ -24,15 +24,13 @@ import { PRESET_NAME } from '../preset/blueprint.js';
 import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.js';
 import { getBoundSettingId, readField, listEntries, playerIdOf } from '../library/library.js';
 import { pathOf, inheritedEnvironment } from '../library/hierarchy.js';
-import { buildGuidance, buildStateBlock, buildCast, timeText } from './build.js';
+import { buildGuidance, buildStateBlock, buildCast, guidanceParts, GUIDANCE_PARTS, timeText } from './build.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { relationsFor, pairCovered } from '../library/relations-edit.js';
 import { activeQuests } from '../quests/sync.js';
 import { momentAt } from '../calendar/clock.js';
 import { routesFrom } from '../library/routes.js';
 import { weatherText } from '../calendar/weather.js';
-import { assignCalendarToVariable } from '../api/calendar.js';
-import { getVariable } from '../api/variables.js';
 
 export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
 
@@ -305,17 +303,6 @@ export async function gatherInputs(chatId, chatKey) {
     };
 }
 
-// canon_datetime reads its value through the setting's calendar: re-point
-// it when this chat's setting uses another one.
-async function followCalendar(calendarId) {
-    if (!calendarId) return;
-    try {
-        const def = await getVariable(PRESET_NAME, 'canon_datetime');
-        if (def && def.calendar !== calendarId) await assignCalendarToVariable({ namespace: 'sb', presetName: PRESET_NAME, variableName: 'canon_datetime' }, calendarId);
-    } catch (err) {
-        console.debug(LOG_PREFIX, 'could not point the date at the setting calendar', err);
-    }
-}
 
 async function writeIfChanged(chatId, values) {
     const current = await getVariableValues(chatId, Object.keys(values));
@@ -344,7 +331,7 @@ export async function syncGuidance() {
             return;
         }
         if (!isActive()) {
-            await writeIfChanged(ref.chatId, { guidance: '', cast: '', state_block: '' });
+            await writeIfChanged(ref.chatId, { guidance: '', ...Object.fromEntries(GUIDANCE_PARTS.map(([name]) => [name, ''])), cast: '', state_block: '' });
             last = { chatKey, guidance: { text: '', tokens: 0, sections: [] }, stateBlock: '', inert: true, reason: getSettings().enabled ? 'Paused.' : 'Scenario Builder is disabled.' };
             announce();
             return;
@@ -354,13 +341,13 @@ export async function syncGuidance() {
         const guidance = buildGuidance(inputs.guidance);
         const stateBlock = getSettings().stateBlockEnabled ? buildStateBlock(inputs.stateBlock) : '';
         const cast = buildCast(inputs.guidance);
-        await followCalendar(inputs.calendarId);
-        await writeIfChanged(ref.chatId, { ...inputs.canonicalValues, guidance: guidance.text, cast, state_block: stateBlock });
+        const parts = guidanceParts(guidance);
+        await writeIfChanged(ref.chatId, { ...inputs.canonicalValues, guidance: guidance.text, ...parts, cast, state_block: stateBlock });
 
         const doc = getChatDoc(chatKey);
         if (doc.settingId !== inputs.settingId) updateChatDoc(chatKey, (d) => { d.settingId = inputs.settingId; });
 
-        last = { chatKey, guidance, cast, stateBlock, inert: false, reason: '' };
+        last = { chatKey, guidance, parts, cast, stateBlock, inert: false, reason: '' };
         announce();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not update the guidance', err);

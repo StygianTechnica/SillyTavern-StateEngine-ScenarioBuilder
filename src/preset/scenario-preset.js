@@ -15,6 +15,7 @@ import { getSettings, saveSettings } from '../settings.js';
 import { findPreset, createPreset, activatePreset, deactivatePreset, listAllPresets } from '../api/presets.js';
 import { getVariable, createVariable, updateVariable } from '../api/variables.js';
 import { PRESET_NAME, PRESET_DESCRIPTION, PRESET_VERSION, ALL_VARIABLES, SCENE_CONTEXT } from './blueprint.js';
+import { fillRoles } from './role-fill.js';
 
 export const PRESET_STATUS_EVENT = 'scenario_builder_preset_status';
 
@@ -67,6 +68,7 @@ export async function setScenarioPresetActive(chatId, active) {
     if (active) {
         await ensureScenarioPreset();
         await activatePreset(chatId, PRESET_NAME);
+        await fillRoles(chatId);
     } else {
         await deactivatePreset(chatId, PRESET_NAME);
     }

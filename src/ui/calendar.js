@@ -8,7 +8,7 @@ import { getSettings, saveSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { listCalendarDefinitions, generateRandomCalendarDefinition, createCalendarDefinition } from '../api/calendar.js';
-import { calendarFor, momentAt, ensureClock, advanceBy, jumpTo, setTime, monthAt, placeFor } from '../calendar/clock.js';
+import { calendarFor, momentAt, ensureClock, advanceBy, jumpTo, setTime, monthAt, placeFor, chooseCalendar } from '../calendar/clock.js';
 import { forecast, CLIMATES } from '../calendar/weather.js';
 import { LATITUDES, moonPhase, holidaysAround } from '../calendar/sky.js';
 import { secondsPerDay, dayOfYear, yearLength } from '../calendar/moment.js';
@@ -153,7 +153,9 @@ async function settingsCard() {
             h('span', { class: 'sb-iconbtn', title: 'Remove', onclick: () => { setCalendar((c) => ({ [key]: c[key].filter((_, j) => j !== i) })); rerender(); } }, icon('fa-xmark')))),
         button(`Add ${blank.label}`, () => { setCalendar((c) => ({ [key]: [...(c[key] ?? []), { ...blank.value }] })); rerender(); }, { iconName: 'fa-plus' }));
 
-    const def = defs.find((d) => d.id === (cal.calendarId || 'gregorian'));
+    // The calendar State Engine keeps on the setting (the one its dates follow).
+    const currentId = (await calendarFor(settingId)).calendarId;
+    const def = defs.find((d) => d.id === currentId);
     const monthOptions = (def?.months ?? []).map((m, i) => ({ value: i + 1, label: m.name }));
     const holidays = h('div', { class: 'sb-field' },
         h('span', { class: 'sb-field-label' }, 'Holidays and festivals'),
@@ -177,7 +179,7 @@ async function settingsCard() {
         try {
             const made = await generateRandomCalendarDefinition({});
             const created = await createCalendarDefinition(made);
-            setCalendar({ calendarId: created?.id ?? made.id });
+            await chooseCalendar(ws.ctx.settingId, created?.id ?? made.id);
             toast('success', `Made the calendar "${made.label}". New chats start on its first morning.`);
             await after(async () => {});
         } catch (err) {
@@ -188,14 +190,13 @@ async function settingsCard() {
     return h('div', { class: 'sb-card' },
         h('div', { class: 'sb-card-title' }, icon('fa-calendar-days'), ' The setting\'s calendar'),
         h('div', { class: 'sb-row' },
-            field('Calendar', select(defs.length ? defs.map((d) => ({ value: d.id, label: d.label || d.id })) : [{ value: 'gregorian', label: 'Gregorian' }], cal.calendarId || 'gregorian', {
+            field('Calendar', select(defs.length ? defs.map((d) => ({ value: d.id, label: d.label || d.id })) : [{ value: 'gregorian', label: 'Gregorian' }], currentId, {
                 onchange: (e) => {
                     const chosen = defs.find((d) => d.id === e.target.value);
-                    const patch = { calendarId: e.target.value === 'gregorian' ? '' : e.target.value };
+                    const calendarId = e.target.value === 'gregorian' ? '' : e.target.value;
                     // A calendar's own cycles (its moons) replace the default moon.
-                    if (chosen?.cycles?.length) patch.moons = chosen.cycles.slice(0, 6).map((c) => ({ name: c.name, cycle: c.length, offset: 0 }));
-                    setCalendar(patch);
-                    void after(async () => {});
+                    if (chosen?.cycles?.length) setCalendar({ moons: chosen.cycles.slice(0, 6).map((c) => ({ name: c.name, cycle: c.length, offset: 0 })) });
+                    void after(() => chooseCalendar(ws.ctx.settingId, calendarId));
                 },
             }), 'Any State Engine calendar - fantasy ones too. Make and edit them in State Engine\'s calendar manager.'),
             button('Generate a fantasy calendar', () => void generate(), { iconName: 'fa-dice', title: 'State Engine makes a random calendar (months, weekdays, seasons) and this setting uses it' })),

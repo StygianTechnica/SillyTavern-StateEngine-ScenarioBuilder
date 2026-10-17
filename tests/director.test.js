@@ -154,3 +154,13 @@ describe('items only when they matter', () => {
         expect(buildDirectorPrompt({ ...input, allowCreate: true }).prompt).toContain('Describe ordinary objects in the prose only.');
     });
 });
+
+describe('director scene title', () => {
+    it('reads a SCENE line and asks to keep the current title', () => {
+        const parsed = parseDirectorNote('Prose.\nSCENE | "The Debt Comes Due."');
+        expect(parsed.scene).toBe('The Debt Comes Due');
+        expect(parsed.note).toBe('Prose.');
+        expect(buildDirectorPrompt({ ...input, scene: { title: 'Rain at the Lantern' } }).prompt).toContain('keep "Rain at the Lantern" unless the scene has moved on');
+        expect(buildDirectorPrompt({ ...input }).prompt).toContain('it has none yet');
+    });
+});

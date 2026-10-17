@@ -172,6 +172,9 @@ export function buildDirectorPrompt(input) {
     }
     parts.push(
         '',
+        `On its own line, a short title (three to seven words) for the scene as it now stands - ${clean(input.scene?.title) ? `keep "${clean(input.scene.title)}" unless the scene has moved on` : 'it has none yet'}:`,
+        'SCENE | The debt comes due',
+        '',
         'If someone known arrives or leaves in this reply, a line for each:',
         'ENTERS | Name',
         'LEAVES | Name',
@@ -218,12 +221,18 @@ export function parseDirectorNote(raw) {
     const keep = [];
     let time = null;
     let weather = null;
+    let scene = '';
     const enters = [];
     const leaves = [];
     for (const line of text.split('\n')) {
         const t = line.match(/^\s*(?:[-*]\s*)?\**TIME\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
         if (t) {
             if (!time) time = { text: clean(t[1]).replace(/^["']|["']$/g, ''), why: clean(t[2]) };
+            continue;
+        }
+        const sc = line.match(/^\s*(?:[-*]\s*)?\**SCENE\**\s*:?\s*\|\s*(.+?)\s*$/i);
+        if (sc) {
+            if (!scene) scene = clean(sc[1]).replace(/^["'*]+|["'*.]+$/g, '').slice(0, 80);
             continue;
         }
         const wx = line.match(/^\s*(?:[-*]\s*)?\**WEATHER\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
@@ -256,5 +265,5 @@ export function parseDirectorNote(raw) {
         .replace(/^\s*#+\s+/gm, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-    return { note: text, ...splitNote(text), created, time, weather, enters: [...new Set(enters)], leaves: [...new Set(leaves)] };
+    return { note: text, ...splitNote(text), created, time, weather, scene, enters: [...new Set(enters)], leaves: [...new Set(leaves)] };
 }

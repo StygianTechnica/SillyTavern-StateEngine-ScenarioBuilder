@@ -323,6 +323,30 @@ export function buildGuidance(input) {
     };
 }
 
+// The guidance in six parts, each its own output variable (so each can be
+// placed, read and tuned on its own in Curator), in the order the whole
+// takes: [variable, header, section keys]. Built from buildGuidance()'s
+// fitted sections, so together they keep to the same token budget.
+export const GUIDANCE_PARTS = Object.freeze([
+    ['guidance_setting', 'THE SETTING', ['overview']],
+    ['guidance_rules', 'WORLD RULES', ['limits']],
+    ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
+    ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'corrections']],
+    ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
+    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['direction']],
+]);
+
+// buildGuidance()'s result -> { [variable]: text } ('' for an empty part).
+export function guidanceParts(built) {
+    const textOf = new Map((built?.sections ?? []).map((s) => [s.key, s.text]));
+    const out = {};
+    for (const [variable, header, keys] of GUIDANCE_PARTS) {
+        const body = keys.map((k) => textOf.get(k)).filter(Boolean).join('\n\n');
+        out[variable] = body ? `${header} (reference only - do not continue)\n${body}` : '';
+    }
+    return out;
+}
+
 // sb__state_block: the canonical state as text, a line per value, empty
 // lines omitted, '' when there is nothing (SB-301) - in the style of State
 // Engine's own se__state_block, but from canonical values only.

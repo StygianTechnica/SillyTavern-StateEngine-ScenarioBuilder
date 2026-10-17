@@ -95,6 +95,14 @@ These came after spec v0.5 and should be folded into its next revision.
   (it must say which; enforced in code: the item ties to an active quest, or
   the player named it outright). The guidance lists items here as "should the
   scene turn to them", not as things to reach for.
+- **The guidance also comes in six parts**, each its own variable
+  (`sb__guidance_setting`, `_rules`, `_threads`, `_scene`, `_summary`,
+  `_direction`), so each can be placed, read and tuned on its own in Curator;
+  `sb__guidance` stays the whole.
+- **Dates follow the setting's calendar.** The calendar is kept on the State
+  Engine setting, and `sb__canon_datetime` uses State Engine's "@setting"
+  calendar, so each setting's chats show their own (fantasy) dates with
+  nothing rewritten when chats change.
 - **No wait before the message is taken.** For a send, the work before a
   reply runs on USER_MESSAGE_RENDERED (after SillyTavern posts the message,
   before it builds the prompt) instead of GENERATION_STARTED.

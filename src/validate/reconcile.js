@@ -58,16 +58,19 @@ async function objectsFor(chatId, ids) {
 
 // The observed variable values matching canonical, for the fields given
 // (all by default). Booleans with no canonical value are left alone.
+// A value Scenario Builder has not set yet is left out, so a blank never
+// overwrites what the story wrote (it would wipe the scene title every turn
+// until one was set); the cast counts as set once there is a scene.
 function restoreValues(canonical, fields = Object.keys(OBSERVED_FIELDS)) {
     const out = {};
     for (const field of fields) {
         switch (field) {
-            case 'location': out.scene_location = canonical.locationId || ''; break;
-            case 'cast': out.scene_characters = [...canonical.castIds]; break;
-            case 'weather': out.scene_weather = [...canonical.weather]; break;
-            case 'temperature': out.scene_temperature = canonical.temperature || ''; break;
+            case 'location': if (canonical.locationId) out.scene_location = canonical.locationId; break;
+            case 'cast': if (canonical.castIds.length || canonical.locationId) out.scene_characters = [...canonical.castIds]; break;
+            case 'weather': if (canonical.weather.length) out.scene_weather = [...canonical.weather]; break;
+            case 'temperature': if (canonical.temperature) out.scene_temperature = canonical.temperature; break;
             case 'indoor': if (typeof canonical.indoor === 'boolean') out.scene_isindoor = canonical.indoor; break;
-            case 'title': out.scene_title = canonical.sceneTitle || ''; break;
+            case 'title': if (canonical.sceneTitle) out.scene_title = canonical.sceneTitle; break;
             default: break;
         }
     }

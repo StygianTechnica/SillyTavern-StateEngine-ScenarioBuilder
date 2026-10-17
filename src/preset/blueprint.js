@@ -36,7 +36,10 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 //    (sb__scene_deltatime observed; canonical datetime, date, clock, part of
 //    day, season, sky, holiday), what is present in the scene (items,
 //    creatures, quests, lore, events) and calculated weather/time flags.
-export const PRESET_VERSION = 3;
+// 4: the scene title is written when it is empty; sb__cast.
+// 5: canon_datetime follows the chat's setting calendar ("@setting").
+// 6: the guidance in six parts (guidance_setting ... guidance_direction).
+export const PRESET_VERSION = 6;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -46,7 +49,7 @@ const prompted = (instructions) => ({ behaviors: { prompted: true, increment: fa
 
 export const OBSERVED_VARIABLES = Object.freeze([
     ['scene_title', text('Scene title', 'A short title for the current situation, as the story tells it.', prompted(
-        'A short scene title summarizing the current situation, from the recent messages and the current value. Keep the current value unless the situation has clearly moved on.',
+        'A short scene title (three to seven words) summarizing the current situation, from the recent messages and the current value. If the current value is empty, write one. Otherwise keep it unless the situation has clearly moved on.',
     ))],
     ['scene_summary', text('Scene summary', 'What is happening in the scene now, as the story tells it.', prompted(
         'Summarize the current scene from the last few messages only - the situation and environment now, not the whole story.',
@@ -118,11 +121,12 @@ export const CANONICAL_VARIABLES = Object.freeze([
     ['canon_setting', text('Indoors / outdoors', 'Whether the scene is canonically indoors or outdoors.')],
     ['canon_time', text('Time', 'The canonical day and time of day.')],
     ['canon_scene', text('Scene', 'The canonical scene title.')],
-    // The clock (src/calendar/clock.js). canon_datetime is on the bound
-    // setting's calendar (re-pointed when the chat's setting uses another).
+    // The clock (src/calendar/clock.js). canon_datetime follows the chat's
+    // setting calendar: State Engine reads it through the calendar the
+    // setting names, so each setting's chats show their own dates.
     ['canon_datetime', {
         label: 'Date and time', description: 'The canonical moment, on the setting\'s calendar.',
-        type: 'datetime', calendar: 'gregorian', unit: 'seconds', datetimeMode: 'full', timeSemanticMode: 'none', deltaSource: '',
+        type: 'datetime', calendar: '@setting', unit: 'seconds', datetimeMode: 'full', timeSemanticMode: 'none', deltaSource: '',
         defaultValue: 0, scope: 'chat', showInTracker: true, behaviors: { prompted: false, increment: false },
     }],
     ['canon_date', text('Date', 'The canonical date, written out.')],
@@ -173,6 +177,13 @@ export const CALCULATED_VARIABLES = Object.freeze([
 
 export const OUTPUT_VARIABLES = Object.freeze([
     ['guidance', text('Narrative guidance', 'Guidance for the next reply: where and when the scene is, who is here and what they want, and corrections to keep the story consistent with its world. Not asked of the model.', { showInTracker: false })],
+    // The same guidance in six parts (src/guidance/build.js GUIDANCE_PARTS).
+    ['guidance_setting', text('Guidance: setting', 'The story\'s setting - premise, tone, how magic and technology work. Not asked of the model.', { showInTracker: false })],
+    ['guidance_rules', text('Guidance: world rules', 'What the world does not have - never broken. Not asked of the model.', { showInTracker: false })],
+    ['guidance_threads', text('Guidance: threads', 'The quests and threads being followed. Not asked of the model.', { showInTracker: false })],
+    ['guidance_scene', text('Guidance: scene', 'The scene now - where and when, what is here, lore and corrections. Not asked of the model.', { showInTracker: false })],
+    ['guidance_summary', text('Guidance: summary', 'The game master\'s summary of where things stand. Not asked of the model.', { showInTracker: false })],
+    ['guidance_direction', text('Guidance: direction', 'The game master\'s direction for this reply. Not asked of the model.', { showInTracker: false })],
     ['cast', text('Characters present', 'Who is in the scene, one line each, the player character marked - its own block so it can be placed above the guidance. Not asked of the model.', { showInTracker: false })],
     ['state_block', text('Canonical scene state', 'The current scene\'s canonical state - location, time, weather and who is present - one line each. Not asked of the model.', { showInTracker: false })],
 ]);
