@@ -26,6 +26,7 @@ import { getBoundSettingId, readField, listEntries, playerIdOf } from '../librar
 import { pathOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { buildGuidance, buildStateBlock, buildCast, guidanceParts, GUIDANCE_PARTS, timeText } from './build.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
+import { relevantLore } from '../library/lore.js';
 import { relationsFor, pairCovered } from '../library/relations-edit.js';
 import { activeQuests } from '../quests/sync.js';
 import { momentAt } from '../calendar/clock.js';
@@ -125,7 +126,9 @@ export async function gatherInputs(chatId, chatKey) {
                 items: (await listEntries(chatId, settingId, 'item'))
                     .filter((o) => (o.base?.location ?? o.location) === obj.id || castIds.includes(o.base?.owner ?? o.owner))
                     .map((o) => ({ ...short(o), id: o.id, carriedBy: (o.base?.location ?? o.location) === obj.id ? '' : (o.base?.owner ?? o.owner) })),
-                creatures: (await listEntries(chatId, settingId, 'creature')).filter((o) => (o.base?.location ?? o.location) === obj.id).map((o) => ({ ...short(o), id: o.id })),
+                // Creatures the library places here, and those the story or
+                // the director has in the scene.
+                creatures: (await listEntries(chatId, settingId, 'creature')).filter((o) => (o.base?.location ?? o.location) === obj.id || c.creatureIds.includes(o.id)).map((o) => ({ ...short(o), id: o.id })),
                 source: sceneSource,
                 id: obj.id,
             };
@@ -177,6 +180,14 @@ export async function gatherInputs(chatId, chatKey) {
         }
     }
 
+    // People the user took out of the scene by hand (src/validate/reconcile.js
+    // holdUserScene), while that holds.
+    const absent = [];
+    for (const h of doc.held.filter((x) => x.field === 'cast' && x.op === 'remove' && x.until > doc.turn && !castIds.includes(x.objectId))) {
+        const name = (await getObject(chatId, h.objectId))?.name;
+        if (name) absent.push(name);
+    }
+
     // The active quests (most important first, a few at most).
     let quests = [];
     if (settingId) {
@@ -222,20 +233,23 @@ export async function gatherInputs(chatId, chatKey) {
         ...moment.holidays.soon.map((x) => `${x.holiday.name} (${x.inDays === 1 ? 'tomorrow' : `in ${x.inDays} days`})`),
     ] : [];
 
-    // Lore that matters here: tied to this place, the places it is in or the
-    // people present, or named in the last few messages.
+    // Lore that matters here (src/library/lore.js): named in the last few
+    // messages (or a distinctive part of its name is), tied to someone or
+    // something they name, or tied to this place, the places it is in or the
+    // people present. Most relevant first.
     let lore = [];
     if (settingId) {
         try {
-            const sceneIds = new Set([...(locationId ? [locationId, ...pathOf(parents, locationId)] : []), ...castIds]);
-            const recent = (SillyTavern.getContext().chat ?? []).slice(-6).map((m) => String(m?.mes ?? '')).join('\n').toLowerCase();
-            const named = (o) => [o.name, ...(o.aliases ?? o.base?.aliases ?? [])].some((n) => n && n.length > 3 && recent.includes(String(n).toLowerCase()));
-            lore = (await listEntries(chatId, settingId, 'lore'))
-                .filter((o) => (o.related_entity_ids ?? o.base?.related_entity_ids ?? []).some((id) => sceneIds.has(id)) || named(o))
-                .slice(0, 8)
-                .map((o) => ({ id: o.id, name: o.name, description: doc.narrative[o.id]?.text || o.description || '' }));
+            const sceneIds = [...(locationId ? [locationId, ...pathOf(parents, locationId)] : []), ...castIds];
+            const recentText = (SillyTavern.getContext().chat ?? []).slice(-6).map((m) => String(m?.mes ?? '')).join('\n');
+            const mentioned = [];
+            for (const type of ['character', 'location', 'faction', 'item', 'creature']) {
+                for (const o of await listEntries(chatId, settingId, type)) mentioned.push({ id: o.id, names: [o.name, ...(o.aliases ?? o.base?.aliases ?? [])] });
+            }
+            lore = relevantLore(await listEntries(chatId, settingId, 'lore'), { recentText, sceneIds, mentioned })
+                .map(({ entry: o, why }) => ({ id: o.id, name: o.name, description: doc.narrative[o.id]?.text || o.description || '', why }));
         } catch (err) {
-            console.debug(LOG_PREFIX, 'no lore for the guidance', err);
+            console.warn(LOG_PREFIX, 'no lore for the guidance', err);
         }
     }
     let questIds = [];
@@ -265,6 +279,8 @@ export async function gatherInputs(chatId, chatKey) {
             weatherText: weatherText({ weather: c.weather, temperature: c.temperature }, { indoor: c.indoor === true, open: clock?.open !== false }),
             scene: { title: c.sceneTitle, premise: c.scenePremise },
             cast,
+            // Taken out of the scene by hand, while that holds.
+            absent,
             lore,
             corrections: doc.corrections.map((x) => x.text),
             quests,
@@ -288,6 +304,7 @@ export async function gatherInputs(chatId, chatKey) {
             canon_setting: c.indoor === true ? 'indoors' : (c.indoor === false ? 'outdoors' : ''),
             canon_time: timeText(time),
             canon_scene: c.sceneTitle || '',
+            canon_summary: c.sceneSummary || '',
             canon_datetime: Number.isFinite(c.time) ? c.time : 0,
             canon_date: moment?.dateWords || moment?.dateText || '',
             canon_clock: moment?.timeText || '',

@@ -413,3 +413,4 @@
 .sb-cal-hol { font-size: 0.85em; color: var(--SmartThemeQuoteColor, #c9a0dc); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-cal-holedit { display: flex; flex-direction: column; gap: 4px; padding: 6px; border-radius: 6px; background: rgba(127, 127, 127, 0.08); margin-bottom: 6px; }
 .sb-cal-rowedit { align-items: center; }
+.sb-iconbtn.sb-disabled { opacity: 0.4; cursor: default; }

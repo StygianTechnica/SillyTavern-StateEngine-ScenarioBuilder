@@ -16,7 +16,7 @@ import { getObjectType, getBoundSettingId, createEntry, findSimilar, setParent, 
 import { routesFrom, listRoutes } from '../library/routes.js';
 import { listRelations, relationsFor } from '../library/relations-edit.js';
 import { setCanonical } from '../state/canonical.js';
-import { advanceBy, perTurnDefault, holdStoryWeather, setTime, travelAlong } from '../calendar/clock.js';
+import { advanceBy, perTurnDefault, holdStoryWeather, setTime, travelAlong, setTimeOfDay } from '../calendar/clock.js';
 import { baselineFields } from '../library/fields.js';
 import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
@@ -158,7 +158,7 @@ function nearbyPeople(characters, castIds, inPlay, relations) {
 }
 
 // Who arrives and leaves, by name (and the new people who are here).
-function castAfter(characters, castIds, { enters, leaves }, made) {
+function castAfter(characters, castIds, { enters, leaves }, made, playerId = '') {
     const byName = new Map();
     for (const c of characters) for (const n of [c.name, ...(c.aliases ?? c.base?.aliases ?? [])]) if (n) byName.set(String(n).toLowerCase(), c.id);
     const idOf = (name) => byName.get(String(name).toLowerCase()) ?? characters.find((c) => c.name.toLowerCase().includes(String(name).toLowerCase()))?.id ?? null;
@@ -166,7 +166,8 @@ function castAfter(characters, castIds, { enters, leaves }, made) {
     const names = { in: [], out: [] };
     for (const name of enters) { const id = idOf(name); if (id && !next.has(id)) { next.add(id); names.in.push(name); } }
     for (const m of made) if (m.kind === 'character' && m.here && !next.has(m.id)) { next.add(m.id); names.in.push(m.name); }
-    for (const name of leaves) { const id = idOf(name); if (id && next.has(id)) { next.delete(id); names.out.push(name); } }
+    // The player character never leaves: the scene goes with them (MOVE).
+    for (const name of leaves) { const id = idOf(name); if (id && id !== playerId && next.has(id)) { next.delete(id); names.out.push(name); } }
     return { castIds: [...next], names };
 }
 
@@ -200,7 +201,8 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
     const along = move.along.map(byName).filter(Boolean);
     const next = [...new Set([...(playerId && castIds.includes(playerId) ? [playerId] : playerId ? [playerId] : []), ...along])];
     const left = castIds.filter((id) => !next.includes(id)).map((id) => characters.find((c) => c.id === id)?.name).filter(Boolean);
-    const patch = { locationId: place.id, castIds: next };
+    // Creatures stay where they were.
+    const patch = { locationId: place.id, castIds: next, creatureIds: [] };
     if (move.indoor !== null) patch.indoor = move.indoor;
     setCanonical(chatKey, patch, { chatId, source: 'director', note: `The scene moves to ${place.name}${left.length ? `; ${left.join(', ')} stay${left.length === 1 ? 's' : ''} behind` : ''}` });
     return { from, castIds: next };
@@ -233,6 +235,7 @@ async function run(chatId, chatKey, type, force) {
         canonOnly,
         nearby,
         timeKeeping: settings.time.enabled && !!settingId,
+        askNow: settings.time.enabled && !!settingId && doc.clock.needsNow,
     });
     const raw = await callModelFirst([{ role: 'system', content: system }, { role: 'user', content: prompt }], settings.director.maxTokens);
     const parsed = parseDirectorNote(raw);
@@ -258,6 +261,11 @@ async function run(chatId, chatKey, type, force) {
     if (parsed.scene && parsed.scene !== currentTitle && (isNewTurn(type) || !currentTitle)) {
         setCanonical(chatKey, { sceneTitle: parsed.scene }, { chatId, source: 'director', note: `Scene: ${parsed.scene}` });
     }
+    // What is going on, in a sentence (sb__canon_summary; also written into
+    // sb__scene_summary). Rewritten every reply - it moves faster than the title.
+    if (parsed.situation && parsed.situation.split(/\s+/).length >= 4) {
+        setCanonical(chatKey, { sceneSummary: parsed.situation }, { chatId, source: 'director', note: '' });
+    }
 
     // The game master keeps the scene: who arrives and leaves, and how much
     // time the reply covers.
@@ -277,13 +285,27 @@ async function run(chatId, chatKey, type, force) {
     }
 
     if (isNewTurn(type) && settingId) {
-        const after = castAfter(characters, baseCast, parsed, made.map((m) => ({ ...m, here: created.find((c) => c.name === m.name)?.here })));
+        const after = castAfter(characters, baseCast, parsed, made.map((m) => ({ ...m, here: created.find((c) => c.name === m.name)?.here })), playerIdOf(settingId, characters));
+        // ENTERS and LEAVES that name creatures (the zombies) change the
+        // creatures in the scene.
+        const creatures = await listEntries(chatId, settingId, 'creature');
+        const findCreature = (name) => creatures.find((c) => [c.name, ...(c.aliases ?? c.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === String(name).toLowerCase()))
+            ?? creatures.find((c) => mentionedIn(name, c.name));
+        const creatureIds = new Set(getChatDoc(chatKey).canonical.creatureIds);
+        const creatureNames = { in: [], out: [] };
+        for (const name of parsed.enters) { const c = !characters.some((x) => x.name.toLowerCase() === name.toLowerCase()) && findCreature(name); if (c && !creatureIds.has(c.id)) { creatureIds.add(c.id); creatureNames.in.push(c.name); } }
+        for (const name of parsed.leaves) { const c = findCreature(name); if (c && creatureIds.has(c.id)) { creatureIds.delete(c.id); creatureNames.out.push(c.name); } }
+        if (creatureNames.in.length || creatureNames.out.length) {
+            setCanonical(chatKey, { creatureIds: [...creatureIds] }, { chatId, source: 'director', note: [creatureNames.in.length ? `${creatureNames.in.join(', ')} appear` : '', creatureNames.out.length ? `${creatureNames.out.join(', ')} gone` : ''].filter(Boolean).join('; ') });
+        }
         moves = after.names;
         if (moves.in.length || moves.out.length) {
             const note2 = [moves.in.length ? `${moves.in.join(', ')} arrive${moves.in.length === 1 ? 's' : ''}` : '', moves.out.length ? `${moves.out.join(', ')} leave${moves.out.length === 1 ? 's' : ''}` : ''].filter(Boolean).join('; ');
             setCanonical(chatKey, { castIds: after.castIds }, { chatId, source: 'director', note: note2 });
         }
         if (settings.time.enabled) {
+            // The clock just started: first the story's own time of day.
+            if (getChatDoc(chatKey).clock.needsNow) await setTimeOfDay(chatId, chatKey, settingId, parsed.now);
             const wanted = parsed.time?.text || perTurnDefault();
             const moved = await advanceBy(chatId, chatKey, settingId, wanted, { planned: true, source: 'director', note: `Time passes: ${wanted}${parsed.time?.why ? ` (${parsed.time.why})` : ''}` })
                 ?? await advanceBy(chatId, chatKey, settingId, perTurnDefault(), { planned: true, source: 'director', note: `Time passes: ${perTurnDefault()}` });

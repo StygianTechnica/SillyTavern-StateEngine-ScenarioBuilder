@@ -52,10 +52,10 @@ export function setCanonical(chatKey, patch, info = {}) {
         if ('castIds' in after) castChange = [before.castIds, after.castIds];
         doc.canonical = next;
         // In play (SB-124): every location and character that has been part
-        // of the canonical scene in this chat.
+        // of the canonical scene in this chat (and every creature).
         const inPlay = new Set(doc.inPlay);
         if (next.locationId) inPlay.add(next.locationId);
-        for (const id of next.castIds) inPlay.add(id);
+        for (const id of [...next.castIds, ...next.creatureIds]) inPlay.add(id);
         doc.inPlay = [...inPlay];
         entry = {
             id: newLocalId('h'),

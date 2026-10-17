@@ -32,6 +32,8 @@ export const SECTIONS = Object.freeze([
     { key: 'corrections', title: 'Corrections', priority: 6, keep: true },
     { key: 'summary', title: 'Where things stand', priority: 7, keep: true },
     { key: 'direction', title: 'Where it should go', priority: 8, keep: true },
+    { key: 'absent', title: 'Not in this scene', priority: 9, keep: true },
+    { key: 'alone', title: 'No one else here', priority: 9, keep: true },
 ]);
 
 export const DEFAULT_SECTIONS = Object.freeze(Object.fromEntries(SECTIONS.map((s) => [s.key, true])));
@@ -73,6 +75,38 @@ export function timeText(time) {
 function directorPart(director, part) {
     const d = typeof director === 'string' ? { summary: director, direction: '' } : (director ?? {});
     const text = String(d[part] ?? '').trim();
+    return text ? { full: text, compact: '' } : null;
+}
+
+// People the user took out of the scene by hand (while that holds): an
+// order, last of all, so the reply does not write them back in.
+function absentSection(absent) {
+    const names = (absent ?? []).map(clean).filter(Boolean);
+    if (!names.length) return null;
+    return { full: `${andList(names)} ${names.length === 1 ? 'is' : 'are'} not in this scene: leave ${names.length === 1 ? 'them' : 'them'} out of this reply entirely - no lines, no actions, no presence.`, compact: '' };
+}
+
+// When the player character has no one else in the scene (everyone left,
+// or the dead have not been put in it yet), a reply that only answers
+// other people has nothing to say. Here the world answers instead: what
+// follows from the player's actions, the place, and whatever creatures are
+// about. -> the text, or '' when someone else is present.
+export function aloneText(input) {
+    const list = (input.cast ?? []).filter((c) => clean(c?.name));
+    const player = list.find((c) => c.player);
+    if (!player || list.some((c) => !c.player)) return '';
+    const name = clean(player.name);
+    const creatures = (input.location?.creatures ?? []).map((x) => clean(x.name)).filter(Boolean);
+    return [
+        `No one else is with ${name} right now, but the reply is not empty: the world answers.`,
+        `Show what follows from what ${name} just did, how the place around ${name} changes, and what can be seen, heard and smelled.`,
+        creatures.length ? `Also here: ${andList(creatures)}. They act by their own nature - describe what they do.` : 'Any creature, danger or force already in the story acts by its own nature - describe what it does.',
+        `Someone may arrive only if the story calls for it. Never write ${name}'s words, actions, thoughts or feelings.`,
+    ].join(' ');
+}
+
+function aloneSection(input) {
+    const text = aloneText(input);
     return text ? { full: text, compact: '' } : null;
 }
 
@@ -202,12 +236,14 @@ function castLine(c) {
 // sb__cast: who is present. '' when nobody is known to be.
 export function buildCast(input) {
     const list = (input.cast ?? []).filter((c) => clean(c?.name));
-    if (!list.length) return '';
+    if (!list.length && !(input.absent ?? []).length) return '';
     const others = list.filter((c) => !c.player);
     const player = list.find((c) => c.player);
     const lines = ['Additional Context-Characters present:', ...list.map(castLine)];
+    const absent = (input.absent ?? []).map(clean).filter(Boolean);
+    if (absent.length) lines.push(`Not here: ${andList(absent)}. ${absent.length === 1 ? 'They are' : 'They are'} elsewhere now; do not write ${absent.length === 1 ? 'them' : 'them'} into this reply.`);
     if (others.length) lines.push(`Write ${others.length === 1 ? clean(others[0].name) : 'each of them'} true to what they want and how they feel; they act on their own intentions.${player ? ` Never write ${clean(player.name)}'s words, actions, thoughts or feelings.` : ''}`);
-    else if (player) lines.push(`Never write ${clean(player.name)}'s words, actions, thoughts or feelings.`);
+    else if (player) lines.push(aloneText(input));
     return `${REFERENCE_HEADER}\n${lines.join('\n')}`;
 }
 
@@ -266,6 +302,8 @@ function correctionsSection(corrections) {
 
 const BUILDERS = {
     summary: (input) => directorPart(input.director, 'summary'),
+    absent: (input) => absentSection(input.absent),
+    alone: (input) => aloneSection(input),
     direction: (input) => directorPart(input.director, 'direction'),
     limits: (input) => limitsSection(input.overview),
     overview: (input) => overviewSection(input.overview),
@@ -306,11 +344,13 @@ export function buildGuidance(input) {
         limits: 'The world\'s magic and technology limits.',
         summary: "The game master's summary of where things stand, written before this reply from the recent chat and the scene.",
         direction: "The game master's direction: what should probably happen in this reply.",
+        absent: 'People you took out of the scene by hand, for the next few replies.',
+        alone: 'Shown when the player character is the only one present: the world, its creatures and the consequences carry the reply.',
         location: input.location?.path?.length ? `Canonical location, its path and inherited environment; canonical time and weather.` : 'Canonical time and weather.',
         scene: 'The canonical scene title and premise.',
         corrections: 'Adjustments made by validation, kept for a few replies.',
         quests: (input.quests ?? []).map((q) => `${q.name}: ${q.why ?? 'active'}`).join('; ') || 'Active quests.',
-        lore: 'Lore tied to this place or the people present, or named in the last few messages.',
+        lore: (input.lore ?? []).filter((l) => l.why).map((l) => `${l.name}: ${l.why}`).join('; ') || 'Lore named in the last few messages, tied to someone they name, or tied to this place or the people present.',
     };
     return {
         text,
@@ -333,7 +373,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
     ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'corrections']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
-    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['direction']],
+    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['direction', 'absent', 'alone']],
 ]);
 
 // buildGuidance()'s result -> { [variable]: text } ('' for an empty part).

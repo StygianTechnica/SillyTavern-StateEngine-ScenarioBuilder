@@ -7,6 +7,8 @@
 //     the story);
 //   - a new location without a parent is placed next to where the scene
 //     came from (the user can drag it elsewhere in the tree);
+//   - a creature detected in the story (or a character State Engine marks
+//     present) joins the scene: it was detected because it is there;
 //   - it is listed in the open chat's Review ("New in the setting");
 //   - its empty fields are enriched in the background, when auto-enrich is
 //     on and the canon switches allow it (src/generate/enrich.js).
@@ -18,6 +20,7 @@ import { getSettings } from '../settings.js';
 import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
+import { setCanonical } from '../state/canonical.js';
 import { getObjectTypes, listEntries, getParents, setParent, setEntryMeta, mayAddGeneratedDetail } from './library.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 
@@ -28,6 +31,23 @@ function neighbourParent(chatDoc, parents, id) {
     const from = moved?.before?.locationId || (chatDoc.canonical.locationId !== id ? chatDoc.canonical.locationId : '');
     if (!from || from === id) return null;
     return parents[from] ?? null;
+}
+
+// Puts newly taken-in creatures and characters into the canonical scene,
+// unless the user has taken them out by hand.
+export function sceneArrivals(chatId, chatKey, arrived, names = new Map()) {
+    const doc = getChatDoc(chatKey);
+    const heldOut = new Set(doc.held.filter((x) => x.op === 'remove' && x.until > doc.turn).map((x) => x.objectId));
+    const patch = {};
+    const joined = [];
+    for (const key of ['creatureIds', 'castIds']) {
+        const add = (arrived[key] ?? []).filter((id) => !heldOut.has(id) && !doc.canonical[key].includes(id));
+        if (!add.length) continue;
+        patch[key] = [...doc.canonical[key], ...add];
+        joined.push(...add.map((id) => names.get(id) ?? id));
+    }
+    if (!joined.length) return null;
+    return setCanonical(chatKey, patch, { source: 'review', note: `Detected in the story, now in the scene: ${joined.join(', ')}`, chatId });
 }
 
 let running = false;
@@ -54,8 +74,12 @@ export async function runIntake(chatId, chatKey, settingId) {
         const parents = getParents(settingId);
         const names = new Map(objects.map((o) => [o.id, o.name]));
         const items = [];
+        const arrived = { creatureIds: [], castIds: [] };
         for (const obj of fresh) {
+            const fromStory = !obj.meta?.origin || obj.meta.origin === 'story';
             if (!obj.meta?.origin) setEntryMeta(settingId, obj.id, { origin: 'story' });
+            if (fromStory && obj.type === 'creature') arrived.creatureIds.push(obj.id);
+            if (fromStory && obj.type === 'character' && (obj.runtime?.present === true || obj.present === true)) arrived.castIds.push(obj.id);
             let placedUnder = '';
             if (obj.type === 'location' && !parents[obj.id]) {
                 const parent = neighbourParent(chatDoc, parents, obj.id);
@@ -69,6 +93,7 @@ export async function runIntake(chatId, chatKey, settingId) {
             const seen = new Set(d.adopted.map((a) => a.objectId));
             d.adopted = [...d.adopted, ...items.filter((a) => !seen.has(a.objectId))];
         });
+        sceneArrivals(chatId, chatKey, arrived, names);
         for (const item of items) {
             if (item.enrich === 'queued') enqueueEnrichment({ settingId, chatId, chatKey, objectId: item.objectId, name: item.name, adoptedId: item.id });
         }

@@ -1,4 +1,4 @@
-import { buildGenerationPrompt, parseGenerationResponse, extractJson, mergeGenerated, buildOverviewPrompt, parseOverviewResponse } from '../src/generate/prompt.js';
+import { buildGenerationPrompt, parseGenerationResponse, extractJson, mergeGenerated, splitAliases, mergeAliases, buildOverviewPrompt, parseOverviewResponse } from '../src/generate/prompt.js';
 import { randomFor, eraGroups, splitList, joinList, describeMagic, describeTech, normalizeMagic, techForEra } from '../src/library/world-options.js';
 import { normalizeSettingDoc } from '../src/store/schema.js';
 
@@ -228,5 +228,16 @@ describe('reliability', () => {
         expect([keys, plain]).toEqual([['name'], true]);
         expect(user).toContain('Reply with just the name. Do not reuse any of these existing names: Mira.');
         expect(user).toContain('What the user wants: a ghost');
+    });
+});
+
+describe('aliases', () => {
+    it('are one name each, whatever the model packs together', () => {
+        expect(splitAliases(['Elyon, Sovereign of Dawn, Lord of Radiant Retribution', "God of Light; Warriors' Champion", 'elyon']))
+            .toEqual(['Elyon', 'Sovereign of Dawn', 'Lord of Radiant Retribution', 'God of Light', "Warriors' Champion"]);
+    });
+    it('are only added to by generation, never rewritten away', () => {
+        expect(mergeAliases(['Elyon', 'god of light'], ['Elyon, Sovereign of Dawn', 'God of Light'])).toEqual(['Elyon', 'god of light', 'Sovereign of Dawn']);
+        expect(mergeGenerated({ aliases: ['Elyon'] }, { aliases: ['Sovereign of Dawn'] }, 'enrich').aliases).toEqual(['Elyon', 'Sovereign of Dawn']);
     });
 });

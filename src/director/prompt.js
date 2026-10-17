@@ -12,6 +12,7 @@
 // is.
 
 import { WEATHER_VALUES } from '../store/schema.js';
+import { shortTitle } from '../validate/drift.js';
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
@@ -143,7 +144,13 @@ export function dossierText(input) {
         ].filter(Boolean).map(bare);
         lines.push(`- ${clean(c.name)}${bits.length ? `: ${bits.join('; ')}` : ''}`);
     }
-    const others = (input.nearby ?? []).filter((c) => clean(c?.name));
+    if (cast.length && cast.every((c) => c.player)) lines.push('- No one else is here.');
+    if (input.absent?.length) {
+        section('TAKEN OUT OF THE SCENE BY THE PLAYER (they must not appear, speak or act in this reply)');
+        lines.push(`- ${input.absent.map(clean).join(', ')}`);
+    }
+    const absentSet = new Set((input.absent ?? []).map((n) => clean(n).toLowerCase()));
+    const others = (input.nearby ?? []).filter((c) => clean(c?.name) && !absentSet.has(clean(c.name).toLowerCase()));
     if (others.length) {
         section('OTHERS WHO COULD TURN UP (not here now)');
         for (const c of others.slice(0, 12)) lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${clean(c.why) ? ` - ${clean(c.why)}` : ''}`);
@@ -169,13 +176,27 @@ export function buildDirectorPrompt(input) {
     const recent = (input.messages ?? []).slice(-8).map((m) => `${clean(m.name) || (m.isUser ? userName : 'Narrator')}: ${cut(m.text, 900)}`).join('\n\n');
     const parts = [dossierText(input), '', 'THE LATEST CHAT', recent || '(the story has not started yet)'];
     if (clean(input.previousNote)) parts.push('', 'YOUR LAST BRIEFING (move on from it; do not repeat what has already happened)', cut(input.previousNote, 1200));
+    // With no one but the player present there are no people to brief on:
+    // the world itself must answer, or the reply has nothing to do.
+    const castHere = (input.cast ?? []).filter((c) => clean(c?.name));
+    const alone = castHere.some((c) => c.player) && castHere.every((c) => c.player);
+    const people = alone
+        ? `No one else is with ${userName} right now, so brief the narrator on how the world answers instead: what follows from what ${userName} just did, how the place changes around ${userName}, and what any creatures, dangers or forces in the story (the ones here, or ones the latest chat shows coming) are doing and are likely to do next. If the chat shows creatures or people arriving that are not listed as here, name them with an ENTERS line below. Someone may turn up only if the story calls for it - do not invent a companion just to have someone to talk to.`
+        : `what the people around ${userName} want, feel toward one another and are likely to do about it - woven together, not person by person.`;
     parts.push(
         '',
         'WRITE THE BRIEFING',
-        `In a few paragraphs of natural prose (no headings, lists or tables), tell the narrator where things stand now that ${userName} has spoken, and what the people around ${userName} want, feel toward one another and are likely to do about it - woven together, not person by person. Let the place come through in a few concrete details of what can be seen, heard or smelled, and anything here that matters now. Vary how you open; do not start with a stock phrase.`,
+        `In a few paragraphs of natural prose (no headings, lists or tables), tell the narrator where things stand now that ${userName} has spoken${alone ? `. ${people}` : `, and ${people}`} Let the place come through in a few concrete details of what can be seen, heard or smelled, and anything here that matters now. Vary how you open; do not start with a stock phrase.`,
         'End with a paragraph that begins "Next:" saying where this reply should probably go - one or two natural developments, as direction rather than a script, leaning toward an open thread when it fits.',
         'Keep it under 400 words in all.',
     );
+    if (input.askNow) {
+        parts.push(
+            '',
+            'The story\'s clock is only now starting. On its own line, the time of day it is in the story as of the latest message - dawn, morning, midday, afternoon, evening, night or late night, or a clock time like 21:30 - from what the messages say or show (light, meals, lamps, sleep); "unknown" if they give no clue:',
+            'NOW | evening',
+        );
+    }
     if (input.timeKeeping !== false) {
         parts.push(
             '',
@@ -189,13 +210,15 @@ export function buildDirectorPrompt(input) {
     }
     parts.push(
         '',
-        `On its own line, a short title (three to seven words) for the scene as it now stands - ${clean(input.scene?.title) ? `keep "${clean(input.scene.title)}" unless the scene has moved on` : 'it has none yet'}:`,
+        `On its own line, a title of two to five words for the scene as it now stands - ${clean(input.scene?.title) ? `keep "${clean(input.scene.title)}" unless the scene has moved on` : 'it has none yet'}:`,
         'SCENE | The debt comes due',
+        'And one sentence on what is going on in the scene as this reply begins - who is doing what, and where:',
+        'SITUATION | Remus and Varyn hold the gate while the dead mass below the wall.',
         '',
-        `If the latest message takes the scene somewhere else (${userName} goes to another place), a line naming where the scene is now - one of the ways on when it fits - who goes along with ${userName} (or "none"), and whether it is indoors or outdoors. Everyone else stays behind.`,
+        `The scene always follows ${userName}. If the latest message takes ${userName} somewhere else - leaving the room, walking out, going to another place - never write LEAVES for ${userName}; write a line naming where the scene is now (one of the ways on when it fits), who goes along with ${userName} (or "none"), and whether it is indoors or outdoors. Everyone else stays behind.`,
         'MOVE | Place name | Name, Name | outdoors',
         '',
-        'If someone known arrives or leaves in this reply, a line for each:',
+        'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each:',
         'ENTERS | Name',
         'LEAVES | Name',
     );
@@ -263,7 +286,9 @@ export function parseDirectorNote(raw) {
     let time = null;
     let weather = null;
     let scene = '';
+    let situation = '';
     let move = null;
+    let now = '';
     const enters = [];
     const leaves = [];
     for (const line of text.split('\n')) {
@@ -274,13 +299,23 @@ export function parseDirectorNote(raw) {
         }
         const sc = line.match(/^\s*(?:[-*]\s*)?\**SCENE\**\s*:?\s*\|\s*(.+?)\s*$/i);
         if (sc) {
-            if (!scene) scene = clean(sc[1]).replace(/^["'*]+|["'*.]+$/g, '').slice(0, 80);
+            if (!scene) scene = shortTitle(clean(sc[1]));
+            continue;
+        }
+        const st = line.match(/^\s*(?:[-*]\s*)?\**SITUATION\**\s*:?\s*\|\s*(.+?)\s*$/i);
+        if (st) {
+            if (!situation) situation = clean(st[1]).replace(/^["'*]+|["'*]+$/g, '').slice(0, 300);
             continue;
         }
         const wx = line.match(/^\s*(?:[-*]\s*)?\**WEATHER\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
         if (wx) {
             const values = wx[1].split(/[,/]| and /i).map((v) => clean(v).toLowerCase()).map((v) => WEATHER_VALUES.find((w) => w.toLowerCase() === v)).filter(Boolean);
             if (!weather && values.length) weather = { values: [...new Set(values)], why: clean(wx[2]) };
+            continue;
+        }
+        const nw = line.match(/^\s*(?:[-*]\s*)?\**NOW\**\s*:?\s*\|\s*(.+?)\s*$/i);
+        if (nw) {
+            if (!now) now = clean(nw[1]).replace(/^["'*]+|["'*.]+$/g, '');
             continue;
         }
         const mv = line.match(/^\s*(?:[-*]\s*)?\**MOVE\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?$/i);
@@ -317,5 +352,5 @@ export function parseDirectorNote(raw) {
         .replace(/^\s*#+\s+/gm, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-    return { note: text, ...splitNote(text), created, time, weather, scene, move, enters: [...new Set(enters)], leaves: [...new Set(leaves)] };
+    return { note: text, ...splitNote(text), created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)] };
 }

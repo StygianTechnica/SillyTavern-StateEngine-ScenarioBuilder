@@ -98,6 +98,7 @@ export async function renderScene() {
         const rows = [
             ['Location', await nameOf(obs.location)],
             ['Characters', (await Promise.all(obs.cast.map(nameOf))).join(', ')],
+            ['Creatures', (await Promise.all(obs.creatures.map(nameOf))).join(', ')],
             ['Weather', obs.weather.join(', ')],
             ['Temperature', obs.temperature],
             ['Indoors', obs.indoor === null ? '' : (obs.indoor ? 'yes' : 'no')],

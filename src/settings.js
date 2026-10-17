@@ -57,6 +57,9 @@ const DEFAULTS = {
     // Quests (src/quests/): make quest objects from Archivist's quest seeds,
     // goals and plans automatically; how many active quests are tracked.
     quests: { autoCreate: true, tracked: 5 },
+    // Lore (src/library/lore-sync.js): make Lore entries from Archivist's
+    // compiled world lore automatically.
+    lore: { autoCreate: true },
     // The director (src/director/): a game master's briefing written before
     // each reply. timeout: seconds the reply waits for it (the last note is
     // used when it is late); allowCreate: it may add the rooms, people and
@@ -104,6 +107,8 @@ export function getSettings() {
     settings.quests ??= { autoCreate: true, tracked: 5 };
     settings.quests.autoCreate ??= true;
     settings.quests.tracked ??= 5;
+    settings.lore ??= { autoCreate: true };
+    settings.lore.autoCreate ??= true;
     return settings;
 }
 

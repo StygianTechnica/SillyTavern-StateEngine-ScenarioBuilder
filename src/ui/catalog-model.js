@@ -7,7 +7,7 @@ import { isWithin } from '../library/hierarchy.js';
 // SB-124: 'scene' (in the current scene), 'play' (has been in play in this
 // chat), or 'unused'.
 export function chatStatusOf(entryId, doc) {
-    if (doc?.canonical?.locationId === entryId || doc?.canonical?.castIds?.includes(entryId)) return 'scene';
+    if (doc?.canonical?.locationId === entryId || doc?.canonical?.castIds?.includes(entryId) || doc?.canonical?.creatureIds?.includes(entryId)) return 'scene';
     if (doc?.inPlay?.includes(entryId)) return 'play';
     return 'unused';
 }
@@ -71,6 +71,7 @@ export function entityHistory(doc, id) {
         let what = h.note || 'Scene changed';
         if (keys.includes('locationId')) what = h.after.locationId === id ? 'The scene moved here' : 'The scene left here';
         else if (keys.includes('castIds')) what = (h.after.castIds ?? []).includes(id) ? 'Joined the scene' : 'Left the scene';
+        else if (keys.includes('creatureIds')) what = (h.after.creatureIds ?? []).includes(id) ? 'Appeared in the scene' : 'Left the scene';
         out.push({ at: h.at, kind: 'change', text: `${what}${h.undone ? ' (undone)' : ''}`, source: h.source });
     }
     for (const d of doc?.drift ?? []) {

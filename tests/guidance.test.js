@@ -24,7 +24,7 @@ describe('guidance', () => {
         expect(text).toContain('The climate is humid.');
         expect(text).not.toContain('Mira, the innkeeper');
         expect(text).toContain('Hold to these: The scene is still at Brass Market, not the docks.');
-        expect(sections.filter((s) => !['quests', 'summary', 'direction', 'lore', 'limits'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
+        expect(sections.filter((s) => !['quests', 'summary', 'direction', 'lore', 'limits', 'absent', 'alone'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
         expect(text).not.toMatch(/^\[/m);
     });
 
@@ -154,5 +154,37 @@ describe('guidance in parts', () => {
 
     it('leaves an empty part empty', () => {
         expect(guidanceParts(buildGuidance({ budget: 600 })).guidance_threads).toBe('');
+    });
+});
+
+describe('people taken out of the scene by hand', () => {
+    it('are named as not here in the cast block, even with nobody left', () => {
+        expect(buildCast({ cast: [{ name: 'Remus', player: true }], absent: ['Varyn', 'Niamh'] })).toContain('Not here: Varyn and Niamh. They are elsewhere now; do not write them into this reply.');
+        expect(buildCast({ cast: [], absent: ['Varyn'] })).toContain('Not here: Varyn.');
+    });
+    it('close the guidance, in the direction part', () => {
+        const built = buildGuidance({ ...input, director: { summary: 'S.', direction: 'D.' }, absent: ['Varyn', 'Niamh'], budget: 100 });
+        expect(built.text.endsWith('Varyn and Niamh are not in this scene: leave them out of this reply entirely - no lines, no actions, no presence.')).toBe(true);
+        expect(guidanceParts(built).guidance_direction).toContain('D.\n\nVaryn and Niamh are not in this scene');
+    });
+});
+
+describe('the player character alone in the scene', () => {
+    const solo = { cast: [{ name: 'Remus', player: true }], location: { path: ['Gatehouse'], creatures: [{ name: 'Zombies' }] }, budget: 600 };
+    it('tells the reply to let the world answer, naming the creatures here', () => {
+        const text = buildCast(solo);
+        expect(text).toContain('No one else is with Remus right now, but the reply is not empty: the world answers.');
+        expect(text).toContain('Also here: Zombies. They act by their own nature');
+        expect(text).toContain("Never write Remus's words, actions, thoughts or feelings.");
+    });
+    it('closes the direction part of the guidance', () => {
+        const built = buildGuidance(solo);
+        expect(built.sections.find((s) => s.key === 'alone').mode).toBe('full');
+        expect(guidanceParts(built).guidance_direction).toContain('Show what follows from what Remus just did');
+    });
+    it('says nothing when someone else is present', () => {
+        const built = buildGuidance({ ...solo, cast: [...solo.cast, { name: 'Varyn' }] });
+        expect(built.sections.find((s) => s.key === 'alone').mode).toBe('empty');
+        expect(buildCast({ ...solo, cast: [...solo.cast, { name: 'Varyn' }] })).not.toContain('No one else');
     });
 });

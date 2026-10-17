@@ -22,10 +22,10 @@ import { getVariableValues, setVariableValue } from '../api/variables.js';
 import { getObject, confirmObject, resolveObject } from '../api/objects.js';
 import { PRESET_NAME, OBSERVED_NAMES } from '../preset/blueprint.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
-import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry } from '../library/library.js';
+import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry, playerIdOf, listEntries } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
 import { catchUpWithStory, holdStoryWeather, travelAlong } from '../calendar/clock.js';
-import { detectDrift, readObserved, applyAccepted, correctionText, describeItem, OBSERVED_FIELDS } from './drift.js';
+import { detectDrift, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
 
 export const DRIFT_CHANGED_EVENT = 'scenario_builder_drift_changed';
 
@@ -71,6 +71,8 @@ function restoreValues(canonical, fields = Object.keys(OBSERVED_FIELDS)) {
             case 'temperature': if (canonical.temperature) out.scene_temperature = canonical.temperature; break;
             case 'indoor': if (typeof canonical.indoor === 'boolean') out.scene_isindoor = canonical.indoor; break;
             case 'title': if (canonical.sceneTitle) out.scene_title = canonical.sceneTitle; break;
+            case 'summary': if (canonical.sceneSummary) out.scene_summary = canonical.sceneSummary; break;
+            case 'creatures': if (canonical.creatureIds.length || canonical.locationId) out.scene_creatures = [...canonical.creatureIds]; break;
             default: break;
         }
     }
@@ -148,13 +150,15 @@ async function reconcileOnce() {
     const settings = getSettings();
     const settingId = await getBoundSettingId(chatId);
     const raw = await getVariableValues(chatId, OBSERVED_NAMES);
-    const observed = readObserved(raw);
     const doc = getChatDoc(chatKey);
+    // The player character never leaves the scene: the scene goes with them.
+    const playerId = settingId ? playerIdOf(settingId, await listEntries(chatId, settingId, 'character')) : '';
+    const observed = followPlayer(readObserved(raw), doc.canonical, playerId);
     const replySource = latestReplySource(chatId);
     const newReply = !!replySource && replySource !== doc.lastReply;
 
     const objects = await objectsFor(chatId, [observed.location, ...observed.cast, doc.canonical.locationId, ...doc.canonical.castIds]);
-    const items = detectDrift({
+    const items = applyHolds(detectDrift({
         canonical: doc.canonical,
         observed,
         lastObserved: doc.lastObserved,
@@ -162,7 +166,7 @@ async function reconcileOnce() {
         parents: settingId ? getParents(settingId) : {},
         policies: settings.policies,
         rejected: doc.rejected,
-    });
+    }), doc.held.filter((h) => h.until > doc.turn));
 
     if (!items.length && !newReply && JSON.stringify(doc.lastObserved) === JSON.stringify(observed)) return;
 
@@ -220,6 +224,7 @@ async function reconcileOnce() {
             d.corrections = d.corrections.map((c) => ({ ...c, turnsLeft: (c.turnsLeft ?? 1) - 1 })).filter((c) => c.turnsLeft > 0);
             d.turn += 1;
             d.lastReply = replySource;
+            d.held = d.held.filter((h) => h.until > d.turn);
         }
         d.corrections = [...d.corrections, ...corrections];
         const known = new Set(d.candidates.map((c) => c.objectId));
@@ -231,7 +236,7 @@ async function reconcileOnce() {
     };
 
     const patch = {};
-    for (const key of ['locationId', 'castIds', 'weather', 'temperature', 'indoor', 'sceneTitle']) {
+    for (const key of ['locationId', 'castIds', 'creatureIds', 'weather', 'temperature', 'indoor', 'sceneTitle', 'sceneSummary']) {
         if (JSON.stringify(canonical[key]) !== JSON.stringify(doc.canonical[key])) patch[key] = canonical[key];
     }
     // One save: the canonical change (if any) plus the queue/log updates,
@@ -379,14 +384,16 @@ export async function removeAdopted(chatId, chatKey, adoptedId) {
         source: 'review', note: `${a.name} is not part of this world`, chatId,
         alsoMutate: (d) => {
             d.adopted = d.adopted.filter((x) => x.id !== adoptedId);
-            // A quest made from an Archivist thread: the thread is dismissed,
-            // or the next sync would make the quest again.
-            const threadId = a.type === 'quest' ? Object.entries(d.questLinks).find(([, q]) => q === a.objectId)?.[0] ?? '' : '';
+            // A quest made from an Archivist thread (or lore from its world
+            // lore): the source is dismissed, or the next sync would make it
+            // again.
+            const [linkKey, dismissKey] = a.type === 'quest' ? ['questLinks', 'questsDismissed'] : a.type === 'lore' ? ['loreLinks', 'loreDismissed'] : [];
+            const threadId = linkKey ? Object.entries(d[linkKey]).find(([, q]) => q === a.objectId)?.[0] ?? '' : '';
             if (threadId) {
-                d.questsDismissed = [...new Set([...d.questsDismissed, threadId])];
-                const links = { ...d.questLinks };
+                d[dismissKey] = [...new Set([...d[dismissKey], threadId])];
+                const links = { ...d[linkKey] };
                 delete links[threadId];
-                d.questLinks = links;
+                d[linkKey] = links;
             }
             const known = d.rejected.some((r) => r.type === a.type && String(r.name).toLowerCase() === String(a.name).toLowerCase());
             if (!known) d.rejected = [...d.rejected, { type: a.type, name: a.name, ...(threadId ? { threadId } : {}) }];
@@ -405,7 +412,10 @@ export function forgetRejection(chatKey, index) {
     updateChatDoc(chatKey, (d) => {
         const gone = d.rejected[index];
         d.rejected = d.rejected.filter((_, i) => i !== index);
-        if (gone?.threadId) d.questsDismissed = d.questsDismissed.filter((t) => t !== gone.threadId);
+        if (gone?.threadId) {
+            d.questsDismissed = d.questsDismissed.filter((t) => t !== gone.threadId);
+            d.loreDismissed = d.loreDismissed.filter((t) => t !== gone.threadId);
+        }
     });
 }
 
@@ -443,5 +453,47 @@ export async function revertFromMessage(fromIndex) {
         },
     });
     await pushCanonicalToObserved(ref.chatId, chatKey);
+    announce(chatKey);
+}
+
+// The user changed the scene by hand (the Scene tab, "Set the scene here",
+// "Bring into / Remove from scene"): the change holds over the story's
+// reading for HOLD_TURNS replies, the model is told (corrections), and the
+// game master's briefing - written for the scene as it was - is dropped
+// and written again. `before`: the canonical state before the change.
+const HOLD_TURNS = 3;
+export async function holdUserScene(chatId, chatKey, before) {
+    const doc = getChatDoc(chatKey);
+    const after = doc.canonical;
+    const until = doc.turn + HOLD_TURNS;
+    const holds = [];
+    const lines = [];
+    const settingId = await getBoundSettingId(chatId);
+    const nameOf = async (id) => (await getObject(chatId, id))?.name ?? '';
+    if (after.locationId && after.locationId !== before.locationId) {
+        holds.push({ field: 'location', value: after.locationId, until });
+        const path = settingId ? (await getLocationPathNames(chatId, settingId, after.locationId)).join(' > ') : await nameOf(after.locationId);
+        lines.push(`The scene is now at ${path || await nameOf(after.locationId)}.`);
+    }
+    for (const id of before.castIds.filter((x) => !after.castIds.includes(x))) {
+        holds.push({ field: 'cast', op: 'remove', objectId: id, until });
+        const name = await nameOf(id);
+        if (name) lines.push(`${name} is not in this scene any more.`);
+    }
+    for (const id of after.castIds.filter((x) => !before.castIds.includes(x))) {
+        holds.push({ field: 'cast', op: 'add', objectId: id, until });
+        const name = await nameOf(id);
+        if (name) lines.push(`${name} is in this scene.`);
+    }
+    for (const id of (before.creatureIds ?? []).filter((x) => !(after.creatureIds ?? []).includes(x))) holds.push({ field: 'creatures', op: 'remove', objectId: id, until });
+    if (!holds.length) return;
+    const settings = getSettings();
+    const fields = new Set(holds.map((h) => h.field));
+    updateChatDoc(chatKey, (d) => {
+        d.held = [...d.held.filter((h) => !fields.has(h.field) || h.until <= d.turn), ...holds];
+        d.corrections = [...d.corrections, ...lines.map((text) => ({ id: newLocalId('c'), text, turnsLeft: settings.correctionTurns + 1, source: 'user' }))];
+        // The briefing described the old scene.
+        d.director = { ...d.director, note: '', summary: '', direction: '', key: '' };
+    });
     announce(chatKey);
 }

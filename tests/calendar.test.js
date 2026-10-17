@@ -1,5 +1,5 @@
 import { daylight, dayPartAt, skyAt, moonPhase, needsAt, holidaysAround, holidayText, seasonName, dayOfYearOf } from '../src/calendar/sky.js';
-import { fallbackAdvance, defaultStart } from '../src/calendar/moment.js';
+import { fallbackAdvance, defaultStart, timeOfDayFraction } from '../src/calendar/moment.js';
 import { weatherAt, forecast, bandOf, weatherText, CLIMATES } from '../src/calendar/weather.js';
 
 const months = Array.from({ length: 12 }, (_, i) => ({ name: `M${i + 1}`, days: 30 }));
@@ -152,5 +152,26 @@ describe('fallback time reading', () => {
         expect(fallbackAdvance(def, t0, 'until dawn')).toBe(11 * 86400 + 0.25 * 86400);
         expect(fallbackAdvance(def, t0, 'mumble')).toBeNull();
         expect(defaultStart(def)).toBe(8 * 3600);
+    });
+});
+
+describe("reading the story's time of day", () => {
+    it('reads parts of the day and clock times', () => {
+        expect(timeOfDayFraction('evening')).toBeCloseTo(0.78);
+        expect(timeOfDayFraction('late afternoon')).toBeCloseTo(0.68);
+        expect(timeOfDayFraction('late evening')).toBeCloseTo(0.86);
+        expect(timeOfDayFraction('Late at night')).toBeCloseTo(0.9);
+        expect(timeOfDayFraction('late night')).toBeCloseTo(0.1);
+        expect(timeOfDayFraction('midnight')).toBe(0);
+        expect(timeOfDayFraction('21:30')).toBeCloseTo(21.5 / 24);
+        expect(timeOfDayFraction('9 pm')).toBeCloseTo(21 / 24);
+        expect(timeOfDayFraction('12 am')).toBe(0);
+        expect(timeOfDayFraction('half past six in the morning')).toBeCloseTo(0.36);
+        expect(timeOfDayFraction('unknown')).toBeNull();
+        expect(timeOfDayFraction('')).toBeNull();
+    });
+    it("reads clock times in a fantasy calendar's hours", () => {
+        expect(timeOfDayFraction('15:00', { hoursPerDay: 30, minutesPerHour: 60 })).toBeCloseTo(0.5);
+        expect(timeOfDayFraction('27:00')).toBeNull();
     });
 });

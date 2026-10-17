@@ -31,6 +31,33 @@ export function defaultStart(def, { year = 2026 } = {}) {
     return hour * perHour;
 }
 
+// A time of day as written in a story - "evening", "late night", "noon",
+// "21:30", "9 pm", "half past six in the morning" - as a fraction of the day,
+// or null. Clock times are in the calendar's own hours.
+const DAY_PART_FRACTIONS = [
+    ['late night', 0.1], ['small hours', 0.1], ['midnight', 0], ['before dawn', 0.21], ['dawn', 0.25], ['sunrise', 0.26],
+    ['early morning', 0.29], ['morning', 0.36], ['late morning', 0.44], ['midday', 0.5], ['noon', 0.5],
+    ['early afternoon', 0.56], ['afternoon', 0.62], ['late afternoon', 0.68], ['dusk', 0.77], ['sunset', 0.76], ['twilight', 0.79],
+    ['early evening', 0.74], ['evening', 0.78], ['late evening', 0.86], ['night', 0.9],
+];
+export function timeOfDayFraction(text, def = null) {
+    const t = String(text ?? '').toLowerCase().trim();
+    if (!t || /^(unknown|unclear|none|-)$/.test(t)) return null;
+    const hpd = def?.hoursPerDay || 24;
+    const mph = def?.minutesPerHour || 60;
+    const clock = t.match(/\b(\d{1,2})(?:[:.h](\d{2}))?\s*(a\.?m\.?|p\.?m\.?)?(?=\b|$)/);
+    if (clock && (clock[2] !== undefined || clock[3])) {
+        let hour = Number(clock[1]);
+        const minute = Number(clock[2] ?? 0);
+        if (clock[3]?.startsWith('p') && hour < 12) hour += 12;
+        if (clock[3]?.startsWith('a') && hour === 12) hour = 0;
+        if (hour < hpd && minute < mph) return (hour + minute / mph) / hpd;
+    }
+    // Longer phrases first ("late afternoon" before "afternoon").
+    const hit = [...DAY_PART_FRACTIONS].sort((a, b) => b[0].length - a[0].length).find(([phrase]) => new RegExp(`\\b${phrase}\\b`).test(t));
+    return hit ? hit[1] : null;
+}
+
 const WORDS = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, few: 3, several: 4, half: 0.5 };
 const TIMES_OF_DAY = { dawn: 0.25, sunrise: 0.25, morning: 0.33, noon: 0.5, midday: 0.5, afternoon: 0.6, evening: 0.75, dusk: 0.77, sunset: 0.77, night: 0.88, midnight: 0 };
 

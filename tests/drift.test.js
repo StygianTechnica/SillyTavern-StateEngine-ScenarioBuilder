@@ -1,4 +1,4 @@
-import { detectDrift, readObserved, applyAccepted, correctionText, describeItem, DEFAULT_POLICIES } from '../src/validate/drift.js';
+import { followPlayer, applyHolds, detectDrift, readObserved, applyAccepted, correctionText, describeItem, DEFAULT_POLICIES } from '../src/validate/drift.js';
 import { emptyCanonical } from '../src/store/schema.js';
 
 const parents = { market: 'city', docks: 'city', stall: 'market' };
@@ -108,5 +108,37 @@ describe('applying and describing', () => {
         const nameOf = (id) => objects.get(id)?.name ?? id;
         expect(describeItem({ field: 'location', canonical: 'market', observed: 'moon', reason: 'moved to an unconnected place' }, nameOf)).toBe('Location: Market → Moon (moved to an unconnected place)');
         expect(describeItem({ field: 'cast', op: 'remove', objectId: 'mira' }, nameOf)).toBe('Characters present: Mira left');
+    });
+});
+
+describe('the scene follows the player character', () => {
+    const canonical = { castIds: ['remus', 'varyn', 'niamh'], locationId: 'room' };
+    it('reads the player character dropping out somewhere else as the scene going with them', () => {
+        const observed = { cast: ['varyn', 'niamh'], location: 'wall' };
+        expect(followPlayer(observed, canonical, 'remus').cast).toEqual(['remus']);
+    });
+    it('keeps people met at the new place', () => {
+        expect(followPlayer({ cast: ['varyn', 'guard'], location: 'wall' }, canonical, 'remus').cast).toEqual(['remus', 'guard']);
+    });
+    it('keeps them when only their name is missing', () => {
+        expect(followPlayer({ cast: ['varyn', 'niamh'], location: 'room' }, canonical, 'remus').cast).toEqual(['varyn', 'niamh', 'remus']);
+    });
+    it('leaves the reading alone when the player character is still there or unknown', () => {
+        const observed = { cast: ['remus', 'varyn'] };
+        expect(followPlayer(observed, canonical, 'remus')).toBe(observed);
+        expect(followPlayer({ cast: ['varyn'] }, canonical, '')).toEqual({ cast: ['varyn'] });
+    });
+});
+
+describe('changes made by hand hold', () => {
+    const held = [{ field: 'cast', op: 'remove', objectId: 'varyn' }, { field: 'location', value: 'wall' }];
+    it('turns back the story putting someone back or moving the scene', () => {
+        const items = applyHolds([
+            { field: 'cast', op: 'add', objectId: 'varyn', action: 'accept', reason: 'joined' },
+            { field: 'cast', op: 'add', objectId: 'niamh', action: 'accept' },
+            { field: 'location', observed: 'room', action: 'accept' },
+            { field: 'location', observed: 'wall', action: 'accept' },
+        ], held);
+        expect(items.map((i) => i.action)).toEqual(['adjust', 'accept', 'adjust', 'accept']);
     });
 });

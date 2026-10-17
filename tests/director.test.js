@@ -36,6 +36,15 @@ describe('director prompt', () => {
         expect(text).toContain('Where: not known yet.');
         expect(text).toContain('WHO IS HERE: not known yet.');
     });
+
+    it('briefs on the world when the player character is alone', () => {
+        const alone = { cast: [{ name: 'Remus', player: true }] };
+        expect(dossierText(alone)).toContain('- No one else is here.');
+        const { prompt } = buildDirectorPrompt(alone);
+        expect(prompt).toContain('No one else is with Remus right now, so brief the narrator on how the world answers instead');
+        expect(prompt).not.toContain('what the people around Remus want');
+        expect(buildDirectorPrompt({ cast: [...alone.cast, { name: 'Varyn' }] }).prompt).toContain('what the people around Remus want');
+    });
 });
 
 describe('director note parsing', () => {
@@ -210,5 +219,26 @@ describe('director moves the scene', () => {
         expect(matchPlace('the wall', places, ['b'])?.id).toBe('b');
         expect(matchPlace('the wall', places)?.id).toBe('a');
         expect(matchPlace('the docks', places)).toBeNull();
+    });
+});
+
+describe('director reads the starting time of day', () => {
+    it('asks for NOW only while the clock needs it, and reads the line', () => {
+        expect(buildDirectorPrompt({ ...input, askNow: true }).prompt).toContain('NOW | evening');
+        expect(buildDirectorPrompt({ ...input }).prompt).not.toContain('NOW | evening');
+        const parsed = parseDirectorNote('Prose.\nNOW | late evening\nTIME | 5 minutes');
+        expect(parsed.now).toBe('late evening');
+        expect(parsed.note).toBe('Prose.');
+        expect(parseDirectorNote('Prose.').now).toBe('');
+    });
+});
+
+describe('director and people taken out by hand', () => {
+    it('lists them as not to appear and does not offer them as turning up', () => {
+        const { prompt } = buildDirectorPrompt({ ...input, absent: ['Varyn'], nearby: [{ name: 'Varyn', why: 'seen earlier' }, { name: 'Tobin' }] });
+        expect(prompt).toContain('TAKEN OUT OF THE SCENE BY THE PLAYER');
+        expect(prompt).toContain('- Varyn');
+        expect(prompt).not.toContain('- Varyn - seen earlier');
+        expect(prompt).toContain('- Tobin');
     });
 });

@@ -39,6 +39,8 @@ export const DEFAULT_POLICIES = Object.freeze({
     temperature: 'observed',
     indoor: 'observed',
     title: 'observed',
+    creatures: 'observed',
+    summary: 'observed',
 });
 
 export const POLICY_VALUES = Object.freeze(['canonical', 'observed', 'ask']);
@@ -50,6 +52,8 @@ export const FIELD_LABELS = Object.freeze({
     temperature: 'Temperature',
     indoor: 'Indoors / outdoors',
     title: 'Scene title',
+    creatures: 'Creatures present',
+    summary: 'Scene summary',
 });
 
 // The prompted variables (local names, src/preset/blueprint.js) each
@@ -62,6 +66,8 @@ export const OBSERVED_FIELDS = Object.freeze({
     temperature: { variable: 'scene_temperature', canonical: 'temperature' },
     indoor: { variable: 'scene_isindoor', canonical: 'indoor' },
     title: { variable: 'scene_title', canonical: 'sceneTitle' },
+    creatures: { variable: 'scene_creatures', canonical: 'creatureIds' },
+    summary: { variable: 'scene_summary', canonical: 'sceneSummary' },
 });
 
 const list = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === 'string' && v) : []);
@@ -83,11 +89,23 @@ export function readObserved(raw) {
         temperature: typeof r.scene_temperature === 'string' ? r.scene_temperature : '',
         indoor: typeof indoor === 'boolean' ? indoor : (indoor === 'true' ? true : (indoor === 'false' ? false : null)),
         title: typeof r.scene_title === 'string' ? r.scene_title : '',
+        creatures: list(r.scene_creatures),
+        summary: typeof r.scene_summary === 'string' ? r.scene_summary.trim() : '',
     };
 }
 
+// Scene titles are kept short: at most this many words.
+export const TITLE_MAX_WORDS = 6;
+const wordCount = (text) => String(text ?? '').trim().split(/\s+/).filter(Boolean).length;
+
+// A title cut down to TITLE_MAX_WORDS words, without trailing punctuation.
+export function shortTitle(text) {
+    const words = String(text ?? '').replace(/^["'*]+|["'*.]+$/g, '').trim().split(/\s+/).filter(Boolean);
+    return words.slice(0, TITLE_MAX_WORDS).join(' ').replace(/[,;:\-\u2013\u2014]+$/, '');
+}
+
 export function valuesEqual(field, a, b) {
-    if (field === 'cast' || field === 'weather') return sameSet(a, b);
+    if (field === 'cast' || field === 'weather' || field === 'creatures') return sameSet(a, b);
     return (a ?? '') === (b ?? '');
 }
 
@@ -95,7 +113,11 @@ export function valuesEqual(field, a, b) {
 function isBlank(field, value) {
     if (field === 'indoor') return value === null || value === undefined;
     if (field === 'weather') return list(value).length === 0;
-    if (field === 'cast') return false; // an empty list means "everyone left"
+    if (field === 'cast' || field === 'creatures') return false; // an empty list means "everyone left"
+    // A summary that is not a sentence (a name, a word) says nothing; a
+    // title that rambles is not taken either.
+    if (field === 'summary') return wordCount(value) < 4;
+    if (field === 'title') return !value || wordCount(value) > TITLE_MAX_WORDS + 4;
     return !value;
 }
 
@@ -216,10 +238,49 @@ export function applyAccepted(canonical, item) {
         case 'weather': next.weather = list(item.observed); break;
         case 'temperature': next.temperature = item.observed || ''; break;
         case 'indoor': next.indoor = typeof item.observed === 'boolean' ? item.observed : null; break;
-        case 'title': next.sceneTitle = item.observed || ''; break;
+        case 'title': next.sceneTitle = shortTitle(item.observed); break;
+        case 'creatures': next.creatureIds = list(item.observed); break;
+        case 'summary': next.sceneSummary = String(item.observed ?? '').trim(); break;
         default: break;
     }
     return next;
+}
+
+// The scene follows the player character, who never leaves it. When the
+// story's reading drops them from those present and also puts the scene
+// somewhere else, the scene went with them: the people still listed are the
+// ones left behind. When only their name is missing (a reading that forgot
+// them), they are simply still here. Pure: the observed values to validate
+// instead. playerId: '' when no player character is known.
+export function followPlayer(observed, canonical, playerId) {
+    if (!playerId || !canonical.castIds?.includes(playerId) || observed.cast.includes(playerId)) return observed;
+    const moved = !!observed.location && observed.location !== canonical.locationId;
+    // After a move, those listed who were not in the old scene are at the
+    // new place; whether anyone from the old scene came along cannot be
+    // told from this reading (the director's MOVE line says who goes along).
+    const there = observed.cast.filter((id) => !canonical.castIds.includes(id));
+    return { ...observed, cast: moved ? [playerId, ...there] : [...observed.cast, playerId] };
+}
+
+// Changes the user made by hand win for a few replies (chat document
+// `held`): the story putting back someone the user took out, or moving the
+// scene from where the user put it, is turned back (a correction tells the
+// model) instead of taken. Pure. held: [{ field, op?, objectId?, value? }].
+export function applyHolds(items, held) {
+    if (!held?.length) return items;
+    const heldAs = (field, op, id) => held.some((h) => h.field === field && h.op === op && h.objectId === id);
+    return items.map((item) => {
+        let turnBack = false;
+        if (item.field === 'location') turnBack = held.some((h) => h.field === 'location' && h.value && item.observed !== h.value);
+        else if (item.field === 'cast') {
+            if (item.op === 'add') turnBack = heldAs('cast', 'remove', item.objectId);
+            else if (item.op === 'remove') turnBack = heldAs('cast', 'add', item.objectId);
+            else if (item.op === 'clear') turnBack = held.some((h) => h.field === 'cast' && h.op === 'add');
+        } else if (item.field === 'creatures') {
+            turnBack = list(item.observed).some((id) => heldAs('creatures', 'remove', id));
+        }
+        return turnBack ? { ...item, action: 'adjust', reason: `${item.reason ? `${item.reason}; ` : ''}you changed this by hand` } : item;
+    });
 }
 
 // What the observed variables should hold so they agree with canonical
@@ -232,6 +293,8 @@ export function observedRestore(canonical) {
         scene_temperature: canonical.temperature || '',
         scene_isindoor: canonical.indoor === null || canonical.indoor === undefined ? '' : canonical.indoor,
         scene_title: canonical.sceneTitle || '',
+        scene_creatures: [...(canonical.creatureIds ?? [])],
+        scene_summary: canonical.sceneSummary || '',
     };
 }
 
@@ -251,6 +314,7 @@ export function correctionText(item, { nameOf = (id) => id, placeOf = (id) => na
         case 'temperature': return item.canonical ? `It is ${String(item.canonical).toLowerCase()}.` : '';
         case 'indoor': return item.canonical === true ? 'The scene is indoors.' : (item.canonical === false ? 'The scene is outdoors.' : '');
         case 'title': return '';
+        case 'creatures': return item.canonical?.length ? `The creatures present are: ${item.canonical.map(nameOf).join(', ')}.` : 'There are no creatures in this scene.';
         default: return '';
     }
 }

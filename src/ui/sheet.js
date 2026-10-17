@@ -7,14 +7,16 @@
 
 import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc } from '../store/chat-store.js';
-import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview, playerIdOf, setPlayerId } from '../library/library.js';
+import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview, playerIdOf, setPlayerId, listEntries } from '../library/library.js';
 import { pathOf, descendantsOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
 import { getSettingDoc } from '../store/setting-store.js';
 import { setCanonical } from '../state/canonical.js';
 import { setNarrative, revertNarrative } from '../state/narrative.js';
-import { pushCanonicalToObserved } from '../validate/reconcile.js';
+import { pushCanonicalToObserved, holdUserScene } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
+import { getSettings } from '../settings.js';
+import { runDirector } from '../director/run.js';
 import { safeImageSrc } from '../images/attach.js';
 import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
@@ -22,10 +24,12 @@ import { renderQuestTab } from './quest-board.js';
 import { baselineFields } from '../library/fields.js';
 import { CLIMATES } from '../calendar/weather.js';
 import { listRoutes, routesFrom, addRoute, removeRoute } from '../library/routes.js';
+import { suggestRoutes, suggestEnvironment, randomClimate } from '../generate/places.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
 import { sparkButton, fieldWithTools } from './controls.js';
 import { generateEntry, canGenerateFor } from '../generate/run.js';
+import { splitAliases, mergeAliases } from '../generate/prompt.js';
 import { confirmAction } from './confirm.js';
 import { ws, rerender, openSheet, closeSheet, markDirty, stopEditing } from './ws.js';
 import { h, icon, button, select, field, csv, fromCsv, toast } from './dom.js';
@@ -94,7 +98,7 @@ function applyGenerated(values, task) {
     for (const [key, value] of Object.entries(values)) {
         if (key === 'name') { if (take(d.name)) { d.name = value; ws.generatedFields.add('name'); } continue; }
         if (key === 'description') { if (take(d.description)) { d.description = value; ws.generatedFields.add(key); } continue; }
-        if (key === 'aliases') { if (take(d.aliases)) { d.aliases = value; ws.generatedFields.add(key); } continue; }
+        if (key === 'aliases') { if (take(d.aliases)) { d.aliases = mergeAliases(d.aliases, value); ws.generatedFields.add(key); } continue; }
         if (key === 'relations') { d.pendingRelations = value; continue; }
         if (key in d.fields && take(d.fields[key])) { d.fields[key] = value; ws.generatedFields.add(key); }
     }
@@ -259,6 +263,12 @@ export async function renderSheet(type, all) {
                 castIds: present ? doc.canonical.castIds.filter((id) => id !== entry.id) : [...doc.canonical.castIds, entry.id],
             }, `${entry.name} ${present ? 'left' : 'joined'} the scene`), { iconName: present ? 'fa-user-minus' : 'fa-user-plus' }));
         }
+        if (type.id === 'creature') {
+            const present = doc.canonical.creatureIds.includes(entry.id);
+            quick.push(button(present ? 'Remove from scene' : 'Bring into scene', () => void setScene({
+                creatureIds: present ? doc.canonical.creatureIds.filter((id) => id !== entry.id) : [...doc.canonical.creatureIds, entry.id],
+            }, `${entry.name} ${present ? 'left' : 'appeared in'} the scene`), { iconName: present ? 'fa-minus' : 'fa-plus' }));
+        }
     }
     const header = h('div', { class: 'sb-sheet-head', style: `--sb-accent: ${type.color}` },
         h('div', { class: 'sb-portrait', title: 'Image', onclick: () => { ws.sheetTab = 'image'; rerender(); } },
@@ -406,7 +416,34 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
             const label = (id) => pathOf(parents, id).map((x) => names.get(x)?.name).filter(Boolean).join(' › ');
             const options = (all.location ?? []).filter((e) => !blocked.has(e.id)).map((e) => ({ value: e.id, label: label(e.id) || e.name })).sort((a, b) => a.label.localeCompare(b.label));
             parentField = field('Inside', select([{ value: '', label: '(a top-level region)' }, ...options], ws.draft.meta.parentId, { onchange: (e) => set('meta.parentId', e.target.value) }), 'Where this place is. You can also drag it in the tree.');
-            envCard = h('div', { class: 'sb-card' }, h('div', { class: 'sb-card-title' }, 'Environment', h('small', { class: 'sb-hint' }, ' - places inside inherit it unless they set their own')),
+            const envGate = canGenerateFor(settingId, isNew ? null : entry.id);
+            const rollClimate = () => { set('meta.climate', randomClimate(ws.draft.meta.climate)); rerender({ force: true }); };
+            const writeClimate = async () => {
+                ws.envBusy = true;
+                rerender({ force: true });
+                try {
+                    const envById = Object.fromEntries(Object.entries(getSettingDoc(settingId).entries).map(([id, m]) => [id, m.environment]));
+                    const parentId = ws.draft.meta.parentId || null;
+                    const inherited = parentId ? inheritedEnvironment(parents, envById, parentId) : {};
+                    const v = await suggestEnvironment({
+                        place: { name: ws.draft.name || entry.name, description: ws.draft.description, path: parentId ? pathOf(parents, parentId).map((x) => names.get(x)?.name).filter(Boolean) : [] },
+                        inherited: { climate: inherited.climate?.value ?? '', lighting: inherited.lighting?.value ?? '' },
+                        overview: getOverview(settingId),
+                        brief: ws.genBrief ?? '',
+                    });
+                    if (v.climateZone) set('meta.climate', v.climateZone);
+                    for (const k of ['climate', 'lighting', 'rules']) if (v[k]) set(`meta.environment.${k}`, v[k]);
+                    toast('info', 'Climate written - review it and save.');
+                } catch (err) {
+                    toast('error', `Could not write the climate: ${err?.message ?? err}`);
+                }
+                ws.envBusy = false;
+                rerender({ force: true });
+            };
+            envCard = h('div', { class: 'sb-card' }, h('div', { class: 'sb-card-title' }, 'Environment', h('small', { class: 'sb-hint' }, ' - places inside inherit it unless they set their own'),
+                h('span', { class: 'sb-spacer' }),
+                h('span', { class: 'sb-iconbtn', title: 'A random climate for the weather here', onclick: rollClimate }, icon('fa-dice')),
+                h('span', { class: `sb-iconbtn${envGate.ok && !ws.envBusy ? '' : ' sb-disabled'}`, title: envGate.ok ? 'Write a climate that fits this place (steer it with the box above, e.g. "frozen and windswept")' : envGate.reason, onclick: envGate.ok && !ws.envBusy ? () => void writeClimate() : null }, icon(ws.envBusy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles'))),
                 h('div', { class: 'sb-row' },
                     field('Climate', textInput('meta.environment.climate', ws.draft.meta.environment.climate, { placeholder: 'inherited when empty' })),
                     field('Lighting', textInput('meta.environment.lighting', ws.draft.meta.environment.lighting, { placeholder: 'inherited when empty' }))),
@@ -464,8 +501,48 @@ function routesCard(entry, names) {
         ws.routeDraft = null;
         void syncNow().then(() => rerender());
     };
+    // Routes between the places inside this one, suggested by the model and
+    // kept only as the user chooses.
+    const parents = getParents(settingId);
+    const inside = [...names.entries()].filter(([id, n]) => n.type === 'location' && parents[id] === entry.id).map(([id, n]) => ({ id, name: n.name }));
+    const sug = ws.routeSuggest?.for === entry.id ? ws.routeSuggest : null;
+    const gate = canGenerateFor(settingId, entry.id);
+    const suggest = async () => {
+        ws.routeSuggest = { for: entry.id, busy: true, items: [], error: '' };
+        rerender();
+        try {
+            const all = await listEntries(ws.ctx.chatId, settingId, 'location');
+            const described = inside.map((p) => ({ name: p.name, description: all.find((e) => e.id === p.id)?.description ?? '' }));
+            const idOf = new Map(inside.map((p) => [p.name, p.id]));
+            const existing = listRoutes(settingId).filter((r) => idOf.has(names.get(r.from)?.name) && idOf.has(names.get(r.to)?.name)).map((r) => ({ from: names.get(r.from).name, to: names.get(r.to).name }));
+            const items = await suggestRoutes({ parent: { name: entry.name, description: entry.base?.description ?? entry.description ?? '' }, places: described, overview: getOverview(settingId), existing });
+            ws.routeSuggest = { for: entry.id, busy: false, items: items.map((r) => ({ ...r, fromId: idOf.get(r.from), toId: idOf.get(r.to) })), error: '' };
+        } catch (err) {
+            ws.routeSuggest = { for: entry.id, busy: false, items: [], error: String(err?.message ?? err) };
+        }
+        rerender();
+    };
+    const keep = () => {
+        for (const r of sug.items) addRoute(settingId, { from: r.fromId, to: r.toId, travel: r.travel, note: r.note });
+        toast('success', `Added ${sug.items.length} route${sug.items.length === 1 ? '' : 's'}.`);
+        ws.routeSuggest = null;
+        void syncNow().then(() => rerender());
+    };
+    const suggestions = !sug ? null : h('div', { class: 'sb-callout' },
+        sug.busy ? h('span', {}, icon('fa-spinner fa-spin'), ' Working out the routes…')
+            : sug.error ? h('span', { class: 'sb-warn' }, `Could not suggest routes: ${sug.error}`)
+                : h('div', { class: 'sb-routes' },
+                    h('small', { class: 'sb-hint' }, sug.items.length ? 'Suggested - take out any you do not want, then add them:' : 'No new routes suggested.'),
+                    sug.items.map((r, i) => h('div', { class: 'sb-route' },
+                        h('span', {}, `${r.from} - ${r.to}: ${r.travel}`), r.note ? h('small', { class: 'sb-hint' }, ` - ${r.note}`) : null,
+                        h('span', { class: 'sb-iconbtn', title: 'Leave this one out', onclick: () => { sug.items.splice(i, 1); rerender(); } }, icon('fa-xmark')))),
+                    h('div', { class: 'sb-actions' },
+                        sug.items.length ? button('Add these routes', keep, { iconName: 'fa-check', cls: 'sb-primary' }) : null,
+                        button('Dismiss', () => { ws.routeSuggest = null; rerender(); }, { iconName: 'fa-xmark' }))));
     return h('div', { class: 'sb-card' },
         h('div', { class: 'sb-card-title' }, icon('fa-route'), ' Routes', h('small', { class: 'sb-hint' }, ' - when the scene moves along one, the clock moves on by its travel time')),
+        inside.length >= 2 ? h('div', { class: 'sb-actions' }, button(`Suggest routes between the ${inside.length} places inside`, () => void suggest(), { iconName: 'fa-wand-magic-sparkles', disabled: !gate.ok || sug?.busy, title: gate.reason || 'The model connects the places inside this one with routes and travel times; you choose which to keep.' })) : null,
+        suggestions,
         routes.length ? h('div', { class: 'sb-routes' }, routes.map(({ route, otherId }) => h('div', { class: 'sb-route' },
             h('span', { class: 'sb-linkchip', onclick: () => openSheet(otherId) }, icon('fa-location-dot'), ` ${names.get(otherId)?.name ?? 'a place no longer in the library'}`),
             h('span', {}, ` ${route.travel}`),
@@ -671,7 +748,7 @@ function gmTab({ entry }) {
 async function saveSheet(type, entry, defs, isNew) {
     const { chatId, chatKey, settingId } = ws.ctx;
     const d = ws.draft;
-    const patch = { name: d.name.trim(), aliases: d.aliases, description: d.description };
+    const patch = { name: d.name.trim(), aliases: splitAliases(d.aliases), description: d.description };
     for (const def of defs) if (d.fields[def.name] !== undefined) patch[def.name] = d.fields[def.name] ?? (def.kind === 'refs' || def.kind === 'list' ? [] : '');
     if (!patch.name) return toast('warning', 'Give it a name first.');
     const meta = { tags: d.meta.tags, pinned: d.meta.pinned, canonLocked: d.meta.canonLocked, gmNotes: d.meta.gmNotes };
@@ -718,6 +795,7 @@ async function removeEntry(entry) {
     if (!await confirmAction(question)) return;
     if (doc.canonical.locationId === entry.id) setCanonical(chatKey, { locationId: '' }, { source: 'user', note: `Deleted ${entry.name}`, chatId });
     if (doc.canonical.castIds.includes(entry.id)) setCanonical(chatKey, { castIds: doc.canonical.castIds.filter((id) => id !== entry.id) }, { source: 'user', note: `Deleted ${entry.name}`, chatId });
+    if (doc.canonical.creatureIds.includes(entry.id)) setCanonical(chatKey, { creatureIds: doc.canonical.creatureIds.filter((id) => id !== entry.id) }, { source: 'user', note: `Deleted ${entry.name}`, chatId });
     if (!await deleteEntry(chatId, settingId, entry.id)) return toast('error', 'State Engine refused to delete it.');
     closeSheet();
 }
@@ -726,7 +804,17 @@ async function removeEntry(entry) {
 // guidance follow at once.
 export async function setScene(patch, note) {
     const { chatId, chatKey } = ws.ctx;
+    const before = structuredClone(getChatDoc(chatKey).canonical);
     setCanonical(chatKey, patch, { source: 'user', note, chatId });
+    // A move or a change of who is here, made by hand: it holds over the
+    // story's reading for a few replies, the model is told, and the game
+    // master's briefing is written again for the new scene.
+    const after = getChatDoc(chatKey).canonical;
+    const sceneChanged = before.locationId !== after.locationId || JSON.stringify(before.castIds) !== JSON.stringify(after.castIds) || JSON.stringify(before.creatureIds) !== JSON.stringify(after.creatureIds);
+    if (sceneChanged) await holdUserScene(chatId, chatKey, before);
     await pushCanonicalToObserved(chatId, chatKey);
     await syncNow();
+    if (sceneChanged && getSettings().director.enabled) {
+        void runDirector(chatId, chatKey, { type: 'continue', force: true }).then(() => syncNow());
+    }
 }

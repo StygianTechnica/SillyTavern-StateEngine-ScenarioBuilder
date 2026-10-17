@@ -16,7 +16,8 @@ import { emptyCalendar } from '../store/schema.js';
 import { getSetting, updateSetting } from '../api/objects.js';
 import { setCanonical } from '../state/canonical.js';
 import { getDateTimeParts, formatDateTime, formatDateTimePartial, advanceDateTime, getCalendarDefinition } from '../api/calendar.js';
-import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance } from './moment.js';
+import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance, timeOfDayFraction } from './moment.js';
+import { getRawValues } from '../api/variables.js';
 import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.js';
 import { weatherAt } from './weather.js';
 import { routeForMove } from '../library/routes.js';
@@ -171,15 +172,50 @@ export async function setTime(chatId, chatKey, settingId, scalar, info = {}) {
 
 // Starts the clock for a chat that has none: the setting's start, else the
 // calendar's first morning (keeping an older chat's part of day).
+// The story's time of day where State Engine's Scene Context has been
+// keeping it (se__scene_currenttime, Gregorian seconds), as a fraction of
+// the day - or null.
+async function sceneContextTimeOfDay(chatId) {
+    try {
+        const v = (await getRawValues(chatId, ['se__scene_currenttime'])).se__scene_currenttime;
+        const n = Number(v);
+        if (!Number.isFinite(n) || n === 0) return null;
+        return (((n % 86400) + 86400) % 86400) / 86400;
+    } catch {
+        return null;
+    }
+}
+
+// Starts the clock for a chat that has none, at the setting's start (else
+// the calendar's first day) - at the time of day the story is at: Scene
+// Context's, else an older chat's part of day; failing both, the director
+// is asked for it on its next briefing (a NOW line, setTimeOfDay).
 export async function ensureClock(chatId, chatKey, settingId) {
     const c = getChatDoc(chatKey).canonical;
     if (Number.isFinite(c.time)) return c.time;
     const { def, options } = await calendarFor(settingId);
     let start = Number.isFinite(options.start) ? options.start : defaultStart(def);
-    const shift = { dawn: 0.25, morning: 0.33, midday: 0.5, afternoon: 0.6, evening: 0.76, night: 0.88, 'late night': 0.1 }[c.dayPart];
-    if (shift !== undefined) start = dayIndexOf(def, start) * secondsPerDay(def) + Math.round(shift * secondsPerDay(def));
+    const known = (await sceneContextTimeOfDay(chatId)) ?? timeOfDayFraction(c.dayPart);
+    if (known !== null) start = dayIndexOf(def, start) * secondsPerDay(def) + Math.round(known * secondsPerDay(def));
     await setTime(chatId, chatKey, settingId, start, { note: 'The clock started' });
+    updateChatDoc(chatKey, (d) => { d.clock.needsNow = known === null; });
     return start;
+}
+
+// Sets the time of day ("evening", "21:30") on the clock's current day -
+// the story's own time when the clock started without it. -> the new time
+// or null.
+export async function setTimeOfDay(chatId, chatKey, settingId, text, { note = '' } = {}) {
+    const now = await ensureClock(chatId, chatKey, settingId);
+    const { def } = await calendarFor(settingId);
+    const fraction = timeOfDayFraction(text, def);
+    updateChatDoc(chatKey, (d) => { d.clock.needsNow = false; });
+    if (fraction === null) return null;
+    const perDay = secondsPerDay(def);
+    const to = dayIndexOf(def, now) * perDay + Math.round(fraction * perDay);
+    await setTime(chatId, chatKey, settingId, to, { source: 'director', note: note || `The story's time of day: ${text}` });
+    updateChatDoc(chatKey, (d) => { d.clock.planned = null; });
+    return to;
 }
 
 // The moment `text`'s worth of time after `from`, or null when the text

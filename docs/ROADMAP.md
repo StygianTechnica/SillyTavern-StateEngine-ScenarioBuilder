@@ -136,6 +136,11 @@ These came after spec v0.5 and should be folded into its next revision.
   Details tab, in the guidance, the director's dossier and the graph; a move
   along a route (or between the places the ends are in) moves the clock on
   by its travel time.
+- [x] Suggested routes: on a location with places inside, the model connects
+  them with routes and travel times that fit their scale and the world's
+  technology; the user keeps the ones they want.
+- [x] A place's climate can be rolled at random (dice) or written to fit it
+  (wand, steerable), in edit mode on the Environment card.
 - [ ] Routes: locked or hidden ones, and travel time by means (on foot, by
   cart, by ship).
 - [ ] Merge two entries from the catalog (SB-113 merge path).

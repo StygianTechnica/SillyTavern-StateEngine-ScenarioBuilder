@@ -39,7 +39,9 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 // 4: the scene title is written when it is empty; sb__cast.
 // 5: canon_datetime follows the chat's setting calendar ("@setting").
 // 6: the guidance in six parts (guidance_setting ... guidance_direction).
-export const PRESET_VERSION = 6;
+// 7: sb__scene_creatures (the creatures the story has in the scene).
+// 8: sb__canon_summary; scene summary and title instructions tightened.
+export const PRESET_VERSION = 8;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -49,10 +51,10 @@ const prompted = (instructions) => ({ behaviors: { prompted: true, increment: fa
 
 export const OBSERVED_VARIABLES = Object.freeze([
     ['scene_title', text('Scene title', 'A short title for the current situation, as the story tells it.', prompted(
-        'A short scene title (three to seven words) summarizing the current situation, from the recent messages and the current value. If the current value is empty, write one. Otherwise keep it unless the situation has clearly moved on.',
+        'A short scene title of two to five words naming the current situation (like "Siege at the Wall"), from the recent messages and the current value. If the current value is empty, write one. Otherwise keep it unless the situation has clearly moved on.',
     ))],
     ['scene_summary', text('Scene summary', 'What is happening in the scene now, as the story tells it.', prompted(
-        'Summarize the current scene from the last few messages only - the situation and environment now, not the whole story.',
+        'One or two sentences on what is happening in the scene right now, from the last few messages only: who is doing what, and where. Write full sentences - never just a name or a word. Not the whole story.',
     ))],
     ['scene_location', {
         label: 'Location (story)', description: 'The place the story says the scene is in - a location object, checked against the canonical location.',
@@ -63,6 +65,11 @@ export const OBSERVED_VARIABLES = Object.freeze([
         label: 'Characters (story)', description: 'The characters the story says are present - checked against the canonical cast.',
         type: 'array', itemType: 'object', itemObjectType: 'character', unique: true, defaultValue: '[]', scope: 'chat', showInTracker: true,
         ...prompted('Who is present in the scene now. Keep characters who remain, add characters who arrive, remove characters who leave. Start from the current value - it is who is meant to be here.'),
+    }],
+    ['scene_creatures', {
+        label: 'Creatures (story)', description: 'The creatures the story says are in the scene - checked against the canonical ones.',
+        type: 'array', itemType: 'object', itemObjectType: 'creature', unique: true, defaultValue: '[]', scope: 'chat', showInTracker: true,
+        ...prompted('The creatures in the scene now - monsters, beasts and animals that matter to it. A group counts as one entry, by what the story calls it ("the zombies", "a pack of wolves"). Start from the current value: keep those still here, add any that arrive, remove those that leave or are killed.'),
     }],
     ['scene_weather', {
         label: 'Weather (story)', description: 'The weather the story describes.',
@@ -121,6 +128,7 @@ export const CANONICAL_VARIABLES = Object.freeze([
     ['canon_setting', text('Indoors / outdoors', 'Whether the scene is canonically indoors or outdoors.')],
     ['canon_time', text('Time', 'The canonical day and time of day.')],
     ['canon_scene', text('Scene', 'The canonical scene title.')],
+    ['canon_summary', text('Scene summary', 'What is going on in the scene now, in a sentence.')],
     // The clock (src/calendar/clock.js). canon_datetime follows the chat's
     // setting calendar: State Engine reads it through the calendar the
     // setting names, so each setting's chats show their own dates.

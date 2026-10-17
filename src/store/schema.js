@@ -65,8 +65,14 @@
 //     candidates: [{ id, objectId, type, name, field, source, at }],
 //     rejected: [{ type, name, threadId? }], suppressed names (SB-225); threadId: the
 //                                           Archivist thread a rejected quest came from
+//     factionsWritten: { [characterId]: [factionId] }   memberships Scenario Builder wrote
+//                                           into characters' runtime factions (src/library/faction-sync.js)
+//     held: [{ field, op?, objectId?, value?, until }]   scene changes the user made by
+//                                           hand, kept over the story's reading until turn `until`
 //     questsDismissed: [threadId]           Archivist threads whose quest was removed:
 //                                           no quest is made from them again
+//     loreLinks: { [archivistWorldId]: loreId }   lore made from or linked to Archivist's world lore
+//     loreDismissed: [archivistWorldId]     Archivist lore whose entry was removed
 //     corrections: [{ id, text, turnsLeft, source }],
 //     history: [historyEntry],              every automated or manual change (SB-226)
 //     turn }                                AI replies reconciled so far
@@ -100,7 +106,7 @@ export function emptyOverview() {
 }
 
 export function emptyEntryMeta() {
-    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, generated: [], source: '', quest: emptyQuestMeta(), environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '' };
+    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '' };
 }
 
 export function normalizeEntryMeta(meta) {
@@ -117,6 +123,9 @@ export function normalizeEntryMeta(meta) {
         generated: strList(m.generated),
         source: str(m.source),
         quest: normalizeQuestMeta(m.quest),
+        // Lore made from or linked to Archivist (src/library/lore-sync.js):
+        // the text last synced, so a user's edit is never overwritten.
+        archivist: { syncedText: str(m.archivist?.syncedText) },
         environment: { climate: str(env.climate), lighting: str(env.lighting), rules: str(env.rules) },
         // Locations: the climate zone the weather follows (src/calendar/
         // weather.js CLIMATES; '' = inherit from the place it is in) and
@@ -209,7 +218,7 @@ export function emptyCanonical() {
     // time: the canonical moment, scalar seconds on the setting's calendar
     // (src/calendar/clock.js); null until the clock starts. dayPart and day
     // follow it whenever it is set.
-    return { locationId: '', castIds: [], weather: [], temperature: '', indoor: null, dayPart: '', day: 1, time: null, sceneTitle: '', scenePremise: '' };
+    return { locationId: '', castIds: [], creatureIds: [], weather: [], temperature: '', indoor: null, dayPart: '', day: 1, time: null, sceneTitle: '', sceneSummary: '', scenePremise: '' };
 }
 
 export function normalizeCanonical(value) {
@@ -217,6 +226,9 @@ export function normalizeCanonical(value) {
     return {
         locationId: str(c.locationId),
         castIds: strList(c.castIds),
+        // Creatures the story (or the director) has in the scene, beyond
+        // those the library places here.
+        creatureIds: strList(c.creatureIds),
         weather: strList(c.weather).filter((w) => WEATHER_VALUES.includes(w)),
         temperature: TEMPERATURES.includes(c.temperature) ? c.temperature : '',
         indoor: typeof c.indoor === 'boolean' ? c.indoor : null,
@@ -224,6 +236,9 @@ export function normalizeCanonical(value) {
         day: Number.isInteger(c.day) && c.day > 0 ? c.day : 1,
         time: Number.isFinite(c.time) ? c.time : null,
         sceneTitle: str(c.sceneTitle),
+        // What is going on in the scene now, in a sentence (the director's
+        // SITUATION line, or the story's reading when it is a sentence).
+        sceneSummary: str(c.sceneSummary),
         scenePremise: str(c.scenePremise),
     };
 }
@@ -241,8 +256,10 @@ function normalizeNarrative(value) {
 // The clock's bookkeeping (src/calendar/clock.js): the advance made before
 // the reply being written (to compare with how much time the story says
 // passed), and a weather the story set, kept until a later watch.
+// needsNow: the clock started without knowing the story's time of day -
+// the director is asked for it (a NOW line) on its next briefing.
 export function emptyClock() {
-    return { planned: null, override: null };
+    return { planned: null, override: null, needsNow: false };
 }
 
 function normalizeClock(value) {
@@ -250,7 +267,7 @@ function normalizeClock(value) {
     const planned = isObject(c.planned) && Number.isFinite(c.planned.from) && Number.isFinite(c.planned.to) ? { from: c.planned.from, to: c.planned.to, text: str(c.planned.text) } : null;
     const o = c.override;
     const override = isObject(o) && Number.isFinite(o.until) ? { until: o.until, weather: strList(o.weather).filter((w) => WEATHER_VALUES.includes(w)), temperature: TEMPERATURES.includes(o.temperature) ? o.temperature : '' } : null;
-    return { planned, override };
+    return { planned, override, needsNow: c.needsNow === true };
 }
 
 export function emptyDirector() {
@@ -290,6 +307,10 @@ export function emptyChatDoc() {
         candidates: [],
         rejected: [],
         questsDismissed: [],
+        loreLinks: {},
+        loreDismissed: [],
+        factionsWritten: {},
+        held: [],
         corrections: [],
         history: [],
         turn: 0,
@@ -318,6 +339,10 @@ export function normalizeChatDoc(doc) {
             ? d.rejected.filter(isObject).filter((r, i, all) => all.findIndex((x) => x.type === r.type && str(x.name).toLowerCase() === str(r.name).toLowerCase()) === i)
             : [],
         questsDismissed: strList(d.questsDismissed),
+        loreLinks: isObject(d.loreLinks) ? d.loreLinks : {},
+        loreDismissed: strList(d.loreDismissed),
+        held: Array.isArray(d.held) ? d.held.filter((h) => isObject(h) && str(h.field) && Number.isInteger(h.until)) : [],
+        factionsWritten: isObject(d.factionsWritten) ? Object.fromEntries(Object.entries(d.factionsWritten).map(([k, v]) => [k, strList(v)]).filter(([, v]) => v.length)) : {},
         corrections: Array.isArray(d.corrections) ? d.corrections.filter(isObject) : [],
         history: Array.isArray(d.history) ? d.history.filter(isObject).slice(-HISTORY_LIMIT) : [],
         turn: Number.isInteger(d.turn) && d.turn >= 0 ? d.turn : 0,

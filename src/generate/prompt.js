@@ -428,8 +428,31 @@ export function parseGenerationResponse(text, { fields = [], keys = [], refLooku
     return { values, dropped, error: null };
 }
 
+// Aliases one name each: a model (or an older save) may pack several into
+// one string ("Elyon, Sovereign of Dawn, Lord of Radiant Retribution"),
+// which then never matches the plain name. Split at commas and semicolons,
+// duplicates (any case) dropped.
+export function splitAliases(list) {
+    const out = [];
+    const seen = new Set();
+    for (const raw of Array.isArray(list) ? list : [list]) {
+        for (const part of String(raw ?? '').split(/[,;\n]/)) {
+            const alias = part.replace(/^[-*•]\s*/, '').replace(/\s+/g, ' ').trim();
+            if (alias && !seen.has(alias.toLowerCase())) { seen.add(alias.toLowerCase()); out.push(alias); }
+        }
+    }
+    return out;
+}
+
+// Generated aliases ADD to the ones there: a name someone gave is never
+// rewritten away.
+export function mergeAliases(existing, generated) {
+    return splitAliases([...(existing ?? []), ...(generated ?? [])]);
+}
+
 function coerce(def, raw, refLookup, dropped) {
     const asList = (v) => (Array.isArray(v) ? v.map(textOf) : textOf(v).split(/,|\n/)).map((x) => clean(x).replace(/^[-*•]\s*/, '')).filter(Boolean);
+    if (def.name === 'aliases') return splitAliases(asList(raw));
     switch (def.kind) {
         case 'raw': return raw;
         case 'list': return asList(raw);
@@ -471,7 +494,8 @@ export function mergeGenerated(existing, generated, task) {
     const out = { ...existing };
     for (const [key, value] of Object.entries(generated)) {
         if (task === 'fill' && !isEmpty(existing[key])) continue;
-        out[key] = value;
+        // Aliases are only ever added to.
+        out[key] = key === 'aliases' ? mergeAliases(existing[key], value) : value;
     }
     return out;
 }

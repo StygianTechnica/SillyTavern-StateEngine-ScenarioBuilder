@@ -34,6 +34,9 @@ describe('catalog filters', () => {
         expect(chatStatusOf('mira', doc)).toBe('scene');
         expect(chatStatusOf('stall', doc)).toBe('unused');
     });
+    it('counts creatures in the scene', () => {
+        expect(chatStatusOf('zombies', { canonical: { castIds: [], creatureIds: ['zombies'] } })).toBe('scene');
+    });
 });
 
 describe('relationships', () => {

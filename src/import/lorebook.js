@@ -13,7 +13,7 @@
 //     lorebook is canon (and can be canon-locked on import);
 //   - the original books are never changed (SB-150).
 
-import { BASE_FIELDS } from '../generate/prompt.js';
+import { BASE_FIELDS, splitAliases } from '../generate/prompt.js';
 
 export const IMPORT_TYPES = Object.freeze(['character', 'location', 'faction', 'item', 'creature', 'lore']);
 
@@ -246,7 +246,7 @@ export function blanksOnly(existing, values) {
     for (const [key, value] of Object.entries(values)) {
         if (key === 'aliases') {
             const have = new Set((existing.aliases ?? []).map(nameKey));
-            const add = (value ?? []).filter((a) => !have.has(nameKey(a)) && nameKey(a) !== nameKey(existing.name));
+            const add = splitAliases(value ?? []).filter((a) => !have.has(nameKey(a)) && nameKey(a) !== nameKey(existing.name));
             if (add.length) patch.aliases = [...(existing.aliases ?? []), ...add];
             continue;
         }

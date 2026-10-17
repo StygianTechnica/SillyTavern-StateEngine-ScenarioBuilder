@@ -23,6 +23,7 @@ import { VARIABLES_CHANGED_EVENT } from '../api/variables.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { ensureBoundSetting, getBoundSettingId } from '../library/library.js';
 import { runIntake } from '../library/intake.js';
+import { runLoreSync } from '../library/lore-sync.js';
 import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
@@ -31,6 +32,8 @@ import { ensureClock, advanceBy, setTime, perTurnDefault } from '../calendar/clo
 import { getChatDoc } from '../store/chat-store.js';
 import { fillRoles } from '../preset/role-fill.js';
 import { setReplying } from '../generate/llm.js';
+import { syncFactions } from '../library/faction-sync.js';
+import { LIBRARY_CHANGED_EVENT } from '../store/setting-store.js';
 
 const VALIDATE_DEBOUNCE_MS = 1000;
 let timer = null;
@@ -43,6 +46,7 @@ async function intakeOpenChat() {
     const settingId = await getBoundSettingId(ref.chatId);
     await runIntake(ref.chatId, chatKeyFor(ref), settingId);
     await runQuestSync(ref.chatId, chatKeyFor(ref), settingId);
+    await runLoreSync(ref.chatId, chatKeyFor(ref), settingId);
     hookArchivist();
 }
 
@@ -112,6 +116,8 @@ async function prepareReply(ref, type) {
         const chatKey = chatKeyFor(ref);
         const settingId = await getBoundSettingId(ref.chatId);
         await writeActiveQuests(ref.chatId, chatKey, settingId);
+        // Memberships set in the library show in the characters' runtime factions.
+        await syncFactions(ref.chatId, chatKey, settingId);
         const settings = getSettings();
         const newTurn = !type || type === 'normal';
         if (settings.time.enabled && settingId) await ensureClock(ref.chatId, chatKey, settingId);
@@ -152,6 +158,7 @@ async function onChatChanged() {
     await syncNow();
     // Displays bound to familiar roles show the canonical state here.
     if (active) await fillRoles(ref.chatId);
+    if (active) await syncFactions(ref.chatId, chatKeyFor(ref), await getBoundSettingId(ref.chatId));
 }
 
 const safely = (fn) => (...args) => void Promise.resolve(fn(...args)).catch((err) => console.warn(LOG_PREFIX, err));
@@ -161,6 +168,16 @@ export function startLifecycle() {
     eventSource.on(VARIABLES_CHANGED_EVENT, (chatId) => { if (isActive()) scheduleValidation(chatId); });
     if (eventTypes.GENERATION_STARTED) eventSource.on(eventTypes.GENERATION_STARTED, beforeGeneration);
     if (eventTypes.USER_MESSAGE_RENDERED) eventSource.on(eventTypes.USER_MESSAGE_RENDERED, onUserMessageRendered);
+    // A membership edited in the library reaches the open chat's characters.
+    let factionTimer = null;
+    eventSource.on(LIBRARY_CHANGED_EVENT, () => {
+        clearTimeout(factionTimer);
+        factionTimer = setTimeout(() => {
+            const ref = getCurrentChatRef();
+            if (!ref || !isActive()) return;
+            void getBoundSettingId(ref.chatId).then((settingId) => syncFactions(ref.chatId, chatKeyFor(ref), settingId));
+        }, 1500);
+    });
     for (const key of ['GENERATION_ENDED', 'GENERATION_STOPPED']) {
         if (eventTypes[key]) eventSource.on(eventTypes[key], () => setReplying(false));
     }

@@ -23,6 +23,8 @@ import {
 import { generateOverview, generateEntry } from '../generate/run.js';
 import { fieldDefs } from './sheet.js';
 import { renderQuestBoard } from './quest-board.js';
+import { runLoreSync, hasArchivistLore } from '../library/lore-sync.js';
+import { syncNow } from '../guidance/sync.js';
 
 const CHAPTER_BLURBS = Object.freeze({
     character: 'The people of the setting - allies, rivals, shopkeepers.',
@@ -322,6 +324,22 @@ function canonCard(settingId) {
 
 // ---- a chapter
 
+// Lore from Archivist's compiled memory, on demand (src/library/lore-sync.js).
+async function scanLore() {
+    const { chatId, chatKey, settingId } = ws.ctx;
+    ws.loreScanning = true;
+    rerender();
+    try {
+        const out = await runLoreSync(chatId, chatKey, settingId, { scan: true });
+        if (!out) toast('warning', 'A scan is already running.');
+        else toast('success', out.created || out.linked || out.updated ? `Lore: ${out.created} new, ${out.updated} updated, ${out.linked} linked.` : 'Nothing new in Archivist's lore.');
+        await syncNow();
+    } finally {
+        ws.loreScanning = false;
+        rerender({ force: true });
+    }
+}
+
 function chapterPage(type, all, doc, board = null) {
     const { settingId } = ws.ctx;
     const entries = all[type.id];
@@ -350,6 +368,7 @@ function chapterPage(type, all, doc, board = null) {
         PLACED.has(type.id) && locations.length ? select([{ value: '', label: 'Anywhere' }, ...locations.map((l) => ({ value: l.id, label: `Within ${pathLabel(l.id) || l.name}` })).sort((a, b) => a.label.localeCompare(b.label))], ws.within, { title: 'Where', onchange: (e) => { ws.within = e.target.value; rerender(); } }) : null,
         view !== 'tree' ? select([{ value: 'name', label: 'A–Z' }, { value: 'recent', label: 'Recently edited' }, { value: 'status', label: 'In play first' }], sort, { title: 'Sort', onchange: (e) => { getSettings().catalog.sort = e.target.value; saveSettings(); rerender(); } }) : null,
         h('div', { class: 'sb-viewtoggle' }, views.map(([v, i, label]) => h('div', { class: `sb-viewbtn${view === v ? ' active' : ''}`, title: label, onclick: () => setView(type.id, v) }, icon(i)))),
+        type.id === 'lore' && hasArchivistLore() ? button(ws.loreScanning ? 'Scanning…' : 'Scan Archivist', () => void scanLore(), { iconName: ws.loreScanning ? 'fa-spinner fa-spin' : 'fa-book-open-reader', disabled: !!ws.loreScanning, title: 'Take the lore Archivist has found in this chat into the library' }) : null,
         button('Generate', () => { ws.genPanel = ws.genPanel === type.id ? null : type.id; rerender(); }, { iconName: 'fa-wand-magic-sparkles', title: `Generate a new ${type.noun} - from your idea, or a surprise` }),
         button(`New ${type.noun}`, () => openSheet('new'), { iconName: 'fa-plus', cls: 'sb-primary' }));
 
