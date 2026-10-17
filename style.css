@@ -456,3 +456,7 @@
 .sb-map-tile-here .sb-map-tile-box { stroke: rgba(76, 175, 80, 0.95); stroke-width: 3.5; }
 .sb-map-tile-pin { fill: #4caf50; }
 .sb-map-hint { opacity: 0.8; }
+
+/* A notice that needs the user (catalog). */
+.sb-callout-warn { border-style: solid; border-color: color-mix(in srgb, var(--sb-gold) 60%, transparent); background: color-mix(in srgb, var(--sb-gold) 8%, transparent); margin: 8px 0; }
+.sb-callout-warn > div { flex: 1; }

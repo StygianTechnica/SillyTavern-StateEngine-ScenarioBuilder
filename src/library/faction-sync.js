@@ -1,10 +1,13 @@
 // Keeps characters' runtime "factions" in step with the library and the
-// story. State Engine makes "factions" a PROMPTED field, which no other
-// extension may write; FACTION TRACKING (set up on the user's request,
-// SB-102) changes the setting's character fields:
-//   factions       no longer prompted - Scenario Builder writes it;
-//   faction_ties   a new prompted field: the factions the story shows the
-//                  character tied to (the detection).
+// story. A character has two faction fields (State Engine's defaults since
+// 2026-10-17; the user asked for them, so they are not an SB-102 addition):
+//   factions       settable - Scenario Builder writes it;
+//   faction_ties   prompted: the factions the story shows the character
+//                  tied to (the detection). State Engine adds a newly shown
+//                  tie to factions itself.
+// A setting made before then (factions prompted, no faction_ties) is set up
+// the same way automatically, the first time it is synced - FACTION
+// TRACKING is on by default, with nothing to switch on.
 // Then each character's factions are the library's memberships - a
 // faction's Members field, and the relationships the user wrote from a
 // character to a faction ("member of", "leads", "serves", "works for") -
@@ -67,7 +70,9 @@ export async function hasFactionTracking(settingId) {
     }
 }
 
-// Sets faction tracking up for a setting (the user's request). -> true when done.
+// Sets faction tracking up for a setting (factions settable, faction_ties
+// added): done automatically for a setting from before it was the default.
+// -> true when done.
 export async function setupFactionTracking(settingId) {
     const defs = trackingDefs(await getObjectFields(settingId, 'character'));
     if (!defs) return false;
@@ -120,8 +125,12 @@ export async function syncFactions(chatId, chatKey, settingId) {
     try {
         const { stateEngine, instanceId } = await getStateEngine();
         if (typeof stateEngine.setObjectRuntimeValue !== 'function') return 0;
-        // State Engine refuses writes to a prompted factions field.
-        if (!await hasFactionTracking(settingId)) return 0;
+        // An older setting gets the two fields first (State Engine refuses
+        // writes to a prompted factions field).
+        if (!await hasFactionTracking(settingId) && !await setupFactionTracking(settingId)) {
+            console.warn(LOG_PREFIX, 'could not set the setting\'s character fields up for faction tracking');
+            return 0;
+        }
         const factions = await listEntries(chatId, settingId, 'faction');
         const factionIds = factions.map((f) => f.id);
         const memberships = libraryMemberships(factions, getSettingDoc(settingId).relations);
@@ -135,9 +144,14 @@ export async function syncFactions(chatId, chatKey, settingId) {
             const library = wantedFactions(memberships.get(id), ties, factionIds);
             const current = ids(stateEngine.getObjectField(EXTENSION_ID, instanceId, chatId, id, FACTIONS_FIELD));
             const next = mergeFactions(current, library, written[id]);
+            let stored = true;
             if (JSON.stringify([...next].sort()) !== JSON.stringify([...current].sort())) {
-                if (stateEngine.setObjectRuntimeValue(EXTENSION_ID, instanceId, chatId, id, FACTIONS_FIELD, next) !== null) changed += 1;
+                stored = stateEngine.setObjectRuntimeValue(EXTENSION_ID, instanceId, chatId, id, FACTIONS_FIELD, next) !== null;
+                if (stored) changed += 1;
             }
+            // Remembered only once it is really there: a refused write
+            // writes nothing.
+            if (!stored) continue;
             if (library.length) record[id] = library;
             else delete record[id];
         }

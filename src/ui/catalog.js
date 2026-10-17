@@ -25,8 +25,6 @@ import { fieldDefs } from './sheet.js';
 import { renderQuestBoard } from './quest-board.js';
 import { locationMap } from './map.js';
 import { runLoreSync, hasArchivistLore } from '../library/lore-sync.js';
-import { hasFactionTracking, setupFactionTracking, syncFactions } from '../library/faction-sync.js';
-import { confirmAction } from './confirm.js';
 import { syncNow } from '../guidance/sync.js';
 
 const CHAPTER_BLURBS = Object.freeze({
@@ -338,27 +336,6 @@ function canonCard(settingId) {
 
 // ---- a chapter
 
-// Whether the setting tracks factions (src/library/faction-sync.js):
-// true / false, or null while it is being read (then the chapter redraws).
-function factionTrackingKnown() {
-    const { settingId } = ws.ctx;
-    if (ws.factionTracking?.settingId === settingId) return ws.factionTracking.on;
-    ws.factionTracking = { settingId, on: null };
-    void hasFactionTracking(settingId).then((on) => { ws.factionTracking = { settingId, on }; rerender(); });
-    return null;
-}
-
-async function trackFactions() {
-    const { chatId, chatKey, settingId } = ws.ctx;
-    const ok = await confirmAction("Track factions in this setting? Characters' Factions will be written by Scenario Builder from the library (a faction's Members, \"member of\" relationships) and from a new story-detected field, Faction ties. The story model stops writing Factions directly.");
-    if (!ok) return;
-    if (!await setupFactionTracking(settingId)) return toast('error', 'State Engine refused the change to the character fields.');
-    ws.factionTracking = { settingId, on: true };
-    const changed = await syncFactions(chatId, chatKey, settingId);
-    toast('success', `Factions are tracked now${changed ? ` - ${changed} character${changed === 1 ? '' : 's'} updated` : ''}.`);
-    rerender();
-}
-
 // Lore from Archivist's compiled memory, on demand (src/library/lore-sync.js).
 async function scanLore() {
     const { chatId, chatKey, settingId } = ws.ctx;
@@ -403,7 +380,6 @@ function chapterPage(type, all, doc, board = null) {
         PLACED.has(type.id) && locations.length ? select([{ value: '', label: 'Anywhere' }, ...locations.map((l) => ({ value: l.id, label: `Within ${pathLabel(l.id) || l.name}` })).sort((a, b) => a.label.localeCompare(b.label))], ws.within, { title: 'Where', onchange: (e) => { ws.within = e.target.value; rerender(); } }) : null,
         view !== 'tree' && view !== 'map' ? select([{ value: 'name', label: 'A–Z' }, { value: 'recent', label: 'Recently edited' }, { value: 'status', label: 'In play first' }], sort, { title: 'Sort', onchange: (e) => { getSettings().catalog.sort = e.target.value; saveSettings(); rerender(); } }) : null,
         h('div', { class: 'sb-viewtoggle' }, views.map(([v, i, label, text]) => h('div', { class: `sb-viewbtn${view === v ? ' active' : ''}`, title: label, onclick: () => setView(type.id, v) }, icon(i), text ? ` ${text}` : null))),
-        type.id === 'faction' && factionTrackingKnown() === false ? button('Track factions', () => void trackFactions(), { iconName: 'fa-people-group', title: "Fill each character's Factions from the library's memberships and what the story shows - sets this setting's character fields up for it" }) : null,
         type.id === 'lore' && hasArchivistLore() ? button(ws.loreScanning ? 'Scanning…' : 'Scan Archivist', () => void scanLore(), { iconName: ws.loreScanning ? 'fa-spinner fa-spin' : 'fa-book-open-reader', disabled: !!ws.loreScanning, title: 'Take the lore Archivist has found in this chat into the library' }) : null,
         button('Generate', () => { ws.genPanel = ws.genPanel === type.id ? null : type.id; rerender(); }, { iconName: 'fa-wand-magic-sparkles', title: `Generate a new ${type.noun} - from your idea, or a surprise` }),
         button(`New ${type.noun}`, () => openSheet('new'), { iconName: 'fa-plus', cls: 'sb-primary' }));
