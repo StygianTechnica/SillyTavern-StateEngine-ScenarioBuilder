@@ -164,3 +164,23 @@ describe('director scene title', () => {
         expect(buildDirectorPrompt({ ...input }).prompt).toContain('it has none yet');
     });
 });
+
+describe('finding the direction when the model words it its own way', () => {
+    it('takes reworded markers, at a line or a sentence start', () => {
+        expect(splitNote('Mira is wary.\nNext steps: Tobin knocks.').direction).toBe('Tobin knocks.');
+        expect(splitNote('Mira is wary. **What happens next:** Tobin knocks.')).toEqual({ summary: 'Mira is wary.', direction: 'Tobin knocks.' });
+        expect(splitNote('Mira is wary.\nGoing forward, the collector loses patience.').direction).toBe('The collector loses patience.');
+        expect(splitNote('Mira is wary.\nDirection - Tobin knocks.').direction).toBe('Tobin knocks.');
+    });
+    it('takes the last of two paragraphs', () => {
+        expect(splitNote('Mira is wary.\n\nTobin knocks soon.')).toEqual({ summary: 'Mira is wary.', direction: 'Tobin knocks soon.' });
+    });
+    it('finds a direction sentence in a single paragraph', () => {
+        expect(splitNote('Mira is wary of the stranger. Rain drums on the shutters. Then Tobin knocks at the back door.'))
+            .toEqual({ summary: 'Mira is wary of the stranger. Rain drums on the shutters.', direction: 'Then Tobin knocks at the back door.' });
+        expect(splitNote('Mira is wary. The rain drums.').direction).toBe('');
+    });
+    it('does not mistake a word in the middle of a sentence for the marker', () => {
+        expect(splitNote('She glances at the next table and the rain drums.').direction).toBe('');
+    });
+});

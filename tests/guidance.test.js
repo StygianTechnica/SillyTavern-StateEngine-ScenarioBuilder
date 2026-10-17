@@ -126,7 +126,7 @@ describe('characters present (sb__cast)', () => {
     ];
     it('is one line each, the player character marked and never given wants or moods', () => {
         const text = buildCast({ cast });
-        expect(text.startsWith(`${REFERENCE_HEADER}\nCharacters present:\n`)).toBe(true);
+        expect(text.startsWith(`${REFERENCE_HEADER}\nAdditional Context-Characters present:\n`)).toBe(true);
         expect(text).toContain('- Mira: Innkeeper. Sharp-eyed and tired. Dry humour. Wants: keep the inn. Now: suspicious, means to stall for time.');
         expect(text).toContain('- Ash (sellsword): the player character, played by the user.');
         expect(text).not.toMatch(/angry|blade|Kill him/i);

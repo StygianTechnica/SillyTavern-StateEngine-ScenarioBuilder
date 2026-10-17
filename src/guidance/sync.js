@@ -30,6 +30,7 @@ import { relationsFor, pairCovered } from '../library/relations-edit.js';
 import { activeQuests } from '../quests/sync.js';
 import { momentAt } from '../calendar/clock.js';
 import { routesFrom } from '../library/routes.js';
+import { splitNote } from '../director/prompt.js';
 import { weatherText } from '../calendar/weather.js';
 
 export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
@@ -250,8 +251,10 @@ export async function gatherInputs(chatId, chatKey) {
         guidance: {
             // The game master's briefing (src/director/), written before
             // the reply; the rest is the scene it was written from.
+            // Split again from the note when the record has no direction (a
+            // briefing stored before the split, or one the split missed).
             director: settings.director.enabled
-                ? (doc.director.summary || doc.director.direction ? { summary: doc.director.summary, direction: doc.director.direction } : doc.director.note)
+                ? (doc.director.direction ? { summary: doc.director.summary, direction: doc.director.direction } : splitNote(doc.director.note))
                 : '',
             overview: library.overview,
             location,

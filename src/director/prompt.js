@@ -196,17 +196,38 @@ export function buildDirectorPrompt(input) {
 }
 
 // The briefing's two parts: the summary (where things stand, the people,
-// what to show) and the direction (the "Next:" paragraph). Without the
-// marker, a last paragraph of several is taken as the direction.
+// what to show) and the direction (where this reply should go). Models do
+// not always write the "Next:" marker as asked, so it is read leniently:
+//   1. a marker at the start of a line or sentence - "Next:", "Next steps -",
+//      "What happens next:", "Direction:", "Where this reply should go:",
+//      "Going forward,", bold or not;
+//   2. else, with two or more paragraphs, the last one;
+//   3. else, in a single paragraph, from the first sentence in its second half
+//      that reads as direction ("Then...", "Soon...", "This reply should...",
+//      "Let...", "Have...") to the end.
+// Otherwise there is no direction (the whole is the summary).
+const MARKER = /(^|\n|(?<=[.!?…]["')\]]?[ \t]+))[ \t]*\**[ \t]*(?:next(?: steps?| up| beat)?|what (?:should |might |could )?happens? next|direction|where (?:this|the) (?:reply|scene|story) (?:should )?go(?:es)?(?: next)?|going forward|moving forward|from here)\**[ \t]*(?:[:\-–—]|,(?=\s))\**[ \t]*/i;
+const CUE = /^(?:next|then|soon|before long|from here|shortly|presently|this reply should|the reply should|the narrator should|let\b|have\b|perhaps\b|it would be natural|a natural next)/i;
+
+const capitalize = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+
 export function splitNote(note) {
     const text = String(note ?? '').trim();
-    const m = text.match(/(^|\n)[ \t]*\**(?:next|what (?:should )?happens? next)\**[ \t]*[:\-\u2013\u2014]\**[ \t]*/i);
+    if (!text) return { summary: '', direction: '' };
+    const m = text.match(MARKER);
     if (m) {
         const direction = text.slice(m.index + m[0].length).trim();
-        return { summary: text.slice(0, m.index).trim(), direction: direction.charAt(0).toUpperCase() + direction.slice(1) };
+        const summary = text.slice(0, m.index).trim();
+        if (direction) return { summary, direction: capitalize(direction) };
     }
     const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
-    if (paragraphs.length >= 3) return { summary: paragraphs.slice(0, -1).join('\n\n'), direction: paragraphs.at(-1) };
+    if (paragraphs.length >= 2) return { summary: paragraphs.slice(0, -1).join('\n\n'), direction: paragraphs.at(-1) };
+    const sentences = text.match(/[^.!?…]+(?:[.!?…]+["')\]]?|$)\s*/g) ?? [text];
+    for (let i = Math.max(1, Math.floor(sentences.length / 2)); i < sentences.length; i++) {
+        if (CUE.test(sentences[i].trim())) {
+            return { summary: sentences.slice(0, i).join('').trim(), direction: capitalize(sentences.slice(i).join('').trim()) };
+        }
+    }
     return { summary: text, direction: '' };
 }
 
