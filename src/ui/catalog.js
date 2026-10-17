@@ -279,7 +279,18 @@ async function frontPage(types, all) {
 function bookGraphToggle() {
     return h('div', { class: 'sb-viewtoggle', title: 'See the setting as a book, or as a graph of how everything connects' },
         h('div', { class: 'sb-viewbtn active', title: 'Book' }, icon('fa-book-open'), ' Book'),
-        h('div', { class: 'sb-viewbtn', title: 'Graph', onclick: () => { ws.tab = 'graph'; rerender(); } }, icon('fa-diagram-project'), ' Graph'));
+        h('div', { class: 'sb-viewbtn', title: 'Graph', onclick: () => { ws.tab = 'graph'; rerender(); } }, icon('fa-diagram-project'), ' Graph'),
+        h('div', { class: 'sb-viewbtn', title: 'Map of the places, one level at a time', onclick: () => openLocationMap() }, icon('fa-map'), ' Map'));
+}
+
+// The Locations chapter in its Map view (src/ui/map.js).
+export function openLocationMap() {
+    getSettings().catalog.views.location = 'map';
+    saveSettings();
+    ws.tab = 'catalog';
+    ws.chapter = 'location';
+    ws.entryId = null;
+    rerender();
 }
 
 // The front page's read view of magic and technology: what exists, how
@@ -379,8 +390,8 @@ function chapterPage(type, all, doc, board = null) {
 
     const tags = tagsOf(entries);
     const views = [['grid', 'fa-grip', 'Cards'], ['list', 'fa-list', 'List']];
-    if (type.id === 'location') views.unshift(['tree', 'fa-sitemap', 'Tree'], ['map', 'fa-map', 'Map - places where they lie, one level at a time']);
-    if (type.id === 'quest') views.unshift(['board', 'fa-table-columns', 'Board']);
+    if (type.id === 'location') views.unshift(['tree', 'fa-sitemap', 'Tree - places inside places', 'Tree'], ['map', 'fa-map', 'Map - places where they lie, one level at a time', 'Map']);
+    if (type.id === 'quest') views.unshift(['board', 'fa-table-columns', 'Board', 'Board']);
 
     const toolbar = h('div', { class: 'sb-toolbar' },
         h('div', { class: 'sb-search' }, icon('fa-magnifying-glass'), h('input', {
@@ -391,7 +402,7 @@ function chapterPage(type, all, doc, board = null) {
         select([{ value: '', label: 'Any status' }, ...Object.entries(STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))], ws.status, { title: 'Status in this chat', onchange: (e) => { ws.status = e.target.value; rerender(); } }),
         PLACED.has(type.id) && locations.length ? select([{ value: '', label: 'Anywhere' }, ...locations.map((l) => ({ value: l.id, label: `Within ${pathLabel(l.id) || l.name}` })).sort((a, b) => a.label.localeCompare(b.label))], ws.within, { title: 'Where', onchange: (e) => { ws.within = e.target.value; rerender(); } }) : null,
         view !== 'tree' && view !== 'map' ? select([{ value: 'name', label: 'A–Z' }, { value: 'recent', label: 'Recently edited' }, { value: 'status', label: 'In play first' }], sort, { title: 'Sort', onchange: (e) => { getSettings().catalog.sort = e.target.value; saveSettings(); rerender(); } }) : null,
-        h('div', { class: 'sb-viewtoggle' }, views.map(([v, i, label]) => h('div', { class: `sb-viewbtn${view === v ? ' active' : ''}`, title: label, onclick: () => setView(type.id, v) }, icon(i)))),
+        h('div', { class: 'sb-viewtoggle' }, views.map(([v, i, label, text]) => h('div', { class: `sb-viewbtn${view === v ? ' active' : ''}`, title: label, onclick: () => setView(type.id, v) }, icon(i), text ? ` ${text}` : null))),
         type.id === 'faction' && factionTrackingKnown() === false ? button('Track factions', () => void trackFactions(), { iconName: 'fa-people-group', title: "Fill each character's Factions from the library's memberships and what the story shows - sets this setting's character fields up for it" }) : null,
         type.id === 'lore' && hasArchivistLore() ? button(ws.loreScanning ? 'Scanning…' : 'Scan Archivist', () => void scanLore(), { iconName: ws.loreScanning ? 'fa-spinner fa-spin' : 'fa-book-open-reader', disabled: !!ws.loreScanning, title: 'Take the lore Archivist has found in this chat into the library' }) : null,
         button('Generate', () => { ws.genPanel = ws.genPanel === type.id ? null : type.id; rerender(); }, { iconName: 'fa-wand-magic-sparkles', title: `Generate a new ${type.noun} - from your idea, or a surprise` }),

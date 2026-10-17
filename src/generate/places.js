@@ -8,6 +8,7 @@
 import { describeTech } from '../library/world-options.js';
 import { CLIMATES } from '../calendar/weather.js';
 import { extractJson } from './prompt.js';
+import { scaleOf, guessTravel, SCALE_ORDER } from '../library/routes.js';
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
@@ -42,25 +43,65 @@ export function buildRoutesPrompt({ parent, places, overview, existing = [] }) {
     return { system, user };
 }
 
+// The place a name in the reply means: the same name, else the one whose
+// name holds it or that it holds ("Market" for "Liston Market"), else the
+// one with every distinctive word of it. null when none, or more than one, fits.
+export function matchPlaceName(name, placeNames) {
+    const k = keyOf(name);
+    if (!k) return null;
+    const exact = placeNames.find((n) => keyOf(n) === k);
+    if (exact) return exact;
+    const one = (list) => (list.length === 1 ? list[0] : null);
+    const holds = one(placeNames.filter((n) => keyOf(n).includes(k) || k.includes(keyOf(n))));
+    if (holds) return holds;
+    const words = k.split(/[^a-z0-9']+/).filter((w) => w.length >= 3 && !['the', 'and', 'of'].includes(w));
+    return words.length ? one(placeNames.filter((n) => words.every((w) => keyOf(n).includes(w)))) : null;
+}
+
+const pairKey = (a, b) => [keyOf(a), keyOf(b)].sort().join('|');
+
 // -> { values: [{ from, to, travel, note }] (names as given), error }
 export function readRoutes(text, placeNames, existing = []) {
     const data = extractJson(text);
     const list = Array.isArray(data?.routes) ? data.routes : (Array.isArray(data) ? data : null);
     if (!list) return { values: [], error: 'no routes list in the reply' };
-    const byKey = new Map(placeNames.map((n) => [keyOf(n), n]));
-    const seen = new Set(existing.map((r) => [keyOf(r.from), keyOf(r.to)].sort().join('|')));
+    const seen = new Set(existing.map((r) => pairKey(r.from, r.to)));
     const out = [];
     for (const r of list) {
-        const from = byKey.get(keyOf(r?.from));
-        const to = byKey.get(keyOf(r?.to));
-        const travel = clean(r?.travel);
+        // Models name the ends in different ways.
+        const ends = Array.isArray(r?.between) ? r.between : [r?.from ?? r?.a ?? r?.start ?? r?.place1, r?.to ?? r?.b ?? r?.end ?? r?.place2];
+        const from = matchPlaceName(ends[0], placeNames);
+        const to = matchPlaceName(ends[1], placeNames);
+        const travel = clean(r?.travel ?? r?.time ?? r?.duration ?? r?.travel_time);
         if (!from || !to || from === to || !travel) continue;
-        const pair = [keyOf(from), keyOf(to)].sort().join('|');
+        const pair = pairKey(from, to);
         if (seen.has(pair)) continue;
         seen.add(pair);
         out.push({ from, to, travel: cut(travel, 60), note: cut(r?.note, 120) });
     }
     return out.length ? { values: out.slice(0, placeNames.length * 3), error: '' } : { values: [], error: 'no usable routes in the reply' };
+}
+
+// The pairs of places no route joins yet: [[a, b]] (names).
+export function unconnectedPairs(placeNames, existing = []) {
+    const seen = new Set(existing.map((r) => pairKey(r.from, r.to)));
+    const out = [];
+    for (let i = 0; i < placeNames.length; i++) for (let j = i + 1; j < placeNames.length; j++) if (!seen.has(pairKey(placeNames[i], placeNames[j]))) out.push([placeNames[i], placeNames[j]]);
+    return out;
+}
+
+// Routes guessed without the model, when it gives none to use: every
+// unconnected pair of a few places (up to 4 - more would be a web of
+// guesses), each with a time from the larger place's size and the world's
+// technology. places: [{ name, description }].
+export function guessedRoutes(places, existing = [], techLevel = '') {
+    if (places.length > 4) return [];
+    const byName = new Map(places.map((p) => [p.name, p]));
+    return unconnectedPairs(places.map((p) => p.name), existing).map(([from, to]) => {
+        const scales = [from, to].map((n) => scaleOf(byName.get(n))).filter(Boolean);
+        const scale = scales.length ? scales.reduce((x, y) => (SCALE_ORDER.indexOf(y) > SCALE_ORDER.indexOf(x) ? y : x)) : 'building';
+        return { from, to, travel: guessTravel(scale, techLevel), note: 'guessed - edit if wrong', guessed: true };
+    });
 }
 
 // ---- climate and environment
@@ -107,13 +148,26 @@ export function randomClimate(current = '', random = Math.random) {
 
 // ---- runners (the generation connection)
 
+// -> { items: [{ from, to, travel, note, guessed? }], message }: what the
+// model suggests; when it gives nothing to use, guesses (marked so) - or,
+// when every place is already connected, nothing and a message saying so.
 export async function suggestRoutes({ parent, places, overview, existing }) {
+    const names = places.map((p) => p.name);
+    if (!unconnectedPairs(names, existing).length) return { items: [], message: `The places inside ${clean(parent.name)} are already connected - every pair has a route. Edit those on each place's sheet.` };
     const [{ askReliably }, { useStateEngineJsonParser }, { getSettings }] = await Promise.all([import('./run.js'), import('./json.js'), import('../settings.js')]);
     await useStateEngineJsonParser();
     const prompt = buildRoutesPrompt({ parent, places, overview, existing });
-    const result = await askReliably(prompt, (_p, text) => readRoutes(text, places.map((p) => p.name), existing), getSettings().generation.maxTokens);
-    if (result.error) throw new Error(result.error);
-    return result.values;
+    let result = null;
+    try {
+        result = await askReliably(prompt, (_p, text) => readRoutes(text, names, existing), getSettings().generation.maxTokens);
+    } catch (err) {
+        result = { values: [], error: String(err?.message ?? err) };
+    }
+    if (!result.error && result.values.length) return { items: result.values, message: '' };
+    const guesses = guessedRoutes(places, existing, overview?.tech?.level ?? '');
+    return guesses.length
+        ? { items: guesses, message: 'The model suggested no routes that could be used, so these are guesses from the places\' size. Keep the ones you want and change their times on the sheet.' }
+        : { items: [], message: 'The model suggested no routes that could be used. Add them by hand below, or try again.' };
 }
 
 export async function suggestEnvironment({ place, inherited, overview, brief }) {

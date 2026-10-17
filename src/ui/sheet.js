@@ -508,22 +508,22 @@ function routesCard(entry, names) {
     const sug = ws.routeSuggest?.for === entry.id ? ws.routeSuggest : null;
     const gate = canGenerateFor(settingId, entry.id);
     const suggest = async () => {
-        ws.routeSuggest = { for: entry.id, busy: true, items: [], error: '' };
+        ws.routeSuggest = { for: entry.id, busy: true, items: [], error: '', message: '' };
         rerender();
         try {
             const all = await listEntries(ws.ctx.chatId, settingId, 'location');
             const described = inside.map((p) => ({ name: p.name, description: all.find((e) => e.id === p.id)?.description ?? '' }));
             const idOf = new Map(inside.map((p) => [p.name, p.id]));
             const existing = listRoutes(settingId).filter((r) => idOf.has(names.get(r.from)?.name) && idOf.has(names.get(r.to)?.name)).map((r) => ({ from: names.get(r.from).name, to: names.get(r.to).name }));
-            const items = await suggestRoutes({ parent: { name: entry.name, description: entry.base?.description ?? entry.description ?? '' }, places: described, overview: getOverview(settingId), existing });
-            ws.routeSuggest = { for: entry.id, busy: false, items: items.map((r) => ({ ...r, fromId: idOf.get(r.from), toId: idOf.get(r.to) })), error: '' };
+            const { items, message } = await suggestRoutes({ parent: { name: entry.name, description: entry.base?.description ?? entry.description ?? '' }, places: described, overview: getOverview(settingId), existing });
+            ws.routeSuggest = { for: entry.id, busy: false, items: items.map((r) => ({ ...r, fromId: idOf.get(r.from), toId: idOf.get(r.to) })), error: '', message };
         } catch (err) {
             ws.routeSuggest = { for: entry.id, busy: false, items: [], error: String(err?.message ?? err) };
         }
         rerender();
     };
     const keep = () => {
-        for (const r of sug.items) addRoute(settingId, { from: r.fromId, to: r.toId, travel: r.travel, note: r.note });
+        for (const r of sug.items) addRoute(settingId, { from: r.fromId, to: r.toId, travel: r.travel, note: r.note, guessed: r.guessed === true });
         toast('success', `Added ${sug.items.length} route${sug.items.length === 1 ? '' : 's'}.`);
         ws.routeSuggest = null;
         void syncNow().then(() => rerender());
@@ -532,9 +532,10 @@ function routesCard(entry, names) {
         sug.busy ? h('span', {}, icon('fa-spinner fa-spin'), ' Working out the routes…')
             : sug.error ? h('span', { class: 'sb-warn' }, `Could not suggest routes: ${sug.error}`)
                 : h('div', { class: 'sb-routes' },
-                    h('small', { class: 'sb-hint' }, sug.items.length ? 'Suggested - take out any you do not want, then add them:' : 'No new routes suggested.'),
+                    sug.message ? h('small', { class: 'sb-hint' }, icon('fa-circle-info'), ` ${sug.message}`) : null,
+                    sug.items.length && !sug.message ? h('small', { class: 'sb-hint' }, 'Suggested - take out any you do not want, then add them:') : null,
                     sug.items.map((r, i) => h('div', { class: 'sb-route' },
-                        h('span', {}, `${r.from} - ${r.to}: ${r.travel}`), r.note ? h('small', { class: 'sb-hint' }, ` - ${r.note}`) : null,
+                        h('span', {}, `${r.from} - ${r.to}: ${r.travel}`), r.guessed ? h('span', { class: 'sb-badge' }, 'guess') : (r.note ? h('small', { class: 'sb-hint' }, ` - ${r.note}`) : null),
                         h('span', { class: 'sb-iconbtn', title: 'Leave this one out', onclick: () => { sug.items.splice(i, 1); rerender(); } }, icon('fa-xmark')))),
                     h('div', { class: 'sb-actions' },
                         sug.items.length ? button('Add these routes', keep, { iconName: 'fa-check', cls: 'sb-primary' }) : null,

@@ -82,8 +82,17 @@ These came after spec v0.5 and should be folded into its next revision.
   the world; the player character's line says only who they are.
 - **Characters present is its own output** (`sb__cast`), concise, so it can be
   placed above the guidance in Curator.
-- **The director adds only what the chat brought up** - enforced in code: a
-  new thing's name must share a distinctive word with the last few messages.
+- **The director adds only what is relevant** - enforced in code: a new
+  thing (any kind: place, person, creature, faction, lore, event, item) must
+  be brought up by the last few messages, or be tied by name to a person,
+  place, faction or open thread the setting already has (a plot point that
+  grows out of what is there); items only for plot points. What it is tied
+  to becomes its related entries; every type can be added (quests start
+  active). Its dossier carries the factions at play, the lore that matters
+  here, events, earlier scenes, and every other entry of any type the chat
+  names or that is tied to the place or the people present ("Also
+  relevant") - one short line each, which the briefing folds into its
+  narrative in a few words rather than listing.
 - **The guidance runs from the general to the immediate:** setting, world
   rules, threads followed, the scene, then the game master's summary and,
   last, where the reply should go (the briefing's "Next:" paragraph). The

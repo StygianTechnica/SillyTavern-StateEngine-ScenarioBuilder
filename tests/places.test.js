@@ -1,4 +1,4 @@
-import { buildRoutesPrompt, readRoutes, buildEnvironmentPrompt, readEnvironment, randomClimate } from '../src/generate/places.js';
+import { buildRoutesPrompt, readRoutes, matchPlaceName, unconnectedPairs, guessedRoutes, buildEnvironmentPrompt, readEnvironment, randomClimate } from '../src/generate/places.js';
 
 const places = [{ name: 'The Taproom', description: 'Smoky.' }, { name: 'Lantern Cellar', description: 'Damp.' }, { name: 'The Loft' }];
 const names = places.map((p) => p.name);
@@ -42,5 +42,25 @@ describe('suggesting a climate', () => {
         expect(seen.has('temperate')).toBe(false);
         expect(seen.has('underground')).toBe(false);
         expect(seen.size).toBeGreaterThan(5);
+    });
+});
+
+describe('route suggestions that come back thin', () => {
+    const names = ['Liston Market', 'The Old Mill'];
+    it('match the names a model writes loosely', () => {
+        expect(matchPlaceName('the market', names)).toBe('Liston Market');
+        expect(matchPlaceName('Old Mill', names)).toBe('The Old Mill');
+        expect(matchPlaceName('Docks', names)).toBeNull();
+        const { values } = readRoutes('{"routes":[{"a":"Market","b":"old mill","time":"15 minutes"}]}', names);
+        expect(values).toEqual([{ from: 'Liston Market', to: 'The Old Mill', travel: '15 minutes', note: '' }]);
+    });
+    it('know which pairs are still unconnected', () => {
+        expect(unconnectedPairs(names, [{ from: 'The Old Mill', to: 'Liston Market' }])).toEqual([]);
+        expect(unconnectedPairs([...names, 'Chapel'], [{ from: 'The Old Mill', to: 'Liston Market' }])).toEqual([['Liston Market', 'Chapel'], ['The Old Mill', 'Chapel']]);
+    });
+    it('fall back to guesses for a few places', () => {
+        const guesses = guessedRoutes([{ name: 'Liston Market' }, { name: 'The Old Mill' }], [], 'tl3');
+        expect(guesses).toEqual([{ from: 'Liston Market', to: 'The Old Mill', travel: '10 minutes', note: 'guessed - edit if wrong', guessed: true }]);
+        expect(guessedRoutes(Array.from({ length: 5 }, (_, i) => ({ name: `P${i}` })))).toEqual([]);
     });
 });

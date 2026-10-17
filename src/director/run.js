@@ -1,7 +1,9 @@
 // Runs the director (src/director/prompt.js) for the open chat: reads the
 // recent chat and the scene dossier, asks the generation connection for a
-// game master's briefing, adds the rooms, people and items the briefing
-// says the scene needs to the library, and keeps the briefing in the chat
+// game master's briefing, adds what the briefing says the scene needs -
+// places, people, creatures, factions, lore, events, plot-point items -
+// to the library (only what the chat brought up or what is tied to the
+// setting: prompt.js relevance), and keeps the briefing in the chat
 // document, where the guidance (src/guidance/sync.js) puts it first.
 //
 // Called before each reply (src/state/lifecycle.js, with a timeout: a late
@@ -12,8 +14,9 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { getObjectType, getBoundSettingId, createEntry, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, listEntries, getParents, playerIdOf } from '../library/library.js';
+import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, listEntries, getParents, playerIdOf } from '../library/library.js';
 import { routesFrom, listRoutes } from '../library/routes.js';
+import { pathOf } from '../library/hierarchy.js';
 import { listRelations, relationsFor } from '../library/relations-edit.js';
 import { setCanonical } from '../state/canonical.js';
 import { advanceBy, perTurnDefault, holdStoryWeather, setTime, travelAlong, setTimeOfDay } from '../calendar/clock.js';
@@ -22,7 +25,9 @@ import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import { callModelFirst } from '../generate/llm.js';
 import { gatherInputs } from '../guidance/sync.js';
-import { buildDirectorPrompt, parseDirectorNote, mentionedIn, itemMatters, matchPlace, peopleNamedIn, callNames } from './prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant } from './prompt.js';
+import { libraryMemberships } from '../library/faction-sync.js';
+import { getSettingDoc } from '../store/setting-store.js';
 
 export const DIRECTOR_EVENT = 'scenario_builder_director';
 
@@ -96,8 +101,27 @@ async function locationFieldOf(settingId, typeId) {
     return (refs.find((f) => f.name === 'location') ?? refs[0])?.name ?? null;
 }
 
+// The groups at play in the scene, for the dossier: the factions of the
+// people present (the library's memberships and their runtime factions)
+// and those tied to the place or the places it is in.
+// -> [{ name, description, goals, members: [names here], why }]
+export function factionsAtPlay(factions, { cast = [], placeIds = [], relations = [], runtimeOf = () => [] } = {}) {
+    const members = libraryMemberships(factions, relations);
+    const out = [];
+    for (const f of factions ?? []) {
+        const here = cast.filter((c) => (members.get(c.id) ?? []).includes(f.id) || (runtimeOf(c.id) ?? []).includes(f.id)).map((c) => c.name);
+        const record = f.base ?? f;
+        const holdsPlace = Object.values(record).some((v) => (Array.isArray(v) ? v : [v]).some((x) => placeIds.includes(x)))
+            || placeIds.some((id) => (runtimeOf(id) ?? []).includes(f.id));
+        if (!here.length && !holdsPlace) continue;
+        out.push({ name: f.name, description: record.description ?? f.description ?? '', goals: Array.isArray(record.goals) ? record.goals.join(', ') : (record.goals ?? ''), members: here, why: holdsPlace ? 'holds or is tied to this place' : '' });
+    }
+    return out;
+}
+
 // Adds what the briefing says the scene needs. Places go under the current
-// location; items and people who are here are placed in it. Never adds a
+// location; items, creatures and people who are here are placed in it;
+// what a new thing is tied to becomes its related entries. Never adds a
 // duplicate of something the library already has.
 async function createNeeded(chatId, chatKey, settingId, created, locationId) {
     const made = [];
@@ -105,7 +129,10 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId) {
         try {
             if ((await findSimilar(chatId, settingId, item.kind, item.name)).length) continue;
             const data = { name: item.name, description: item.description };
-            if (locationId && item.kind !== 'location' && item.here) {
+            if (item.tiedIds?.length) data.related_entity_ids = [...new Set(item.tiedIds)];
+            if (item.kind === 'quest') data.startValues = { status: 'Active' };
+            // Only things that are physically here are put in the place.
+            if (locationId && ['character', 'item', 'creature'].includes(item.kind) && item.here) {
                 const field = await locationFieldOf(settingId, item.kind);
                 if (field) data[field] = locationId;
             }
@@ -224,6 +251,32 @@ async function run(chatId, chatKey, type, force) {
     const overview = settingId ? getOverview(settingId) : {};
     const limits = [...describeMagic(overview.magic).limits, ...describeTech(overview.tech).limits];
     const canonOnly = settingId ? isCanonOnly(settingId) : true;
+    // Factions, events and earlier scenes: what the guidance does not carry.
+    const factionList = settingId ? await listEntries(chatId, settingId, 'faction').catch(() => []) : [];
+    // The place and the places it is in.
+    const placeIds = settingId && guidance.location?.id ? [...pathOf(getParents(settingId), guidance.location.id)].reverse() : [];
+    const placeEntries = placeIds.length ? await listEntries(chatId, settingId, 'location').catch(() => []) : [];
+    const runtimeFactions = new Map();
+    for (const o of [...characters.filter((c) => castIds.includes(c.id)), ...placeEntries.filter((p) => placeIds.includes(p.id))]) {
+        const value = o.runtime?.values?.factions;
+        if (Array.isArray(value)) runtimeFactions.set(o.id, value);
+    }
+    const factions = settingId ? factionsAtPlay(factionList, { cast: (guidance.cast ?? []).filter((c) => c.id), placeIds, relations: getSettingDoc(settingId).relations, runtimeOf: (id) => runtimeFactions.get(id) ?? [] }) : [];
+    const eventObjects = settingId ? (await listEntries(chatId, settingId, 'event').catch(() => [])).slice(-8).map((e) => ({ name: e.name, description: e.base?.description ?? e.description ?? '', when: e.base?.when ?? e.when ?? e.base?.date ?? '' })) : [];
+    const scenes = settingId ? (await listEntries(chatId, settingId, 'scene').catch(() => [])).map((x) => ({ name: x.name, description: x.base?.description ?? x.description ?? '' })) : [];
+    // Every entry of every type, for "also relevant" and for checking what
+    // the director adds.
+    const types = await getObjectTypes().catch(() => []);
+    const everything = [];
+    if (settingId) for (const t of types) everything.push(...await listEntries(chatId, settingId, t.id).catch(() => []));
+    const labelOf = new Map(types.map((t) => [t.id, t.label]));
+    const covered = new Set([
+        ...castIds, ...placeIds, ...nearby.map((c) => c.id),
+        ...(guidance.location?.items ?? []).map((x) => x.id), ...(guidance.location?.creatures ?? []).map((x) => x.id),
+        ...(guidance.lore ?? []).map((x) => x.id),
+        ...[...(guidance.location?.places ?? []), ...factions, ...eventObjects, ...scenes, ...(guidance.quests ?? [])].map((x) => String(x.name ?? '').trim().toLowerCase()),
+    ].filter(Boolean));
+    const relevant = alsoRelevant(everything, { recentText: messages.slice(-6).map((m) => m.text).join('\n'), sceneIds: [...placeIds, ...castIds], covered, typeLabel: (t) => labelOf.get(t) ?? t });
     const { system, prompt } = buildDirectorPrompt({
         ...guidance,
         messages,
@@ -234,6 +287,11 @@ async function run(chatId, chatKey, type, force) {
         allowCreate: settings.director.allowCreate && !!settingId,
         canonOnly,
         nearby,
+        factions,
+        eventObjects,
+        events: inputs.canonicalValues?.canon_events ?? [],
+        scenes,
+        relevant,
         timeKeeping: settings.time.enabled && !!settingId,
         askNow: settings.time.enabled && !!settingId && doc.clock.needsNow,
     });
@@ -245,11 +303,18 @@ async function run(chatId, chatKey, type, force) {
     // Only what the recent chat brought up (the last few messages).
     const recentText = messages.slice(-4).map((m) => m.text).join('\n');
     const latestUserText = [...messages].reverse().find((m) => m.isUser)?.text ?? '';
-    const wanted = created.filter((c) => (c.kind === 'item'
-        // Items only for plot points and open threads - never flavour.
-        ? itemMatters(c, { quests: guidance.quests, latestUserText })
-        : mentionedIn(c.name, recentText) || (c.kind === 'location' && mentionedIn(c.description, recentText))));
-    if (wanted.length < created.length) console.info(LOG_PREFIX, `the director left out ${created.length - wanted.length} new thing(s): not brought up by the chat, or an item that is only flavour`);
+    // Never at random: brought up by the chat, or tied to what the setting
+    // already has (prompt.js relevance). Items only for plot points.
+    const known = everything.map((e) => ({ id: e.id, name: e.name, aliases: e.aliases ?? e.base?.aliases ?? [] }));
+    const typeIds = new Set(types.map((t) => t.id));
+    const wanted = [];
+    for (const c of created) {
+        // Only kinds State Engine has.
+        if (!typeIds.has(c.kind)) continue;
+        const r = relevance(c, { recentText, latestUserText, quests: guidance.quests, known });
+        if (r.ok) wanted.push({ ...c, tiedIds: r.tiedIds });
+    }
+    if (wanted.length < created.length) console.info(LOG_PREFIX, `the director left out ${created.length - wanted.length} new thing(s): not brought up by the chat or tied to the setting, or an item that is only flavour`);
     const made = settingId && settings.director.allowCreate && !canonOnly
         ? await createNeeded(chatId, chatKey, settingId, wanted, guidance.location?.id ?? null)
         : [];

@@ -54,9 +54,9 @@ export function locationMap(locations, doc) {
     const trail = [];
     for (let at = parentId; at; at = parents[at]) trail.unshift(at);
     const crumb = h('div', { class: 'sb-map-crumbs' },
-        h('span', { class: `sb-linkchip${parentId ? '' : ' active'}`, onclick: () => { ws.mapParent = null; ws.mapView = null; rerender(); } }, icon('fa-earth-americas'), ' The world'),
+        crumbLink(null, h('span', {}, icon('fa-earth-americas'), ' The world'), !parentId),
         trail.map((id) => [h('span', { class: 'sb-hint' }, ' › '),
-            h('span', { class: `sb-linkchip${id === parentId ? ' active' : ''}`, onclick: () => { ws.mapParent = id; ws.mapView = null; rerender(); } }, byId.get(id)?.name ?? '?')]));
+            crumbLink(id, byId.get(id)?.name ?? '?', id === parentId)]));
     const apply = () => {
         for (const g of guesses) updateRoute(settingId, g.route.id, { travel: g.travel });
         toast('success', `Updated ${guesses.length} guessed route${guesses.length === 1 ? '' : 's'} from the map.`);
@@ -125,6 +125,14 @@ export function locationMap(locations, doc) {
         else fit(svg, pos, parentId);
     });
     return h('div', { class: 'sb-map' }, h('div', { class: 'sb-toolbar' }, crumb, tools), h('div', { class: 'sb-map-stage' }, svg), hint);
+}
+
+// A breadcrumb step: a button to that level (the current one is not).
+function crumbLink(id, label, current) {
+    const go = () => { ws.mapParent = id; ws.mapView = null; rerender(); };
+    return h('span', current
+        ? { class: 'sb-linkchip active', 'aria-current': 'page', title: 'You are here' }
+        : { class: 'sb-linkchip', role: 'button', tabindex: 0, title: id ? 'Show the places inside this one' : 'Show the top-level places', onclick: go, onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } } }, label);
 }
 
 function scaleText(minutesPerUnit) {

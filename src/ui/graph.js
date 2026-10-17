@@ -18,6 +18,7 @@
 //   - hover a node to light up its neighbours; click it to open its sheet.
 
 import { getChatDoc } from '../store/chat-store.js';
+import { getSettings, saveSettings } from '../settings.js';
 import { listRelations, addLink, addRelation, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
 import { listRoutes, addRoute, guessRoute } from '../library/routes.js';
 import { baselineFields } from '../library/fields.js';
@@ -93,7 +94,8 @@ export async function renderGraph() {
     const toolbar = h('div', { class: 'sb-graph-bar' },
         h('div', { class: 'sb-viewtoggle', title: 'See the setting as a book, or as a graph' },
             h('div', { class: 'sb-viewbtn', title: 'Book', onclick: () => { ws.tab = 'catalog'; ws.chapter = 'overview'; ws.entryId = null; rerender(); } }, icon('fa-book-open'), ' Book'),
-            h('div', { class: 'sb-viewbtn active', title: 'Graph' }, icon('fa-diagram-project'), ' Graph')),
+            h('div', { class: 'sb-viewbtn active', title: 'Graph' }, icon('fa-diagram-project'), ' Graph'),
+            h('div', { class: 'sb-viewbtn', title: 'Map of the places, one level at a time', onclick: () => { getSettings().catalog.views.location = 'map'; saveSettings(); ws.tab = 'catalog'; ws.chapter = 'location'; ws.entryId = null; rerender(); } }, icon('fa-map'), ' Map')),
         typeChips,
         check('In play only', 'Only what has been in this chat\'s scene', filters.inPlayOnly, (on) => { ws.graphInPlay = on; ws.graphView = null; }),
         check('Labels', 'Write each link\'s kind on the canvas', ws.graphLabels === true, (on) => { ws.graphLabels = on; }),

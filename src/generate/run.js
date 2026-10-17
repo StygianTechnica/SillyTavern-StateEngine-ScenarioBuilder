@@ -35,15 +35,44 @@ export function canGenerateFor(settingId, entryId) {
     };
 }
 
-// Related entries as prompt context, nearest first.
-function neighboursOf(entry, all, parents, parentId) {
+// The entries an entry's per-chat state and starting values point at - a
+// location's Factions, a character's runtime factions: [{ field, ids }].
+// Those live outside its base record, where relationsOf() looks.
+export function runtimeRefs(entry) {
+    const out = [];
+    const seen = new Set();
+    for (const values of [entry?.runtime?.values, entry?.startValues ?? entry?.base?.startValues]) {
+        for (const [field, value] of Object.entries(values ?? {})) {
+            const ids = (Array.isArray(value) ? value : [value]).filter((v) => typeof v === 'string' && /^[a-z]{3}_[\w-]+$/.test(v) && !seen.has(`${field}|${v}`));
+            for (const id of ids) seen.add(`${field}|${id}`);
+            if (ids.length) out.push({ field, ids });
+        }
+    }
+    return out;
+}
+
+const fieldLabel = (field) => field.charAt(0).toUpperCase() + field.slice(1).replace(/_/g, ' ');
+
+// Related entries as prompt context, the most direct first: what the
+// entry points at and what points at it (its fields, its per-chat state
+// such as a location's Factions, its starting values), then the places
+// around it. The prompt shows the first 16, so direct ties are never
+// crowded out by a long list of neighbouring places.
+export function neighboursOf(entry, all, parents, parentId) {
     const allEntries = Object.values(all).flat();
     const byId = new Map(allEntries.map((e) => [e.id, e]));
     const out = [];
     const add = (id, relation) => {
         const e = byId.get(id);
-        if (e && e.id !== entry?.id && !out.some((o) => o.name === e.name)) out.push({ relation, type: e.type, name: e.name, description: e.description ?? '' });
+        if (e && e.id !== entry?.id && !out.some((o) => o.name === e.name)) out.push({ relation, type: e.type, name: e.name, description: e.description ?? e.base?.description ?? '' });
     };
+    if (entry?.id) {
+        const rel = relationsOf(entry, allEntries, parents);
+        for (const o of rel.outgoing) for (const id of o.ids) add(id, o.label);
+        for (const r of runtimeRefs(entry)) for (const id of r.ids) add(id, fieldLabel(r.field));
+        for (const r of rel.incoming) add(r.id, `${r.label} of`);
+        for (const id of rel.children) add(id, 'Inside it');
+    }
     const locationIds = (all.location ?? []).map((e) => e.id);
     const placeId = entry?.id && entry.type === 'location' ? entry.id : parentId;
     if (placeId) {
@@ -52,12 +81,6 @@ function neighboursOf(entry, all, parents, parentId) {
         for (const id of [...up].reverse()) add(id, 'Inside');
         const parent = entry?.id === placeId ? parents[placeId] : placeId;
         if (parent) for (const id of childrenOf(parents, locationIds, parent)) add(id, 'Nearby');
-    }
-    if (entry?.id) {
-        const rel = relationsOf(entry, allEntries, parents);
-        for (const id of rel.children) add(id, 'Inside it');
-        for (const o of rel.outgoing) for (const id of o.ids) add(id, o.label);
-        for (const r of rel.incoming) add(r.id, `${r.label} of`);
     }
     return out;
 }

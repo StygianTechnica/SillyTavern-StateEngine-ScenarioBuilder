@@ -62,8 +62,8 @@ describe('director note parsing', () => {
         const { note, created } = parseDirectorNote(raw);
         expect(note).toBe('In this reply, Mira eyes Ash and decides whether to mention the cellar.\n\nThe cellar door creaks below the bar.');
         expect(created).toEqual([
-            { kind: 'location', name: 'Wine cellar', description: 'A cramped, damp cellar under the taproom.', here: true },
-            { kind: 'character', name: 'Old Bram', description: 'A cellarman who knows too much.', here: false },
+            { kind: 'location', name: 'Wine cellar', description: 'A cramped, damp cellar under the taproom.', here: true, why: '' },
+            { kind: 'character', name: 'Old Bram', description: 'A cellarman who knows too much.', here: false, why: '' },
         ]);
     });
 

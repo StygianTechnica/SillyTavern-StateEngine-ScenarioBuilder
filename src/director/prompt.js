@@ -1,11 +1,13 @@
 // The director: the "GM brain". Before the roleplay model replies, a
 // background model reads the recent chat and the scene dossier (who is
 // here, what they want, where they are, what is around them, the open
-// quests, the world's limits) and writes a short NARRATIVE note to the
+// quests, the factions at play, the lore that matters here, events and
+// earlier scenes, the world's limits) and writes a short NARRATIVE note to the
 // narrator: where things stand, how the people present are likely to act,
 // what should probably happen next, and what to weave into the reply. When
-// the scene needs a place, person or thing the library does not have yet,
-// it says so on NEW lines, which the runner turns into library entries.
+// the scene needs something the library does not have yet - any kind of
+// entry - it says so on NEW lines, each tied to what the setting already
+// has, which the runner turns into library entries.
 //
 // Pure: no SillyTavern imports. The note itself is model output, so it is
 // NOT deterministic (a recorded exception to SB-015); everything around it
@@ -23,7 +25,24 @@ const cut = (text, max) => {
 // Without closing punctuation, for joining with semicolons.
 const bare = (text) => clean(text).replace(/[.;,]+$/, '');
 
-export const NEW_KINDS = Object.freeze({ location: 'location', place: 'location', room: 'location', character: 'character', npc: 'character', person: 'character', item: 'item', object: 'item' });
+export const NEW_KINDS = Object.freeze({
+    location: 'location', place: 'location', room: 'location',
+    character: 'character', npc: 'character', person: 'character',
+    item: 'item', object: 'item',
+    creature: 'creature', monster: 'creature', beast: 'creature',
+    faction: 'faction', group: 'faction', organization: 'faction', organisation: 'faction',
+    lore: 'lore', legend: 'lore', history: 'lore',
+    event: 'event', happening: 'event',
+    quest: 'quest', mission: 'quest', task: 'quest',
+    scene: 'scene',
+});
+
+// A NEW line's kind as a type id (every State Engine type, and the words a
+// model uses for them - "mission", "npcs"), or null for anything else.
+export function newKind(word) {
+    const w = String(word ?? '').toLowerCase();
+    return NEW_KINDS[w] ?? NEW_KINDS[w.replace(/s$/, '')] ?? null;
+}
 export const MAX_NEW = 2;
 
 // Words too common to tie a new thing to the chat.
@@ -58,6 +77,54 @@ export function itemMatters(item, { quests = [], latestUserText = '' } = {}) {
     const words = String(item.name ?? '').toLowerCase().split(/[^a-z0-9'\u00c0-\u024f]+/).filter((w) => w.length >= 4 && !STOP.has(w));
     const said = String(latestUserText ?? '').toLowerCase();
     return words.length > 0 && words.every((w) => said.includes(w) || (w.endsWith('s') && said.includes(w.slice(0, -1))));
+}
+
+// Whether something the director wants to add is RELEVANT - never added
+// at random. It must be one of:
+//   - brought up by the recent chat (its name, or for a place its
+//     description);
+//   - an item: a plot point or open thread (itemMatters);
+//   - TIED to the setting: its tie (the NEW line's last part) names a
+//     person, place, faction or other entry the library has, or an open
+//     thread - a plot point that grows out of what is already there.
+// known: [{ id, name, aliases }] - the library's entries; quests: the open
+// threads. -> { ok, tiedIds } (the entries the tie names).
+export function relevance(item, { recentText = '', latestUserText = '', quests = [], known = [] } = {}) {
+    const tie = clean(item.why);
+    const tiedIds = tie ? (known ?? []).filter((e) => [e.name, ...(e.aliases ?? e.base?.aliases ?? [])].some((n) => clean(n).length >= 3 && mentionedWhole(tie, n))).map((e) => e.id) : [];
+    const threadTie = !!tie && (quests ?? []).some((q) => clean(q.name) && (mentionedWhole(tie, q.name) || mentionedIn(q.name, tie)));
+    if (item.kind === 'item') return { ok: itemMatters(item, { quests, latestUserText }) || tiedIds.length > 0 && threadTie, tiedIds };
+    const named = mentionedIn(item.name, recentText) || (item.kind === 'location' && mentionedIn(item.description, recentText));
+    return { ok: named || tiedIds.length > 0 || threadTie, tiedIds };
+}
+
+// `name` in `text` as whole words, case aside.
+function mentionedWhole(text, name) {
+    const n = clean(name).toLowerCase().replace(/^(the|a|an)\s+/, '');
+    if (n.length < 3) return false;
+    const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'iu').test(String(text ?? ''));
+}
+
+// Every other entry that bears on this moment, of any type: named in the
+// recent chat, or tied to the scene (one of its fields or related ids
+// holds the place, a place it is in, or someone present). `covered`: ids
+// and lower-case names already in the dossier. Most relevant first (named
+// before tied), at most `max`.
+// entries: [{ id, type, name, aliases, description, base }]; typeLabel(type).
+// -> [{ name, type, description, why }]
+export function alsoRelevant(entries, { recentText = '', sceneIds = [], covered = new Set(), typeLabel = (t) => t } = {}, max = 10) {
+    const scene = new Set(sceneIds);
+    const out = [];
+    for (const e of entries ?? []) {
+        if (!clean(e?.name) || covered.has(e.id) || covered.has(clean(e.name).toLowerCase()) || scene.has(e.id)) continue;
+        const named = [e.name, ...(e.aliases ?? e.base?.aliases ?? [])].some((n) => mentionedWhole(recentText, n));
+        const record = e.base ?? e;
+        const tied = Object.entries(record).some(([k, v]) => k !== 'id' && (Array.isArray(v) ? v : [v]).some((x) => typeof x === 'string' && scene.has(x)));
+        if (!named && !tied) continue;
+        out.push({ name: clean(e.name), type: typeLabel(e.type), description: cut(record.description ?? e.description ?? '', 140), why: named ? 'named in the chat' : 'tied to this place or someone here', rank: named ? 0 : 1 });
+    }
+    return out.sort((a, b) => a.rank - b.rank).slice(0, max).map(({ rank, ...x }) => x);
 }
 
 // Whether a new thing's name is tied to the recent chat: one of its
@@ -152,6 +219,36 @@ export function dossierText(input) {
     if (clean(input.scene?.title) || clean(input.scene?.premise)) lines.push(`The scene: ${[clean(input.scene?.title), cut(input.scene?.premise, 300)].filter(Boolean).join(' - ')}`);
     if (input.corrections?.length) lines.push(`Hold to these (the story recently got them wrong): ${input.corrections.map((t) => bare(t)).join('; ')}.`);
 
+    // The groups at play, what is known here, what is coming.
+    const factions = (input.factions ?? []).filter((f) => clean(f?.name));
+    if (factions.length) {
+        section('FACTIONS AT PLAY');
+        for (const f of factions.slice(0, 8)) {
+            const bits = [cut(f.description, 200), clean(f.goals) && `wants: ${cut(f.goals, 160)}`, f.members?.length && `here: ${f.members.join(', ')}`, clean(f.why)].filter(Boolean).map(bare);
+            lines.push(`- ${clean(f.name)}${bits.length ? `: ${bits.join('; ')}` : ''}`);
+        }
+    }
+    const lore = (input.lore ?? []).filter((l) => clean(l?.name));
+    if (lore.length) {
+        section('LORE THAT MATTERS HERE');
+        for (const l of lore.slice(0, 8)) lines.push(`- ${clean(l.name)}${clean(l.description) ? `: ${cut(l.description, 220)}` : ''}`);
+    }
+    const events = [...(input.eventObjects ?? []).filter((e) => clean(e?.name)).map((e) => `${clean(e.name)}${clean(e.description) ? `: ${cut(e.description, 180)}` : ''}${clean(e.when) ? ` (${clean(e.when)})` : ''}`), ...(input.events ?? []).map(clean).filter(Boolean)];
+    if (events.length) {
+        section('EVENTS (happening, planned or on the calendar)');
+        for (const e of [...new Set(events)].slice(0, 8)) lines.push(`- ${e}`);
+    }
+    const relevantEntries = (input.relevant ?? []).filter((x) => clean(x?.name));
+    if (relevantEntries.length) {
+        section('ALSO RELEVANT (named in the chat, or tied to this place or the people here)');
+        for (const x of relevantEntries) lines.push(`- ${clean(x.name)}${clean(x.type) ? ` (${clean(x.type).toLowerCase()})` : ''}${clean(x.description) ? `: ${bare(x.description)}` : ''}`);
+    }
+    const scenes = (input.scenes ?? []).filter((x) => clean(x?.name));
+    if (scenes.length) {
+        section('EARLIER SCENES IN THIS CHAT');
+        for (const x of scenes.slice(-5)) lines.push(`- ${clean(x.name)}${clean(x.description) ? `: ${cut(x.description, 160)}` : ''}`);
+    }
+
     // The people: who is here, then who could turn up.
     const cast = (input.cast ?? []).filter((c) => clean(c?.name));
     section(cast.length ? 'WHO IS HERE' : 'WHO IS HERE: not known yet.');
@@ -214,7 +311,7 @@ export function buildDirectorPrompt(input) {
     parts.push(
         '',
         'WRITE THE BRIEFING',
-        `In a few paragraphs of natural prose (no headings, lists or tables), tell the narrator where things stand now that ${userName} has spoken${alone ? `. ${people}` : `, and ${people}`} Let the place come through in a few concrete details of what can be seen, heard or smelled, and anything here that matters now. Vary how you open; do not start with a stock phrase.`,
+        `In a few paragraphs of natural prose (no headings, lists or tables), tell the narrator where things stand now that ${userName} has spoken${alone ? `. ${people}` : `, and ${people}`} Let the place come through in a few concrete details of what can be seen, heard or smelled, and anything here that matters now. Draw on everything above that bears on this moment - factions, lore, events, threads and the other entries - but fold each into the narrative in a few words where it matters; never list them, and leave out what does not touch this moment. Vary how you open; do not start with a stock phrase.`,
         'End with a paragraph that begins "Next:" saying where this reply should probably go - one or two natural developments, as direction rather than a script, leaning toward an open thread when it fits.',
         'Keep it under 400 words in all.',
     );
@@ -253,15 +350,21 @@ export function buildDirectorPrompt(input) {
     if (creating) {
         parts.push(
             '',
-            'Only if the latest messages name or clearly call for something the facts above do not have - a place the characters are about to go to, a person the chat has mentioned who is about to appear - give it its details, mention it in the briefing, and add one line per thing (at most two):',
-            'NEW location | Name | one-sentence description',
-            'NEW character | Name | one-sentence description | here (or nearby)',
+            'Anything your briefing relies on that the facts above do not have - a place the characters are about to go to, a person, creature or group about to matter, a piece of lore or history, an event that is happening or coming - give it its details, mention it in the briefing, and add one line per thing (at most two). The last part says what it is TIED to: a person, place, faction or thread named above (by name), or the message that brought it up:',
+            'NEW location | Name | one-sentence description | tied to',
+            'NEW character | Name | one-sentence description | here (or nearby) | tied to',
+            'NEW creature | Name | one-sentence description | tied to',
+            'NEW faction | Name | one-sentence description | tied to',
+            'NEW lore | Name | one-sentence description | tied to',
+            'NEW event | Name | one-sentence description | tied to',
+            'NEW quest | Name | what it asks of the characters | tied to',
+            'NEW scene | Name | one-sentence description | tied to',
             'Items are different: a named item takes on weight and pulls the story toward it. Describe ordinary objects in the prose only. Add an item only when it is a real plot point or something an open thread needs, and say which:',
             'NEW item | Name | one-sentence description | the thread or plot point it serves',
-            'Most replies need no NEW lines. Never invent something the chat has not brought up, never add something just for colour, and never add something that already exists above.',
+            'Most replies need no NEW lines. Never add something at random or just for colour, and never add something that already exists above. Only when the story needs a new plot point may you invent one - and then it must grow out of what is above (tie it to a person, place, faction or thread by name), fit the setting and its rules, and be named in your briefing.',
         );
     } else {
-        parts.push('', 'Use only places, people and items named above; do not invent new named ones.');
+        parts.push('', 'Use only the places, people, creatures, factions, lore, events, quests and items named above; do not invent new named ones.');
     }
     return { system, prompt: parts.join('\n') };
 }
@@ -362,13 +465,18 @@ export function parseDirectorNote(raw) {
             if (name) (step[1].toUpperCase() === 'ENTERS' ? enters : leaves).push(name);
             continue;
         }
-        const m = line.match(/^\s*(?:[-*]\s*)?\**NEW\**\s*:?\s*([a-z]+)\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?$/i);
+        const m = line.match(/^\s*(?:[-*]\s*)?\**NEW\**\s*:?\s*([a-z]+)\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?$/i);
         if (m) {
-            const kind = NEW_KINDS[m[1].toLowerCase()];
+            const kind = newKind(m[1]);
             const name = clean(m[2]).replace(/^["'*]+|["'*]+$/g, '');
             if (kind && name && !seen.has(name.toLowerCase()) && created.length < MAX_NEW) {
                 seen.add(name.toLowerCase());
-                created.push({ kind, name, description: clean(m[3]), here: kind === 'character' ? !/nearby|elsewhere|later/i.test(m[4] ?? '') : true, ...(kind === 'item' ? { why: clean(m[4]) } : {}) });
+                // A character's fourth part says where they are; its fifth, and
+                // every other kind's fourth, what it is tied to.
+                const isPerson = kind === 'character';
+                const where = isPerson && /^(here|nearby|elsewhere|later|present|away)\b/i.test(clean(m[4])) ? clean(m[4]) : '';
+                const why = clean(isPerson ? (where ? m[5] : m[4]) : m[4]);
+                created.push({ kind, name, description: clean(m[3]), here: isPerson ? !/nearby|elsewhere|later|away/i.test(where) : true, why });
             }
             continue;
         }
