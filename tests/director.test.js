@@ -1,4 +1,4 @@
-import { buildDirectorPrompt, parseDirectorNote, dossierText, MAX_NEW } from '../src/director/prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, dossierText, mentionedIn, MAX_NEW } from '../src/director/prompt.js';
 
 const input = {
     overview: { premise: 'A port city where the old gods are waking.', tone: 'gritty' },
@@ -17,7 +17,7 @@ const input = {
 describe('director prompt', () => {
     it('gives the director the whole scene and the latest chat', () => {
         const { system, prompt } = buildDirectorPrompt({ ...input, allowCreate: true });
-        expect(system).toContain('Never decide what Ash says, does, thinks or feels');
+        expect(system).toContain('Never decide or suggest what Ash says, does, thinks, feels or will do next');
         for (const bit of ['Veylan > Gilded Gull (indoors)', 'Items here: Ledger (The debt book.)', 'Places off it: Cellar', 'wants: keep the inn', 'toward Tobin: debtor',
             'Recover the ledger [high]: now - find the key', 'Tobin borrowed forty crowns.', 'There is NO gunpowder.', 'Ash: I lean on the bar']) {
             expect(prompt).toContain(bit);
@@ -54,7 +54,6 @@ describe('director note parsing', () => {
         expect(created).toEqual([
             { kind: 'location', name: 'Wine cellar', description: 'A cramped, damp cellar under the taproom.', here: true },
             { kind: 'character', name: 'Old Bram', description: 'A cellarman who knows too much.', here: false },
-            { kind: 'item', name: 'Rusty key', description: 'Opens the cellar.', here: true },
         ]);
     });
 
@@ -62,7 +61,7 @@ describe('director note parsing', () => {
         const raw = ['Text.', 'NEW room | A | x', 'NEW room | a | y', 'NEW spell | B | z', 'NEW npc | C | w', 'NEW object | D | v', 'NEW place | E | u'].join('\n');
         const { note, created } = parseDirectorNote(raw);
         expect(note).toBe('Text.');
-        expect(created.map((c) => c.name)).toEqual(['A', 'C', 'D']);
+        expect(created.map((c) => c.name)).toEqual(['A', 'C']);
         expect(created).toHaveLength(MAX_NEW);
     });
 
@@ -89,5 +88,24 @@ describe('director scene keeping', () => {
         expect(prompt).toContain('- Tobin (debt collector) - seen earlier in this story');
         expect(prompt).toContain('TIME: evening (18:40), Thursday, day 4 of Stormfall, in spring');
         expect(buildDirectorPrompt({ ...input, timeKeeping: false }).prompt).not.toContain('TIME | 5 minutes');
+    });
+});
+
+describe('director perspective and restraint', () => {
+    it('briefs on the others and never details the player character', () => {
+        const cast = [{ name: 'Mira', role: 'innkeeper', mood: 'wary' }, { name: 'Ash', role: 'sellsword', mood: 'furious', intent: 'stab Tobin', player: true }];
+        const { system, prompt } = buildDirectorPrompt({ ...input, cast, userName: 'Someone' });
+        expect(system).toContain('Ash is the player character');
+        expect(prompt).toContain('- Ash (sellsword): the player character, played by the human - never write for them.');
+        expect(prompt).not.toContain('stab Tobin');
+        expect(prompt).toContain('The other people present (not Ash)');
+    });
+
+    it('only lets in new things the recent chat brought up', () => {
+        const chat = 'I ask Mira what is under the trapdoor. Is it the wine cellar?';
+        expect(mentionedIn('Lantern Cellar', chat)).toBe(true);
+        expect(mentionedIn('Iron trapdoor ring', chat)).toBe(true);
+        expect(mentionedIn('Old Bram', chat)).toBe(false);
+        expect(mentionedIn('The Great Hall', chat)).toBe(false);
     });
 });

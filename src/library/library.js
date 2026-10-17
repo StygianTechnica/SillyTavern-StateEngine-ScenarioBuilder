@@ -30,7 +30,7 @@ export async function getObjectType(typeId) {
 
 // The catalog's chapter names (spec 6.1).
 export const CHAPTER_LABELS = Object.freeze({
-    character: 'NPCs', location: 'Locations', faction: 'Factions', item: 'Items', creature: 'Creatures',
+    character: 'Characters', location: 'Locations', faction: 'Factions', item: 'Items', creature: 'Creatures',
     lore: 'Lore', quest: 'Quests', scene: 'Scenes', event: 'Events',
 });
 
@@ -254,6 +254,25 @@ export function setOverview(settingId, patch) {
 // generation never adds detail to its entries (when generation arrives -
 // docs/ROADMAP.md), and what the story invents waits for review instead of
 // being adopted.
+// ---- the player character
+
+// The character the user plays: the one marked on its sheet, else the one
+// named like the SillyTavern persona. `characters`: the setting's
+// character entries. -> id or ''.
+export function playerIdOf(settingId, characters = []) {
+    const marked = settingId ? getSettingDoc(settingId).playerId : '';
+    if (marked && characters.some((c) => c.id === marked)) return marked;
+    if (marked && !characters.length) return marked;
+    const persona = String(SillyTavern.getContext().name1 ?? '').trim().toLowerCase();
+    if (!persona) return '';
+    return characters.find((c) => [c.name, ...(c.aliases ?? c.base?.aliases ?? [])].some((n) => String(n ?? '').trim().toLowerCase() === persona))?.id ?? '';
+}
+
+// Marks (or, with '', unmarks) the player character - one per setting.
+export function setPlayerId(settingId, id) {
+    updateSettingDoc(settingId, (doc) => { doc.playerId = id || ''; });
+}
+
 export function isCanonOnly(settingId) {
     return getSettingDoc(settingId).canonOnly === true;
 }

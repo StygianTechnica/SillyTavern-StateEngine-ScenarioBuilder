@@ -12,9 +12,10 @@ import { chatStatusOf } from './catalog-model.js';
 
 // filters: { types: Set | null (null = every type), inPlayOnly }
 // -> { nodes: [{ id, type, name, image, status }],
-//      edges: [{ source, target, kind: 'parent' | 'ref' | 'related', label }] }
+//      edges: [{ source, target, kind: 'parent' | 'ref' | 'related' | 'bond', label }] }
+// relations: the relationships the user wrote (setting doc), drawn as 'bond'.
 // Edges are only drawn between shown nodes, and each pair/kind/label once.
-export function buildGraph({ entries, parents = {}, doc = null, filters = {}, labelOf = (_t, f) => f.replace(/_/g, ' ') }) {
+export function buildGraph({ entries, parents = {}, doc = null, filters = {}, relations = [], labelOf = (_t, f) => f.replace(/_/g, ' ') }) {
     const shown = entries.filter((e) => (!filters.types || filters.types.has(e.type))
         && (!filters.inPlayOnly || chatStatusOf(e.id, doc) !== 'unused'));
     const ids = new Set(shown.map((e) => e.id));
@@ -37,6 +38,7 @@ export function buildGraph({ entries, parents = {}, doc = null, filters = {}, la
             for (const id of o.ids) add(entry.id, id, o.field === 'related_entity_ids' ? 'related' : 'ref', o.label);
         }
     }
+    for (const r of relations ?? []) add(r.from, r.to, 'bond', r.note ? `${r.kind} (${r.note})` : r.kind);
     return { nodes, edges };
 }
 

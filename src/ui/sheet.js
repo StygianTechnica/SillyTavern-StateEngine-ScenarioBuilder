@@ -7,7 +7,7 @@
 
 import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc } from '../store/chat-store.js';
-import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview } from '../library/library.js';
+import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview, playerIdOf, setPlayerId } from '../library/library.js';
 import { pathOf, descendantsOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
 import { getSettingDoc } from '../store/setting-store.js';
@@ -20,6 +20,7 @@ import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
 import { renderQuestTab } from './quest-board.js';
 import { baselineFields } from '../library/fields.js';
+import { CLIMATES } from '../calendar/weather.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
 import { sparkButton, fieldWithTools } from './controls.js';
@@ -64,6 +65,8 @@ function startDraft(entry, defs) {
             gmNotes: entry.meta?.gmNotes ?? '',
             parentId: entry.meta?.parentId ?? ws.newParent ?? '',
             environment: { climate: '', lighting: '', rules: '', ...(entry.meta?.environment ?? {}) },
+            climate: entry.meta?.climate ?? '',
+            sky: entry.meta?.sky ?? '',
         },
     };
     ws.draftFor = entry.id ?? 'new';
@@ -245,6 +248,11 @@ export async function renderSheet(type, all) {
     if (!isNew && !ws.editing) {
         if (type.id === 'location' && doc.canonical.locationId !== entry.id) quick.push(button('Set the scene here', () => void setScene({ locationId: entry.id }, `Moved the scene to ${entry.name}`), { iconName: 'fa-location-dot' }));
         if (type.id === 'character') {
+            const isPlayer = playerIdOf(ws.ctx.settingId, [entry]) === entry.id;
+            quick.push(button(isPlayer ? 'Player character' : 'Mark as player character', () => {
+                setPlayerId(ws.ctx.settingId, isPlayer ? '' : entry.id);
+                rerender();
+            }, { iconName: 'fa-gamepad', cls: isPlayer ? 'sb-primary' : '', title: isPlayer ? 'The character you play - the guidance never writes their words, actions, thoughts or feelings. Click to unmark.' : 'The character you play. The guidance is then written from the other characters\' side and never speaks for this one.' }));
             const present = doc.canonical.castIds.includes(entry.id);
             quick.push(button(present ? 'Remove from scene' : 'Bring into scene', () => void setScene({
                 castIds: present ? doc.canonical.castIds.filter((id) => id !== entry.id) : [...doc.canonical.castIds, entry.id],
@@ -401,7 +409,11 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
                 h('div', { class: 'sb-row' },
                     field('Climate', textInput('meta.environment.climate', ws.draft.meta.environment.climate, { placeholder: 'inherited when empty' })),
                     field('Lighting', textInput('meta.environment.lighting', ws.draft.meta.environment.lighting, { placeholder: 'inherited when empty' }))),
-                field('Local rules', textInput('meta.environment.rules', ws.draft.meta.environment.rules, { placeholder: 'inherited when empty' })));
+                field('Local rules', textInput('meta.environment.rules', ws.draft.meta.environment.rules, { placeholder: 'inherited when empty' })),
+                h('div', { class: 'sb-row' },
+                    field('Weather follows', select([{ value: '', label: '(inherited)' }, ...CLIMATES.map(([id, label]) => ({ value: id, label }))], ws.draft.meta.climate, { onchange: (e) => set('meta.climate', e.target.value) }),
+                        'The climate the simulated weather and temperature follow here and in the places inside.'),
+                    field('Sky', select([{ value: '', label: '(inherited)' }, { value: 'open', label: 'Open sky - sun, moons and weather seen' }, { value: 'none', label: 'No sky - underground or enclosed' }], ws.draft.meta.sky, { onchange: (e) => set('meta.sky', e.target.value) }))));
         }
         return h('div', { class: 'sb-tabpane' },
             parentField,
@@ -418,10 +430,14 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
         const envById = Object.fromEntries(Object.entries(getSettingDoc(settingId).entries).map(([id, m]) => [id, m.environment]));
         const inherited = inheritedEnvironment(parents, envById, entry.id);
         const list = [['climate', 'Climate'], ['lighting', 'Lighting'], ['rules', 'Local rules']].filter(([k]) => inherited[k]);
-        if (list.length) {
+        const zone = CLIMATES.find(([id]) => id === entry.meta?.climate)?.[1];
+        const skyLabel = { open: 'Open sky', none: 'No sky (underground or enclosed)' }[entry.meta?.sky];
+        if (list.length || zone || skyLabel) {
             env = h('div', { class: 'sb-card' }, h('div', { class: 'sb-card-title' }, 'Environment'),
                 h('dl', { class: 'sb-glance' }, list.flatMap(([k, label]) => [h('dt', {}, label), h('dd', {}, inherited[k].value,
-                    inherited[k].from !== entry.id ? h('small', { class: 'sb-hint' }, ` (from ${names.get(inherited[k].from)?.name ?? 'a parent'})`) : null)])));
+                    inherited[k].from !== entry.id ? h('small', { class: 'sb-hint' }, ` (from ${names.get(inherited[k].from)?.name ?? 'a parent'})`) : null)]),
+                zone ? [h('dt', {}, 'Weather follows'), h('dd', {}, zone)] : null,
+                skyLabel ? [h('dt', {}, 'Sky'), h('dd', {}, skyLabel)] : null));
         }
     }
     return h('div', { class: 'sb-tabpane' },
@@ -633,7 +649,7 @@ async function saveSheet(type, entry, defs, isNew) {
     // Which fields came from generation (SB-136), shown on the GM tab.
     if (ws.generatedFields?.size) meta.generated = [...new Set([...(entry.meta?.generated ?? []), ...ws.generatedFields])].filter((f) => f !== 'name');
     if (isNew) meta.origin = 'user';
-    if (type.id === 'location') meta.environment = d.meta.environment;
+    if (type.id === 'location') Object.assign(meta, { environment: d.meta.environment, climate: d.meta.climate, sky: d.meta.sky });
     try {
         if (isNew) {
             const similar = await findSimilar(chatId, settingId, type.id, patch.name);

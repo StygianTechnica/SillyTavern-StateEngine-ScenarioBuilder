@@ -22,9 +22,9 @@ import { getVariableValues, getRawValues, setVariableValue, VARIABLES_CHANGED_EV
 import { getObject, listObjects } from '../api/objects.js';
 import { PRESET_NAME } from '../preset/blueprint.js';
 import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.js';
-import { getBoundSettingId, readField, listEntries } from '../library/library.js';
+import { getBoundSettingId, readField, listEntries, playerIdOf } from '../library/library.js';
 import { pathOf, inheritedEnvironment } from '../library/hierarchy.js';
-import { buildGuidance, buildStateBlock, timeText } from './build.js';
+import { buildGuidance, buildStateBlock, buildCast, timeText } from './build.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { relationsFor, pairCovered } from '../library/relations-edit.js';
 import { activeQuests } from '../quests/sync.js';
@@ -37,7 +37,7 @@ export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
 
 // The latest build, for the preview (SB-314) and the public API:
 // { chatKey, guidance: { text, tokens, sections }, stateBlock, inert, reason }.
-let last = { chatKey: null, guidance: { text: '', tokens: 0, sections: [] }, stateBlock: '', inert: true, reason: 'Not started yet.' };
+let last = { chatKey: null, guidance: { text: '', tokens: 0, sections: [] }, cast: '', stateBlock: '', inert: true, reason: 'Not started yet.' };
 
 export function getLastBuild() {
     return structuredClone(last);
@@ -130,6 +130,8 @@ export async function gatherInputs(chatId, chatKey) {
         }
     }
 
+    // The character the user plays: marked so nothing speaks for them.
+    const playerId = settingId ? playerIdOf(settingId, await listEntries(chatId, settingId, 'character')) : '';
     const cast = [];
     for (const id of castIds) {
         const obj = await getObject(chatId, id);
@@ -149,6 +151,7 @@ export async function gatherInputs(chatId, chatKey) {
             thought: await readField(chatId, id, 'se__character.thought', 'thought'),
             relations: [],
             id,
+            player: id === playerId,
             why: c.castIds.length ? 'canonically present' : 'present in the story',
         });
     }
@@ -269,7 +272,7 @@ export async function gatherInputs(chatId, chatKey) {
             temperature: c.temperature,
             indoor: c.indoor,
             sceneTitle: c.sceneTitle,
-            castNames: cast.map((x) => x.name),
+            castNames: cast.map((x) => (x.player ? `${x.name} (player character)` : x.name)),
         },
         canonicalValues: {
             canon_location: c.locationId || '',
@@ -336,7 +339,7 @@ export async function syncGuidance() {
             return;
         }
         if (!isActive()) {
-            await writeIfChanged(ref.chatId, { guidance: '', state_block: '' });
+            await writeIfChanged(ref.chatId, { guidance: '', cast: '', state_block: '' });
             last = { chatKey, guidance: { text: '', tokens: 0, sections: [] }, stateBlock: '', inert: true, reason: getSettings().enabled ? 'Paused.' : 'Scenario Builder is disabled.' };
             announce();
             return;
@@ -345,13 +348,14 @@ export async function syncGuidance() {
         const inputs = await gatherInputs(ref.chatId, chatKey);
         const guidance = buildGuidance(inputs.guidance);
         const stateBlock = getSettings().stateBlockEnabled ? buildStateBlock(inputs.stateBlock) : '';
+        const cast = buildCast(inputs.guidance);
         await followCalendar(inputs.calendarId);
-        await writeIfChanged(ref.chatId, { ...inputs.canonicalValues, guidance: guidance.text, state_block: stateBlock });
+        await writeIfChanged(ref.chatId, { ...inputs.canonicalValues, guidance: guidance.text, cast, state_block: stateBlock });
 
         const doc = getChatDoc(chatKey);
         if (doc.settingId !== inputs.settingId) updateChatDoc(chatKey, (d) => { d.settingId = inputs.settingId; });
 
-        last = { chatKey, guidance, stateBlock, inert: false, reason: '' };
+        last = { chatKey, guidance, cast, stateBlock, inert: false, reason: '' };
         announce();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not update the guidance', err);

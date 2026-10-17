@@ -174,7 +174,10 @@ export function detectDrift({ canonical, observed, lastObserved = {}, objects = 
             const added = [...after].filter((id) => !before.has(id)).sort();
             const removed = [...before].filter((id) => !after.has(id)).sort();
             if (after.size === 0 && before.size > 1) {
-                items.push({ field, op: 'clear', canonical: [...before], observed: [], classification: 'natural', action: decideFor('natural', policy), reason: 'everyone left' });
+                // Nobody at all is far more often a missed reading than everyone
+                // leaving at once: asked, not taken (who leaves one by one
+                // still follows the story, and the director says who leaves).
+                items.push({ field, op: 'clear', canonical: [...before], observed: [], classification: 'ambiguous', action: policy === 'canonical' ? 'adjust' : 'ask', reason: 'the story lists nobody present - everyone left, or the reading missed them' });
                 continue;
             }
             for (const id of added) {

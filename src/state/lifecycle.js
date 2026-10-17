@@ -4,7 +4,9 @@
 // swiped, edited or deleted.
 //
 //   VARIABLES_CHANGED (debounced)  -> validate -> rebuild guidance  (SB-502)
-//   GENERATION_STARTED             -> validate -> push canonical -> rebuild (SB-213, SB-306)
+//   GENERATION_STARTED             -> validate -> push canonical -> director -> rebuild (SB-213, SB-306);
+//                                     for a send, all of it waits for USER_MESSAGE_RENDERED so the
+//                                     message is taken first
 //   MESSAGE_SWIPED / EDITED / DELETED -> revert what that message caused (SB-224)
 //   CHAT_CHANGED                   -> drop pending work, bind the setting, rebuild (SB-501)
 //   (after validation and on a chat change, newly confirmed objects are
@@ -62,12 +64,43 @@ function scheduleValidation(chatId) {
     }, VALIDATE_DEBOUNCE_MS);
 }
 
+// A send with text in the input box: the work waits until SillyTavern has
+// posted the message (USER_MESSAGE_RENDERED, which it also waits on before
+// building the prompt), so the input is taken at once and the wait comes
+// after it. { chatId, type } or null.
+let awaitingMessage = null;
+
+function pendingInput() {
+    const text = String(document.getElementById('send_textarea')?.value ?? '').trim();
+    return text && !text.startsWith('/') ? text : '';
+}
+
 async function beforeGeneration(type, _options, dryRun) {
+    awaitingMessage = null;
     if (dryRun || type === 'quiet' || !isActive()) return;
     const ref = getCurrentChatRef();
     if (!ref) return;
+    clearTimeout(timer);
+    if ((!type || type === 'normal') && pendingInput() && SillyTavern.getContext().eventTypes.USER_MESSAGE_RENDERED) {
+        awaitingMessage = { chatId: ref.chatId, type: type || 'normal' };
+        return;
+    }
+    await prepareReply(ref, type);
+}
+
+async function onUserMessageRendered() {
+    const waiting = awaitingMessage;
+    awaitingMessage = null;
+    const ref = getCurrentChatRef();
+    if (!waiting || !ref || ref.chatId !== waiting.chatId) return;
+    await prepareReply(ref, waiting.type);
+}
+
+// Everything before a reply: validation, the canonical state pushed into the
+// scene variables, the active quests, the clock, the director's briefing and
+// the guidance rebuilt. Never throws.
+async function prepareReply(ref, type) {
     try {
-        clearTimeout(timer);
         if (!(await getPresetStatus(ref.chatId)).active) return;
         await reconcileOpenChat();
         await pushCanonicalToObserved(ref.chatId, chatKeyFor(ref));
@@ -115,6 +148,7 @@ export function startLifecycle() {
     const { eventSource, eventTypes } = SillyTavern.getContext();
     eventSource.on(VARIABLES_CHANGED_EVENT, (chatId) => { if (isActive()) scheduleValidation(chatId); });
     if (eventTypes.GENERATION_STARTED) eventSource.on(eventTypes.GENERATION_STARTED, beforeGeneration);
+    if (eventTypes.USER_MESSAGE_RENDERED) eventSource.on(eventTypes.USER_MESSAGE_RENDERED, onUserMessageRendered);
     if (eventTypes.MESSAGE_SWIPED) eventSource.on(eventTypes.MESSAGE_SWIPED, safely((index) => revertFromMessage(Number(index))));
     if (eventTypes.MESSAGE_EDITED) eventSource.on(eventTypes.MESSAGE_EDITED, safely((index) => revertFromMessage(Number(index))));
     // The payload is the chat's length after the deletion.

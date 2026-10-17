@@ -7,6 +7,7 @@
 import { getSettings, saveSettings } from '../settings.js';
 import { getChatDoc } from '../store/chat-store.js';
 import { getObjectTypes, CHAPTER_LABELS, listEntries, getParents, setParent, getOverview, setOverview, getSettingSummary, isCanonOnly, setCanonOnly } from '../library/library.js';
+import { getSettingDoc } from '../store/setting-store.js';
 import { buildTree, wouldCreateCycle, childrenOf, pathOf } from '../library/hierarchy.js';
 import { truncate } from '../guidance/build.js';
 import { safeImageSrc } from '../images/attach.js';
@@ -448,7 +449,9 @@ function subtitleOf(entry, pathLabel) {
 
 function statusBadge(entry, doc) {
     const status = chatStatusOf(entry.id, doc);
-    return status === 'unused' ? null : h('span', { class: `sb-badge sb-badge-${status}` }, STATUS_LABELS[status]);
+    const player = ws.ctx?.settingId && getSettingDoc(ws.ctx.settingId).playerId === entry.id
+        ? h('span', { class: 'sb-badge sb-badge-player', title: 'The character you play' }, icon('fa-gamepad'), ' Player') : null;
+    return [player, status === 'unused' ? null : h('span', { class: `sb-badge sb-badge-${status}` }, STATUS_LABELS[status])];
 }
 
 function thumb(entry, type, cls) {

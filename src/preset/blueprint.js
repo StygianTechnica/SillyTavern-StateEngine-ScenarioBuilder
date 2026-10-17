@@ -173,6 +173,7 @@ export const CALCULATED_VARIABLES = Object.freeze([
 
 export const OUTPUT_VARIABLES = Object.freeze([
     ['guidance', text('Narrative guidance', 'Guidance for the next reply: where and when the scene is, who is here and what they want, and corrections to keep the story consistent with its world. Not asked of the model.', { showInTracker: false })],
+    ['cast', text('Characters present', 'Who is in the scene, one line each, the player character marked - its own block so it can be placed above the guidance. Not asked of the model.', { showInTracker: false })],
     ['state_block', text('Canonical scene state', 'The current scene\'s canonical state - location, time, weather and who is present - one line each. Not asked of the model.', { showInTracker: false })],
 ]);
 

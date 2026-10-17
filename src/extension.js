@@ -24,7 +24,7 @@ import { startReviewNotice } from './ui/review-notice.js';
 import { pruneSettingDocs } from './store/setting-store.js';
 import { listAllSettings } from './library/library.js';
 
-const OUTPUTS = ['guidance', 'state_block'].map(qualifiedName);
+const OUTPUTS = ['guidance', 'cast', 'state_block'].map(qualifiedName);
 
 // What Scenario Builder provides (SB-002, SB-310): each output offered to
 // Curator for injection, as a user message by default (the user may change

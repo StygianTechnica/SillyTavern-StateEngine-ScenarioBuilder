@@ -72,9 +72,9 @@ describe('drift detection', () => {
         ]);
     });
 
-    it('follows the story when everyone leaves', () => {
+    it('asks rather than emptying the scene when the story lists nobody', () => {
         const [item] = detectDrift({ canonical: canon({ castIds: ['mira', 'bob'] }), observed: observed({ scene_characters: [] }), objects, parents });
-        expect(item).toMatchObject({ op: 'clear', action: 'accept' });
+        expect(item).toMatchObject({ op: 'clear', classification: 'ambiguous', action: 'ask' });
     });
 
     it('ignores fields the model left blank', () => {

@@ -21,7 +21,7 @@ import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import { callModelFirst } from '../generate/llm.js';
 import { gatherInputs } from '../guidance/sync.js';
-import { buildDirectorPrompt, parseDirectorNote } from './prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, mentionedIn } from './prompt.js';
 
 export const DIRECTOR_EVENT = 'scenario_builder_director';
 
@@ -62,8 +62,10 @@ export function recentMessages(type) {
         while (list.length && !list[list.length - 1].isUser) list.pop();
     }
     if (!type || type === 'normal') {
+        // Before SillyTavern posts it, the message is still in the input box.
         const pending = String(document.getElementById('send_textarea')?.value ?? '').trim();
-        if (pending && !pending.startsWith('/')) list.push({ name: context.name1, text: pending, isUser: true });
+        const last = list[list.length - 1];
+        if (pending && !pending.startsWith('/') && !(last?.isUser && last.text.trim() === pending)) list.push({ name: context.name1, text: pending, isUser: true });
     }
     return list.slice(-8);
 }
@@ -200,8 +202,12 @@ async function run(chatId, chatKey, type, force) {
     const { note, created } = parsed;
     if (!note) throw new Error('The model wrote no briefing.');
 
+    // Only what the recent chat brought up (the last few messages).
+    const recentText = messages.slice(-4).map((m) => m.text).join('\n');
+    const wanted = created.filter((c) => mentionedIn(c.name, recentText) || mentionedIn(c.description, recentText) && c.kind === 'location');
+    if (wanted.length < created.length) console.info(LOG_PREFIX, `the director left out ${created.length - wanted.length} new thing(s) the chat has not brought up`);
     const made = settingId && settings.director.allowCreate && !canonOnly
-        ? await createNeeded(chatId, chatKey, settingId, created, guidance.location?.id ?? null)
+        ? await createNeeded(chatId, chatKey, settingId, wanted, guidance.location?.id ?? null)
         : [];
     if (settingId) enrichThin(chatId, chatKey, settingId, guidance);
 

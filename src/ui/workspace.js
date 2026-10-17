@@ -8,6 +8,7 @@
 // Tabs: Catalog (catalog.js + sheet.js), Graph (graph.js), Scene, Review,
 // History, Preview (panels.js).
 
+import { getSettings, saveSettings } from '../settings.js';
 import { LOG_PREFIX } from '../constants.js';
 import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
 import { getChatDoc, SCENARIO_CHANGED_EVENT } from '../store/chat-store.js';
@@ -20,6 +21,7 @@ import { QUESTS_EVENT } from '../quests/sync.js';
 import { renderCatalog } from './catalog.js';
 import { renderGraph } from './graph.js';
 import { renderScene, renderReview, renderHistory, renderPreview } from './panels.js';
+import { renderCalendar } from './calendar.js';
 import { renderImport } from './import-panel.js';
 import { IMPORT_EVENT } from '../import/run.js';
 import { DIRECTOR_EVENT } from '../director/run.js';
@@ -31,6 +33,7 @@ const TABS = Object.freeze([
     ['catalog', 'Catalog', 'fa-book-atlas'],
     ['graph', 'Graph', 'fa-diagram-project'],
     ['scene', 'Scene', 'fa-clapperboard'],
+    ['calendar', 'Calendar', 'fa-calendar-days'],
     ['review', 'Review', 'fa-seedling'],
     ['history', 'History', 'fa-clock-rotate-left'],
     ['import', 'Import', 'fa-file-import'],
@@ -40,6 +43,7 @@ const TABS = Object.freeze([
 let overlay = null;
 let pill = null;
 let renderToken = 0;
+let restored = false;
 let listening = false;
 
 async function bindContext() {
@@ -88,6 +92,13 @@ export async function openWorkspace({ tab = null } = {}) {
     if (!ctx) return toast('info', 'Open a chat first - the library belongs to the chat\'s setting.');
     if (!ctx.settingId) return toast('warning', 'This chat has no State Engine setting yet.');
     ws.ctx = ctx;
+    // The tab and chapter last open, after a reload.
+    if (!restored) {
+        restored = true;
+        const lastSeen = getSettings().catalog.last;
+        if (lastSeen && TABS.some(([key]) => key === lastSeen.tab)) ws.tab = lastSeen.tab;
+        if (lastSeen?.chapter) ws.chapter = lastSeen.chapter;
+    }
     if (tab) ws.tab = tab;
     if (!overlay) {
         overlay = h('div', { class: 'sb-workspace', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Scenario Builder' });
@@ -138,11 +149,16 @@ async function render() {
     // (a sparkle, a save, a background update) - and starts at the top when
     // the view changes (another chapter, sheet or tab).
     const view = [ws.tab, ws.chapter, ws.entryId, ws.sheetTab].join('|');
+    const remembered = getSettings().catalog.last;
+    if (remembered?.tab !== ws.tab || remembered?.chapter !== ws.chapter) {
+        getSettings().catalog.last = { tab: ws.tab, chapter: ws.chapter };
+        saveSettings();
+    }
     const scrolls = view === lastView ? SCROLLERS.map((sel) => overlay.querySelector(sel)?.scrollTop ?? 0) : null;
     lastView = view;
     let body;
     try {
-        body = await ({ graph: renderGraph, import: renderImport, scene: renderScene, review: renderReview, history: renderHistory, preview: renderPreview }[ws.tab] ?? renderCatalog)();
+        body = await ({ graph: renderGraph, import: renderImport, scene: renderScene, calendar: renderCalendar, review: renderReview, history: renderHistory, preview: renderPreview }[ws.tab] ?? renderCatalog)();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not render the workspace', err);
         body = h('div', { class: 'sb-error' }, `Something went wrong: ${err?.message ?? err}`);

@@ -238,7 +238,7 @@ async function reconcileOnce() {
         // The story's weather holds a while before the simulation resumes;
         // a time skip the story made is caught up with (sb__scene_deltatime).
         if (acceptedFields.has('weather') || acceptedFields.has('temperature')) await holdStoryWeather(chatKey, settingId, canonical.weather, canonical.temperature);
-        if (newReply) await catchUpWithStory(chatId, chatKey, settingId, raw.scene_deltatime);
+        if (newReply) await catchUpWithStory(chatId, chatKey, settingId, raw.scene_deltatime, replySource);
     }
     if (restore.size) await pushCanonicalToObserved(chatId, chatKey, { fields: [...restore] });
     if (items.length) announce(chatKey);
@@ -401,7 +401,7 @@ export async function revertFromMessage(fromIndex) {
     const chatKey = chatKeyFor(ref);
     const doc = getChatDoc(chatKey);
     const affected = (source) => sourceIndex(source) >= fromIndex;
-    const toUndo = doc.history.filter((h) => !h.undone && h.source === 'validation' && affected(h.sourceMessage)).reverse();
+    const toUndo = doc.history.filter((h) => !h.undone && (h.source === 'validation' || h.source === 'story') && affected(h.sourceMessage)).reverse();
     const touched = toUndo.length || doc.drift.some((d) => affected(d.source)) || doc.corrections.some((c) => affected(c.source)) || doc.candidates.some((c) => affected(c.source)) || affected(doc.lastReply);
     if (!touched) return;
 

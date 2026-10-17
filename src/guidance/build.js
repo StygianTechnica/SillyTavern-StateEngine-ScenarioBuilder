@@ -23,7 +23,6 @@ const labelOf = (list, id) => list.find(([key]) => key === id)?.[1] ?? id;
 export const SECTIONS = Object.freeze([
     { key: 'director', title: 'Game master', priority: 7, keep: true },
     { key: 'location', title: 'Where and when', priority: 5, keep: true },
-    { key: 'cast', title: 'Characters present', priority: 4, keep: false },
     { key: 'scene', title: 'Scene', priority: 3, keep: false },
     { key: 'quests', title: 'Active quests', priority: 2, keep: false },
     { key: 'lore', title: 'Lore', priority: 2, keep: false },
@@ -140,8 +139,10 @@ function locationSection(input) {
     if (lying.length) around.push(`Things here that can come into play: ${andList(named(lying, 8))}.`);
     if (carried.length) around.push(`Carried by those present: ${andList(named(carried, 8))}.`);
     if (loc?.creatures?.length) around.push(`Also here: ${andList(named(loc.creatures, 6))}.`);
-    const ways = [...named(loc?.places, 8), ...(loc?.partOf ? [`back out to ${clean(loc.partOf.name)}`] : [])];
-    if (ways.length) around.push(`From here one can go to ${orList(ways)}.`);
+    const ways = named(loc?.places, 8);
+    const out = loc?.partOf ? `back out to ${clean(loc.partOf.name)}` : '';
+    if (ways.length) around.push(`From here one can go to ${orList(ways)}${out ? `, or ${out}` : ''}.`);
+    else if (out) around.push(`From here one can go ${out}.`);
     if (around.length) lines.push(around.join(' '));
     if (loc?.path?.length) lines.push('Let what the characters see, hear and smell here colour the reply, and keep them in this place unless the story moves them.');
     return { full: lines.join('\n'), compact: [head.join(' '), loc?.description ? sentence(truncate(loc.description, 200)) : ''].filter(Boolean).join(' ') };
@@ -163,6 +164,39 @@ function sceneSection(scene) {
     if (!title && !premise) return null;
     const full = [title ? `The current scene: ${unstop(title)}.` : '', premise ? sentence(truncate(premise, 400)) : ''].filter(Boolean).join(' ');
     return { full, compact: title ? `The current scene: ${unstop(title)}.` : sentence(truncate(premise, 120)) };
+}
+
+// ---------------------------------------------------------------- cast
+
+// One line per character present, for sb__cast (its own output, so it can
+// be placed above the guidance). The player character's line says only who
+// they are: nothing about what they want, feel or mean to do, which a model
+// would take as a cue to write for them.
+function castLine(c) {
+    const name = clean(c.name);
+    if (c.player) return `- ${name}${clean(c.role) ? ` (${clean(c.role)})` : ''}: the player character, played by the user.`;
+    const bits = [];
+    if (clean(c.role)) bits.push(firstUpper(unstop(c.role)));
+    if (clean(c.description)) bits.push(unstop(truncate(c.description, 160)));
+    if (clean(c.personality)) bits.push(unstop(truncate(c.personality, 90)));
+    if (clean(c.goals)) bits.push(`Wants: ${unstop(firstLower(truncate(c.goals, 110)))}`);
+    const now = [clean(c.mood) ? lower(unstop(c.mood)) : '', clean(c.intent) ? `means to ${unstop(firstLower(truncate(c.intent, 100))).replace(/^to /i, '')}` : ''].filter(Boolean);
+    if (now.length) bits.push(`Now: ${now.join(', ')}`);
+    if (clean(c.condition)) bits.push(unstop(truncate(c.condition, 80)));
+    for (const r of c.relations ?? []) bits.push(firstUpper(unstop(truncate(r, 90))));
+    return `- ${name}${bits.length ? `: ${bits.join('. ')}.` : ''}`;
+}
+
+// sb__cast: who is present. '' when nobody is known to be.
+export function buildCast(input) {
+    const list = (input.cast ?? []).filter((c) => clean(c?.name));
+    if (!list.length) return '';
+    const others = list.filter((c) => !c.player);
+    const player = list.find((c) => c.player);
+    const lines = ['Characters present:', ...list.map(castLine)];
+    if (others.length) lines.push(`Write ${others.length === 1 ? clean(others[0].name) : 'each of them'} true to what they want and how they feel; they act on their own intentions.${player ? ` Never write ${clean(player.name)}'s words, actions, thoughts or feelings.` : ''}`);
+    else if (player) lines.push(`Never write ${clean(player.name)}'s words, actions, thoughts or feelings.`);
+    return `${REFERENCE_HEADER}\n${lines.join('\n')}`;
 }
 
 function castParagraph(c) {
@@ -223,7 +257,6 @@ const BUILDERS = {
     overview: (input) => overviewSection(input.overview),
     location: (input) => locationSection(input),
     scene: (input) => sceneSection(input.scene),
-    cast: (input) => castSection(input.cast),
     quests: (input) => questsSection(input.quests),
     lore: (input) => loreSection(input.lore),
     corrections: (input) => correctionsSection(input.corrections),
@@ -258,7 +291,6 @@ export function buildGuidance(input) {
         overview: 'The setting overview.',
         location: input.location?.path?.length ? `Canonical location, its path and inherited environment; canonical time and weather.` : 'Canonical time and weather.',
         scene: 'The canonical scene title and premise.',
-        cast: (input.cast ?? []).map((c) => `${c.name}: ${c.why ?? 'present'}`).join('; ') || 'Characters present.',
         corrections: 'Adjustments made by validation, kept for a few replies.',
         quests: (input.quests ?? []).map((q) => `${q.name}: ${q.why ?? 'active'}`).join('; ') || 'Active quests.',
         lore: 'Lore tied to this place or the people present, or named in the last few messages.',

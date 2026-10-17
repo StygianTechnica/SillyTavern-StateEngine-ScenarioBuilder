@@ -51,3 +51,9 @@ export async function assignCalendarToVariable(ref, calendarId) {
     const { stateEngine, instanceId } = await getStateEngine();
     return stateEngine.assignCalendarToVariable(EXTENSION_ID, instanceId, ref, calendarId);
 }
+
+// Only the asked-for fields ("season", "cycle", "weekdayName", ...).
+export async function formatDateTimePartial(calendarId, scalarTime, fields) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.formatDateTimePartial(EXTENSION_ID, instanceId, calendarId, scalarTime, fields);
+}

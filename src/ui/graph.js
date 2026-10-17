@@ -11,6 +11,7 @@
 //   - hover a node to light up its neighbours; click it to open its sheet.
 
 import { getChatDoc } from '../store/chat-store.js';
+import { listRelations } from '../library/relations-edit.js';
 import { getObjectTypes, CHAPTER_LABELS, listEntries, getParents, getGraphPositions, setGraphPosition, clearGraphPositions } from '../library/library.js';
 import { safeImageSrc } from '../images/attach.js';
 import { buildGraph, layoutGraph, boundsOf } from './graph-layout.js';
@@ -20,7 +21,7 @@ import { h, icon, button } from './dom.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const NODE_R = 22;
-const EDGE_LABELS = { parent: 'Inside', ref: 'Reference', related: 'Related' };
+const EDGE_LABELS = { parent: 'Inside', ref: 'Reference', related: 'Related', bond: 'Relationship' };
 
 function s(tag, attrs = {}, ...children) {
     const el = document.createElementNS(SVG, tag);
@@ -42,7 +43,7 @@ export async function renderGraph() {
     const parents = getParents(settingId);
     ws.graphTypes ??= null; // null = every type
     const filters = { types: ws.graphTypes ? new Set(ws.graphTypes) : null, inPlayOnly: ws.graphInPlay === true };
-    const graph = buildGraph({ entries, parents, doc, filters });
+    const graph = buildGraph({ entries, parents, doc, filters, relations: listRelations(settingId) });
     const pinned = getGraphPositions(settingId);
     const pos = layoutGraph(graph, pinned, { warm: ws.graphLast?.settingId === settingId ? ws.graphLast.pos : null });
     ws.graphLast = { settingId, pos };

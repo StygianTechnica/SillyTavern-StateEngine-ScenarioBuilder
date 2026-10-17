@@ -62,6 +62,32 @@ These came after spec v0.5 and should be folded into its next revision.
   previous briefing stands when it is late. The guidance is meant to replace
   world-info entries, so the token budget default is now 2000.
 
+- **Scenario Builder keeps the clock and the scene.** It is the authority for
+  the canonical state: time on the setting's State Engine calendar (fantasy
+  calendars included), part of day, simulated weather and temperature
+  (climate zone per region, season, fronts that last), who is present and what
+  is in the scene (items, creatures, active quests, relevant lore, events).
+  Canonical values are deterministic and written only by Scenario Builder;
+  the prompted `sb__scene_*` variables, `sb__scene_deltatime` included, are
+  observations checked against the story. Time moves on before each reply
+  by what the director says the reply covers (TIME line; per-turn default
+  otherwise) and catches up afterwards when the story narrates a bigger skip.
+  A weather the story sets (story leads) holds for two watches, then the
+  simulation resumes. Scenario State (preset v3) is self-contained -
+  calculated flags included - so Scene Context can be switched off, and it is
+  meant to replace the reactive state shown in Pretty Panels.
+- **The player character is never written for.** One character per setting
+  is marked the player character (else the one named like the persona). The
+  guidance and the director's briefing are about the other characters and
+  the world; the player character's line says only who they are.
+- **Characters present is its own output** (`sb__cast`), concise, so it can be
+  placed above the guidance in Curator.
+- **The director adds only what the chat brought up** - enforced in code: a
+  new thing's name must share a distinctive word with the last few messages.
+- **No wait before the message is taken.** For a send, the work before a
+  reply runs on USER_MESSAGE_RENDERED (after SillyTavern posts the message,
+  before it builds the prompt) instead of GENERATION_STARTED.
+
 ## Catalog UI (iterating - "a fun place to do worldbuilding")
 
 - [x] **Graph view** - done (`ui/graph.js`, `ui/graph-layout.js`): a Graph
@@ -77,7 +103,7 @@ These came after spec v0.5 and should be folded into its next revision.
   metadata (SB-110, SB-112); "Correct it" on a story relationship writes your
   own version, which takes precedence in guidance and generation (Archivist
   itself is never written, SB-005).
-- [ ] Show authored relationships as edges in the graph view.
+- [x] Show authored relationships as edges in the graph view.
 - [x] Relationships from Archivist's compiled memory (dossiers): shown on the
   sheet, given to generation, and - between the characters present - in the
   guidance's cast lines.
@@ -92,7 +118,7 @@ These came after spec v0.5 and should be folded into its next revision.
 - [ ] Undo for deletes (SB-127; needs a tombstone, since State Engine ids
   cannot be recreated).
 - [ ] Keyboard navigation (arrows through cards, Enter to open, E to edit).
-- [ ] Remember the window's last tab/chapter/sheet across reloads.
+- [x] Remember the window's last tab and chapter across reloads (not the open sheet yet).
 - [ ] Map-like outline for locations (SB-141).
 
 ## World definition
@@ -191,8 +217,8 @@ calls (one entry at a time, retry, and the entry text as a fallback).
 - [ ] Director: a "think after each reply" mode (zero wait, written before
   the player's next message), and per-character perspective briefings once
   State Engine offers perspectives.
-- [ ] Director: add newly needed people to the canonical cast when they
-  enter, not only to the library.
+- [x] Director: people it says arrive (ENTERS) or adds as here join the
+  canonical cast; LEAVES takes them out.
 - [ ] Perspective and knowledge boundaries, POV modes (9.4, OPEN-5).
 - [x] Quests (9.5): made automatically from Archivist's quest seeds, goals,
   plans and hooks (plus a "Scan Archivist for quests" catch-up), objectives
@@ -205,8 +231,13 @@ calls (one entry at a time, retry, and the entry text as a fallback).
   sb__quests in Scenario State; completion/abandon conditions checked
   automatically (today they are shown to the user and the model only).
 - [ ] Events firing on deterministic conditions (SB-435).
-- [ ] Time advancing by rules; generated weather (SB-211); a calendar model
-  (OPEN-10).
+- [x] Time advancing by rules; generated weather (SB-211); a calendar model
+  (OPEN-10): the clock, weather simulation, sky (suns, moons), holidays and
+  the Calendar tab.
+- [ ] Weather the director may call for (a storm the plot needs), and
+  magical weather; per-season climate overrides per region.
+- [ ] Hunger and tiredness tracked per character from hours awake and meals
+  (today: by the hour only).
 - [ ] Status line in the chat (SB-702).
 - [ ] Curator static blocks such as "Director rules" (SB-313).
 - [ ] New-chat start from a character card or template (SB-504).

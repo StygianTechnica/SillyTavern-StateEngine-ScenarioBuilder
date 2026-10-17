@@ -168,7 +168,9 @@ export function normalizeCalendar(value) {
 }
 
 export function emptySettingDoc() {
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {} }, calendar: emptyCalendar() };
+    // playerId: the character the user plays ('' = the one named like the
+    // SillyTavern persona, if any) - the guidance never writes for them.
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {} }, calendar: emptyCalendar(), playerId: '' };
 }
 
 // Brings any stored setting document (or nothing) to the current shape.
@@ -195,7 +197,7 @@ export function normalizeSettingDoc(doc) {
         : [];
     return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true,
         imports: Array.isArray(d.imports) ? d.imports.filter(isObject).slice(-IMPORTS_KEPT) : [],
-        relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions) }, calendar: normalizeCalendar(d.calendar) };
+        relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions) }, calendar: normalizeCalendar(d.calendar), playerId: str(d.playerId) };
 }
 
 export function emptyCanonical() {

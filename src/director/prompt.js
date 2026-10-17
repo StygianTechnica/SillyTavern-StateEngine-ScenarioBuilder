@@ -21,7 +21,19 @@ const cut = (text, max) => {
 const bare = (text) => clean(text).replace(/[.;,]+$/, '');
 
 export const NEW_KINDS = Object.freeze({ location: 'location', place: 'location', room: 'location', character: 'character', npc: 'character', person: 'character', item: 'item', object: 'item' });
-export const MAX_NEW = 3;
+export const MAX_NEW = 2;
+
+// Words too common to tie a new thing to the chat.
+const STOP = new Set(['the', 'and', 'old', 'new', 'with', 'from', 'that', 'this', 'room', 'place', 'great', 'little', 'small', 'large', 'house', 'hall']);
+
+// Whether a new thing's name is tied to the recent chat: one of its
+// distinctive words (4+ letters) appears there. The director may only add
+// what the story has brought up - never something invented for colour.
+export function mentionedIn(name, recentText) {
+    const text = String(recentText ?? '').toLowerCase();
+    const words = String(name ?? '').toLowerCase().split(/[^a-z0-9'\u00c0-\u024f]+/).filter((w) => w.length >= 4 && !STOP.has(w));
+    return words.some((w) => text.includes(w) || (w.endsWith('s') && text.includes(w.slice(0, -1))));
+}
 
 // The dossier as plain facts for the director (not for the roleplay
 // model): the director needs everything, compactly.
@@ -64,6 +76,10 @@ export function dossierText(input) {
     const cast = (input.cast ?? []).filter((c) => clean(c?.name));
     lines.push('', cast.length ? 'PEOPLE PRESENT:' : 'PEOPLE PRESENT: not known yet.');
     for (const c of cast) {
+        if (c.player) {
+            lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}: the player character, played by the human - never write for them.`);
+            continue;
+        }
         const bits = [
             clean(c.role), cut(c.description, 300),
             clean(c.personality) && `personality: ${cut(c.personality, 200)}`,
@@ -100,12 +116,12 @@ export function dossierText(input) {
 //   userName, previousNote, memories, limits, allowCreate, canonOnly }
 // -> { system, prompt }
 export function buildDirectorPrompt(input) {
-    const userName = clean(input.userName) || 'the player';
+    const userName = clean((input.cast ?? []).find((c) => c.player)?.name) || clean(input.userName) || 'the player';
     const creating = input.allowCreate && !input.canonOnly;
     const system = [
         'You are the game master of an ongoing roleplay. You do not write the story yourself: another writer (the narrator) writes the next reply.',
         'Your job is to brief that narrator before it writes, in plain narrative prose, so its reply is grounded in the actual state of the scene and moves the story forward sensibly.',
-        `Never decide what ${userName} says, does, thinks or feels; ${userName} is played by a human.`,
+        `${userName} is the player character, played by a human. Never decide or suggest what ${userName} says, does, thinks, feels or will do next, and do not describe the scene through ${userName}'s eyes; brief the narrator on the other characters and the world, which react to ${userName}.`,
         'Never contradict the facts you are given. Only use what fits the world limits.',
     ].join(' ');
 
@@ -123,7 +139,7 @@ export function buildDirectorPrompt(input) {
         'WRITE THE BRIEFING',
         `Address the narrator directly ("In this reply..."), in three to five paragraphs of flowing prose - no headings, no bullet lists, no tables. Cover, in this order:`,
         `1. Where things stand right now, in a sentence or two, picking up from ${userName}'s latest message.`,
-        '2. The people present: what each one wants at this moment, how they feel about the others, and how they are likely to react to what just happened. Weave this together; do not list them.',
+        `2. The other people present (not ${userName}): what each one wants at this moment, how they feel about the others, and how they are likely to react to what ${userName} just did. Weave this together; do not list them.`,
         '3. What should probably happen next: one or two natural developments the reply could move toward, offered as direction rather than a script, nudging gently toward an open quest when it fits.',
         '4. What to show: a few concrete sensory details of this place (what can be seen, heard, smelled) and any item or feature that matters now.',
         'Keep it under 400 words.',
@@ -145,11 +161,11 @@ export function buildDirectorPrompt(input) {
     if (creating) {
         parts.push(
             '',
-            'If the scene clearly needs something the facts above do not have - a room or place off this location that someone is about to enter, a person who should appear, an item about to be used - invent it so it fits, mention it in the briefing, and after the briefing add one line per new thing (at most three):',
+            'Only if the latest messages name or clearly call for something the facts above do not have - a place the characters are about to go to, a person the chat has mentioned who is about to appear, an item someone is about to use - give it its details, mention it in the briefing, and add one line per thing (at most two):',
             'NEW location | Name | one-sentence description',
             'NEW character | Name | one-sentence description | here (or nearby)',
             'NEW item | Name | one-sentence description',
-            'Add NEW lines only when they are needed now. Never add something that already exists above.',
+            'Most replies need no NEW lines. Never invent something the chat has not brought up, never add something just for colour, and never add something that already exists above.',
         );
     } else {
         parts.push('', 'Use only places, people and items named above; do not invent new named ones.');

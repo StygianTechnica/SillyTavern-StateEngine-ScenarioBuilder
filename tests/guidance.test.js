@@ -1,4 +1,4 @@
-import { buildGuidance, buildStateBlock, truncate } from '../src/guidance/build.js';
+import { buildGuidance, buildStateBlock, buildCast, truncate } from '../src/guidance/build.js';
 import { fitToBudget, estimateTokens } from '../src/guidance/budget.js';
 import { REFERENCE_HEADER } from '../src/constants.js';
 
@@ -22,7 +22,7 @@ describe('guidance', () => {
         expect(text).toContain('It is evening on day 3;');
         expect(text).toContain('the weather is rainy and windy; the air is cool.');
         expect(text).toContain('The climate is humid.');
-        expect(text).toContain('Mira, the innkeeper, is here. Sharp-eyed and tired. Right now Mira feels suspicious and means to stall for time.');
+        expect(text).not.toContain('Mira, the innkeeper');
         expect(text).toContain('Hold to these: The scene is still at Brass Market, not the docks.');
         expect(sections.filter((s) => !['quests', 'director', 'lore'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
         expect(text).not.toMatch(/^\[/m);
@@ -38,13 +38,13 @@ describe('guidance', () => {
 
     it('is empty when there is nothing to say (SB-304)', () => {
         expect(buildGuidance({ budget: 600 }).text).toBe('');
-        expect(buildGuidance({ ...input, sections: { director: false, overview: false, location: false, scene: false, cast: false, corrections: false } }).text).toBe('');
+        expect(buildGuidance({ ...input, sections: { director: false, overview: false, location: false, scene: false, corrections: false } }).text).toBe('');
     });
 
     it('marks sections switched off', () => {
-        const { text, sections } = buildGuidance({ ...input, sections: { cast: false } });
-        expect(text).not.toContain('Mira (innkeeper)');
-        expect(sections.find((s) => s.key === 'cast').mode).toBe('off');
+        const { text, sections } = buildGuidance({ ...input, sections: { overview: false } });
+        expect(text).not.toContain('A port city where the old gods are waking.');
+        expect(sections.find((s) => s.key === 'overview').mode).toBe('off');
     });
 
     it('compacts, then drops, low-priority sections first and keeps location and corrections', () => {
@@ -87,8 +87,8 @@ describe('state block', () => {
 
 describe('relationships in the cast', () => {
     it('adds how present characters feel toward each other', () => {
-        const { text } = buildGuidance({ cast: [{ name: 'Mira', role: 'innkeeper', relations: ['toward Tobin: debtor, wary, worsening'] }], budget: 600 });
-        expect(text).toContain('Mira, the innkeeper, is here. Toward Tobin: debtor, wary, worsening.');
+        const text = buildCast({ cast: [{ name: 'Mira', role: 'innkeeper', relations: ['toward Tobin: debtor, wary, worsening'] }] });
+        expect(text).toContain('- Mira: Innkeeper. Toward Tobin: debtor, wary, worsening.');
     });
 });
 
@@ -107,5 +107,23 @@ describe('director note in the guidance', () => {
         expect(text.startsWith(`${REFERENCE_HEADER}
 ${note}`)).toBe(true);
         expect(sections.find((s) => s.key === 'director').mode).toBe('full');
+    });
+});
+
+describe('characters present (sb__cast)', () => {
+    const cast = [
+        { name: 'Mira', role: 'innkeeper', description: 'Sharp-eyed and tired.', personality: 'Dry humour', goals: 'Keep the inn', mood: 'Suspicious', intent: 'stall for time' },
+        { name: 'Ash', role: 'sellsword', description: 'Scarred.', mood: 'Angry', intent: 'draw a blade', thought: 'Kill him.', player: true },
+    ];
+    it('is one line each, the player character marked and never given wants or moods', () => {
+        const text = buildCast({ cast });
+        expect(text.startsWith(`${REFERENCE_HEADER}\nCharacters present:\n`)).toBe(true);
+        expect(text).toContain('- Mira: Innkeeper. Sharp-eyed and tired. Dry humour. Wants: keep the inn. Now: suspicious, means to stall for time.');
+        expect(text).toContain('- Ash (sellsword): the player character, played by the user.');
+        expect(text).not.toMatch(/angry|blade|Kill him/i);
+        expect(text).toContain("Never write Ash's words, actions, thoughts or feelings.");
+    });
+    it('is empty with nobody present', () => {
+        expect(buildCast({ cast: [] })).toBe('');
     });
 });

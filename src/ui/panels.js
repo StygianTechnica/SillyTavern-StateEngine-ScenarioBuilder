@@ -18,6 +18,7 @@ import { getLastBuild, syncNow } from '../guidance/sync.js';
 import { curatorStatus, curatorLine } from './status-model.js';
 import { activateForOpenChat } from './activate.js';
 import { enrichListed } from '../library/intake.js';
+import { holdStoryWeather, advanceBy } from '../calendar/clock.js';
 import { getEnrichmentStatus, cancelEnrichment } from '../generate/enrich.js';
 import { runDirector, getDirectorStatus } from '../director/run.js';
 import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
@@ -57,13 +58,30 @@ export async function renderScene() {
     const location = select([{ value: '', label: '(none)' }, ...await pathLabels('location')], draft.locationId, { onchange: (e) => set('locationId', e.target.value) });
     const toggle = (key, value) => (e) => set(key, e.target.checked ? [...new Set([...draft[key], value])] : draft[key].filter((x) => x !== value));
 
+    const clockOn = getSettings().time.enabled && Number.isFinite(c.time);
     const save = async () => {
         ws.dirty = false;
-        await setScene({ ...draft, day: Math.max(1, Math.round(Number(draft.day) || 1)) }, 'Edited the scene');
+        const patch = { ...draft, day: Math.max(1, Math.round(Number(draft.day) || 1)) };
+        if (clockOn) {
+            // The clock owns the time; weather set by hand holds a while.
+            delete patch.time;
+            delete patch.dayPart;
+            delete patch.day;
+            const changedWeather = JSON.stringify(draft.weather) !== JSON.stringify(c.weather) || draft.temperature !== c.temperature;
+            if (changedWeather) await holdStoryWeather(chatKey, settingId, draft.weather, draft.temperature);
+        }
+        await setScene(patch, 'Edited the scene');
         toast('success', 'Scene saved.');
         rerender();
     };
     const advance = async () => {
+        if (clockOn) {
+            ws.dirty = false;
+            await advanceBy(chatId, chatKey, settingId, '1 hour', { source: 'user', note: 'Advanced the time' });
+            await setScene({}, 'Advanced the time');
+            rerender();
+            return;
+        }
         const index = DAY_PARTS.indexOf(c.dayPart);
         const next = index === -1 ? { dayPart: DAY_PARTS[0] } : index === DAY_PARTS.length - 1 ? { dayPart: DAY_PARTS[0], day: c.day + 1 } : { dayPart: DAY_PARTS[index + 1] };
         ws.dirty = false;
@@ -73,7 +91,8 @@ export async function renderScene() {
 
     let observedCol = h('div', { class: 'sb-muted' }, 'Activate Scenario State in this chat to see what the story says.');
     if (status.active) {
-        const obs = readObserved(await getVariableValues(chatId, OBSERVED_NAMES));
+        const raw = await getVariableValues(chatId, OBSERVED_NAMES);
+        const obs = readObserved(raw);
         const nameOf = async (id) => (id ? (await getObject(chatId, id))?.name ?? id : '');
         const rows = [
             ['Location', await nameOf(obs.location)],
@@ -82,6 +101,7 @@ export async function renderScene() {
             ['Temperature', obs.temperature],
             ['Indoors', obs.indoor === null ? '' : (obs.indoor ? 'yes' : 'no')],
             ['Title', obs.title],
+            ['Time passed', typeof raw.scene_deltatime === 'string' ? raw.scene_deltatime : ''],
         ];
         observedCol = h('dl', { class: 'sb-glance' }, rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v || '—')]));
     }
@@ -95,11 +115,16 @@ export async function renderScene() {
                 h('div', { class: 'sb-field' }, h('span', { class: 'sb-field-label' }, 'Characters present'),
                     characters.length ? h('div', { class: 'sb-checks' }, characters.map((ch) => h('label', { class: 'checkbox_label' },
                         h('input', { type: 'checkbox', checked: draft.castIds.includes(ch.id), onchange: toggle('castIds', ch.id) }), h('span', {}, ch.name))))
-                        : h('small', { class: 'sb-hint' }, 'No NPCs in the library yet.')),
-                h('div', { class: 'sb-row' },
-                    field('Day', h('input', { class: 'text_pole', type: 'number', min: 1, value: draft.day, oninput: (e) => set('day', e.target.value) })),
-                    field('Time of day', select([{ value: '', label: '—' }, ...DAY_PARTS.map((p) => ({ value: p, label: p }))], draft.dayPart, { onchange: (e) => set('dayPart', e.target.value) })),
-                    button('Advance', () => void advance(), { iconName: 'fa-forward', title: 'Next time of day' })),
+                        : h('small', { class: 'sb-hint' }, 'No characters in the library yet.')),
+                clockOn
+                    ? h('div', { class: 'sb-row' },
+                        field('Time', h('span', {}, `${c.dayPart || '—'}, day ${c.day} of the story`), 'Kept by the clock - set it on the Calendar tab.'),
+                        button('+1 hour', () => void advance(), { iconName: 'fa-forward' }),
+                        button('Calendar', () => { ws.tab = 'calendar'; rerender(); }, { iconName: 'fa-calendar-days' }))
+                    : h('div', { class: 'sb-row' },
+                        field('Day', h('input', { class: 'text_pole', type: 'number', min: 1, value: draft.day, oninput: (e) => set('day', e.target.value) })),
+                        field('Time of day', select([{ value: '', label: '—' }, ...DAY_PARTS.map((p) => ({ value: p, label: p }))], draft.dayPart, { onchange: (e) => set('dayPart', e.target.value) })),
+                        button('Advance', () => void advance(), { iconName: 'fa-forward', title: 'Next time of day' })),
                 h('div', { class: 'sb-field' }, h('span', { class: 'sb-field-label' }, 'Weather'),
                     h('div', { class: 'sb-checks' }, WEATHER_VALUES.map((w) => h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: draft.weather.includes(w), onchange: toggle('weather', w) }), h('span', {}, w))))),
                 h('div', { class: 'sb-row' },
@@ -189,7 +214,7 @@ export async function renderReview() {
 
 // ---------------------------------------------------------------- history
 
-const SOURCE_LABELS = { user: 'You', validation: 'Story', review: 'Review', revert: 'Revert' };
+const SOURCE_LABELS = { user: 'You', validation: 'Story', story: 'Story', review: 'Review', revert: 'Revert', clock: 'Clock', director: 'Game master' };
 const KEY_LABELS = { locationId: 'Location', castIds: 'Characters', weather: 'Weather', temperature: 'Temperature', indoor: 'Indoors', dayPart: 'Time of day', day: 'Day', sceneTitle: 'Scene', scenePremise: 'Premise' };
 
 export async function renderHistory() {
@@ -260,6 +285,9 @@ export async function renderPreview() {
         directorLine,
         build.inert ? h('div', { class: 'sb-callout sb-warn' }, icon('fa-circle-info'), h('span', {}, `The outputs are empty: ${build.reason}`),
             /not active|missing/.test(build.reason) ? button('Activate Scenario State', async () => { if (await activateForOpenChat()) { await syncNow(); rerender(); } }, { iconName: 'fa-toggle-on', cls: 'sb-primary' }) : null) : null,
+        h('h3', {}, 'Characters present'),
+        h('small', { class: 'sb-hint' }, 'sb__cast - its own block, so you can place it above the guidance in Curator.'),
+        h('pre', { class: 'sb-pre' }, build.cast || '(empty)'),
         h('h3', {}, `Narrative guidance - ~${build.guidance.tokens} of ${getSettings().tokenBudget} tokens`),
         h('pre', { class: 'sb-pre' }, build.guidance.text || '(empty)'),
         h('table', { class: 'sb-sections' },

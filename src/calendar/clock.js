@@ -14,7 +14,7 @@ import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { getSettingDoc } from '../store/setting-store.js';
 import { emptyCalendar } from '../store/schema.js';
 import { setCanonical } from '../state/canonical.js';
-import { getDateTimeParts, formatDateTime, advanceDateTime, getCalendarDefinition } from '../api/calendar.js';
+import { getDateTimeParts, formatDateTime, formatDateTimePartial, advanceDateTime, getCalendarDefinition } from '../api/calendar.js';
 import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance } from './moment.js';
 import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.js';
 import { weatherAt } from './weather.js';
@@ -93,14 +93,23 @@ export async function momentAt(settingId, scalar, { locationId = '', indoor = nu
         // Formatting unavailable.
     }
     const monthName = def.months?.[parts.month - 1]?.name ?? '';
+    // The calendar's own season names when it has seasons.
+    let season = '';
+    try {
+        season = (await formatDateTimePartial(calendarId, scalar, ['season']))?.season ?? '';
+    } catch {
+        season = '';
+    }
     return {
         calendarId, def, options, parts, dayIndex, dayOfYear: doy, yearLength: yl, place, sky, weather, holidays,
-        season: seasonName(doy, yl),
+        season: season || seasonName(doy, yl),
         holidayText: holidayText(holidays),
         needs: needsAt(sky.fraction),
         dateText, timeText: timeText.replace(/:\d\d$/, ''),
         // "Thursday, the 4th of Stormfall" style words for the narrator.
-        dateWords: [parts.weekdayName, monthName ? `day ${parts.day} of ${monthName}` : '', parts.year && def.leapYearRule !== 'gregorian' ? `year ${parts.year}` : (parts.year ? String(parts.year) : '')].filter(Boolean).join(', '),
+        dateWords: def.leapYearRule === 'gregorian'
+            ? [parts.weekdayName, `${parts.day} ${monthName} ${parts.year}`].filter(Boolean).join(', ')
+            : [parts.weekdayName, monthName ? `day ${parts.day} of ${monthName}` : '', parts.year ? `year ${parts.year}` : ''].filter(Boolean).join(', '),
     };
 }
 
@@ -171,7 +180,7 @@ export async function advanceBy(chatId, chatKey, settingId, text, { planned = fa
 // After a reply: how much time the story says passed (sb__scene_deltatime,
 // counted from before the player's message). When that is clearly more than
 // the clock moved, it catches up. -> the history entry, or null.
-export async function catchUpWithStory(chatId, chatKey, settingId, deltaText) {
+export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, sourceMessage = '') {
     const doc = getChatDoc(chatKey);
     const planned = doc.clock.planned;
     updateChatDoc(chatKey, (d) => { d.clock.planned = null; });
@@ -183,7 +192,7 @@ export async function catchUpWithStory(chatId, chatKey, settingId, deltaText) {
     const { def } = await calendarFor(settingId);
     const tolerance = Math.max(15 * (def.secondsPerMinute || 60), 0.25 * ((planned?.to ?? now) - from));
     if (target <= now + tolerance) return null;
-    return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The story moved time on: ${deltaText}` });
+    return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The story moved time on: ${deltaText}`, sourceMessage });
 }
 
 // The default advance for a reply nobody planned.
@@ -201,4 +210,44 @@ export async function holdStoryWeather(chatKey, settingId, weather, temperature)
     const watch = secondsPerDay(def) / 4;
     const until = (Math.floor(c.time / watch) + 2) * watch;
     updateChatDoc(chatKey, (d) => { d.clock.override = { until, weather: weather ?? d.canonical.weather, temperature: temperature ?? d.canonical.temperature }; });
+}
+
+// Sets the clock to a date and time written out ("1203-04-12 08:00",
+// "Stormfall 17", "set time to ..."), backward too. -> the new time or null.
+export async function jumpTo(chatId, chatKey, settingId, text) {
+    const now = await ensureClock(chatId, chatKey, settingId);
+    const { calendarId } = await calendarFor(settingId);
+    let to = null;
+    try {
+        to = await advanceDateTime(calendarId, now, String(text ?? ''));
+    } catch {
+        to = null;
+    }
+    if (!Number.isFinite(to)) return null;
+    await setTime(chatId, chatKey, settingId, to, { source: 'user', note: `Set the date: ${text}` });
+    updateChatDoc(chatKey, (d) => { d.clock.planned = null; });
+    return to;
+}
+
+// The first day of the month `offset` months from the one `scalar` is in:
+// { dayIndex, parts, days } - for the calendar grid.
+export async function monthAt(settingId, scalar, offset = 0) {
+    const { calendarId, def } = await calendarFor(settingId);
+    const perDay = secondsPerDay(def);
+    const parts = await partsOf(calendarId, def, scalar);
+    let year = parts.year;
+    let month = parts.month + offset;
+    const count = def.months?.length || 12;
+    while (month < 1) { month += count; year -= 1; }
+    while (month > count) { month -= count; year += 1; }
+    const isLeap = (y) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+    const daysIn = (y, m) => (def.leapYearRule === 'gregorian' && m === 2 && isLeap(y) ? 29 : def.months?.[m - 1]?.days ?? 30);
+    // Walk from this month's first day to the target month's.
+    let dayIndex = dayIndexOf(def, scalar) - (parts.day - 1);
+    let y = parts.year;
+    let m = parts.month;
+    while (y < year || (y === year && m < month)) { dayIndex += daysIn(y, m); m += 1; if (m > count) { m = 1; y += 1; } }
+    while (y > year || (y === year && m > month)) { m -= 1; if (m < 1) { m = count; y -= 1; } dayIndex -= daysIn(y, m); }
+    const first = await partsOf(calendarId, def, dayIndex * perDay + perDay / 2);
+    return { dayIndex, parts: first, days: daysIn(year, month), year, month, monthName: def.months?.[month - 1]?.name ?? `Month ${month}`, weekdays: def.weekdayShortNames ?? def.weekdayNames ?? null };
 }

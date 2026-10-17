@@ -84,3 +84,11 @@ describe('graph layout', () => {
         expect(hashUnit('abc')).toBeGreaterThanOrEqual(0);
     });
 });
+
+describe('authored relationships in the graph', () => {
+    it('draws them as bond edges between shown nodes', () => {
+        const entries = [{ id: 'chr_a', type: 'character', name: 'A' }, { id: 'chr_b', type: 'character', name: 'B' }];
+        const { edges } = buildGraph({ entries, relations: [{ id: 'r1', from: 'chr_a', to: 'chr_b', kind: 'rival', note: 'old debt' }, { id: 'r2', from: 'chr_a', to: 'chr_x', kind: 'friend' }] });
+        expect(edges).toEqual([{ source: 'chr_a', target: 'chr_b', kind: 'bond', label: 'rival (old debt)' }]);
+    });
+});
