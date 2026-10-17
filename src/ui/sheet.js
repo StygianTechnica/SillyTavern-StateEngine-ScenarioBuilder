@@ -7,7 +7,7 @@
 
 import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc } from '../store/chat-store.js';
-import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview, playerIdOf, setPlayerId, listEntries } from '../library/library.js';
+import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview, getPlaceOverview, playerIdOf, setPlayerId, listEntries } from '../library/library.js';
 import { pathOf, descendantsOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
 import { getSettingDoc } from '../store/setting-store.js';
@@ -30,6 +30,7 @@ import { removeLink, addLink, listRelations, addRelation, removeRelation, relati
 import { sparkButton, fieldWithTools } from './controls.js';
 import { generateEntry, canGenerateFor } from '../generate/run.js';
 import { splitAliases, mergeAliases } from '../generate/prompt.js';
+import { WORLD_TYPES, MAGIC_PRESENCE, TECH_LEVELS, inheritedRealm } from '../library/world-options.js';
 import { confirmAction } from './confirm.js';
 import { ws, rerender, openSheet, closeSheet, markDirty, stopEditing } from './ws.js';
 import { h, icon, button, select, field, csv, fromCsv, toast } from './dom.js';
@@ -72,6 +73,7 @@ function startDraft(entry, defs) {
             environment: { climate: '', lighting: '', rules: '', ...(entry.meta?.environment ?? {}) },
             climate: entry.meta?.climate ?? '',
             sky: entry.meta?.sky ?? '',
+            realm: { worldType: '', magic: '', tech: '', notes: '', ...(entry.meta?.realm ?? {}) },
         },
     };
     ws.draftFor = entry.id ?? 'new';
@@ -428,7 +430,7 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
                     const v = await suggestEnvironment({
                         place: { name: ws.draft.name || entry.name, description: ws.draft.description, path: parentId ? pathOf(parents, parentId).map((x) => names.get(x)?.name).filter(Boolean) : [] },
                         inherited: { climate: inherited.climate?.value ?? '', lighting: inherited.lighting?.value ?? '' },
-                        overview: getOverview(settingId),
+                        overview: getPlaceOverview(settingId, ws.draft.meta.parentId || (isNew ? null : entry.id)),
                         brief: ws.genBrief ?? '',
                     });
                     if (v.climateZone) set('meta.climate', v.climateZone);
@@ -453,10 +455,31 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
                         'The climate the simulated weather and temperature follow here and in the places inside.'),
                     field('Sky', select([{ value: '', label: '(inherited)' }, { value: 'open', label: 'Open sky - sun, moons and weather seen' }, { value: 'none', label: 'No sky - underground or enclosed' }], ws.draft.meta.sky, { onchange: (e) => set('meta.sky', e.target.value) }))));
         }
+        // How the world differs here: a planet, a realm, a dead-magic zone.
+        let realmCard = null;
+        if (type.id === 'location') {
+            const parentId = ws.draft.meta.parentId || null;
+            const above = parentId ? inheritedRealm(parents, getSettingDoc(settingId).entries, parentId) : {};
+            const overview = getOverview(settingId);
+            const fromAbove = (key, labels, fallback) => {
+                const id = above[key] || fallback;
+                const label = labels.find(([k]) => k === id)?.[1] ?? '';
+                return `(inherited${label ? `: ${label.split(' - ')[0]}` : ''})`;
+            };
+            realmCard = h('div', { class: 'sb-card' }, h('div', { class: 'sb-card-title' }, icon('fa-earth-americas'), ' The world here',
+                h('small', { class: 'sb-hint' }, ' - for a planet, a realm or a strange zone; places inside inherit it unless they set their own')),
+                h('div', { class: 'sb-row' },
+                    field('Kind of world', select([{ value: '', label: fromAbove('worldType', WORLD_TYPES, overview.worldType) }, ...WORLD_TYPES.map(([id, label]) => ({ value: id, label }))], ws.draft.meta.realm.worldType, { onchange: (e) => set('meta.realm.worldType', e.target.value) })),
+                    field('Magic', select([{ value: '', label: fromAbove('magic', MAGIC_PRESENCE, overview.magic?.presence) }, ...MAGIC_PRESENCE.map(([id, label]) => ({ value: id, label }))], ws.draft.meta.realm.magic, { onchange: (e) => set('meta.realm.magic', e.target.value) })),
+                    field('Technology', select([{ value: '', label: fromAbove('tech', TECH_LEVELS, overview.tech?.level) }, ...TECH_LEVELS.map(([id, label]) => ({ value: id, label }))], ws.draft.meta.realm.tech, { onchange: (e) => set('meta.realm.tech', e.target.value) }))),
+                field('How it differs', textInput('meta.realm.notes', ws.draft.meta.realm.notes, { placeholder: 'e.g. a tidally locked desert world; psionics instead of magic - inherited when empty' }),
+                    'Told to the narrator, the game master and generation whenever the scene is here or inside.'));
+        }
         return h('div', { class: 'sb-tabpane' },
             parentField,
             defs.length ? h('div', { class: 'sb-fieldgrid' }, defs.map((d) => h('div', { dataset: { field: d.name } }, fieldWithTools(d.label, fieldControl(d, all), [d.kind === 'boolean' ? null : spark(d.name, ws.draft.fields[d.name])], null, genClass(d.name))))) : h('small', { class: 'sb-hint' }, 'This type has no extra fields in the setting.'),
-            envCard);
+            envCard,
+            realmCard);
     }
     // Every field, empty ones too - each with a sparkle to write or enrich it.
     const rows = defs.map((d) => {
@@ -478,6 +501,17 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
                 skyLabel ? [h('dt', {}, 'Sky'), h('dd', {}, skyLabel)] : null));
         }
     }
+    let realm = null;
+    if (type.id === 'location' && !isNew) {
+        const r = inheritedRealm(parents, getSettingDoc(settingId).entries, entry.id);
+        const label = (list, id) => list.find(([k]) => k === id)?.[1]?.split(' - ')[0] ?? id;
+        const rowsOf = [['worldType', 'Kind of world', (v) => label(WORLD_TYPES, v)], ['magic', 'Magic', (v) => label(MAGIC_PRESENCE, v)], ['tech', 'Technology', (v) => label(TECH_LEVELS, v)], ['notes', 'How it differs', (v) => v]].filter(([k]) => r[k]);
+        if (rowsOf.length) {
+            realm = h('div', { class: 'sb-card' }, h('div', { class: 'sb-card-title' }, icon('fa-earth-americas'), ' The world here'),
+                h('dl', { class: 'sb-glance' }, rowsOf.flatMap(([k, name, show]) => [h('dt', {}, name), h('dd', {}, show(r[k]),
+                    r.from[k] !== entry.id ? h('small', { class: 'sb-hint' }, ` (from ${names.get(r.from[k])?.name ?? 'a place it is in'})`) : null)])));
+        }
+    }
     return h('div', { class: 'sb-tabpane' },
         rows.length ? h('dl', { class: 'sb-details' }, rows.flatMap(([d, v, raw]) => [h('dt', {}, d.label), h('dd', { class: 'sb-dd' },
             // Click a value (or the pencil) to edit it right here.
@@ -485,6 +519,7 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
             h('span', { class: 'sb-iconbtn sb-pencil', title: 'Edit', onclick: () => editField(d.name) }, icon('fa-pen')),
             d.kind === 'boolean' ? null : readSpark(d.name, raw))])) : h('div', { class: 'sb-muted' }, 'This type has no extra fields in the setting.'),
         env,
+        realm,
         type.id === 'location' && !isNew ? routesCard(entry, names) : null);
 }
 
@@ -515,7 +550,7 @@ function routesCard(entry, names) {
             const described = inside.map((p) => ({ name: p.name, description: all.find((e) => e.id === p.id)?.description ?? '' }));
             const idOf = new Map(inside.map((p) => [p.name, p.id]));
             const existing = listRoutes(settingId).filter((r) => idOf.has(names.get(r.from)?.name) && idOf.has(names.get(r.to)?.name)).map((r) => ({ from: names.get(r.from).name, to: names.get(r.to).name }));
-            const { items, message } = await suggestRoutes({ parent: { name: entry.name, description: entry.base?.description ?? entry.description ?? '' }, places: described, overview: getOverview(settingId), existing });
+            const { items, message } = await suggestRoutes({ parent: { name: entry.name, description: entry.base?.description ?? entry.description ?? '' }, places: described, overview: getPlaceOverview(settingId, entry.id), existing });
             ws.routeSuggest = { for: entry.id, busy: false, items: items.map((r) => ({ ...r, fromId: idOf.get(r.from), toId: idOf.get(r.to) })), error: '', message };
         } catch (err) {
             ws.routeSuggest = { for: entry.id, busy: false, items: [], error: String(err?.message ?? err) };
@@ -561,8 +596,8 @@ function routesCard(entry, names) {
                 draft.to = e.target.value;
                 // Start from a guess, to change or keep.
                 if (draft.to && !draft.travel.trim()) {
-                    const guess = guessRoute(entry.id, draft.to, { up: (id) => [...pathOf(parents, id)].reverse(), places: new Map([...names.entries()].map(([id, n]) => [id, { name: n.name }])), techLevel: getOverview(settingId)?.tech?.level ?? '' })
-                        ?? guessRoute(entry.id, draft.to, { up: (id) => [id], places: new Map([...names.entries()].map(([id, n]) => [id, { name: n.name }])), techLevel: getOverview(settingId)?.tech?.level ?? '' });
+                    const guess = guessRoute(entry.id, draft.to, { up: (id) => [...pathOf(parents, id)].reverse(), places: new Map([...names.entries()].map(([id, n]) => [id, { name: n.name }])), techLevel: getPlaceOverview(settingId, entry.id)?.tech?.level ?? '' })
+                        ?? guessRoute(entry.id, draft.to, { up: (id) => [id], places: new Map([...names.entries()].map(([id, n]) => [id, { name: n.name }])), techLevel: getPlaceOverview(settingId, entry.id)?.tech?.level ?? '' });
                     if (guess) draft.travel = guess.travel;
                 }
                 rerender();
@@ -736,7 +771,7 @@ async function imageTab({ type, entry, isNew, doc, parents }) {
         type, entry,
         narrative: doc.narrative[entry.id]?.text ?? '',
         environment: { climate: inherited.climate?.value ?? '', lighting: inherited.lighting?.value ?? '' },
-        overview: getOverview(ws.ctx.settingId),
+        overview: getPlaceOverview(ws.ctx.settingId, entry.type === 'location' ? entry.id : (entry.base?.location ?? entry.location ?? null)),
     });
 }
 
@@ -772,7 +807,7 @@ async function saveSheet(type, entry, defs, isNew) {
     // Which fields came from generation (SB-136), shown on the GM tab.
     if (ws.generatedFields?.size) meta.generated = [...new Set([...(entry.meta?.generated ?? []), ...ws.generatedFields])].filter((f) => f !== 'name');
     if (isNew) meta.origin = 'user';
-    if (type.id === 'location') Object.assign(meta, { environment: d.meta.environment, climate: d.meta.climate, sky: d.meta.sky });
+    if (type.id === 'location') Object.assign(meta, { environment: d.meta.environment, climate: d.meta.climate, sky: d.meta.sky, realm: d.meta.realm });
     try {
         if (isNew) {
             const similar = await findSimilar(chatId, settingId, type.id, patch.name);

@@ -11,7 +11,7 @@
 
 import { getSettings } from '../settings.js';
 import { getChatDoc } from '../store/chat-store.js';
-import { getObjectTypes, getParents, getOverview, isCanonOnly, mayAddGeneratedDetail } from '../library/library.js';
+import { getObjectTypes, getParents, getOverview, getPlaceOverview, isCanonOnly, mayAddGeneratedDetail } from '../library/library.js';
 import { getEntryMeta } from '../store/setting-store.js';
 import { pathOf, childrenOf } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
@@ -128,7 +128,9 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     const parentForPrompt = parentId || (type.id === 'location' ? null : (draft?.fields?.location ?? null));
     const base = {
         type, fields, brief,
-        overview: getOverview(ctx.settingId),
+        // The world as it holds where the entry is: a place's own realm, or
+        // the place an entry lies in (a planet at TL12, a dead-magic zone).
+        overview: getPlaceOverview(ctx.settingId, type.id === 'location' ? (entry?.id ?? parentId) : (parentForPrompt ?? entry?.base?.location ?? entry?.location ?? null)),
         neighbours: neighboursOf(entry, all, parents, parentId),
         similarNames: (all[type.id] ?? []).filter((e) => e.id !== entry?.id).map((e) => e.name),
         memories,

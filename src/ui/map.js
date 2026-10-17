@@ -11,7 +11,7 @@
 // places roughly is all it needs. Model: src/ui/map-model.js.
 
 import { listRoutes, updateRoute, addRoute, guessRoute } from '../library/routes.js';
-import { getParents, getMapPositions, setMapPosition, getOverview } from '../library/library.js';
+import { getParents, getMapPositions, setMapPosition, getPlaceOverview } from '../library/library.js';
 import { syncNow } from '../guidance/sync.js';
 import { levelPlaces, levelRoutes, insideCounts, mapScale, estimates, seedPositions, formatMinutes } from './map-model.js';
 import { labelPoint, boundsOf } from './graph-layout.js';
@@ -280,7 +280,7 @@ function addMapRoute(settingId, a, b, pos) {
     const scale = mapScale(routes, pos);
     const fromMap = scale ? Math.hypot(pos[a.id].x - pos[b.id].x, pos[a.id].y - pos[b.id].y) * scale : null;
     const places = new Map([a, b].map((p) => [p.id, { name: p.name, description: p.base?.description ?? p.description ?? '' }]));
-    const guess = guessRoute(a.id, b.id, { up: (id) => [id], places, techLevel: getOverview(settingId)?.tech?.level ?? '' });
+    const guess = guessRoute(a.id, b.id, { up: (id) => [id], places, techLevel: getPlaceOverview(settingId, a.id)?.tech?.level ?? '' });
     const travel = (fromMap && formatMinutes(fromMap)) || guess?.travel || '10 minutes';
     addRoute(settingId, { from: a.id, to: b.id, travel, note: 'guessed - edit if wrong', guessed: true });
     toast('success', `Route added: ${a.name} - ${b.name}, ${travel} (a guess - change it on either place's sheet).`);

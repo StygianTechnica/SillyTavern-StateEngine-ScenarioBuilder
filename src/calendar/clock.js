@@ -22,6 +22,7 @@ import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.j
 import { weatherAt } from './weather.js';
 import { routeForMove, guessRoute, addRoute } from '../library/routes.js';
 import { listEntries } from '../library/library.js';
+import { placeOverview } from '../library/world-options.js';
 import { pathOf } from '../library/hierarchy.js';
 
 const FALLBACK_CALENDAR = Object.freeze({
@@ -338,7 +339,7 @@ export async function travelAlong(chatId, chatKey, settingId, fromId, toId, sour
     if (!route) {
         try {
             const places = new Map((await listEntries(chatId, settingId, 'location')).map((p) => [p.id, { name: p.name, description: p.base?.description ?? p.description ?? '' }]));
-            const guess = guessRoute(fromId, toId, { up, places, techLevel: settingDoc.overview?.tech?.level ?? '' });
+            const guess = guessRoute(fromId, toId, { up, places, techLevel: placeOverview(settingDoc.overview, parents, settingDoc.entries, fromId)?.tech?.level ?? '' });
             if (guess && places.has(guess.from) && places.has(guess.to)) route = addRoute(settingId, guess);
         } catch (err) {
             console.debug(LOG_PREFIX, 'could not guess a route', err);

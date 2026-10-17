@@ -14,7 +14,7 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, listEntries, getParents, playerIdOf } from '../library/library.js';
+import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf } from '../library/library.js';
 import { routesFrom, listRoutes } from '../library/routes.js';
 import { pathOf } from '../library/hierarchy.js';
 import { listRelations, relationsFor } from '../library/relations-edit.js';
@@ -278,7 +278,8 @@ async function run(chatId, chatKey, type, force) {
     const characters = settingId ? await listEntries(chatId, settingId, 'character') : [];
     const castIds = (guidance.cast ?? []).map((c) => c.id).filter(Boolean);
     const nearby = nearbyPeople(characters, castIds, doc.inPlay, settingId ? listRelations(settingId) : []);
-    const overview = settingId ? getOverview(settingId) : {};
+    // The world's rules as they hold where the scene is.
+    const overview = settingId ? getPlaceOverview(settingId, guidance.location?.id) : {};
     const limits = [...describeMagic(overview.magic).limits, ...describeTech(overview.tech).limits];
     const canonOnly = settingId ? isCanonOnly(settingId) : true;
     // Factions, events and earlier scenes: what the guidance does not carry.

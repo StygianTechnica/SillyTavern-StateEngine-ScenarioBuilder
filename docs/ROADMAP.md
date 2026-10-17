@@ -182,9 +182,14 @@ These came after spec v0.5 and should be folded into its next revision.
 
 ## World definition
 
-- [ ] Per-region or per-faction magic and technology (a technologically
-  advanced empire next to a backward one; magic only in one land) - the
-  location tree's inherited environment is the natural place.
+- [x] Per-place world (for science fiction and multiverse settings, or a
+  dead-magic land in a fantasy one): a location's "The world here" card sets
+  its kind of world, magic, technology level and how it differs; the places
+  inside inherit what they do not set. The guidance, the director,
+  generation, image prompts and route times all work from the world as it
+  holds where the scene (or the entry) is.
+- [ ] Per-faction magic and technology (a technologically advanced empire
+  next to a backward one, carried by its people wherever they go).
 - [x] Image prompts that respect world limits (e.g. Midjourney `--no` with
   absent magic or technology).
 - [ ] Final enumerations and custom values (OPEN-15).

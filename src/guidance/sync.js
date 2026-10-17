@@ -27,6 +27,7 @@ import { pathOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { buildGuidance, buildStateBlock, buildCast, guidanceParts, GUIDANCE_PARTS, timeText } from './build.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { relevantLore } from '../library/lore.js';
+import { placeOverview } from '../library/world-options.js';
 import { relationsFor, pairCovered } from '../library/relations-edit.js';
 import { activeQuests } from '../quests/sync.js';
 import { momentAt } from '../calendar/clock.js';
@@ -284,7 +285,8 @@ export async function gatherInputs(chatId, chatKey) {
             director: settings.director.enabled
                 ? (doc.director.direction ? { summary: doc.director.summary, direction: doc.director.direction } : splitNote(doc.director.note))
                 : '',
-            overview: library.overview,
+            // The world as it holds where the scene is (a planet's tech level...).
+            overview: placeOverview(library.overview, parents, library.entries, locationId),
             location,
             time,
             clock,

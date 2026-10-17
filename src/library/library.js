@@ -12,6 +12,7 @@ import { LOG_PREFIX } from '../constants.js';
 import * as se from '../api/objects.js';
 import { getSettingDoc, updateSettingDoc, getEntryMeta } from '../store/setting-store.js';
 import { wouldCreateCycle, parentsAfterDelete, pathOf } from './hierarchy.js';
+import { placeOverview } from './world-options.js';
 
 // ---- types
 
@@ -255,6 +256,14 @@ export function clearGraphPositions(settingId) {
 
 export function getOverview(settingId) {
     return getSettingDoc(settingId).overview;
+}
+
+// The overview as it holds in a place - its realm's kind of world, magic
+// and technology, inherited down the tree (world-options.js placeOverview).
+// The setting's own without a place.
+export function getPlaceOverview(settingId, placeId) {
+    const doc = getSettingDoc(settingId);
+    return placeOverview(doc.overview, getParents(settingId), doc.entries, placeId || null);
 }
 
 export function setOverview(settingId, patch) {
