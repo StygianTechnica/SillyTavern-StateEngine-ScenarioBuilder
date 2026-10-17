@@ -113,9 +113,13 @@ These came after spec v0.5 and should be folded into its next revision.
   workspace tab and a Book/Graph toggle on the front page; type and "in play
   only" filters; drag to pin (saved per setting), pan, zoom, hover to light
   up neighbours, click to open a sheet.
-- [ ] Graph, next: draw an edge between two nodes to create a reference;
-  Archivist relationships (allies, rivals, family) as edges; edge labels on
-  the canvas; pinch-zoom on touch screens; group/cluster by region.
+- [x] Graph, next - done: drag between two nodes (Link tool, or Shift) to
+  link them - a reference field that fits either way, a route between two
+  places (travel time guessed), or a relationship; Archivist's relationships
+  as "In the story" edges (a relationship the user wrote for the pair takes
+  their place); edge labels on the canvas ("Labels"; a lit node's always
+  show); pinch-zoom on touch screens; "Group by region" gathers everything
+  under its top-level place in a labelled box.
 - [x] Relationship editing on the sheet: links in reference fields removed
   (x) and added; authored relationships (ally, rival, family, mentor... or
   your own words, with a note, one-way or mutual) kept as Scenario Builder
@@ -141,6 +145,11 @@ These came after spec v0.5 and should be folded into its next revision.
   technology; the user keeps the ones they want.
 - [x] A place's climate can be rolled at random (dice) or written to fit it
   (wand, steerable), in edit mode on the Environment card.
+- [x] Guessed routes: a move between places no route connects adds one,
+  marked a guess, with a travel time from the places' scale (room, building,
+  settlement, region, country) and the world's technology; the clock moves
+  on by it. Edit the time in place on the sheet to make it yours; the add
+  form starts from a guess too.
 - [ ] Routes: locked or hidden ones, and travel time by means (on foot, by
   cart, by ship).
 - [ ] Merge two entries from the catalog (SB-113 merge path).
@@ -148,7 +157,13 @@ These came after spec v0.5 and should be folded into its next revision.
   cannot be recreated).
 - [ ] Keyboard navigation (arrows through cards, Enter to open, E to edit).
 - [x] Remember the window's last tab and chapter across reloads (not the open sheet yet).
-- [ ] Map-like outline for locations (SB-141).
+- [x] Map-like outline for locations (SB-141): the Locations chapter's Map
+  view, one level at a time (the top-level places first; click a place to
+  go inside, the breadcrumb to come out); places dragged to where they lie;
+  routes drawn with their travel times. The routes whose time the user set
+  give the level a scale, and each guessed route shows what the map says it
+  takes - "Apply map estimates" writes those in. Shift + drag between two
+  places adds a route.
 
 ## World definition
 

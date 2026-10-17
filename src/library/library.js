@@ -233,6 +233,19 @@ export function setGraphPosition(settingId, id, position) {
     });
 }
 
+// Where places sit on the location map: { [id]: { x, y } }.
+export function getMapPositions(settingId) {
+    return getSettingDoc(settingId).graph.map ?? {};
+}
+
+export function setMapPosition(settingId, id, position) {
+    updateSettingDoc(settingId, (doc) => {
+        doc.graph.map ??= {};
+        if (position) doc.graph.map[id] = { x: Math.round(position.x), y: Math.round(position.y) };
+        else delete doc.graph.map[id];
+    });
+}
+
 // Forgets every dragged position, so the layout starts fresh.
 export function clearGraphPositions(settingId) {
     updateSettingDoc(settingId, (doc) => { doc.graph.positions = {}; });

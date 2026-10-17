@@ -12,11 +12,14 @@ import { chatStatusOf } from './catalog-model.js';
 
 // filters: { types: Set | null (null = every type), inPlayOnly }
 // -> { nodes: [{ id, type, name, image, status }],
-//      edges: [{ source, target, kind: 'parent' | 'ref' | 'related' | 'bond', label }] }
+//      edges: [{ source, target, kind: 'parent' | 'ref' | 'related' | 'bond' | 'route' | 'story', label }] }
 // relations: the relationships the user wrote (setting doc), drawn as 'bond';
-// routes: the routes between places, drawn as 'route'.
+// routes: the routes between places, drawn as 'route';
+// story: Archivist's compiled relationships ([{ from, to, type,
+// polarityLabel }] by object id), drawn as 'story' - except for a pair the
+// user wrote a relationship for, which supersedes the story's.
 // Edges are only drawn between shown nodes, and each pair/kind/label once.
-export function buildGraph({ entries, parents = {}, doc = null, filters = {}, relations = [], routes = [], labelOf = (_t, f) => f.replace(/_/g, ' ') }) {
+export function buildGraph({ entries, parents = {}, doc = null, filters = {}, relations = [], routes = [], story = [], labelOf = (_t, f) => f.replace(/_/g, ' ') }) {
     const shown = entries.filter((e) => (!filters.types || filters.types.has(e.type))
         && (!filters.inPlayOnly || chatStatusOf(e.id, doc) !== 'unused'));
     const ids = new Set(shown.map((e) => e.id));
@@ -40,8 +43,80 @@ export function buildGraph({ entries, parents = {}, doc = null, filters = {}, re
         }
     }
     for (const r of relations ?? []) add(r.from, r.to, 'bond', r.note ? `${r.kind} (${r.note})` : r.kind);
-    for (const r of routes ?? []) add(r.from, r.to, 'route', [r.travel, r.note].filter(Boolean).join(', ') || 'route');
+    for (const r of routes ?? []) add(r.from, r.to, 'route', [r.travel, r.guessed ? 'guessed' : r.note].filter(Boolean).join(', ') || 'route');
+    const authored = (a, b) => (relations ?? []).some((r) => (r.from === a && r.to === b) || (r.from === b && r.to === a));
+    for (const r of story ?? []) {
+        if (!r?.from || !r?.to || authored(r.from, r.to)) continue;
+        add(r.from, r.to, 'story', [r.type, r.polarityLabel].filter(Boolean).join(', ') || 'story');
+    }
     return { nodes, edges };
+}
+
+// Archivist's compiled relationships (getCompiledMemory().relationships:
+// [{ from: entity, to: entity, type, polarity_label }]) as id pairs for
+// buildGraph; those naming no library object are left out.
+export function storyEdges(compiledRelationships) {
+    return (compiledRelationships ?? [])
+        .filter((r) => r?.from?.id && r?.to?.id && r.from.id !== r.to.id)
+        .map((r) => ({ from: r.from.id, to: r.to.id, type: String(r.type ?? '').trim(), polarityLabel: String(r.polarity_label ?? '').trim() }));
+}
+
+// ---- regions
+
+// The region each entry belongs to, for grouping the graph: a place's
+// top-level place; anything else, the top-level place of the place its
+// "location" field names (an item where it lies, a creature's lair). Those
+// with no place are left out. -> { [entryId]: regionId }
+export function regionsFor(entries, parents = {}) {
+    const ids = new Set((entries ?? []).map((e) => e.id));
+    const top = (id) => {
+        let at = id;
+        const seen = new Set();
+        while (parents[at] && ids.has(parents[at]) && !seen.has(at)) { seen.add(at); at = parents[at]; }
+        return at;
+    };
+    const out = {};
+    for (const e of entries ?? []) {
+        if (e.type === 'location') { out[e.id] = top(e.id); continue; }
+        const where = (e.base ?? e).location;
+        if (typeof where === 'string' && ids.has(where)) out[e.id] = top(where);
+    }
+    return out;
+}
+
+// ---- drawing a link between two nodes
+
+// What a link drawn from `source` to `target` can become:
+//   { kind: 'field', owner, other, field, label, multiple } - a reference
+//     field on either end whose type points at the other's (a faction's
+//     members, an item's owner);
+//   { kind: 'route' } - both are places;
+//   { kind: 'relation' } - an authored relationship (any two entries).
+// defsOf(typeId): the type's editor fields ({ name, label, kind, refType }).
+export function linkOptions(source, target, defsOf) {
+    const out = [];
+    for (const [owner, other] of [[source, target], [target, source]]) {
+        for (const d of defsOf(owner.type) ?? []) {
+            if ((d.kind !== 'ref' && d.kind !== 'refs') || d.refType !== other.type) continue;
+            out.push({ kind: 'field', owner: owner.id, other: other.id, field: d.name, label: `${owner.name}'s ${String(d.label || d.name).toLowerCase()}: ${other.name}`, multiple: d.kind === 'refs' });
+        }
+    }
+    if (source.type === 'location' && target.type === 'location') out.push({ kind: 'route', label: `A route between ${source.name} and ${target.name}` });
+    out.push({ kind: 'relation', label: `A relationship: ${source.name} → ${target.name}` });
+    return out;
+}
+
+// Where an edge's label sits: its middle, nudged off the line.
+export function labelPoint(a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const d = Math.max(1, Math.hypot(dx, dy));
+    return { x: (a.x + b.x) / 2 - (dy / d) * 8, y: (a.y + b.y) / 2 + (dx / d) * 8 };
+}
+
+// The box drawn around a region's members: { x, y, width, height }.
+export function regionBox(points, padding = 40) {
+    return boundsOf(Object.fromEntries(points.map((p, i) => [i, p])), padding);
 }
 
 // A stable number in [0, 1) from a string (FNV-1a), for starting positions.
@@ -59,10 +134,11 @@ const SPACING = 90;
 
 // Positions for every node: { [id]: { x, y } }. `fixed` positions (the ones
 // the user dragged) are kept exactly and pull their neighbours around them.
-// options: { width, height, iterations, warm } - `warm` is the previous
-// layout: nodes start where they were and only settle gently, so a redraw
-// (after a drag, a filter change) does not reshuffle the picture.
-export function layoutGraph({ nodes, edges }, fixed = {}, { width = 800, height = 600, iterations = 300, warm = null } = {}) {
+// options: { width, height, iterations, warm, groups } - `warm` is the
+// previous layout: nodes start where they were and only settle gently, so
+// a redraw (after a drag, a filter change) does not reshuffle the picture.
+// `groups` ({ [id]: groupId }) pulls each group's members together.
+export function layoutGraph({ nodes, edges }, fixed = {}, { width = 800, height = 600, iterations = 300, warm = null, groups = null } = {}) {
     const cx = width / 2;
     const cy = height / 2;
     const pos = new Map();
@@ -127,6 +203,25 @@ export function layoutGraph({ nodes, edges }, fixed = {}, { width = 800, height 
             const f = (d - (IDEAL[e.kind] ?? 120)) * 0.08;
             force.get(e.source).x += (dx / d) * f; force.get(e.source).y += (dy / d) * f;
             force.get(e.target).x -= (dx / d) * f; force.get(e.target).y -= (dy / d) * f;
+        }
+        // Groups pull their members towards their middle.
+        if (groups) {
+            const sums = new Map();
+            for (const id of list) {
+                const g = groups[id];
+                if (!g) continue;
+                const p = pos.get(id);
+                const s = sums.get(g) ?? { x: 0, y: 0, n: 0 };
+                s.x += p.x; s.y += p.y; s.n += 1;
+                sums.set(g, s);
+            }
+            for (const id of list) {
+                const s = sums.get(groups[id]);
+                if (!s || s.n < 2) continue;
+                const p = pos.get(id);
+                force.get(id).x += (s.x / s.n - p.x) * 0.12;
+                force.get(id).y += (s.y / s.n - p.y) * 0.12;
+            }
         }
         // A gentle pull to the centre keeps islands on screen.
         for (const id of list) {

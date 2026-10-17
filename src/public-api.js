@@ -11,6 +11,8 @@
 //   getPerspective(id)      -> null (knowledge boundaries: a later phase)
 //   getDrift()              -> { pending, candidates, recent } | null
 //   getGuidance()           -> { text, tokens, stateBlock, inert, reason }
+//   getRelationships(id)    -> Promise<[{ otherId, otherName, kind, note, direction }]>
+//                              the relationships the user wrote for an entry (both ways)
 //   SCENARIO_CHANGED_EVENT  SillyTavern event, payload chatKey
 //   DRIFT_CHANGED_EVENT     SillyTavern event, payload chatKey
 //
@@ -21,6 +23,7 @@ import { getChatDoc, SCENARIO_CHANGED_EVENT } from './store/chat-store.js';
 import { getObjectTypes, getBoundSettingId, listEntries, getEntry as libraryEntry, getLocationPathNames } from './library/library.js';
 import { DRIFT_CHANGED_EVENT } from './validate/reconcile.js';
 import { getLastBuild } from './guidance/sync.js';
+import { listRelations, relationsFor } from './library/relations-edit.js';
 
 const open = () => {
     const ref = getCurrentChatRef();
@@ -75,10 +78,27 @@ export function getGuidance() {
     return { text: build.guidance.text, tokens: build.guidance.tokens, stateBlock: build.stateBlock, inert: build.inert, reason: build.reason };
 }
 
+// The relationships the user wrote in the library for entry `id`, seen from
+// it (an "in" one reads as the other side would: "child of" for "parent
+// of"). They take precedence over the story's (Archivist's) for the pair.
+export async function getRelationships(id) {
+    const chat = open();
+    if (!chat || !id) return [];
+    const settingId = await getBoundSettingId(chat.chatId);
+    if (!settingId) return [];
+    const items = relationsFor(id, listRelations(settingId));
+    const out = [];
+    for (const item of items) {
+        const other = await libraryEntry(chat.chatId, settingId, item.otherId);
+        out.push({ otherId: item.otherId, otherName: other?.name ?? '', kind: item.kind, note: item.rel.note ?? '', direction: item.direction });
+    }
+    return out;
+}
+
 export { SCENARIO_CHANGED_EVENT, DRIFT_CHANGED_EVENT };
 
 export const scenarioBuilderApi = Object.freeze({
-    getLibrary, getEntry, getCurrentScene, getLocationPath, getPerspective, getDrift, getGuidance,
+    getLibrary, getEntry, getCurrentScene, getLocationPath, getPerspective, getDrift, getGuidance, getRelationships,
     SCENARIO_CHANGED_EVENT, DRIFT_CHANGED_EVENT,
 });
 

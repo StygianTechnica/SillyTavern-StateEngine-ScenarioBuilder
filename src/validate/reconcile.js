@@ -378,7 +378,7 @@ export function dismissAdopted(chatKey, adoptedId) {
     updateChatDoc(chatKey, (d) => { d.adopted = d.adopted.filter((a) => a.id !== adoptedId); });
 }
 
-// "Not part of this world": deletes an adopted entry from the library,
+// "Reject": deletes an adopted entry from the library,
 // puts the scene back to where it was before the story brought it in, and
 // suppresses the name from now on (later mentions are corrected).
 export async function removeAdopted(chatId, chatKey, adoptedId) {
@@ -392,7 +392,7 @@ export async function removeAdopted(chatId, chatKey, adoptedId) {
     }
     if (doc.canonical.castIds.includes(a.objectId)) patch.castIds = doc.canonical.castIds.filter((id) => id !== a.objectId);
     setCanonical(chatKey, patch, {
-        source: 'review', note: `${a.name} is not part of this world`, chatId,
+        source: 'review', note: `${a.name} rejected`, chatId,
         alsoMutate: (d) => {
             d.adopted = d.adopted.filter((x) => x.id !== adoptedId);
             // A quest made from an Archivist thread (or lore from its world

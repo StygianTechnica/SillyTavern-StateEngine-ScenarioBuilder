@@ -23,6 +23,7 @@ import {
 import { generateOverview, generateEntry } from '../generate/run.js';
 import { fieldDefs } from './sheet.js';
 import { renderQuestBoard } from './quest-board.js';
+import { locationMap } from './map.js';
 import { runLoreSync, hasArchivistLore } from '../library/lore-sync.js';
 import { hasFactionTracking, setupFactionTracking, syncFactions } from '../library/faction-sync.js';
 import { confirmAction } from './confirm.js';
@@ -378,7 +379,7 @@ function chapterPage(type, all, doc, board = null) {
 
     const tags = tagsOf(entries);
     const views = [['grid', 'fa-grip', 'Cards'], ['list', 'fa-list', 'List']];
-    if (type.id === 'location') views.unshift(['tree', 'fa-sitemap', 'Tree']);
+    if (type.id === 'location') views.unshift(['tree', 'fa-sitemap', 'Tree'], ['map', 'fa-map', 'Map - places where they lie, one level at a time']);
     if (type.id === 'quest') views.unshift(['board', 'fa-table-columns', 'Board']);
 
     const toolbar = h('div', { class: 'sb-toolbar' },
@@ -389,7 +390,7 @@ function chapterPage(type, all, doc, board = null) {
         tags.length ? select([{ value: '', label: 'Any tag' }, ...tags.map((t) => ({ value: t, label: `#${t}` }))], ws.tag, { title: 'Tag', onchange: (e) => { ws.tag = e.target.value; rerender(); } }) : null,
         select([{ value: '', label: 'Any status' }, ...Object.entries(STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))], ws.status, { title: 'Status in this chat', onchange: (e) => { ws.status = e.target.value; rerender(); } }),
         PLACED.has(type.id) && locations.length ? select([{ value: '', label: 'Anywhere' }, ...locations.map((l) => ({ value: l.id, label: `Within ${pathLabel(l.id) || l.name}` })).sort((a, b) => a.label.localeCompare(b.label))], ws.within, { title: 'Where', onchange: (e) => { ws.within = e.target.value; rerender(); } }) : null,
-        view !== 'tree' ? select([{ value: 'name', label: 'A–Z' }, { value: 'recent', label: 'Recently edited' }, { value: 'status', label: 'In play first' }], sort, { title: 'Sort', onchange: (e) => { getSettings().catalog.sort = e.target.value; saveSettings(); rerender(); } }) : null,
+        view !== 'tree' && view !== 'map' ? select([{ value: 'name', label: 'A–Z' }, { value: 'recent', label: 'Recently edited' }, { value: 'status', label: 'In play first' }], sort, { title: 'Sort', onchange: (e) => { getSettings().catalog.sort = e.target.value; saveSettings(); rerender(); } }) : null,
         h('div', { class: 'sb-viewtoggle' }, views.map(([v, i, label]) => h('div', { class: `sb-viewbtn${view === v ? ' active' : ''}`, title: label, onclick: () => setView(type.id, v) }, icon(i)))),
         type.id === 'faction' && factionTrackingKnown() === false ? button('Track factions', () => void trackFactions(), { iconName: 'fa-people-group', title: "Fill each character's Factions from the library's memberships and what the story shows - sets this setting's character fields up for it" }) : null,
         type.id === 'lore' && hasArchivistLore() ? button(ws.loreScanning ? 'Scanning…' : 'Scan Archivist', () => void scanLore(), { iconName: ws.loreScanning ? 'fa-spinner fa-spin' : 'fa-book-open-reader', disabled: !!ws.loreScanning, title: 'Take the lore Archivist has found in this chat into the library' }) : null,
@@ -411,6 +412,8 @@ function chapterPage(type, all, doc, board = null) {
         body = h('div', { class: 'sb-callout' }, icon('fa-filter-circle-xmark'), h('span', {}, 'Nothing matches.'), button('Clear filters', () => { ws.search = ''; ws.tag = ''; ws.status = ''; ws.within = ''; rerender(); }));
     } else if (view === 'tree' && !filtering) {
         body = locationTree(entries, doc, parents);
+    } else if (view === 'map' && !filtering) {
+        body = locationMap(entries, doc);
     } else if (view === 'list') {
         body = h('div', { class: 'sb-listview' }, filtered.map((e) => listRow(e, type, doc, pathLabel)));
     } else {
@@ -424,7 +427,7 @@ function chapterPage(type, all, doc, board = null) {
             h('span', { class: 'sb-count-big' }, filtering ? `${filtered.length} of ${entries.length}` : String(entries.length))),
         toolbar,
         ws.genPanel === type.id ? generatePanel(type, all, pathLabel) : null,
-        view === 'tree' && filtering ? h('small', { class: 'sb-hint' }, 'Filtering shows a flat list; clear the filters to see the tree.') : null,
+        (view === 'tree' || view === 'map') && filtering ? h('small', { class: 'sb-hint' }, `Filtering shows a flat list; clear the filters to see the ${view}.`) : null,
         body);
 }
 

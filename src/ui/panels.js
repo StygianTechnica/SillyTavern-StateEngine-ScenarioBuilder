@@ -165,11 +165,11 @@ export async function renderReview() {
                 button('Open sheet', () => openSheet(a.objectId, a.type), { iconName: 'fa-pen', cls: 'sb-primary' }),
                 ['off', 'failed', 'held'].includes(a.enrich) ? button('Add detail', () => enrichListed(chatId, chatKey, settingId, a.id), { iconName: 'fa-wand-magic-sparkles', title: a.error || 'Write its empty fields from the setting\'s context' }) : null,
                 button('Done', () => dismissAdopted(chatKey, a.id), { iconName: 'fa-check', title: 'Take it off this list' }),
-                button('Not part of this world', async () => {
-                    if (!await confirmAction(`Remove "${a.name}" from the library? Later mentions of it will be corrected.`)) return;
+                button('Reject', async () => {
+                    if (!await confirmAction(`Reject "${a.name}"? It is removed from the library, and later mentions of it are corrected rather than taken in again.`)) return;
                     await removeAdopted(chatId, chatKey, a.id);
                     done();
-                }, { iconName: 'fa-ban', cls: 'sb-danger' })));
+                }, { iconName: 'fa-ban', cls: 'sb-danger', title: 'Remove it from the library and keep it out - whether or not it belongs to the world, you do not want it' })));
     });
 
     const questions = pending.map((d) => h('div', { class: 'sb-review-item' },
@@ -206,7 +206,7 @@ export async function renderReview() {
         section('New in the setting', 'fa-seedling', adopted, 'Nothing new. Objects confirmed into the setting while you play land here.'),
         pending.length ? section('Questions', 'fa-circle-question', questions, '') : null,
         candidates.length ? section('Waiting for you', 'fa-inbox', candidates, '') : null,
-        doc.rejected.length ? section('Not part of this world', 'fa-ban', doc.rejected.map((r, i) => h('div', { class: 'sb-review-item sb-row' },
+        doc.rejected.length ? section('Rejected', 'fa-ban', doc.rejected.map((r, i) => h('div', { class: 'sb-review-item sb-row' },
             h('span', {}, `${r.name} (${r.type})`), button('Allow again', () => forgetRejection(chatKey, i), { iconName: 'fa-rotate-left' }))), '') : null,
         h('h3', {}, icon('fa-list-check'), ' Recently followed'),
         resolved.length ? h('div', { class: 'sb-list' }, resolved.map((d) => h('div', { class: 'sb-log' },

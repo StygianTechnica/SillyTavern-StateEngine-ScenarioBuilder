@@ -17,6 +17,7 @@ or `import { scenarioBuilderApi } from '.../SillyTavern-StateEngine-ScenarioBuil
 | `getPerspective(characterId)` | `null` for now (knowledge boundaries come in phase 0.5). |
 | `getDrift()` | `{ pending, candidates, recent }` for the open chat, or `null`. |
 | `getGuidance()` | `{ text, tokens, stateBlock, inert, reason }` - the latest outputs. |
+| `getRelationships(id)` | `Promise<[{ otherId, otherName, kind, note, direction }]>` - the relationships the user wrote for an entry, seen from it; they take precedence over the story's for the pair. |
 
 ## Events
 

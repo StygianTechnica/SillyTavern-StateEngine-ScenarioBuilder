@@ -23,7 +23,7 @@ import { renderImagePanel } from './image-panel.js';
 import { renderQuestTab } from './quest-board.js';
 import { baselineFields } from '../library/fields.js';
 import { CLIMATES } from '../calendar/weather.js';
-import { listRoutes, routesFrom, addRoute, removeRoute } from '../library/routes.js';
+import { listRoutes, routesFrom, addRoute, removeRoute, updateRoute, guessRoute } from '../library/routes.js';
 import { suggestRoutes, suggestEnvironment, randomClimate } from '../generate/places.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
@@ -545,11 +545,27 @@ function routesCard(entry, names) {
         suggestions,
         routes.length ? h('div', { class: 'sb-routes' }, routes.map(({ route, otherId }) => h('div', { class: 'sb-route' },
             h('span', { class: 'sb-linkchip', onclick: () => openSheet(otherId) }, icon('fa-location-dot'), ` ${names.get(otherId)?.name ?? 'a place no longer in the library'}`),
-            h('span', {}, ` ${route.travel}`),
-            route.note ? h('small', { class: 'sb-hint' }, ` - ${route.note}`) : null,
+            // The time is edited in place; a guess stops being one once changed.
+            h('input', { class: 'text_pole sb-route-time', value: route.travel, title: 'Travel time - change it here', onchange: (e) => {
+                const travel = e.target.value.trim();
+                if (!travel || travel === route.travel) return;
+                updateRoute(settingId, route.id, { travel, ...(route.guessed ? { guessed: false, note: route.note === 'guessed - edit if wrong' ? '' : route.note } : {}) });
+                void syncNow().then(() => rerender());
+            } }),
+            route.guessed ? h('span', { class: 'sb-badge', title: 'Guessed from the places\' size and the world\'s technology when the scene first moved along it. Change the time to make it yours.' }, 'guess') : null,
+            route.note && !route.guessed ? h('small', { class: 'sb-hint' }, ` - ${route.note}`) : null,
             h('span', { class: 'sb-iconbtn', title: 'Remove this route', onclick: () => { removeRoute(settingId, route.id); void syncNow().then(() => rerender()); } }, icon('fa-xmark'))))) : h('small', { class: 'sb-muted' }, 'No routes yet.'),
         h('div', { class: 'sb-row' },
-            select([{ value: '', label: 'To…' }, ...places], draft.to, { onchange: (e) => { draft.to = e.target.value; } }),
+            select([{ value: '', label: 'To…' }, ...places], draft.to, { onchange: (e) => {
+                draft.to = e.target.value;
+                // Start from a guess, to change or keep.
+                if (draft.to && !draft.travel.trim()) {
+                    const guess = guessRoute(entry.id, draft.to, { up: (id) => [...pathOf(parents, id)].reverse(), places: new Map([...names.entries()].map(([id, n]) => [id, { name: n.name }])), techLevel: getOverview(settingId)?.tech?.level ?? '' })
+                        ?? guessRoute(entry.id, draft.to, { up: (id) => [id], places: new Map([...names.entries()].map(([id, n]) => [id, { name: n.name }])), techLevel: getOverview(settingId)?.tech?.level ?? '' });
+                    if (guess) draft.travel = guess.travel;
+                }
+                rerender();
+            } }),
             h('input', { class: 'text_pole', placeholder: 'Travel time - "2 hours", "half a day"', value: draft.travel, oninput: (e) => { draft.travel = e.target.value; } }),
             h('input', { class: 'text_pole', placeholder: 'Note - the coast road, a hidden passage', value: draft.note, oninput: (e) => { draft.note = e.target.value; } }),
             button('Add route', add, { iconName: 'fa-plus' })));

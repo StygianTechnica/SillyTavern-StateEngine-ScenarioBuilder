@@ -20,7 +20,8 @@ import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbac
 import { getRawValues } from '../api/variables.js';
 import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.js';
 import { weatherAt } from './weather.js';
-import { routeForMove } from '../library/routes.js';
+import { routeForMove, guessRoute, addRoute } from '../library/routes.js';
+import { listEntries } from '../library/library.js';
 import { pathOf } from '../library/hierarchy.js';
 
 const FALLBACK_CALENDAR = Object.freeze({
@@ -322,16 +323,29 @@ export async function monthAt(settingId, scalar, offset = 0) {
 
 // The scene moved from one place to another: when a route connects them
 // (or the places they are in), the clock catches up to its travel time,
-// counted from before the reply. -> the history entry, or null.
+// counted from before the reply. When none does, a route is GUESSED from
+// the places' scale and the world's technology (src/library/routes.js),
+// added marked as a guess for the user to edit, and used.
+// -> the history entry, or null.
 export async function travelAlong(chatId, chatKey, settingId, fromId, toId, sourceMessage = '') {
     const doc = getChatDoc(chatKey);
     const now = doc.canonical.time;
     if (!settingId || !Number.isFinite(now)) return null;
     const settingDoc = getSettingDoc(settingId);
     const parents = Object.fromEntries(Object.entries(settingDoc.entries).filter(([, m]) => m.parentId).map(([id, m]) => [id, m.parentId]));
-    const route = routeForMove(fromId, toId, settingDoc.routes, (id) => [...pathOf(parents, id)].reverse());
+    const up = (id) => [...pathOf(parents, id)].reverse();
+    let route = routeForMove(fromId, toId, settingDoc.routes, up);
+    if (!route) {
+        try {
+            const places = new Map((await listEntries(chatId, settingId, 'location')).map((p) => [p.id, { name: p.name, description: p.base?.description ?? p.description ?? '' }]));
+            const guess = guessRoute(fromId, toId, { up, places, techLevel: settingDoc.overview?.tech?.level ?? '' });
+            if (guess && places.has(guess.from) && places.has(guess.to)) route = addRoute(settingId, guess);
+        } catch (err) {
+            console.debug(LOG_PREFIX, 'could not guess a route', err);
+        }
+    }
     if (!route?.travel) return null;
     const target = await advanceFrom(settingId, doc.clock.planned?.from ?? now, route.travel);
     if (target === null || target <= now) return null;
-    return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The journey took ${route.travel}`, sourceMessage });
+    return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The journey took ${route.travel}${route.guessed ? ' (a guessed route - edit it on the place\'s sheet)' : ''}`, sourceMessage });
 }

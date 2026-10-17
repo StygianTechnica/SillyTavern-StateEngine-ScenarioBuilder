@@ -46,9 +46,9 @@ export function listRoutes(settingId) {
     return getSettingDoc(settingId).routes ?? [];
 }
 
-// route: { from, to, travel, note }. One route per pair: a new one replaces it.
+// route: { from, to, travel, note, guessed? }. One route per pair: a new one replaces it.
 export function addRoute(settingId, route) {
-    const stored = { id: newLocalId('rt'), from: route.from, to: route.to, travel: String(route.travel ?? '').trim(), note: String(route.note ?? '').trim() };
+    const stored = { id: newLocalId('rt'), from: route.from, to: route.to, travel: String(route.travel ?? '').trim(), note: String(route.note ?? '').trim(), ...(route.guessed ? { guessed: true } : {}) };
     if (!stored.from || !stored.to || stored.from === stored.to) return null;
     updateSettingDoc(settingId, (d) => {
         d.routes = [...(d.routes ?? []).filter((r) => !((r.from === stored.from && r.to === stored.to) || (r.from === stored.to && r.to === stored.from))), stored];
@@ -62,4 +62,85 @@ export function updateRoute(settingId, id, patch) {
 
 export function removeRoute(settingId, id) {
     updateSettingDoc(settingId, (d) => { d.routes = (d.routes ?? []).filter((r) => r.id !== id); });
+}
+
+// ---- guessed routes
+//
+// When the scene moves between two places no route connects, the journey
+// is GUESSED rather than skipped: a route is added between the two places
+// that sit side by side under their nearest shared place (an inn in one
+// town to a tavern in the next: the towns), with a travel time from the
+// places' scale and the world's technology. It is marked guessed, shown so
+// on the sheet, and the user edits it when it is wrong - no need to work
+// routes out before playing.
+
+// Scales, smallest first: [scale, words that say a place is of it].
+const SCALES = [
+    ['room', ['room', 'chamber', 'quarters', 'hall', 'kitchen', 'cellar', 'attic', 'study', 'library', 'office', 'cell', 'vault', 'stair', 'stairs', 'corridor', 'gallery', 'chapel', 'bedroom', 'bar', 'loft', 'wall', 'gate', 'gatehouse', 'courtyard', 'yard', 'garden', 'roof', 'battlements', 'tower']],
+    ['building', ['tavern', 'inn', 'house', 'home', 'shop', 'store', 'smithy', 'forge', 'temple', 'shrine', 'church', 'cathedral', 'manor', 'mansion', 'estate', 'keep', 'castle', 'fortress', 'fort', 'palace', 'barracks', 'warehouse', 'mill', 'farm', 'market', 'square', 'plaza', 'street', 'alley', 'docks', 'dock', 'harbor', 'harbour', 'pier', 'district', 'quarter', 'ward', 'slums', 'park', 'arena', 'station', 'base', 'ship', 'camp']],
+    ['settlement', ['town', 'city', 'village', 'hamlet', 'enclave', 'outpost', 'settlement', 'port', 'haven', 'colony', 'citadel', 'stronghold', 'capital', 'metropolis', 'ruins']],
+    ['region', ['forest', 'woods', 'wood', 'mountain', 'mountains', 'hills', 'valley', 'plains', 'desert', 'swamp', 'marsh', 'region', 'province', 'county', 'wilds', 'wilderness', 'wastes', 'wasteland', 'coast', 'river', 'lake', 'island', 'isles', 'highlands', 'lowlands', 'frontier', 'border', 'march', 'interstate', 'highway', 'road']],
+    ['country', ['kingdom', 'empire', 'realm', 'nation', 'country', 'dominion', 'republic', 'continent', 'sea', 'ocean', 'lands']],
+    ['world', ['world', 'planet', 'moon', 'system', 'star', 'galaxy', 'plane', 'dimension']],
+];
+export const SCALE_ORDER = Object.freeze(SCALES.map(([s]) => s));
+
+// A place's scale ('room' ... 'world') from its name and description, or
+// '' when nothing says.
+export function scaleOf(place) {
+    const words = (text) => String(text ?? '').toLowerCase().split(/[^a-z]+/).filter(Boolean);
+    const name = words(place?.name);
+    // The name's last word says most ("Redhaven Great Hall"), then any
+    // word of it, then the description's opening.
+    for (const pool of [name.slice(-1), name, words(place?.description).slice(0, 40)]) {
+        for (const [scale, keys] of SCALES) if (pool.some((w) => keys.includes(w))) return scale;
+    }
+    return '';
+}
+
+// Travel times by scale: before engines, and with them (TL6 and up: cars,
+// trains, aircraft).
+const TRAVEL = {
+    room: ['1 minute', '1 minute'],
+    building: ['10 minutes', '10 minutes'],
+    settlement: ['half a day', '1 hour'],
+    region: ['2 days', '4 hours'],
+    country: ['2 weeks', '1 day'],
+    world: ['3 months', '3 days'],
+};
+
+const techNumber = (level) => Number(/^tl(\d+)$/.exec(String(level ?? ''))?.[1] ?? NaN);
+
+// A guessed travel time between places of `scale`, for a world at tech
+// level `techLevel` ('tl3'...).
+export function guessTravel(scale, techLevel = '') {
+    const row = TRAVEL[scale] ?? TRAVEL.building;
+    return techNumber(techLevel) >= 6 ? row[1] : row[0];
+}
+
+// The pair a guessed route joins for a move: the two places side by side
+// under the nearest place both are in (or the ends themselves). null when
+// one is inside the other - moving within a place takes no route.
+// `up(id)`: the chain of places from id outwards, id first.
+export function routePairFor(fromId, toId, up) {
+    if (!fromId || !toId || fromId === toId) return null;
+    const a = up(fromId);
+    const b = up(toId);
+    if (a.includes(toId) || b.includes(fromId)) return null;
+    const shared = a.find((x) => b.includes(x));
+    const childOf = (chain) => (shared ? chain[chain.indexOf(shared) - 1] : chain[chain.length - 1]);
+    const pair = [childOf(a), childOf(b)];
+    return pair[0] && pair[1] && pair[0] !== pair[1] ? pair : null;
+}
+
+// The guessed route for a move, or null. places: Map id -> { name,
+// description }; the larger of the two places' scales sets the time.
+export function guessRoute(fromId, toId, { up, places, techLevel = '' }) {
+    const pair = routePairFor(fromId, toId, up);
+    if (!pair) return null;
+    const scales = pair.map((id) => scaleOf(places.get(id))).filter(Boolean);
+    // With nothing to go on, the depth says: the deeper, the closer.
+    const fallback = ['country', 'region', 'settlement', 'building', 'room'][Math.min(4, up(pair[0]).length - 1)];
+    const scale = scales.length ? scales.reduce((x, y) => (SCALE_ORDER.indexOf(y) > SCALE_ORDER.indexOf(x) ? y : x)) : fallback;
+    return { from: pair[0], to: pair[1], travel: guessTravel(scale, techLevel), note: 'guessed - edit if wrong', guessed: true };
 }
