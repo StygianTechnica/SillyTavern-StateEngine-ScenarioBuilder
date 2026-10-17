@@ -12,16 +12,17 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { getObjectType, getBoundSettingId, createEntry, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, listEntries } from '../library/library.js';
+import { getObjectType, getBoundSettingId, createEntry, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, listEntries, getParents, playerIdOf } from '../library/library.js';
+import { routesFrom, listRoutes } from '../library/routes.js';
 import { listRelations, relationsFor } from '../library/relations-edit.js';
 import { setCanonical } from '../state/canonical.js';
-import { advanceBy, perTurnDefault, holdStoryWeather, setTime } from '../calendar/clock.js';
+import { advanceBy, perTurnDefault, holdStoryWeather, setTime, travelAlong } from '../calendar/clock.js';
 import { baselineFields } from '../library/fields.js';
 import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import { callModelFirst } from '../generate/llm.js';
 import { gatherInputs } from '../guidance/sync.js';
-import { buildDirectorPrompt, parseDirectorNote, mentionedIn, itemMatters } from './prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, mentionedIn, itemMatters, matchPlace } from './prompt.js';
 
 export const DIRECTOR_EVENT = 'scenario_builder_director';
 
@@ -169,6 +170,42 @@ function castAfter(characters, castIds, { enters, leaves }, made) {
     return { castIds: [...next], names };
 }
 
+// Moves the scene: finds (or makes) the place, takes the player character
+// and the named companions along. -> { from, castIds } or null.
+async function moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, canCreate }) {
+    const doc = getChatDoc(chatKey);
+    const from = doc.canonical.locationId || guidance.location?.id || '';
+    const places = await listEntries(chatId, settingId, 'location');
+    const parents = getParents(settingId);
+    const parentId = from ? parents[from] ?? '' : '';
+    const nearIds = [
+        ...(from ? routesFrom(from, listRoutes(settingId)).map((r) => r.otherId) : []),
+        ...places.filter((p) => from && (parents[p.id] === from || (parentId && parents[p.id] === parentId))).map((p) => p.id),
+        ...(parentId ? [parentId] : []),
+    ];
+    let place = matchPlace(move.place, places, nearIds);
+    if (place?.id === from) return null;
+    if (!place && canCreate && mentionedIn(move.place, recentText)) {
+        // A place the chat named that the library lacks: beside this one.
+        place = await createEntry(chatId, settingId, 'location', { name: move.place, description: '' }, { origin: 'director' });
+        if (place && parentId) setParent(settingId, place.id, parentId);
+    }
+    if (!place) {
+        console.info(LOG_PREFIX, `the director moved the scene to "${move.place}", which is not in the library`);
+        return null;
+    }
+    const playerId = playerIdOf(settingId, characters);
+    const byName = (name) => characters.find((c) => [c.name, ...(c.aliases ?? c.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === String(name).toLowerCase()))?.id
+        ?? characters.find((c) => c.name.toLowerCase().includes(String(name).toLowerCase()))?.id ?? null;
+    const along = move.along.map(byName).filter(Boolean);
+    const next = [...new Set([...(playerId && castIds.includes(playerId) ? [playerId] : playerId ? [playerId] : []), ...along])];
+    const left = castIds.filter((id) => !next.includes(id)).map((id) => characters.find((c) => c.id === id)?.name).filter(Boolean);
+    const patch = { locationId: place.id, castIds: next };
+    if (move.indoor !== null) patch.indoor = move.indoor;
+    setCanonical(chatKey, patch, { chatId, source: 'director', note: `The scene moves to ${place.name}${left.length ? `; ${left.join(', ')} stay${left.length === 1 ? 's' : ''} behind` : ''}` });
+    return { from, castIds: next };
+}
+
 async function run(chatId, chatKey, type, force) {
     const settings = getSettings();
     const settingId = await getBoundSettingId(chatId);
@@ -226,8 +263,21 @@ async function run(chatId, chatKey, type, force) {
     // time the reply covers.
     let moves = { in: [], out: [] };
     let timeText = '';
+    // The scene moves with the player character: to the place a MOVE line
+    // names (made when the chat named a place the library lacks), with the
+    // people going along; everyone else stays behind.
+    let movedFrom = null;
+    let baseCast = castIds;
+    if (isNewTurn(type) && settingId && parsed.move) {
+        const moved = await moveScene(chatId, chatKey, settingId, parsed.move, { guidance, characters, castIds, recentText, canCreate: settings.director.allowCreate && !canonOnly });
+        if (moved) {
+            movedFrom = moved.from;
+            baseCast = moved.castIds;
+        }
+    }
+
     if (isNewTurn(type) && settingId) {
-        const after = castAfter(characters, castIds, parsed, made.map((m) => ({ ...m, here: created.find((c) => c.name === m.name)?.here })));
+        const after = castAfter(characters, baseCast, parsed, made.map((m) => ({ ...m, here: created.find((c) => c.name === m.name)?.here })));
         moves = after.names;
         if (moves.in.length || moves.out.length) {
             const note2 = [moves.in.length ? `${moves.in.join(', ')} arrive${moves.in.length === 1 ? 's' : ''}` : '', moves.out.length ? `${moves.out.join(', ')} leave${moves.out.length === 1 ? 's' : ''}` : ''].filter(Boolean).join('; ');
@@ -238,6 +288,8 @@ async function run(chatId, chatKey, type, force) {
             const moved = await advanceBy(chatId, chatKey, settingId, wanted, { planned: true, source: 'director', note: `Time passes: ${wanted}${parsed.time?.why ? ` (${parsed.time.why})` : ''}` })
                 ?? await advanceBy(chatId, chatKey, settingId, perTurnDefault(), { planned: true, source: 'director', note: `Time passes: ${perTurnDefault()}` });
             if (moved) timeText = wanted;
+            // A move along a route takes at least its travel time.
+            if (movedFrom) await travelAlong(chatId, chatKey, settingId, movedFrom, getChatDoc(chatKey).canonical.locationId);
             // A change of weather the plot calls for: held a while, like the
             // story's own, then the simulation takes over again.
             if (parsed.weather) {

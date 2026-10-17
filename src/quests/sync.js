@@ -27,7 +27,7 @@ import { getEntryMeta } from '../store/setting-store.js';
 import { newLocalId } from '../store/schema.js';
 import { getObject, getObjectRuntimeFields, setObjectRuntimeFields } from '../api/objects.js';
 import { getVariableValues, setVariableValue } from '../api/variables.js';
-import { listEntries, createEntry, updateEntry, setEntryMeta, mayAddGeneratedDetail, readField } from '../library/library.js';
+import { listEntries, createEntry, updateEntry, setEntryMeta, mayAddGeneratedDetail, readField, deleteEntry } from '../library/library.js';
 import { PRESET_NAME } from '../preset/blueprint.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import {
@@ -88,10 +88,21 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
         const doc = getChatDoc(chatKey);
         const links = { ...doc.questLinks };
         const adopted = [];
+        // Removed quests stay removed: their threads are dismissed, and a
+        // quest whose name was rejected is never made or taken in again.
+        const dismissed = new Set(doc.questsDismissed);
+        const rejectedName = (name) => doc.rejected.some((r) => r.type === 'quest' && lower(r.name) === lower(name));
 
         for (const thread of threads) {
+            if (dismissed.has(thread.id)) continue;
             let qid = links[thread.id];
-            if (qid && !quests.some((q) => q.id === qid)) qid = null; // deleted since
+            if (qid && !quests.some((q) => q.id === qid)) {
+                // The quest made from this thread was deleted: the thread is
+                // dismissed rather than made into a quest again.
+                dismissed.add(thread.id);
+                delete links[thread.id];
+                continue;
+            }
             if (!qid && thread.entity?.type === 'quest' && quests.some((q) => q.id === thread.entity.id)) qid = thread.entity.id;
             if (!qid) qid = quests.find((q) => [q.name, ...(q.aliases ?? [])].some((n) => lower(n) === lower(thread.title)))?.id ?? null;
 
@@ -107,7 +118,7 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
                 if (links[thread.id] !== qid) { links[thread.id] = qid; out.linked += 1; }
                 continue;
             }
-            if (!create) continue;
+            if (!create || rejectedName(thread.title)) continue;
             const finished = thread.status === 'resolved' || thread.status === 'abandoned';
             if (finished && !scan) continue;
 
@@ -134,7 +145,12 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
         // sb__quests): taken in once. The first pass only records what exists.
         const seen = doc.questsSeen;
         const fresh = seen ? quests.filter((q) => !seen.includes(q.id) && !Object.values(links).includes(q.id) && !getEntryMeta(settingId, q.id).origin) : [];
-        for (const q of fresh) {
+        // A quest the story starts again under a rejected name is removed.
+        for (const q of fresh.filter((x) => rejectedName(x.name))) {
+            await deleteEntry(chatId, settingId, q.id);
+            quests = quests.filter((x) => x.id !== q.id);
+        }
+        for (const q of fresh.filter((x) => !rejectedName(x.name))) {
             setEntryMeta(settingId, q.id, { origin: 'story' });
             adopted.push({ id: newLocalId('a'), objectId: q.id, type: 'quest', name: q.name, at: new Date().toISOString(), placedUnder: '', enrich: 'off', error: '' });
             out.taken += 1;
@@ -142,6 +158,7 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
 
         updateChatDoc(chatKey, (d) => {
             d.questLinks = links;
+            d.questsDismissed = [...dismissed];
             d.questsSeen = quests.map((q) => q.id);
             const known = new Set(d.adopted.map((a) => a.objectId));
             d.adopted = [...d.adopted, ...adopted.filter((a) => !known.has(a.objectId))];

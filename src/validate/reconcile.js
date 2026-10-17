@@ -379,7 +379,17 @@ export async function removeAdopted(chatId, chatKey, adoptedId) {
         source: 'review', note: `${a.name} is not part of this world`, chatId,
         alsoMutate: (d) => {
             d.adopted = d.adopted.filter((x) => x.id !== adoptedId);
-            d.rejected = [...d.rejected, { type: a.type, name: a.name }];
+            // A quest made from an Archivist thread: the thread is dismissed,
+            // or the next sync would make the quest again.
+            const threadId = a.type === 'quest' ? Object.entries(d.questLinks).find(([, q]) => q === a.objectId)?.[0] ?? '' : '';
+            if (threadId) {
+                d.questsDismissed = [...new Set([...d.questsDismissed, threadId])];
+                const links = { ...d.questLinks };
+                delete links[threadId];
+                d.questLinks = links;
+            }
+            const known = d.rejected.some((r) => r.type === a.type && String(r.name).toLowerCase() === String(a.name).toLowerCase());
+            if (!known) d.rejected = [...d.rejected, { type: a.type, name: a.name, ...(threadId ? { threadId } : {}) }];
         },
     });
     const settingId = await getBoundSettingId(chatId);
@@ -390,8 +400,13 @@ export async function removeAdopted(chatId, chatKey, adoptedId) {
 }
 
 // Un-rejects a name.
+// Un-rejects a name - and lets a quest be made from its thread again.
 export function forgetRejection(chatKey, index) {
-    updateChatDoc(chatKey, (d) => { d.rejected = d.rejected.filter((_, i) => i !== index); });
+    updateChatDoc(chatKey, (d) => {
+        const gone = d.rejected[index];
+        d.rejected = d.rejected.filter((_, i) => i !== index);
+        if (gone?.threadId) d.questsDismissed = d.questsDismissed.filter((t) => t !== gone.threadId);
+    });
 }
 
 // ---- following messages (SB-224)

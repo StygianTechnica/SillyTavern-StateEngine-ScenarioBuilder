@@ -63,7 +63,10 @@
 //                                           'running' | 'done' | 'failed' | 'off' | 'held'.
 //                                           Listed in Review until the user has looked
 //     candidates: [{ id, objectId, type, name, field, source, at }],
-//     rejected: [{ type, name }],           suppressed candidate names (SB-225)
+//     rejected: [{ type, name, threadId? }], suppressed names (SB-225); threadId: the
+//                                           Archivist thread a rejected quest came from
+//     questsDismissed: [threadId]           Archivist threads whose quest was removed:
+//                                           no quest is made from them again
 //     corrections: [{ id, text, turnsLeft, source }],
 //     history: [historyEntry],              every automated or manual change (SB-226)
 //     turn }                                AI replies reconciled so far
@@ -286,6 +289,7 @@ export function emptyChatDoc() {
         adopted: [],
         candidates: [],
         rejected: [],
+        questsDismissed: [],
         corrections: [],
         history: [],
         turn: 0,
@@ -309,7 +313,11 @@ export function normalizeChatDoc(doc) {
         drift: Array.isArray(d.drift) ? d.drift.filter(isObject) : [],
         adopted: Array.isArray(d.adopted) ? d.adopted.filter(isObject) : [],
         candidates: Array.isArray(d.candidates) ? d.candidates.filter(isObject) : [],
-        rejected: Array.isArray(d.rejected) ? d.rejected.filter(isObject) : [],
+        // One entry per type and name (older chats could hold repeats).
+        rejected: Array.isArray(d.rejected)
+            ? d.rejected.filter(isObject).filter((r, i, all) => all.findIndex((x) => x.type === r.type && str(x.name).toLowerCase() === str(r.name).toLowerCase()) === i)
+            : [],
+        questsDismissed: strList(d.questsDismissed),
         corrections: Array.isArray(d.corrections) ? d.corrections.filter(isObject) : [],
         history: Array.isArray(d.history) ? d.history.filter(isObject).slice(-HISTORY_LIMIT) : [],
         turn: Number.isInteger(d.turn) && d.turn >= 0 ? d.turn : 0,

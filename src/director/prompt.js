@@ -28,6 +28,23 @@ export const MAX_NEW = 2;
 // Words too common to tie a new thing to the chat.
 const STOP = new Set(['the', 'and', 'old', 'new', 'with', 'from', 'that', 'this', 'room', 'place', 'great', 'little', 'small', 'large', 'house', 'hall']);
 
+// The library place a MOVE names: its name or an alias exactly, else one
+// whose name holds every distinctive word of it ("the wall" -> "The Outer
+// Wall"), places near the scene first (`nearIds`: ways on, the place it is
+// in, its neighbours). -> the place, or null.
+export function matchPlace(name, places, nearIds = []) {
+    const bareName = (n) => String(n ?? '').toLowerCase().replace(/^(the|a|an)\s+/, '').trim();
+    const target = bareName(name);
+    if (!target) return null;
+    const near = new Set(nearIds);
+    const ranked = [...(places ?? [])].sort((a, b) => Number(near.has(b.id)) - Number(near.has(a.id)));
+    const exact = ranked.find((p) => [p.name, ...(p.aliases ?? p.base?.aliases ?? [])].some((n) => bareName(n) === target));
+    if (exact) return exact;
+    const words = target.split(/[^a-z0-9'\u00c0-\u024f]+/).filter((w) => w.length >= 3 && !['the', 'and', 'of'].includes(w));
+    if (!words.length) return null;
+    return ranked.find((p) => words.every((w) => bareName(p.name).includes(w))) ?? null;
+}
+
 // Whether a new item matters enough to become a library entry: an item
 // takes on weight with the model and pulls the scene toward it, so flavour
 // stays in the prose. It must serve an open thread (its stated purpose or
@@ -175,6 +192,9 @@ export function buildDirectorPrompt(input) {
         `On its own line, a short title (three to seven words) for the scene as it now stands - ${clean(input.scene?.title) ? `keep "${clean(input.scene.title)}" unless the scene has moved on` : 'it has none yet'}:`,
         'SCENE | The debt comes due',
         '',
+        `If the latest message takes the scene somewhere else (${userName} goes to another place), a line naming where the scene is now - one of the ways on when it fits - who goes along with ${userName} (or "none"), and whether it is indoors or outdoors. Everyone else stays behind.`,
+        'MOVE | Place name | Name, Name | outdoors',
+        '',
         'If someone known arrives or leaves in this reply, a line for each:',
         'ENTERS | Name',
         'LEAVES | Name',
@@ -243,6 +263,7 @@ export function parseDirectorNote(raw) {
     let time = null;
     let weather = null;
     let scene = '';
+    let move = null;
     const enters = [];
     const leaves = [];
     for (const line of text.split('\n')) {
@@ -262,10 +283,20 @@ export function parseDirectorNote(raw) {
             if (!weather && values.length) weather = { values: [...new Set(values)], why: clean(wx[2]) };
             continue;
         }
-        const move = line.match(/^\s*(?:[-*]\s*)?\**(ENTERS|LEAVES)\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|.*)?$/i);
-        if (move) {
-            const name = clean(move[2]).replace(/^["'*]+|["'*]+$/g, '');
-            if (name) (move[1].toUpperCase() === 'ENTERS' ? enters : leaves).push(name);
+        const mv = line.match(/^\s*(?:[-*]\s*)?\**MOVE\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?$/i);
+        if (mv) {
+            const place = clean(mv[1]).replace(/^["'*]+|["'*.]+$/g, '');
+            if (!move && place) {
+                const along = /^(none|no one|nobody|alone|-)?$/i.test(clean(mv[2])) ? [] : clean(mv[2]).split(/,| and /i).map((n) => clean(n).replace(/^["'*]+|["'*.]+$/g, '')).filter(Boolean);
+                const io = clean(mv[3]).toLowerCase();
+                move = { place, along, indoor: /^in/.test(io) ? true : /^out/.test(io) ? false : null };
+            }
+            continue;
+        }
+        const step = line.match(/^\s*(?:[-*]\s*)?\**(ENTERS|LEAVES)\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|.*)?$/i);
+        if (step) {
+            const name = clean(step[2]).replace(/^["'*]+|["'*]+$/g, '');
+            if (name) (step[1].toUpperCase() === 'ENTERS' ? enters : leaves).push(name);
             continue;
         }
         const m = line.match(/^\s*(?:[-*]\s*)?\**NEW\**\s*:?\s*([a-z]+)\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?$/i);
@@ -286,5 +317,5 @@ export function parseDirectorNote(raw) {
         .replace(/^\s*#+\s+/gm, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-    return { note: text, ...splitNote(text), created, time, weather, scene, enters: [...new Set(enters)], leaves: [...new Set(leaves)] };
+    return { note: text, ...splitNote(text), created, time, weather, scene, move, enters: [...new Set(enters)], leaves: [...new Set(leaves)] };
 }

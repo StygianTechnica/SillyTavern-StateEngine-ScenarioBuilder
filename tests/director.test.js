@@ -1,4 +1,4 @@
-import { buildDirectorPrompt, parseDirectorNote, dossierText, mentionedIn, splitNote, itemMatters, MAX_NEW } from '../src/director/prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, dossierText, mentionedIn, splitNote, itemMatters, matchPlace, MAX_NEW } from '../src/director/prompt.js';
 
 const input = {
     overview: { premise: 'A port city where the old gods are waking.', tone: 'gritty' },
@@ -182,5 +182,33 @@ describe('finding the direction when the model words it its own way', () => {
     });
     it('does not mistake a word in the middle of a sentence for the marker', () => {
         expect(splitNote('She glances at the next table and the rain drums.').direction).toBe('');
+    });
+});
+
+describe('director moves the scene', () => {
+    it('reads where the scene goes, who goes along and indoors or out', () => {
+        const parsed = parseDirectorNote('Prose.\nMOVE | The Outer Wall | Varyn and Niamh | outdoors');
+        expect(parsed.move).toEqual({ place: 'The Outer Wall', along: ['Varyn', 'Niamh'], indoor: false });
+        expect(parsed.note).toBe('Prose.');
+        expect(parseDirectorNote('Prose.\nMOVE | Cellar | none | indoors').move).toEqual({ place: 'Cellar', along: [], indoor: true });
+        expect(parseDirectorNote('Prose.\nMOVE | Cellar').move).toEqual({ place: 'Cellar', along: [], indoor: null });
+        expect(parseDirectorNote('Prose.').move).toBeNull();
+    });
+
+    it('asks for a MOVE line', () => {
+        expect(buildDirectorPrompt({ ...input }).prompt).toContain('MOVE | Place name | Name, Name | outdoors');
+    });
+
+    it('finds the place by name or alias, near places first', () => {
+        const places = [
+            { id: 'a', name: 'The Outer Wall' },
+            { id: 'b', name: 'Wall of the Old Keep' },
+            { id: 'c', name: 'Gatehouse', aliases: ['the gate'] },
+        ];
+        expect(matchPlace('the Outer Wall', places)?.id).toBe('a');
+        expect(matchPlace('The Gate', places)?.id).toBe('c');
+        expect(matchPlace('the wall', places, ['b'])?.id).toBe('b');
+        expect(matchPlace('the wall', places)?.id).toBe('a');
+        expect(matchPlace('the docks', places)).toBeNull();
     });
 });
