@@ -46,10 +46,34 @@ async function callNow(messages, maxTokens) {
     return text;
 }
 
+// While the roleplay reply is being written, background calls wait: on a
+// local server with one slot a second request arriving mid-reply can cut
+// the reply short. src/state/lifecycle.js says when a reply starts and
+// ends; a reply that never reports its end is let go after REPLY_MAX_MS.
+const REPLY_MAX_MS = 5 * 60 * 1000;
+let replying = false;
+let replyTimer = null;
+let waiting = [];
+
+export function setReplying(on) {
+    clearTimeout(replyTimer);
+    replying = on === true;
+    if (replying) {
+        replyTimer = setTimeout(() => setReplying(false), REPLY_MAX_MS);
+        return;
+    }
+    const release = waiting;
+    waiting = [];
+    for (const resolve of release) resolve();
+}
+
+const afterReply = () => (replying ? new Promise((resolve) => waiting.push(resolve)) : Promise.resolve());
+
 // messages: [{ role: 'system' | 'user', content }]. Resolves to the reply
-// text; rejects with a readable reason.
+// text; rejects with a readable reason. Queued, and held while a reply is
+// being written.
 export function callModel(messages, maxTokens = 900) {
-    const run = chain.then(() => callNow(messages, maxTokens));
+    const run = chain.then(afterReply).then(() => callNow(messages, maxTokens));
     chain = run.catch((err) => console.warn(LOG_PREFIX, 'generation failed', err));
     return run;
 }

@@ -205,7 +205,7 @@ export function buildCast(input) {
     if (!list.length) return '';
     const others = list.filter((c) => !c.player);
     const player = list.find((c) => c.player);
-    const lines = ['Characters present:', ...list.map(castLine)];
+    const lines = ['Additional Context-Characters present:', ...list.map(castLine)];
     if (others.length) lines.push(`Write ${others.length === 1 ? clean(others[0].name) : 'each of them'} true to what they want and how they feel; they act on their own intentions.${player ? ` Never write ${clean(player.name)}'s words, actions, thoughts or feelings.` : ''}`);
     else if (player) lines.push(`Never write ${clean(player.name)}'s words, actions, thoughts or feelings.`);
     return `${REFERENCE_HEADER}\n${lines.join('\n')}`;

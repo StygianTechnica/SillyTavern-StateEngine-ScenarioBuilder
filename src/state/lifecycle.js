@@ -30,6 +30,7 @@ import { directBeforeReply } from '../director/run.js';
 import { ensureClock, advanceBy, setTime, perTurnDefault } from '../calendar/clock.js';
 import { getChatDoc } from '../store/chat-store.js';
 import { fillRoles } from '../preset/role-fill.js';
+import { setReplying } from '../generate/llm.js';
 
 const VALIDATE_DEBOUNCE_MS = 1000;
 let timer = null;
@@ -78,7 +79,10 @@ function pendingInput() {
 
 async function beforeGeneration(type, _options, dryRun) {
     awaitingMessage = null;
-    if (dryRun || type === 'quiet' || !isActive()) return;
+    if (dryRun || type === 'quiet') return;
+    // Background generation waits until this reply is written.
+    setReplying(true);
+    if (!isActive()) return;
     const ref = getCurrentChatRef();
     if (!ref) return;
     clearTimeout(timer);
@@ -157,6 +161,9 @@ export function startLifecycle() {
     eventSource.on(VARIABLES_CHANGED_EVENT, (chatId) => { if (isActive()) scheduleValidation(chatId); });
     if (eventTypes.GENERATION_STARTED) eventSource.on(eventTypes.GENERATION_STARTED, beforeGeneration);
     if (eventTypes.USER_MESSAGE_RENDERED) eventSource.on(eventTypes.USER_MESSAGE_RENDERED, onUserMessageRendered);
+    for (const key of ['GENERATION_ENDED', 'GENERATION_STOPPED']) {
+        if (eventTypes[key]) eventSource.on(eventTypes[key], () => setReplying(false));
+    }
     if (eventTypes.MESSAGE_SWIPED) eventSource.on(eventTypes.MESSAGE_SWIPED, safely((index) => revertFromMessage(Number(index))));
     if (eventTypes.MESSAGE_EDITED) eventSource.on(eventTypes.MESSAGE_EDITED, safely((index) => revertFromMessage(Number(index))));
     // The payload is the chat's length after the deletion.
