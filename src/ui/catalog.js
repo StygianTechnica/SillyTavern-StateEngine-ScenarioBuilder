@@ -332,7 +332,7 @@ async function scanLore() {
     try {
         const out = await runLoreSync(chatId, chatKey, settingId, { scan: true });
         if (!out) toast('warning', 'A scan is already running.');
-        else toast('success', out.created || out.linked || out.updated ? `Lore: ${out.created} new, ${out.updated} updated, ${out.linked} linked.` : 'Nothing new in Archivist's lore.');
+        else toast('success', out.created || out.linked || out.updated ? `Lore: ${out.created} new, ${out.updated} updated, ${out.linked} linked.` : 'Nothing new in Archivist\'s lore.');
         await syncNow();
     } finally {
         ws.loreScanning = false;
