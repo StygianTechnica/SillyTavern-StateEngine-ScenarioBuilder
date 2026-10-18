@@ -1,5 +1,5 @@
 import { daylight, dayPartAt, skyAt, moonPhase, needsAt, holidaysAround, holidayText, seasonName, dayOfYearOf } from '../src/calendar/sky.js';
-import { fallbackAdvance, defaultStart, timeOfDayFraction } from '../src/calendar/moment.js';
+import { fallbackAdvance, defaultStart, timeOfDayFraction, storyTimeCue, cueTarget } from '../src/calendar/moment.js';
 import { weatherAt, forecast, bandOf, weatherText, CLIMATES } from '../src/calendar/weather.js';
 
 const months = Array.from({ length: 12 }, (_, i) => ({ name: `M${i + 1}`, days: 30 }));
@@ -173,5 +173,25 @@ describe("reading the story's time of day", () => {
     it("reads clock times in a fantasy calendar's hours", () => {
         expect(timeOfDayFraction('15:00', { hoursPerDay: 30, minutesPerHour: 60 })).toBeCloseTo(0.5);
         expect(timeOfDayFraction('27:00')).toBeNull();
+    });
+});
+
+describe('the time of day the story shows', () => {
+    const reply = 'The sun began to set over the fortress walls as it turned darker and colder. It was time for them to get some rest; he had a feeling their meeting with Graxx would not end so smoothly in the morning.';
+    it('reads the day turning in plain narration', () => {
+        expect(storyTimeCue(reply)).toEqual({ phrase: 'sunset', fraction: 0.77 });
+        expect(storyTimeCue('Night fell over the wastes.')).toEqual({ phrase: 'night', fraction: 0.88 });
+        expect(storyTimeCue('Dawn broke grey and cold.')).toEqual({ phrase: 'dawn', fraction: 0.25 });
+    });
+    it('ignores what is said about later', () => {
+        expect(storyTimeCue('They would leave when the sun set.')).toBeNull();
+        expect(storyTimeCue('We ride at dawn, before the sun rises.')).toBeNull();
+        expect(storyTimeCue('Graxx paced the hall.')).toBeNull();
+    });
+    it('moves the clock forward only, to the next day for a dawn after dark', () => {
+        expect(cueTarget({ phrase: 'sunset', fraction: 0.77 }, 10.5 / 24)).toEqual({ fraction: 0.77, nextDay: false });
+        expect(cueTarget({ phrase: 'sunset', fraction: 0.77 }, 0.8)).toBeNull();
+        expect(cueTarget({ phrase: 'dawn', fraction: 0.25 }, 0.9)).toEqual({ fraction: 0.25, nextDay: true });
+        expect(cueTarget({ phrase: 'dawn', fraction: 0.25 }, 0.3)).toBeNull();
     });
 });

@@ -25,7 +25,7 @@ import { withStateEngineCast, SE_CAST } from './drift.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry, playerIdOf, listEntries } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
-import { catchUpWithStory, holdStoryWeather, travelAlong } from '../calendar/clock.js';
+import { catchUpWithStory, holdStoryWeather, travelAlong, followStoryTimeOfDay } from '../calendar/clock.js';
 import { detectDrift, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
 
 export const DRIFT_CHANGED_EVENT = 'scenario_builder_drift_changed';
@@ -43,6 +43,15 @@ function latestReplySource(chatId) {
     const chat = SillyTavern.getContext().chat ?? [];
     for (let i = chat.length - 1; i >= 0; i--) {
         if (chat[i] && !chat[i].is_user && !chat[i].is_system) return sourceMessageId(chatId, i, chat[i]);
+    }
+    return '';
+}
+
+// The newest AI reply's text.
+function latestReplyText() {
+    const chat = SillyTavern.getContext().chat ?? [];
+    for (let i = chat.length - 1; i >= 0; i--) {
+        if (chat[i] && !chat[i].is_user && !chat[i].is_system) return String(chat[i].mes ?? '');
     }
     return '';
 }
@@ -260,6 +269,8 @@ async function reconcileOnce() {
         // A move along a route takes its travel time.
         if (acceptedFields.has('location') && canonical.locationId !== doc.canonical.locationId) await travelAlong(chatId, chatKey, settingId, doc.canonical.locationId, canonical.locationId, replySource);
         if (newReply) await catchUpWithStory(chatId, chatKey, settingId, raw.scene_deltatime, replySource);
+        // The day turning in the reply's own words ("the sun began to set").
+        if (newReply) await followStoryTimeOfDay(chatId, chatKey, settingId, latestReplyText(), replySource);
     }
     if (restore.size) await pushCanonicalToObserved(chatId, chatKey, { fields: [...restore] });
     if (items.length) announce(chatKey);

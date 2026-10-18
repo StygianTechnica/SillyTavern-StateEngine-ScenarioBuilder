@@ -86,3 +86,45 @@ export function fallbackAdvance(def, scalar, text) {
     }
     return null;
 }
+
+// ---- the time of day the story shows
+//
+// A reply that shows the day turning - "the sun began to set", "night fell",
+// "dawn broke" - moves the clock to that part of the day (the story leads).
+// Only plain narration of the scene counts: a sentence about later ("their
+// meeting in the morning", "by nightfall", "would", "tomorrow") does not.
+const TIME_CUES = [
+    ['dawn', 0.25, [/\b(?:dawn|daybreak) (?:broke|breaks|had broken|came|comes|arrived|crept|creeps)\b/, /\bthe sun (?:rose|rises|had risen|came up|comes up|crested|crests|climbed above)\b/, /\bthe first light of (?:dawn|day|morning) (?:crept|spilled|broke|touched)\b/]],
+    ['noon', 0.5, [/\bthe (?:noon|midday) sun (?:beat|beats|blazed|blazes|hung|hangs)\b/]],
+    ['sunset', 0.77, [/\bthe sun (?:began|begins|started|starts|was beginning|is beginning) to (?:set|sink|go down|dip)\b/, /\bthe sun (?:set|sets|was setting|is setting|sank|sinks|was sinking|is sinking|dipped|dips|went down|goes down|had set)\b/, /\b(?:dusk|twilight) (?:fell|falls|had fallen|settled|settles|gathered|gathers|crept|creeps|descended|descends)\b/, /\bas (?:the )?(?:daylight|the light|the day) (?:faded|fades|waned|wanes|died|dies)\b/]],
+    ['night', 0.88, [/\b(?:night|darkness) (?:fell|falls|had fallen|has fallen|settled|settles|descended|descends|closed in|closes in)\b/]],
+];
+const NOT_NOW = /\b(?:will|would|tomorrow|until|by the time|before|by nightfall|by dawn|in the morning|tonight|later|soon|next)\b/i;
+
+// The latest part of the day a reply shows the scene reaching:
+// { phrase, fraction } (fraction of the day: sunset 0.77), or null.
+export function storyTimeCue(text) {
+    const sentences = String(text ?? '').replace(/\s+/g, ' ').match(/[^.!?…]+[.!?…]*/g) ?? [];
+    let found = null;
+    for (const sentence of sentences) {
+        const t = sentence.toLowerCase();
+        if (NOT_NOW.test(t)) continue;
+        for (const [phrase, fraction, patterns] of TIME_CUES) {
+            if (patterns.some((re) => re.test(t))) found = { phrase, fraction };
+        }
+    }
+    return found;
+}
+
+// Where the clock should go for a cue, from the time of day now (both as
+// fractions of the day): later the same day; the next day for a dawn
+// reached from evening or night; null when the clock is already there or
+// past it (within a tenth of a day), or the cue is earlier the same day.
+// -> { fraction, nextDay } or null.
+export function cueTarget(cue, nowFraction) {
+    if (!cue || !Number.isFinite(nowFraction)) return null;
+    if (cue.fraction > nowFraction + 0.1) return { fraction: cue.fraction, nextDay: false };
+    if (cue.phrase === 'dawn' && nowFraction >= 0.6) return { fraction: cue.fraction, nextDay: true };
+    return null;
+}
+

@@ -16,7 +16,7 @@ import { emptyCalendar } from '../store/schema.js';
 import { getSetting, updateSetting } from '../api/objects.js';
 import { setCanonical } from '../state/canonical.js';
 import { getDateTimeParts, formatDateTime, formatDateTimePartial, advanceDateTime, getCalendarDefinition } from '../api/calendar.js';
-import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance, timeOfDayFraction } from './moment.js';
+import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance, timeOfDayFraction, storyTimeCue, cueTarget } from './moment.js';
 import { getRawValues } from '../api/variables.js';
 import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.js';
 import { weatherAt } from './weather.js';
@@ -263,6 +263,24 @@ export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, so
     const tolerance = Math.max(15 * (def.secondsPerMinute || 60), 0.25 * ((planned?.to ?? now) - from));
     if (target <= now + tolerance) return null;
     return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The story moved time on: ${deltaText}`, sourceMessage });
+}
+
+// The reply showed the day turning ("the sun began to set"): the clock
+// moves on to that part of the day - forward only, the next day for a dawn
+// after the evening. -> the history entry, or null.
+export async function followStoryTimeOfDay(chatId, chatKey, settingId, replyText, sourceMessage = '') {
+    const now = getChatDoc(chatKey).canonical.time;
+    if (!settingId || !Number.isFinite(now)) return null;
+    const cue = storyTimeCue(replyText);
+    if (!cue) return null;
+    const { def } = await calendarFor(settingId);
+    const perDay = secondsPerDay(def);
+    const day = dayIndexOf(def, now);
+    const target = cueTarget(cue, (now - day * perDay) / perDay);
+    if (!target) return null;
+    const to = (day + (target.nextDay ? 1 : 0)) * perDay + Math.round(target.fraction * perDay);
+    if (to <= now) return null;
+    return setTime(chatId, chatKey, settingId, to, { source: 'story', note: `The story reached ${cue.phrase}`, sourceMessage });
 }
 
 // The default advance for a reply nobody planned.
