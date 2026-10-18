@@ -1,4 +1,4 @@
-import { parseDirectorNote, relevance, dossierText, buildDirectorPrompt, alsoRelevant, newKind, echoes } from '../src/director/prompt.js';
+import { parseDirectorNote, relevance, dossierText, buildDirectorPrompt, alsoRelevant, newKind, echoes, withoutPlayerActions } from '../src/director/prompt.js';
 import { factionsAtPlay, renamePlan } from '../src/director/run.js';
 
 const known = [
@@ -142,5 +142,32 @@ describe('the director and agendas', () => {
         expect(prompt).toContain('what they are doing about it off-screen');
         expect(prompt).toContain('driven by what the other characters want');
         expect(system).toContain('How the user wants this story run - follow it: Keep danger real.');
+    });
+});
+
+describe("the player character's own actions in the briefing", () => {
+    const names = ['Remus Watt', 'Remus'];
+    const briefing = [
+        "As the relentless undead horde claws at the fortress's stone barrier below, Graxx fixes his piercing gaze on Remus Watt, his voice low and even as he speaks. Remus tightens his grip on his crossbow, but maintains a neutral expression, not wishing to antagonize Graxx further.",
+        "As the heavy rain continues to lash against the fortress walls, Remus's thoughts drift uneasily to Graxx's imposing form. Varyn and Remus hold the gate. The fat Ravager watches Remus with unsettling interest.",
+        'Next: Graxx names his price.',
+    ].join('\n\n');
+    it('are taken out; what others do to him stays', () => {
+        const out = withoutPlayerActions(briefing, names);
+        expect(out).toContain('Graxx fixes his piercing gaze on Remus Watt');
+        expect(out).toContain('The fat Ravager watches Remus with unsettling interest.');
+        expect(out).toContain('Next: Graxx names his price.');
+        expect(out).not.toContain('tightens his grip');
+        expect(out).not.toContain('thoughts drift');
+        expect(out).not.toContain('hold the gate');
+        expect(out.split('\n\n')).toHaveLength(3);
+    });
+    it('changes nothing without a player character', () => {
+        expect(withoutPlayerActions(briefing, [])).toBe(briefing);
+    });
+    it('are ruled out in the prompt, whose example no longer has him act', () => {
+        const { system, prompt } = buildDirectorPrompt({ cast: [{ name: 'Remus', player: true }] });
+        expect(system).toContain('Remus is never the subject of your sentences');
+        expect(prompt).not.toMatch(/SITUATION \| Remus/);
     });
 });

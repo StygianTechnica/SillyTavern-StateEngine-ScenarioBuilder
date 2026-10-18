@@ -302,6 +302,7 @@ export function buildDirectorPrompt(input) {
         'You are the game master of an ongoing roleplay. You do not write the story yourself: another writer (the narrator) writes the next reply.',
         'Your job is to brief that narrator before it writes, in plain narrative prose, so its reply is grounded in the actual state of the scene and moves the story forward sensibly.',
         `${userName} is the player character, played by a human. Never decide or suggest what ${userName} says, does, thinks, feels or will do next, and do not describe the scene through ${userName}'s eyes; brief the narrator on the other characters and the world, which react to ${userName}.`,
+        `${userName} is never the subject of your sentences - not even a small gesture, a glance or a passing thought ("${userName} tightens his grip", "${userName}'s thoughts drift" are forbidden). Write what the others do to, at or around ${userName} instead ("Graxx fixes his gaze on ${userName}").`,
         'Never contradict the facts you are given. Only use what fits the world\'s rules.',
         clean(input.overview?.gmStyle) ? `How the user wants this story run - follow it: ${cut(input.overview.gmStyle, 800)}` : '',
     ].filter(Boolean).join(' ');
@@ -349,8 +350,8 @@ export function buildDirectorPrompt(input) {
         '',
         `On its own line, a title of two to five words for the scene as it now stands - ${clean(input.scene?.title) ? `keep "${clean(input.scene.title)}" unless the scene has moved on` : 'it has none yet'}:`,
         'SCENE | The debt comes due',
-        'And one sentence on what is going on in the scene as this reply begins - who is doing what, and where:',
-        'SITUATION | Remus and Varyn hold the gate while the dead mass below the wall.',
+        `And one sentence on what is going on in the scene as this reply begins - what the others are doing, and where (never what ${userName} does):`,
+        'SITUATION | Varyn holds the gate while Graxx\'s men wait below and the dead mass beyond the wall.',
         '',
         `The scene always follows ${userName}. If the latest message takes ${userName} somewhere else - leaving the room, walking out, going to another place - never write LEAVES for ${userName}; write a line naming where the scene is now (one of the ways on when it fits), who goes along with ${userName} (or "none"), and whether it is indoors or outdoors. Everyone else stays behind.`,
         'MOVE | Place name | Name, Name | outdoors',
@@ -384,6 +385,29 @@ export function buildDirectorPrompt(input) {
         parts.push('', 'Use only the places, people, creatures, factions, lore, events, quests and items named above; do not invent new named ones.');
     }
     return { system, prompt: parts.join('\n') };
+}
+
+// The director's sentences with the player character as their subject
+// ("Remus tightens his grip", "As the rain falls, Remus's thoughts drift",
+// "Remus and Varyn hold the gate") taken out: whatever the director is
+// told, a small model narrates the player character now and then, and the
+// narrator copies what it reads. Sentences where others act on them stay
+// ("Graxx fixes his gaze on Remus"). `names`: how the player character is
+// called (callNames). Paragraph breaks are kept.
+export function withoutPlayerActions(text, names) {
+    const list = [...new Set((names ?? []).map((n) => clean(n)).filter((n) => n.length >= 3))].sort((a, b) => b.length - a.length);
+    if (!list.length) return String(text ?? '');
+    const esc = (n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const who = `(?:${list.map(esc).join('|')})`;
+    // Optional lead-in ("As the rain falls, " / "Meanwhile, "), then the
+    // player character (or "X and Y") as the subject, or their thoughts,
+    // eyes, hands...
+    const subject = new RegExp(`^["'*\\s]*(?:[^.!?,;:]{0,120},\\s+)?(?:(?:${who})(?:['\u2019]s\\s+\\w+)?|\\w+\\s+and\\s+${who}|${who}\\s+and\\s+\\w+)\\b(?!['\u2019])`, 'iu');
+    return String(text ?? '').split(/(\n\s*\n)/).map((para) => {
+        if (/^\n/.test(para)) return para;
+        const sentences = para.match(/[^.!?…]+(?:[.!?…]+["'”)\]]*|$)\s*/g) ?? [para];
+        return sentences.filter((s) => !subject.test(s.trim())).join('').trim();
+    }).filter((p, i, all) => !(p === '' && /^\n/.test(all[i + 1] ?? '\n'))).join('').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 // The briefing's two parts: the summary (where things stand, the people,

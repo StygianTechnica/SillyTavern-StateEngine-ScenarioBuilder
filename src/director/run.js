@@ -25,11 +25,13 @@ import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import { callModelFirst } from '../generate/llm.js';
 import { gatherInputs } from '../guidance/sync.js';
-import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant } from './prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
 
 export const DIRECTOR_EVENT = 'scenario_builder_director';
+
+const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 
 // The run in flight, by chat key + situation key: a second request for the
 // same situation (a swipe, the Rethink button) waits on the same run.
@@ -328,6 +330,11 @@ async function run(chatId, chatKey, type, force) {
     });
     const raw = await callModelFirst([{ role: 'system', content: system }, { role: 'user', content: prompt }], settings.director.maxTokens);
     const parsed = parseDirectorNote(raw);
+    // Whatever the director wrote of the player character's own actions,
+    // thoughts or feelings goes - the narrator would copy it.
+    const playerChar = settingId ? characters.find((c) => c.id === playerIdOf(settingId, characters)) : null;
+    const playerNames = [...(playerChar ? callNames(playerChar) : []), clean(SillyTavern.getContext().name1)].filter(Boolean);
+    for (const key of ['note', 'summary', 'direction', 'situation']) parsed[key] = withoutPlayerActions(parsed[key], playerNames);
     const { note, created } = parsed;
     if (!note) throw new Error('The model wrote no briefing.');
 
