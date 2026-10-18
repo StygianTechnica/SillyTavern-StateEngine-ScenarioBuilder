@@ -23,6 +23,31 @@ describe('lore relevance', () => {
         expect(relevantLore([fall], { recentText: 'the fall was long' })).toEqual([]);
     });
 
+    // From the God War chat: neither was in the scene.
+    const cerys = { id: 'lor_c', name: 'Cerys, the Silent Chronicler', aliases: ['Cerys'], related_entity_ids: [] };
+    const compact = { id: 'lor_g', name: 'The Graveborn Compact', aliases: ['Graveborn Pact', 'Unspoken Law of Death'], related_entity_ids: [] };
+
+    it('does not take a word of an epithet that is part of another name', () => {
+        expect(relevantLore([cerys], { recentText: '"I was raised among the Silent Wardens," Remus said.' })).toEqual([]);
+        expect(relevantLore([cerys], { recentText: 'Cerys wrote it down.' })[0].entry.id).toBe('lor_c');
+        expect(relevantLore([cerys], { recentText: 'They asked the Silent Chronicler.' })[0].entry.id).toBe('lor_c');
+    });
+
+    it('needs the words of a name together, not scattered over the messages', () => {
+        const scattered = 'He let the unspoken implication hang in the air. "I have death\'s eye on me." Death knights rode by.';
+        expect(relevantLore([compact], { recentText: scattered })).toEqual([]);
+        expect(relevantLore([compact], { recentText: 'They obey the unspoken law of death here.' })[0].entry.id).toBe('lor_g');
+        expect(relevantLore([compact], { recentText: 'The compact of the Graveborn binds them.' })[0].entry.id).toBe('lor_g');
+    });
+
+    it('takes a one-word name only when it is used as a name', () => {
+        // "God of Light" leaves only "light", which a lower-case use isn't.
+        expect(relevantLore([elyon], { recentText: 'The light faded from the hall.' })).toEqual([]);
+        expect(relevantLore([fall], { recentText: 'Then Varn burned.' })[0].entry.id).toBe('lor_f');
+        expect(relevantLore([fall], { recentText: 'They bowed to Lord Varn.' })[0].entry.id).toBe('lor_f');
+        expect(relevantLore([fall], { recentText: 'The Varn Guard marched.' })).toEqual([]);
+    });
+
     it('finds lore tied to someone the chat names, and to the scene', () => {
         const out = relevantLore([pact, fall], { recentText: 'Maren frowned.', sceneIds: ['chr_remus'], mentioned: [{ id: 'chr_maren', names: ['Maren'] }] });
         expect(out.map((x) => x.entry.id)).toEqual(['lor_f', 'lor_p']);

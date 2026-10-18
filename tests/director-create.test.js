@@ -1,4 +1,4 @@
-import { parseDirectorNote, relevance, dossierText, buildDirectorPrompt, alsoRelevant, newKind, echoes, withoutPlayerActions, isPlaceholder } from '../src/director/prompt.js';
+import { parseDirectorNote, relevance, dossierText, buildDirectorPrompt, alsoRelevant, newKind, echoes, withoutPlayerActions, isPlaceholder, knownAs } from '../src/director/prompt.js';
 import { factionsAtPlay, renamePlan } from '../src/director/run.js';
 
 const known = [
@@ -198,5 +198,32 @@ describe('copied format lines', () => {
         expect(parsed.move).toEqual({ place: 'The Junkyard', along: ['Varyn'], indoor: false });
         expect(parsed.enters).toEqual(['Niamh']);
         expect(isPlaceholder('The Junkyard')).toBe(false);
+    });
+});
+
+describe('never a second thing of a name the library has', () => {
+    // From the God War chat: an event the director was shown, proposed as a place.
+    const library = [
+        ...known.map((e) => ({ ...e, type: e.id.startsWith('chr') ? 'character' : e.id.startsWith('fac') ? 'faction' : 'location' })),
+        { id: 'evt_bleak', type: 'event', name: 'The Bleakfast', aliases: ['Night of the Flesh Feast'] },
+    ];
+
+    it('finds the name under any type, by name or alias', () => {
+        expect(knownAs('The Bleakfast', library)?.id).toBe('evt_bleak');
+        expect(knownAs('Night of the Flesh Feast', library)?.type).toBe('event');
+        expect(knownAs('silent wardens', library)?.id).toBe('fac_wardens');
+    });
+
+    it('ignores case, a leading article, quotes and a possessive', () => {
+        expect(knownAs('Bleakfast', library)?.id).toBe('evt_bleak');
+        expect(knownAs('"the bleakfast"', library)?.id).toBe('evt_bleak');
+        expect(knownAs("The Bleakfast's", library)?.id).toBe('evt_bleak');
+    });
+
+    it('lets a genuinely new name through - a longer name is not the same name', () => {
+        expect(knownAs('The Bleakfast Grounds', library)).toBeNull();
+        expect(knownAs("Niamh's Fortress Gate", library)).toBeNull();
+        expect(knownAs('', library)).toBeNull();
+        expect(knownAs('Ash Ghouls', [])).toBeNull();
     });
 });

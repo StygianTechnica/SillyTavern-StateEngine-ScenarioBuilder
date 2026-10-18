@@ -100,6 +100,20 @@ export function relevance(item, { recentText = '', latestUserText = '', quests =
     return { ok: named || tiedIds.length > 0 || threadTie, tiedIds };
 }
 
+// A name as compared across the library: case, a leading article, quotes
+// and a possessive aside ("The Bleakfast" = "bleakfast").
+const sameNameKey = (name) => clean(name).toLowerCase().replace(/^["“”]+|["“”]+$/g, '').replace(/[’']s$/, '').replace(/["'’]/g, '').trim().replace(/^(the|a|an)\s+/, '');
+
+// The library entry - of ANY type - already called `name` (its name or an
+// alias), or null. The director never makes a second thing of the same
+// name: "The Bleakfast", an event it was shown, is not a new place.
+// known: [{ id, type?, name, aliases }].
+export function knownAs(name, known) {
+    const key = sameNameKey(name);
+    if (!key) return null;
+    return (known ?? []).find((e) => [e.name, ...(e.aliases ?? e.base?.aliases ?? [])].some((n) => typeof n === 'string' && sameNameKey(n) === key)) ?? null;
+}
+
 // Whether a descriptive name ("The Eyepatched Man") echoes the text ("a
 // man with an eyepatch"): one of its distinctive words, or its stem, is there.
 export function echoes(name, text) {

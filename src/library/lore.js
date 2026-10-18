@@ -16,11 +16,58 @@ export function namedIn(text, name) {
     return new RegExp(`(^|[^\\p{L}\\p{N}])${escape(n)}(?=$|[^\\p{L}\\p{N}])`, 'iu').test(String(text ?? ''));
 }
 
-// `word` in `text` capitalized, as a name is.
-function properIn(text, word) {
-    const re = new RegExp(`(^|[^\\p{L}\\p{N}])(${escape(word)})(?=$|[^\\p{L}\\p{N}])`, 'giu');
-    for (const m of String(text ?? '').matchAll(re)) if (/^\p{Lu}/u.test(m[2])) return true;
-    return false;
+// The text's words in order: { word (lower case, no "'s"), proper (it
+// starts with a capital), joined (only spaces or a hyphen since the word
+// before - the same phrase) }.
+function tokensOf(text) {
+    const out = [];
+    let end = 0;
+    for (const m of String(text ?? '').matchAll(/[\p{L}\p{N}']+/gu)) {
+        const gap = String(text).slice(end, m.index);
+        out.push({ word: m[0].toLowerCase().replace(/'s$/, '').replace(/^'+|'+$/g, ''), proper: /^\p{Lu}/u.test(m[0]), joined: out.length > 0 && /^[ \t-]+$/.test(gap) });
+        end = m.index + m[0].length;
+    }
+    return out;
+}
+
+// Token `i` used as a name: capitalized, and not the start or end of some
+// other capitalized name - "Silent" in "the Silent Wardens" names the
+// Wardens, not "the Silent Chronicler". `own`: the words of the name it
+// may stand with ("Elyon" in "Covenant of Elyon").
+function properAt(tokens, i, own) {
+    const t = tokens[i];
+    if (!t.proper) return false;
+    // A capitalized neighbour in the same phrase makes it another name -
+    // unless that neighbour is part of this one, a title ("Lord Elyon"),
+    // or (before it) just the sentence's first word ("Then Elyon spoke").
+    const other = (n) => n.proper && !own.has(n.word) && !STOP.has(n.word);
+    const next = tokens[i + 1];
+    if (next?.joined && other(next)) return false;
+    const prev = tokens[i - 1];
+    if (t.joined && prev?.joined && other(prev)) return false;
+    return true;
+}
+
+// Whether `words` (a name's distinctive words) are named together in the
+// text: close to one another (a few words apart at most), so "unspoken"
+// in one sentence and "death" in another don't make "the Unspoken Law of
+// Death". A one-word name must be used as a name (properAt).
+function wordsNamedIn(tokens, words) {
+    const own = new Set(words);
+    if (words.length === 1) return tokens.some((t, i) => t.word === words[0] && properAt(tokens, i, own));
+    const reach = words.length + 2;
+    return tokens.some((t, i) => t.word === words[0]
+        && words.every((w) => tokens.slice(Math.max(0, i - reach), i + reach + 1).some((x) => x.word === w)));
+}
+
+// One distinctive word (5+ letters) of the entry's own name - its first
+// part, not an epithet or alias - used as a name: "Varn" for "The Fall of
+// Varn", "Cerys" for "Cerys, the Silent Chronicler" (never "Silent").
+function headWordIn(tokens, entry) {
+    const head = String(entry.name ?? '').split(/\s*(?:,|;|\s[-–—]\s)\s*/)[0];
+    const words = keyWords(head);
+    const own = new Set(words);
+    return words.find((w) => w.length >= 5 && tokens.some((t, i) => t.word === w && properAt(tokens, i, own))) ?? null;
 }
 
 // The words of a name that identify it: 4+ letters, not common words.
@@ -55,7 +102,7 @@ const relatedOf = (o) => {
 export function relevantLore(entries, { recentText = '', sceneIds = [], mentioned = [] } = {}, max = 8) {
     const scene = new Set(sceneIds);
     const text = String(recentText ?? '');
-    const lowText = lower(text);
+    const tokens = tokensOf(text);
     const namedObjects = new Map();
     for (const m of mentioned ?? []) {
         const hit = (m.names ?? []).find((n) => namedIn(text, n));
@@ -69,11 +116,12 @@ export function relevantLore(entries, { recentText = '', sceneIds = [], mentione
         const full = names.find((n) => namedIn(text, n));
         if (full) { score += 4; why.push(`"${full}" was just mentioned`); }
         else {
-            // Every distinctive word of the name, or else one of 5+ letters
-            // the text uses as a proper noun ("Elyon" for "The Covenant of
-            // Elyon").
-            const word = names.map(keyWords).find((ws) => ws.length && ws.every((w) => namedIn(lowText, w)));
-            const one = !word && names.flatMap(keyWords).find((w) => w.length >= 5 && properIn(text, w));
+            // Every distinctive word of a name, close together ("Varn's
+            // fall" for "The Fall of Varn"), or else one of 5+ letters of
+            // its own name the text uses as a name ("Elyon" for "The
+            // Covenant of Elyon").
+            const word = names.map(keyWords).find((ws) => ws.length && wordsNamedIn(tokens, ws));
+            const one = !word && headWordIn(tokens, entry);
             if (word) { score += 3; why.push(`"${word.join(' ')}" was just mentioned`); }
             else if (one) { score += 2; why.push(`"${one}" was just mentioned`); }
         }

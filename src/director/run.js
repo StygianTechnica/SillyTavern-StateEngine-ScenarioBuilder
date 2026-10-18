@@ -25,7 +25,7 @@ import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import { callModelFirst } from '../generate/llm.js';
 import { gatherInputs } from '../guidance/sync.js';
-import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions } from './prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
 
@@ -232,7 +232,7 @@ function castAfter(characters, castIds, { enters, leaves }, made, playerId = '')
 
 // Moves the scene: finds (or makes) the place, takes the player character
 // and the named companions along. -> { from, castIds } or null.
-async function moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, canCreate }) {
+async function moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, known = [], canCreate }) {
     const doc = getChatDoc(chatKey);
     const from = doc.canonical.locationId || guidance.location?.id || '';
     const places = await listEntries(chatId, settingId, 'location');
@@ -245,8 +245,9 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
     ];
     let place = matchPlace(move.place, places, nearIds);
     if (place?.id === from) return null;
-    if (!place && canCreate && mentionedIn(move.place, recentText)) {
-        // A place the chat named that the library lacks: beside this one.
+    if (!place && canCreate && mentionedIn(move.place, recentText) && !knownAs(move.place, known)) {
+        // A place the chat named that the library lacks (under any type):
+        // beside this one.
         place = await createEntry(chatId, settingId, 'location', { name: move.place, description: '' }, { origin: 'director' });
         if (place && parentId) setParent(settingId, place.id, parentId);
         // Listed in Review like anything else the director adds, so a wrong
@@ -349,12 +350,18 @@ async function run(chatId, chatKey, type, force) {
     const latestUserText = [...messages].reverse().find((m) => m.isUser)?.text ?? '';
     // Never at random: brought up by the chat, or tied to what the setting
     // already has (prompt.js relevance). Items only for plot points.
-    const known = everything.map((e) => ({ id: e.id, name: e.name, aliases: e.aliases ?? e.base?.aliases ?? [] }));
+    const known = everything.map((e) => ({ id: e.id, type: e.type, name: e.name, aliases: e.aliases ?? e.base?.aliases ?? [] }));
     const typeIds = new Set(types.map((t) => t.id));
     const wanted = [];
     for (const c of created) {
         // Only kinds State Engine has.
         if (!typeIds.has(c.kind)) continue;
+        // Never a second thing of a name the library has, whatever its type.
+        const existing = knownAs(c.name, known);
+        if (existing) {
+            console.info(LOG_PREFIX, `the director did not add ${c.kind} "${c.name}": the library already has "${existing.name}"${existing.type ? ` (${existing.type})` : ''}`);
+            continue;
+        }
         const r = relevance(c, { recentText, latestUserText, quests: guidance.quests, known });
         if (r.ok) wanted.push({ ...c, tiedIds: r.tiedIds });
     }
@@ -387,7 +394,7 @@ async function run(chatId, chatKey, type, force) {
     let movedFrom = null;
     let baseCast = castIds;
     if (isNewTurn(type) && settingId && parsed.move) {
-        const moved = await moveScene(chatId, chatKey, settingId, parsed.move, { guidance, characters, castIds, recentText, canCreate: settings.director.allowCreate && !canonOnly });
+        const moved = await moveScene(chatId, chatKey, settingId, parsed.move, { guidance, characters, castIds, recentText, known, canCreate: settings.director.allowCreate && !canonOnly });
         if (moved) {
             movedFrom = moved.from;
             baseCast = moved.castIds;
