@@ -249,6 +249,12 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
         // A place the chat named that the library lacks: beside this one.
         place = await createEntry(chatId, settingId, 'location', { name: move.place, description: '' }, { origin: 'director' });
         if (place && parentId) setParent(settingId, place.id, parentId);
+        // Listed in Review like anything else the director adds, so a wrong
+        // one is seen - and Reject takes the scene back where it was.
+        if (place) {
+            const item = { id: newLocalId('a'), objectId: place.id, type: 'location', name: place.name, at: new Date().toISOString(), placedUnder: parentId, enrich: 'off', error: '' };
+            updateChatDoc(chatKey, (d) => { if (!d.adopted.some((a) => a.objectId === place.id)) d.adopted = [...d.adopted, item]; });
+        }
     }
     if (!place) {
         console.info(LOG_PREFIX, `the director moved the scene to "${move.place}", which is not in the library`);

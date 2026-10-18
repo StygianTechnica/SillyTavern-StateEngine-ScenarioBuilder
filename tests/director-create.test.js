@@ -1,4 +1,4 @@
-import { parseDirectorNote, relevance, dossierText, buildDirectorPrompt, alsoRelevant, newKind, echoes, withoutPlayerActions } from '../src/director/prompt.js';
+import { parseDirectorNote, relevance, dossierText, buildDirectorPrompt, alsoRelevant, newKind, echoes, withoutPlayerActions, isPlaceholder } from '../src/director/prompt.js';
 import { factionsAtPlay, renamePlan } from '../src/director/run.js';
 
 const known = [
@@ -169,5 +169,34 @@ describe("the player character's own actions in the briefing", () => {
         const { system, prompt } = buildDirectorPrompt({ cast: [{ name: 'Remus', player: true }] });
         expect(system).toContain('Remus is never the subject of your sentences');
         expect(prompt).not.toMatch(/SITUATION \| Remus/);
+    });
+});
+
+describe('copied format lines', () => {
+    it('never become a move, a title, a person or a new place', () => {
+        const parsed = parseDirectorNote([
+            'Graxx waits at the gate.',
+            'MOVE | Place name | Name, Name | outdoors',
+            'SCENE | The debt comes due',
+            'ENTERS | <name>',
+            'NEW location | <name> | <one-sentence description> | <tied to>',
+            'RENAME | none',
+            'NEW | none',
+            'SITUATION | <one sentence: who of the others is doing what, and where>',
+        ].join('\n'));
+        expect(parsed.move).toBeNull();
+        expect(parsed.scene).toBe('');
+        expect(parsed.situation).toBe('');
+        expect(parsed.enters).toEqual([]);
+        expect(parsed.created).toEqual([]);
+        expect(parsed.renames).toEqual([]);
+        // ...and none of them is left in the briefing.
+        expect(parsed.note).toBe('Graxx waits at the gate.');
+    });
+    it('still reads real values', () => {
+        const parsed = parseDirectorNote('x\nMOVE | The Junkyard | Varyn | outdoors\nENTERS | Niamh');
+        expect(parsed.move).toEqual({ place: 'The Junkyard', along: ['Varyn'], indoor: false });
+        expect(parsed.enters).toEqual(['Niamh']);
+        expect(isPlaceholder('The Junkyard')).toBe(false);
     });
 });

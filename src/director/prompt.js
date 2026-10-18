@@ -328,57 +328,61 @@ export function buildDirectorPrompt(input) {
         'End with a paragraph that begins "Next:" saying where this reply should probably go - one or two natural developments driven by what the other characters want, as direction rather than a script, leaning toward an open thread when it fits.',
         'Keep it under 400 words in all.',
     );
+    parts.push(
+        '',
+        'FORMAT LINES: the lines below are filled in only when they apply. Replace each <...> with the real value; never copy a <...> or an example, and never write "none" for a line that does not apply - leave the line out entirely.',
+    );
     if (input.askNow) {
         parts.push(
             '',
             'The story\'s clock is only now starting. On its own line, the time of day it is in the story as of the latest message - dawn, morning, midday, afternoon, evening, night or late night, or a clock time like 21:30 - from what the messages say or show (light, meals, lamps, sleep); "unknown" if they give no clue:',
-            'NOW | evening',
+            'NOW | <dawn, morning, midday, afternoon, evening, night, late night or a clock time>',
         );
     }
     if (input.timeKeeping !== false) {
         parts.push(
             '',
             'After the briefing, on its own line, how much in-story time this reply will cover from the latest message on:',
-            'TIME | 5 minutes | why',
+            'TIME | <how long, e.g. 5 minutes> | <why>',
             'A few minutes for talk; longer when people travel, wait, work or sleep, or when the scene moves on (a duration like "2 hours" or "3 days", or a time of day like "the next morning"). A journey along one of the ways on takes its travel time. Follow any time skip the latest message asks for.',
             '',
             `Only if the story needs the weather to change now (a storm rolling in that the plot calls for), a line naming the new weather from these: ${WEATHER_VALUES.join(', ')}.`,
-            'WEATHER | Rainy, Windy | why',
+            'WEATHER | <values from the list> | <why>',
         );
     }
     parts.push(
         '',
-        `On its own line, a title of two to five words for the scene as it now stands - ${clean(input.scene?.title) ? `keep "${clean(input.scene.title)}" unless the scene has moved on` : 'it has none yet'}:`,
-        'SCENE | The debt comes due',
+        `On its own line, a title of two to five words for the scene as it now stands - ${clean(input.scene?.title) && !isPlaceholder(input.scene.title) ? `keep "${clean(input.scene.title)}" unless the scene has moved on` : 'it has none yet'}:`,
+        'SCENE | <a title of two to five words>',
         `And one sentence on what is going on in the scene as this reply begins - what the others are doing, and where (never what ${userName} does):`,
-        'SITUATION | Varyn holds the gate while Graxx\'s men wait below and the dead mass beyond the wall.',
+        'SITUATION | <one sentence: who of the others is doing what, and where>',
         '',
-        `The scene always follows ${userName}. If the latest message takes ${userName} somewhere else - leaving the room, walking out, going to another place - never write LEAVES for ${userName}; write a line naming where the scene is now (one of the ways on when it fits), who goes along with ${userName} (or "none"), and whether it is indoors or outdoors. Everyone else stays behind.`,
-        'MOVE | Place name | Name, Name | outdoors',
+        `The scene always follows ${userName}. Only if the latest message takes ${userName} somewhere else - leaving the room, walking out, going to another place - never write LEAVES for ${userName}; write a line naming where the scene is now (one of the ways on when it fits), who goes along with ${userName} (or "none"), and whether it is indoors or outdoors. Everyone else stays behind.`,
+        'MOVE | <the place the scene is in now> | <who goes along, comma-separated, or none> | <indoors or outdoors>',
         '',
         'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along):',
-        'ENTERS | Name',
-        'LEAVES | Name',
+        'ENTERS | <name>',
+        'LEAVES | <name>',
         '',
         'If the latest chat gives a name to someone listed with "no name yet", a line for each (only the name the story gives - never one of your own):',
-        'RENAME | The Eyepatched Man | Korrin',
+        'RENAME | <the descriptive name> | <the name the story gives>',
     );
     if (creating) {
         parts.push(
             '',
             'Anything your briefing relies on that the facts above do not have - a place the characters are about to go to, a person, creature or group about to matter, a piece of lore or history, an event that is happening or coming - give it its details, mention it in the briefing, and add one line per thing (at most two). The last part says what it is TIED to: a person, place, faction or thread named above (by name), or the message that brought it up:',
-            'NEW location | Name | one-sentence description | tied to',
-            'NEW character | Name | one-sentence description | here (or nearby) | tied to',
+            'NEW location | <name> | <one-sentence description> | <tied to>',
+            'NEW character | <name> | <one-sentence description> | <here or nearby> | <tied to>',
             'Someone who takes part in the scene - speaks, acts, is spoken to, or is singled out by a description - but has no name yet is a character too: give them a short descriptive name from how the story describes them ("The Eyepatched Man", "The Heavyset Man") and add the word unnamed as the last part. Background crowds ("several others", "the guards") are not.',
-            'NEW character | The Eyepatched Man | a man with crooked teeth and an eyepatch | here | unnamed',
-            'NEW creature | Name | one-sentence description | tied to',
-            'NEW faction | Name | one-sentence description | tied to',
-            'NEW lore | Name | one-sentence description | tied to',
-            'NEW event | Name | one-sentence description | tied to',
-            'NEW quest | Name | what it asks of the characters | tied to',
-            'NEW scene | Name | one-sentence description | tied to',
+            'NEW character | <descriptive name, e.g. The Eyepatched Man> | <one-sentence description> | here | unnamed',
+            'NEW creature | <name> | <one-sentence description> | <tied to>',
+            'NEW faction | <name> | <one-sentence description> | <tied to>',
+            'NEW lore | <name> | <one-sentence description> | <tied to>',
+            'NEW event | <name> | <one-sentence description> | <tied to>',
+            'NEW quest | <name> | <what it asks of the characters> | <tied to>',
+            'NEW scene | <name> | <one-sentence description> | <tied to>',
             'Items are different: a named item takes on weight and pulls the story toward it. Describe ordinary objects in the prose only. Add an item only when it is a real plot point or something an open thread needs, and say which:',
-            'NEW item | Name | one-sentence description | the thread or plot point it serves',
+            'NEW item | <name> | <one-sentence description> | <the thread or plot point it serves>',
             'Most replies need no NEW lines. Never add something at random or just for colour, and never add something that already exists above. Only when the story needs a new plot point may you invent one - and then it must grow out of what is above (tie it to a person, place, faction or thread by name), fit the setting and its rules, and be named in your briefing.',
         );
     } else {
@@ -446,6 +450,17 @@ export function splitNote(note) {
     return { summary: text, direction: '' };
 }
 
+// A value the model copied from the format instead of filling in: a
+// <...> placeholder, "none", or one of the words the format used to show.
+const PLACEHOLDER = /^(?:none|n\/?a|null|nothing|no|-+|—|same|unchanged|unknown|not applicable|place name|names?|name, name|the debt comes due)$/i;
+export function isPlaceholder(value) {
+    const v = clean(value).replace(/^["'*]+|["'*.]+$/g, '');
+    return !v || /[<>]/.test(v) || PLACEHOLDER.test(v);
+}
+
+// A format line, whether or not it could be read - never left in the prose.
+const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|LEAVES|NEW|RENAME)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
 // Lenient: strips fences, headings and preambles; NEW lines may appear
@@ -467,17 +482,17 @@ export function parseDirectorNote(raw) {
     for (const line of text.split('\n')) {
         const t = line.match(/^\s*(?:[-*]\s*)?\**TIME\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
         if (t) {
-            if (!time) time = { text: clean(t[1]).replace(/^["']|["']$/g, ''), why: clean(t[2]) };
+            if (!time && !isPlaceholder(t[1])) time = { text: clean(t[1]).replace(/^["']|["']$/g, ''), why: clean(t[2]) };
             continue;
         }
         const sc = line.match(/^\s*(?:[-*]\s*)?\**SCENE\**\s*:?\s*\|\s*(.+?)\s*$/i);
         if (sc) {
-            if (!scene) scene = shortTitle(clean(sc[1]));
+            if (!scene && !isPlaceholder(sc[1])) scene = shortTitle(clean(sc[1]));
             continue;
         }
         const st = line.match(/^\s*(?:[-*]\s*)?\**SITUATION\**\s*:?\s*\|\s*(.+?)\s*$/i);
         if (st) {
-            if (!situation) situation = clean(st[1]).replace(/^["'*]+|["'*]+$/g, '').slice(0, 300);
+            if (!situation && !isPlaceholder(st[1])) situation = clean(st[1]).replace(/^["'*]+|["'*]+$/g, '').slice(0, 300);
             continue;
         }
         const wx = line.match(/^\s*(?:[-*]\s*)?\**WEATHER\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
@@ -488,14 +503,14 @@ export function parseDirectorNote(raw) {
         }
         const nw = line.match(/^\s*(?:[-*]\s*)?\**NOW\**\s*:?\s*\|\s*(.+?)\s*$/i);
         if (nw) {
-            if (!now) now = clean(nw[1]).replace(/^["'*]+|["'*.]+$/g, '');
+            if (!now && !isPlaceholder(nw[1])) now = clean(nw[1]).replace(/^["'*]+|["'*.]+$/g, '');
             continue;
         }
         const mv = line.match(/^\s*(?:[-*]\s*)?\**MOVE\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?$/i);
         if (mv) {
             const place = clean(mv[1]).replace(/^["'*]+|["'*.]+$/g, '');
-            if (!move && place) {
-                const along = /^(none|no one|nobody|alone|-)?$/i.test(clean(mv[2])) ? [] : clean(mv[2]).split(/,| and /i).map((n) => clean(n).replace(/^["'*]+|["'*.]+$/g, '')).filter(Boolean);
+            if (!move && place && !isPlaceholder(place)) {
+                const along = /^(none|no one|nobody|alone|-)?$/i.test(clean(mv[2])) ? [] : clean(mv[2]).split(/,| and /i).map((n) => clean(n).replace(/^["'*]+|["'*.]+$/g, '')).filter((n) => n && !isPlaceholder(n));
                 const io = clean(mv[3]).toLowerCase();
                 move = { place, along, indoor: /^in/.test(io) ? true : /^out/.test(io) ? false : null };
             }
@@ -505,20 +520,20 @@ export function parseDirectorNote(raw) {
         if (rn) {
             const from = clean(rn[1]).replace(/^["'*]+|["'*.]+$/g, '');
             const to = clean(rn[2]).replace(/^["'*]+|["'*.]+$/g, '');
-            if (from && to && from.toLowerCase() !== to.toLowerCase()) renames.push({ from, to });
+            if (from && to && !isPlaceholder(from) && !isPlaceholder(to) && from.toLowerCase() !== to.toLowerCase()) renames.push({ from, to });
             continue;
         }
         const step = line.match(/^\s*(?:[-*]\s*)?\**(ENTERS|LEAVES)\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|.*)?$/i);
         if (step) {
             const name = clean(step[2]).replace(/^["'*]+|["'*]+$/g, '');
-            if (name) (step[1].toUpperCase() === 'ENTERS' ? enters : leaves).push(name);
+            if (name && !isPlaceholder(name)) (step[1].toUpperCase() === 'ENTERS' ? enters : leaves).push(name);
             continue;
         }
         const m = line.match(/^\s*(?:[-*]\s*)?\**NEW\**\s*:?\s*([a-z]+)\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?$/i);
         if (m) {
             const kind = newKind(m[1]);
             const name = clean(m[2]).replace(/^["'*]+|["'*]+$/g, '');
-            if (kind && name && !seen.has(name.toLowerCase()) && created.length < MAX_NEW) {
+            if (kind && name && !isPlaceholder(name) && !seen.has(name.toLowerCase()) && created.length < MAX_NEW) {
                 seen.add(name.toLowerCase());
                 // A character's fourth part says where they are; its fifth, and
                 // every other kind's fourth, what it is tied to.
@@ -531,6 +546,8 @@ export function parseDirectorNote(raw) {
             }
             continue;
         }
+        // A format line that could not be read ("NEW | none") is dropped too.
+        if (FORMAT_LINE.test(line)) continue;
         keep.push(line);
     }
     text = keep.join('\n')

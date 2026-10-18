@@ -23,7 +23,7 @@ describe('director prompt', () => {
             expect(prompt).toContain(bit);
         }
         expect(prompt).toContain('natural prose');
-        expect(prompt).toContain('NEW location | Name');
+        expect(prompt).toContain('NEW location | <name>');
     });
 
     it('asks for no new things when creation is off or the setting is canon-only', () => {
@@ -93,7 +93,7 @@ describe('director scene keeping', () => {
 
     it('asks for a TIME line and lists who could turn up', () => {
         const { prompt } = buildDirectorPrompt({ ...input, nearby: [{ name: 'Tobin', role: 'debt collector', why: 'seen earlier in this story' }], clock: { dayPart: 'evening', clock: '18:40', words: 'Thursday, day 4 of Stormfall', season: 'spring', sky: 'Dusk is falling.' } });
-        expect(prompt).toContain('TIME | 5 minutes | why');
+        expect(prompt).toContain('TIME | <how long, e.g. 5 minutes> | <why>');
         expect(prompt).toContain('OTHERS WHO COULD TURN UP');
         expect(prompt).toContain('- Tobin (debt collector) - seen earlier in this story');
         expect(prompt).toContain('When: evening (18:40), Thursday, day 4 of Stormfall, in spring.');
@@ -167,8 +167,8 @@ describe('items only when they matter', () => {
 
 describe('director scene title', () => {
     it('reads a SCENE line and asks to keep the current title', () => {
-        const parsed = parseDirectorNote('Prose.\nSCENE | "The Debt Comes Due."');
-        expect(parsed.scene).toBe('The Debt Comes Due');
+        const parsed = parseDirectorNote('Prose.\nSCENE | "Siege at the Gate."');
+        expect(parsed.scene).toBe('Siege at the Gate');
         expect(parsed.note).toBe('Prose.');
         expect(buildDirectorPrompt({ ...input, scene: { title: 'Rain at the Lantern' } }).prompt).toContain('keep "Rain at the Lantern" unless the scene has moved on');
         expect(buildDirectorPrompt({ ...input }).prompt).toContain('it has none yet');
@@ -206,7 +206,7 @@ describe('director moves the scene', () => {
     });
 
     it('asks for a MOVE line', () => {
-        expect(buildDirectorPrompt({ ...input }).prompt).toContain('MOVE | Place name | Name, Name | outdoors');
+        expect(buildDirectorPrompt({ ...input }).prompt).toContain('MOVE | <the place the scene is in now> |');
     });
 
     it('finds the place by name or alias, near places first', () => {
@@ -225,8 +225,8 @@ describe('director moves the scene', () => {
 
 describe('director reads the starting time of day', () => {
     it('asks for NOW only while the clock needs it, and reads the line', () => {
-        expect(buildDirectorPrompt({ ...input, askNow: true }).prompt).toContain('NOW | evening');
-        expect(buildDirectorPrompt({ ...input }).prompt).not.toContain('NOW | evening');
+        expect(buildDirectorPrompt({ ...input, askNow: true }).prompt).toContain('NOW | <dawn, morning');
+        expect(buildDirectorPrompt({ ...input }).prompt).not.toContain('NOW | <dawn');
         const parsed = parseDirectorNote('Prose.\nNOW | late evening\nTIME | 5 minutes');
         expect(parsed.now).toBe('late evening');
         expect(parsed.note).toBe('Prose.');
