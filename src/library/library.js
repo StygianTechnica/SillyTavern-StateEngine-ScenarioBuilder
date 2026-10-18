@@ -13,6 +13,7 @@ import * as se from '../api/objects.js';
 import { getSettingDoc, updateSettingDoc, getEntryMeta } from '../store/setting-store.js';
 import { wouldCreateCycle, parentsAfterDelete, pathOf } from './hierarchy.js';
 import { placeOverview } from './world-options.js';
+import { normalizeKnowledgeItem, authoredKnowledge, storyKnowledge } from './knowledge.js';
 
 // ---- types
 
@@ -325,3 +326,38 @@ export async function readField(chatId, id, roleId, fieldName) {
     }
     return '';
 }
+
+// ---- secrets and oaths (src/library/knowledge.js)
+
+export function listKnowledge(settingId) {
+    return getSettingDoc(settingId).knowledge ?? [];
+}
+
+// item: { kind, text, knownBy, madeBy, madeTo, status } - a new one, or
+// one replacing the item with the same id.
+export function saveKnowledge(settingId, item) {
+    const stored = normalizeKnowledgeItem({ ...item, id: item.id || `k_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}` });
+    if (!stored.text) return null;
+    updateSettingDoc(settingId, (doc) => {
+        doc.knowledge = [...(doc.knowledge ?? []).filter((k) => k.id !== stored.id), stored];
+    });
+    return stored;
+}
+
+export function removeKnowledge(settingId, id) {
+    updateSettingDoc(settingId, (doc) => { doc.knowledge = (doc.knowledge ?? []).filter((k) => k.id !== id); });
+}
+
+// Every secret and oath for a chat: the user's, then Archivist's compiled
+// ones (when Archivist is there). nameOf(id) -> a name. Never throws.
+export async function allKnowledge(settingId, nameOf) {
+    const out = authoredKnowledge(listKnowledge(settingId), nameOf);
+    try {
+        const view = await globalThis.window?.StateEngineArchivist?.getCompiledMemory?.();
+        out.push(...storyKnowledge(view?.world));
+    } catch {
+        // No compiled memory yet.
+    }
+    return out;
+}
+

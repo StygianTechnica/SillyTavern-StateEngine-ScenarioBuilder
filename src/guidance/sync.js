@@ -22,7 +22,8 @@ import { getVariableValues, getRawValues, setVariableValue, VARIABLES_CHANGED_EV
 import { getObject, listObjects } from '../api/objects.js';
 import { PRESET_NAME } from '../preset/blueprint.js';
 import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.js';
-import { getBoundSettingId, readField, listEntries, playerIdOf } from '../library/library.js';
+import { getBoundSettingId, readField, listEntries, playerIdOf, allKnowledge } from '../library/library.js';
+import { sceneKnowledge } from '../library/knowledge.js';
 import { pathOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { buildGuidance, buildStateBlock, buildCast, guidanceParts, GUIDANCE_PARTS, timeText } from './build.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
@@ -137,7 +138,8 @@ export async function gatherInputs(chatId, chatKey) {
     }
 
     // The character the user plays: marked so nothing speaks for them.
-    const playerId = settingId ? playerIdOf(settingId, await listEntries(chatId, settingId, 'character')) : '';
+    const allCharacters = settingId ? await listEntries(chatId, settingId, 'character') : [];
+    const playerId = settingId ? playerIdOf(settingId, allCharacters) : '';
     const cast = [];
     for (const id of castIds) {
         const obj = await getObject(chatId, id);
@@ -148,6 +150,7 @@ export async function gatherInputs(chatId, chatKey) {
         // Runtime values by field role (SB-441); GM notes are never read here (SB-123).
         cast.push({
             name: obj.name,
+            aliases: obj.aliases ?? base.aliases ?? [],
             role: await readField(chatId, id, 'se__character.role', 'role'),
             description: doc.narrative[id]?.text || obj.description || '',
             personality: text(base.personality),
@@ -201,6 +204,24 @@ export async function gatherInputs(chatId, chatKey) {
         othersTracked = Array.isArray(tracked) && tracked.some((id) => typeof id === 'string' && id !== playerId && !heldOut.has(id));
     } catch (err) {
         console.debug(LOG_PREFIX, "could not read State Engine's scene tracker", err);
+    }
+
+    // Secrets and oaths (src/library/knowledge.js): what each person here
+    // knows and has sworn, and who here must not know a secret.
+    let secretRules = [];
+    if (settingId && cast.length) {
+        try {
+            const nameById = new Map(allCharacters.map((c) => [c.id, c.name]));
+            const knowledge = await allKnowledge(settingId, (id) => nameById.get(id) ?? '');
+            const { members, rules } = sceneKnowledge(knowledge, cast);
+            for (const member of cast) {
+                const k = members.get(member.id ?? member.name);
+                if (k) Object.assign(member, { knows: k.knows, sworn: k.sworn, owed: k.owed });
+            }
+            secretRules = rules;
+        } catch (err) {
+            console.debug(LOG_PREFIX, 'no secrets or oaths for the guidance', err);
+        }
     }
 
     // The active quests (most important first, a few at most).
@@ -298,6 +319,8 @@ export async function gatherInputs(chatId, chatKey) {
             // Taken out of the scene by hand, while that holds.
             absent,
             othersTracked,
+            // Secrets kept from those present; oaths binding them.
+            secrets: secretRules,
             lore,
             corrections: doc.corrections.map((x) => x.text),
             quests,

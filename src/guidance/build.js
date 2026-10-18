@@ -30,6 +30,7 @@ export const SECTIONS = Object.freeze([
     { key: 'scene', title: 'Scene premise', priority: 3, keep: false },
     { key: 'lore', title: 'Lore', priority: 2, keep: false },
     { key: 'corrections', title: 'Corrections', priority: 6, keep: true },
+    { key: 'secrets', title: 'Secrets and oaths', priority: 7, keep: true },
     { key: 'summary', title: 'Where things stand', priority: 7, keep: true },
     { key: 'style', title: 'How the story is run', priority: 8, keep: true },
     { key: 'direction', title: 'Where it should go', priority: 8, keep: true },
@@ -240,6 +241,9 @@ function castLine(c) {
     if (now.length) bits.push(`Now: ${now.join(', ')}`);
     if (clean(c.condition)) bits.push(unstop(truncate(c.condition, 80)));
     for (const r of c.relations ?? []) bits.push(firstUpper(unstop(truncate(r, 90))));
+    // What they know that others may not, and what binds them.
+    for (const k of c.knows ?? []) bits.push(`Knows: ${unstop(truncate(k, 160))}`);
+    for (const k of [...(c.sworn ?? []), ...(c.owed ?? [])]) bits.push(unstop(truncate(k, 160)));
     return `- ${name}${bits.length ? `: ${bits.join('. ')}.` : ''}`;
 }
 
@@ -324,6 +328,8 @@ const BUILDERS = {
     quests: (input) => questsSection(input.quests),
     lore: (input) => loreSection(input.lore),
     corrections: (input) => correctionsSection(input.corrections),
+    // Who here must not know a secret; the oaths that bind those present.
+    secrets: (input) => ((input.secrets ?? []).length ? { full: ['People know only what they have learned in the story.', ...input.secrets.slice(0, 8)].join(' '), compact: '' } : null),
 };
 
 // input: { overview, location: { path, description, environment, indoor },
@@ -362,6 +368,7 @@ export function buildGuidance(input) {
         location: input.location?.path?.length ? `Canonical location, its path and inherited environment; canonical time and weather.` : 'Canonical time and weather.',
         scene: 'The canonical scene title and premise.',
         corrections: 'Adjustments made by validation, kept for a few replies.',
+        secrets: 'Secrets and oaths touching those present - yours (on the sheets) and the story\'s (Archivist).',
         quests: (input.quests ?? []).map((q) => `${q.name}: ${q.why ?? 'active'}`).join('; ') || 'Active quests.',
         lore: (input.lore ?? []).filter((l) => l.why).map((l) => `${l.name}: ${l.why}`).join('; ') || 'Lore named in the last few messages, tied to someone they name, or tied to this place or the people present.',
     };
@@ -384,7 +391,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_setting', 'THE SETTING', ['overview']],
     ['guidance_rules', 'WORLD RULES', ['limits']],
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
-    ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'corrections']],
+    ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'secrets', 'corrections']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
     ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'absent', 'alone']],
 ]);

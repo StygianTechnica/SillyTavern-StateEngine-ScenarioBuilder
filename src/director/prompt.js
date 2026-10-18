@@ -275,10 +275,16 @@ export function dossierText(input) {
             clean(c.intent) && `intends: ${cut(c.intent, 160)}`,
             clean(c.thought) && `thinking: ${cut(c.thought, 160)}`,
             ...(c.relations ?? []).map((r) => cut(r, 140)),
+            ...(c.knows ?? []).map((k) => `knows: ${cut(k, 160)}`),
+            ...[...(c.sworn ?? []), ...(c.owed ?? [])].map((k) => cut(k, 160)),
         ].filter(Boolean).map(bare);
         lines.push(`- ${clean(c.name)}${c.provisional ? ' (no name yet - known by this description)' : ''}${bits.length ? `: ${bits.join('; ')}` : ''}`);
     }
     if (cast.length && cast.every((c) => c.player)) lines.push('- No one else is here.');
+    if (input.secrets?.length) {
+        section('SECRETS AND OATHS (people act only on what they know)');
+        for (const r of input.secrets.slice(0, 8)) lines.push(`- ${r}`);
+    }
     if (input.absent?.length) {
         section('TAKEN OUT OF THE SCENE BY THE PLAYER (they must not appear, speak or act in this reply)');
         lines.push(`- ${input.absent.map(clean).join(', ')}`);
@@ -304,6 +310,7 @@ export function buildDirectorPrompt(input) {
         `${userName} is the player character, played by a human. Never decide or suggest what ${userName} says, does, thinks, feels or will do next, and do not describe the scene through ${userName}'s eyes; brief the narrator on the other characters and the world, which react to ${userName}.`,
         `${userName} is never the subject of your sentences - not even a small gesture, a glance or a passing thought ("${userName} tightens his grip", "${userName}'s thoughts drift" are forbidden). Write what the others do to, at or around ${userName} instead ("Graxx fixes his gaze on ${userName}").`,
         'Never contradict the facts you are given. Only use what fits the world\'s rules.',
+        'People know only what they have learned: a secret stays hidden from those who do not know it - they never act on it, hint at it or guess it - unless the story reveals it in front of them; an oath binds those who swore it.',
         clean(input.overview?.gmStyle) ? `How the user wants this story run - follow it: ${cut(input.overview.gmStyle, 800)}` : '',
     ].filter(Boolean).join(' ');
 

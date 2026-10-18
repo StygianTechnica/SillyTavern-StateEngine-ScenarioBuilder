@@ -80,6 +80,7 @@
 
 import { emptyMagic, emptyTech, normalizeMagic, normalizeTech } from '../library/world-options.js';
 import { emptyQuestMeta, normalizeQuestMeta } from '../quests/model.js';
+import { normalizeKnowledgeItem } from '../library/knowledge.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
 export const CHAT_SCHEMA_VERSION = 1;
@@ -199,7 +200,7 @@ export function normalizeCalendar(value) {
 export function emptySettingDoc() {
     // playerId: the character the user plays ('' = the one named like the
     // SillyTavern persona, if any) - the guidance never writes for them.
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {}, map: {} }, calendar: emptyCalendar(), playerId: '', routes: [] };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {}, map: {} }, calendar: emptyCalendar(), playerId: '', routes: [], knowledge: [] };
 }
 
 // Brings any stored setting document (or nothing) to the current shape.
@@ -227,6 +228,8 @@ export function normalizeSettingDoc(doc) {
     return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true,
         imports: Array.isArray(d.imports) ? d.imports.filter(isObject).slice(-IMPORTS_KEPT) : [],
         relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions), map: normalizePositions(d.graph?.map) }, calendar: normalizeCalendar(d.calendar), playerId: str(d.playerId),
+        // Secrets and oaths the user wrote (src/library/knowledge.js).
+        knowledge: Array.isArray(d.knowledge) ? d.knowledge.map(normalizeKnowledgeItem).filter((k) => k.id && k.text) : [],
         // Routes between places: { id, from, to, travel, note, guessed? } (src/library/routes.js).
         routes: Array.isArray(d.routes) ? d.routes.filter((r) => isObject(r) && str(r.id) && str(r.from) && str(r.to) && r.from !== r.to).map((r) => ({ id: r.id, from: r.from, to: r.to, travel: str(r.travel), note: str(r.note), ...(r.guessed === true ? { guessed: true } : {}) })) : [] };
 }

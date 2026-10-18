@@ -283,7 +283,15 @@ calls (one entry at a time, retry, and the entry text as a fallback).
   State Engine offers perspectives.
 - [x] Director: people it says arrive (ENTERS) or adds as here join the
   canonical cast; LEAVES takes them out.
-- [ ] Perspective and knowledge boundaries, POV modes (9.4, OPEN-5).
+- [x] Secrets and oaths (part of 9.4): Archivist's compiled secrets (who
+  knows them) and promises - oaths, vows, pledges, pacts (who swore, to
+  whom, pending / kept / broken / released) - plus the user's own, written
+  on an entry's Relations tab. Each person present is told what they know
+  and have sworn; the scene gets a rule for every kept secret naming who
+  here does not know it (they never act on it, hint at it or guess it);
+  the director is given the same and told people act only on what they
+  know. Revealed secrets and released or kept oaths drop out.
+- [ ] Perspective and knowledge boundaries beyond secrets, POV modes (9.4, OPEN-5).
 - [x] Quests (9.5): made automatically from Archivist's quest seeds, goals,
   plans and hooks (plus a "Scan Archivist for quests" catch-up), objectives
   kept in step with the plan's steps, type and base priority, effective

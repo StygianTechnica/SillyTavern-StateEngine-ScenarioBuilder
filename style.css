@@ -460,3 +460,7 @@
 /* A notice that needs the user (catalog). */
 .sb-callout-warn { border-style: solid; border-color: color-mix(in srgb, var(--sb-gold) 60%, transparent); background: color-mix(in srgb, var(--sb-gold) 8%, transparent); margin: 8px 0; }
 .sb-callout-warn > div { flex: 1; }
+
+/* Secrets and oaths (src/ui/sheet.js secretsCard). */
+.sb-multi { min-width: 12em; max-width: 100%; }
+.sb-badge-warn { border-color: #d08a3a; color: #e8a65a; }

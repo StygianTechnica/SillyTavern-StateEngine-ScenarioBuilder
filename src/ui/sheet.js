@@ -7,7 +7,8 @@
 
 import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc } from '../store/chat-store.js';
-import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview, getPlaceOverview, playerIdOf, setPlayerId, listEntries } from '../library/library.js';
+import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview, getPlaceOverview, playerIdOf, setPlayerId, listEntries, allKnowledge, listKnowledge, saveKnowledge, removeKnowledge } from '../library/library.js';
+import { knowledgeOf, OATH_STATUSES, SECRET_STATUSES } from '../library/knowledge.js';
 import { pathOf, descendantsOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
 import { getSettingDoc } from '../store/setting-store.js';
@@ -731,7 +732,54 @@ async function relationsTab({ entry, isNew, allEntries, names, parents, defs }) 
         relForm,
         h('div', { class: 'sb-section-title' }, icon('fa-book-open-reader'), ' From the story'),
         story,
-        h('small', { class: 'sb-hint' }, 'Story relationships come from Archivist and are read-only here; "Correct it" writes your own version, which takes precedence.'));
+        h('small', { class: 'sb-hint' }, 'Story relationships come from Archivist and are read-only here; "Correct it" writes your own version, which takes precedence.'),
+        await secretsCard(entry, names, allEntries));
+}
+
+// Secrets and oaths touching this entry (src/library/knowledge.js): the
+// story's (Archivist, read-only) and the user's own, with who knows a
+// secret and who swore an oath to whom.
+async function secretsCard(entry, names, allEntries) {
+    const { settingId } = ws.ctx;
+    const nameOf = (id) => names.get(id)?.name ?? '';
+    const items = knowledgeOf(entry, await allKnowledge(settingId, nameOf));
+    const people = (list) => (list ?? []).map((p) => p.name).filter(Boolean).join(', ');
+    const draft = ws.secretDraft?.for === entry.id ? ws.secretDraft : (ws.secretDraft = { for: entry.id, kind: 'secret', text: '', knownBy: entry.type === 'character' ? [entry.id] : [], madeBy: entry.type === 'character' ? [entry.id] : [], madeTo: [], status: '' });
+    const characters = allEntries.filter((e) => e.type === 'character').sort((a, b) => a.name.localeCompare(b.name));
+    const multi = (key) => h('select', { class: 'text_pole sb-multi', multiple: true, size: Math.min(5, Math.max(2, characters.length)), onchange: (e) => { draft[key] = [...e.target.selectedOptions].map((o) => o.value); } },
+        characters.map((c) => h('option', { value: c.id, selected: draft[key].includes(c.id) }, c.name)));
+    const rows = items.length ? h('div', { class: 'sb-relgroup' }, items.map((k) => h('div', { class: 'sb-rel' },
+        h('span', { class: 'sb-chip sb-chip-on', title: k.kind === 'oath' ? 'An oath, vow or pledge' : 'A secret' }, icon(k.kind === 'oath' ? 'fa-handshake' : 'fa-user-secret'), ` ${k.kind}`),
+        h('span', {}, k.text),
+        k.kind === 'secret' && k.knownBy.length ? h('small', { class: 'sb-hint' }, `known by ${people(k.knownBy)}`) : null,
+        k.kind === 'oath' ? h('small', { class: 'sb-hint' }, [k.madeBy.length ? `sworn by ${people(k.madeBy)}` : '', k.madeTo.length ? `to ${people(k.madeTo)}` : ''].filter(Boolean).join(' ')) : null,
+        h('span', { class: `sb-badge${k.status === 'broken' || k.status === 'revealed' ? ' sb-badge-warn' : ''}` }, k.status),
+        h('span', { class: 'sb-push' }, k.source === 'story'
+            ? h('small', { class: 'sb-hint', title: 'Compiled by Archivist from the story - it updates as the story goes' }, 'from the story')
+            : [h('span', { class: 'sb-iconbtn', title: 'Edit', onclick: () => { Object.assign(draft, { ...listKnowledge(settingId).find((x) => x.id === k.id), for: entry.id }); rerender(); } }, icon('fa-pen')),
+                h('span', { class: 'sb-iconbtn sb-danger', title: 'Remove', onclick: () => { removeKnowledge(settingId, k.id); void syncNow().then(() => rerender()); } }, icon('fa-trash'))])))) : h('div', { class: 'sb-muted' }, 'None yet. Archivist adds the secrets and oaths the story shows; add your own below.');
+    const save = () => {
+        if (!draft.text.trim()) return toast('warning', 'Write the secret or oath first.');
+        saveKnowledge(settingId, { ...draft, status: draft.status || undefined });
+        ws.secretDraft = null;
+        void syncNow().then(() => rerender());
+    };
+    const form = h('div', { class: 'sb-addform' },
+        h('div', { class: 'sb-row' },
+            select([{ value: 'secret', label: 'A secret' }, { value: 'oath', label: 'An oath, vow or pledge' }], draft.kind, { onchange: (e) => { draft.kind = e.target.value; draft.status = ''; rerender(); } }),
+            h('input', { class: 'text_pole', value: draft.text, placeholder: draft.kind === 'oath' ? 'e.g. to see Varyn safely to Redhaven' : `e.g. ${entry.name} is the champion of Elyon`, oninput: (e) => { draft.text = e.target.value; } })),
+        draft.kind === 'secret'
+            ? h('div', { class: 'sb-row' }, h('small', { class: 'sb-hint' }, 'Known by'), multi('knownBy'),
+                h('small', { class: 'sb-hint' }, 'Everyone else in a scene is told they do not know it.'))
+            : h('div', { class: 'sb-row' }, h('small', { class: 'sb-hint' }, 'Sworn by'), multi('madeBy'), h('small', { class: 'sb-hint' }, 'to'), multi('madeTo')),
+        h('div', { class: 'sb-row' },
+            select((draft.kind === 'oath' ? OATH_STATUSES : SECRET_STATUSES).map((s) => ({ value: s, label: s })), draft.status || (draft.kind === 'oath' ? 'pending' : 'kept'), { onchange: (e) => { draft.status = e.target.value; } }),
+            button(draft.id ? 'Save' : 'Add', save, { iconName: draft.id ? 'fa-floppy-disk' : 'fa-plus', cls: 'sb-primary' }),
+            draft.id || draft.text ? button('Cancel', () => { ws.secretDraft = null; rerender(); }, { iconName: 'fa-xmark' }) : null));
+    return h('div', {},
+        h('div', { class: 'sb-section-title' }, icon('fa-user-secret'), ' Secrets and oaths'),
+        rows, form,
+        h('small', { class: 'sb-hint' }, 'The guidance tells each person present what they know and have sworn, and tells everyone else they do not know a secret.'));
 }
 
 async function storyTab({ entry, isNew, doc }) {
