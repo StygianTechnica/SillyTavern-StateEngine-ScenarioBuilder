@@ -69,6 +69,13 @@ const DEFAULTS = {
     // time and weather; perTurn = how much time a reply covers when the
     // director does not say.
     time: { enabled: true, perTurn: '5 minutes' },
+    // The GM planner (src/planner/, docs/DESIGN - GM PLANNER.md): background
+    // passes that plan each in-game day and keep it in step with the story.
+    // level: 'light' | 'moderate' | 'heavy' (how often it checks; null
+    // overrides take the level's own numbers); pacing: 'off' | 'gentle' |
+    // 'brisk' | 'fast' (how readily an idle scene moves on); showSpoilers:
+    // the day plan is shown in the GM Plan tab (off: veiled).
+    planner: { enabled: true, level: 'moderate', checkEvery: null, dayExpire: null, pacing: 'gentle', showSpoilers: false, maxTokens: 1200 },
     // Settings migrations already applied.
     migrated: [],
     // { [settingId]: library document } - src/store/setting-store.js.
@@ -92,6 +99,8 @@ export function getSettings() {
     for (const [key, value] of Object.entries(DEFAULT_SECTIONS)) settings.sections[key] ??= value;
     for (const [key, value] of Object.entries(DEFAULTS.director)) settings.director[key] ??= value;
     for (const [key, value] of Object.entries(DEFAULTS.time)) settings.time[key] ??= value;
+    settings.planner ??= structuredClone(DEFAULTS.planner);
+    for (const [key, value] of Object.entries(DEFAULTS.planner)) if (settings.planner[key] === undefined) settings.planner[key] = value;
     // The old 600-token default was far too small for a narrative briefing.
     if (!settings.migrated.includes('budget-2000')) {
         if (settings.tokenBudget === 600) settings.tokenBudget = DEFAULTS.tokenBudget;

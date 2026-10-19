@@ -278,6 +278,12 @@ calls (one entry at a time, retry, and the entry text as a fallback).
   sections 5-7: knowledge boundaries, quests, factions/items/lore/events.
 - [x] Archivist memories feed the director's briefing (the location's and
   the cast's top memories).
+- [x] GM planner, phase 1 (docs/DESIGN - GM PLANNER.md): a day plan made in
+  the background and kept in step with the story, the user's guidance queue,
+  inspiration texts distilled into motifs, pacing that moves an idle scene
+  on, a private GM PLAN section with BEAT lines, and the GM Plan tab.
+- [ ] GM planner, phases 2-4: story outline and shapes on Archivist's
+  tension, proactive ideas and the agenda, tuning.
 - [ ] Director: a "think after each reply" mode (zero wait, written before
   the player's next message), and per-character perspective briefings once
   State Engine offers perspectives.

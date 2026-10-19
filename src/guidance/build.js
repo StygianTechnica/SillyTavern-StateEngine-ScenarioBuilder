@@ -12,6 +12,7 @@
 import { REFERENCE_HEADER } from '../constants.js';
 import { fitToBudget, estimateTokens } from './budget.js';
 import { WORLD_TYPES, describeMagic, describeTech, lookLines } from '../library/world-options.js';
+import { isPlaceholder } from '../director/prompt.js';
 
 const labelOf = (list, id) => list.find(([key]) => key === id)?.[1] ?? id;
 
@@ -195,8 +196,10 @@ function locationSection(input) {
     if (lying.length) around.push(`Also here, should the scene turn to them: ${andList(named(lying, 8))}.`);
     if (carried.length) around.push(`Carried by those present: ${andList(named(carried, 8))}.`);
     if (loc?.creatures?.length) around.push(`Also here: ${andList(named(loc.creatures, 6))}.`);
-    const roads = (loc?.routes ?? []).slice(0, 8).map((r) => `${clean(r.name)} (${[clean(r.travel), clean(r.note)].filter(Boolean).join(', ')})`);
-    const ways = [...named(loc?.places, 8), ...roads];
+    // A place saved under a template word ("Place name") is not a way on.
+    const real = (list) => (list ?? []).filter((x) => !isPlaceholder(x?.name));
+    const roads = real(loc?.routes).slice(0, 8).map((r) => `${clean(r.name)} (${[clean(r.travel), clean(r.note)].filter(Boolean).join(', ')})`);
+    const ways = [...named(real(loc?.places), 8), ...roads];
     const out = loc?.partOf ? `back out to ${clean(loc.partOf.name)}` : '';
     if (ways.length) around.push(`From here one can go to ${orList(ways)}${out ? `, or ${out}` : ''}.`);
     else if (out) around.push(`From here one can go ${out}.`);

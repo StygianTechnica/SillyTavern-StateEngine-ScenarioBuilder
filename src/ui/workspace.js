@@ -5,7 +5,7 @@
 //   - keys typed inside it never reach SillyTavern's own shortcuts;
 //   - Minimise folds it into a small pill so the chat can be read, and
 //     brings it back exactly where it was.
-// Tabs: Catalog (catalog.js + sheet.js), Graph (graph.js), Scene, Review,
+// Tabs: Catalog (catalog.js + sheet.js), Graph (graph.js), Scene, GM Plan (gm-plan.js), Review,
 // History, Preview (panels.js).
 
 import { getSettings, saveSettings } from '../settings.js';
@@ -22,6 +22,8 @@ import { renderCatalog } from './catalog.js';
 import { renderGraph } from './graph.js';
 import { renderScene, renderReview, renderHistory, renderPreview } from './panels.js';
 import { renderCalendar } from './calendar.js';
+import { renderGmPlan } from './gm-plan.js';
+import { PLANNER_EVENT } from '../planner/run.js';
 import { renderImport } from './import-panel.js';
 import { IMPORT_EVENT } from '../import/run.js';
 import { DIRECTOR_EVENT } from '../director/run.js';
@@ -33,6 +35,7 @@ const TABS = Object.freeze([
     ['catalog', 'Catalog', 'fa-book-atlas'],
     ['graph', 'Graph', 'fa-diagram-project'],
     ['scene', 'Scene', 'fa-clapperboard'],
+    ['plan', 'GM Plan', 'fa-chess-knight'],
     ['calendar', 'Calendar', 'fa-calendar-days'],
     ['review', 'Review', 'fa-seedling'],
     ['history', 'History', 'fa-clock-rotate-left'],
@@ -121,6 +124,7 @@ function listen() {
     eventSource.on(GUIDANCE_CHANGED_EVENT, () => { if (ws.tab === 'preview') later(); });
     eventSource.on(ENRICH_EVENT, later);
     eventSource.on(QUESTS_EVENT, later);
+    eventSource.on(PLANNER_EVENT, () => { if (ws.tab === 'plan') later(); });
     // The import's progress redraws the Import tab (no unsaved input there).
     eventSource.on(IMPORT_EVENT, () => { if (ws.tab === 'import') rerender(); });
     eventSource.on(DIRECTOR_EVENT, () => { if (ws.tab === 'preview') rerender(); });
@@ -158,7 +162,7 @@ async function render() {
     lastView = view;
     let body;
     try {
-        body = await ({ graph: renderGraph, import: renderImport, scene: renderScene, calendar: renderCalendar, review: renderReview, history: renderHistory, preview: renderPreview }[ws.tab] ?? renderCatalog)();
+        body = await ({ graph: renderGraph, import: renderImport, scene: renderScene, plan: renderGmPlan, calendar: renderCalendar, review: renderReview, history: renderHistory, preview: renderPreview }[ws.tab] ?? renderCatalog)();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not render the workspace', err);
         body = h('div', { class: 'sb-error' }, `Something went wrong: ${err?.message ?? err}`);

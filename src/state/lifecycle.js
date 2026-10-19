@@ -9,6 +9,7 @@
 //                                     message is taken first
 //   MESSAGE_SWIPED / EDITED / DELETED -> revert what that message caused (SB-224)
 //   CHAT_CHANGED                   -> drop pending work, bind the setting, rebuild (SB-501)
+//   GENERATION_ENDED               -> the GM planner keeps pace and runs due passes (src/planner/)
 //   (after validation and on a chat change, newly confirmed objects are
 //   taken into the library and enriched - src/library/intake.js)
 //
@@ -34,6 +35,7 @@ import { fillRoles } from '../preset/role-fill.js';
 import { setReplying } from '../generate/llm.js';
 import { syncFactions } from '../library/faction-sync.js';
 import { LIBRARY_CHANGED_EVENT } from '../store/setting-store.js';
+import { afterReply } from '../planner/run.js';
 
 const VALIDATE_DEBOUNCE_MS = 1000;
 let timer = null;
@@ -180,6 +182,13 @@ export function startLifecycle() {
     });
     for (const key of ['GENERATION_ENDED', 'GENERATION_STOPPED']) {
         if (eventTypes[key]) eventSource.on(eventTypes[key], () => setReplying(false));
+    }
+    // The GM planner follows each finished reply in the background (src/planner/).
+    if (eventTypes.GENERATION_ENDED) {
+        eventSource.on(eventTypes.GENERATION_ENDED, () => {
+            const ref = getCurrentChatRef();
+            if (ref && isActive()) void afterReply(ref.chatId, chatKeyFor(ref));
+        });
     }
     if (eventTypes.MESSAGE_SWIPED) eventSource.on(eventTypes.MESSAGE_SWIPED, safely((index) => revertFromMessage(Number(index))));
     if (eventTypes.MESSAGE_EDITED) eventSource.on(eventTypes.MESSAGE_EDITED, safely((index) => revertFromMessage(Number(index))));

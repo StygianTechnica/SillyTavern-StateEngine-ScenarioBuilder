@@ -28,6 +28,7 @@ import { gatherInputs } from '../guidance/sync.js';
 import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
+import { directorPlan, takeBeats, markActive } from '../planner/run.js';
 
 export const DIRECTOR_EVENT = 'scenario_builder_director';
 
@@ -274,16 +275,11 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
     return { from, castIds: next };
 }
 
-async function run(chatId, chatKey, type, force) {
-    const settings = getSettings();
-    const settingId = await getBoundSettingId(chatId);
-    const inputs = await gatherInputs(chatId, chatKey);
-    const guidance = inputs.guidance;
-    const messages = recentMessages(type);
-    const key = hashOf(JSON.stringify(messages.map((m) => [m.name, m.text])));
+// What the director (and the planner, src/planner/run.js) knows about the
+// world around the scene beyond the guidance: the people, the rules where
+// the scene is, the factions at play, events and earlier scenes.
+export async function sceneContext(chatId, chatKey, settingId, guidance) {
     const doc = getChatDoc(chatKey);
-    if (!force && doc.director.key === key && doc.director.note) return doc.director;
-
     const characters = settingId ? await listEntries(chatId, settingId, 'character') : [];
     const castIds = (guidance.cast ?? []).map((c) => c.id).filter(Boolean);
     const nearby = nearbyPeople(characters, castIds, doc.inPlay, settingId ? listRelations(settingId) : []);
@@ -304,6 +300,20 @@ async function run(chatId, chatKey, type, force) {
     const factions = settingId ? factionsAtPlay(factionList, { cast: (guidance.cast ?? []).filter((c) => c.id), placeIds, relations: getSettingDoc(settingId).relations, runtimeOf: (id) => runtimeFactions.get(id) ?? [] }) : [];
     const eventObjects = settingId ? (await listEntries(chatId, settingId, 'event').catch(() => [])).slice(-8).map((e) => ({ name: e.name, description: e.base?.description ?? e.description ?? '', when: e.base?.when ?? e.when ?? e.base?.date ?? '' })) : [];
     const scenes = settingId ? (await listEntries(chatId, settingId, 'scene').catch(() => [])).map((x) => ({ name: x.name, description: x.base?.description ?? x.description ?? '' })) : [];
+    return { characters, castIds, nearby, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes };
+}
+
+async function run(chatId, chatKey, type, force) {
+    const settings = getSettings();
+    const settingId = await getBoundSettingId(chatId);
+    const inputs = await gatherInputs(chatId, chatKey);
+    const guidance = inputs.guidance;
+    const messages = recentMessages(type);
+    const key = hashOf(JSON.stringify(messages.map((m) => [m.name, m.text])));
+    const doc = getChatDoc(chatKey);
+    if (!force && doc.director.key === key && doc.director.note) return doc.director;
+
+    const { characters, castIds, nearby, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes } = await sceneContext(chatId, chatKey, settingId, guidance);
     // Every entry of every type, for "also relevant" and for checking what
     // the director adds.
     const types = await getObjectTypes().catch(() => []);
@@ -334,6 +344,7 @@ async function run(chatId, chatKey, type, force) {
         relevant,
         timeKeeping: settings.time.enabled && !!settingId,
         askNow: settings.time.enabled && !!settingId && doc.clock.needsNow,
+        gmPlan: settingId ? directorPlan(chatKey, messages) : '',
     });
     const raw = await callModelFirst([{ role: 'system', content: system }, { role: 'user', content: prompt }], settings.director.maxTokens);
     const parsed = parseDirectorNote(raw);
@@ -445,6 +456,14 @@ async function run(chatId, chatKey, type, force) {
                 if (Number.isFinite(now)) await setTime(chatId, chatKey, settingId, now, { source: 'director', note: `The weather turns: ${parsed.weather.values.join(', ')}${parsed.weather.why ? ` (${parsed.weather.why})` : ''}` });
             }
         }
+    }
+
+    // The planner hears what played out (BEAT lines) and whether the scene
+    // changed - its pace count (src/planner/model.js) treats a turn with
+    // no change as idle.
+    if (isNewTurn(type) && settingId) {
+        takeBeats(chatKey, parsed.beats);
+        if (made.length || movedFrom || moves.in.length || moves.out.length) markActive(chatKey);
     }
 
     const result = { note, summary: parsed.summary, direction: parsed.direction, key, at: new Date().toISOString(), created: [...doc.director.created, ...made].slice(-20), error: '', time: timeText, moves };

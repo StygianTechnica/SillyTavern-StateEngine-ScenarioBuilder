@@ -331,7 +331,9 @@ export function buildDirectorPrompt(input) {
     // General to immediate: the world, the scene, then the latest chat and
     // the last briefing, then what to write.
     const recent = (input.messages ?? []).slice(-8).map((m) => `${clean(m.name) || (m.isUser ? userName : 'Narrator')}: ${cut(m.text, 900)}`).join('\n\n');
-    const parts = [dossierText(input), '', 'THE LATEST CHAT', recent || '(the story has not started yet)'];
+    // The planner's private plan (src/planner/): after the world, before the chat.
+    const plan = String(input.gmPlan ?? '').trim();
+    const parts = [dossierText(input), ...(plan ? ['', plan] : []), '', 'THE LATEST CHAT', recent || '(the story has not started yet)'];
     if (clean(input.previousNote)) parts.push('', 'YOUR LAST BRIEFING (move on from it; do not repeat what has already happened)', cut(input.previousNote, 1200));
     // With no one but the player present there are no people to brief on:
     // the world itself must answer, or the reply has nothing to do.
@@ -388,6 +390,14 @@ export function buildDirectorPrompt(input) {
         'If the latest chat gives a name to someone listed with "no name yet", a line for each (only the name the story gives - never one of your own):',
         'RENAME | <the descriptive name> | <the name the story gives>',
     );
+    if (/\[m\d+\]/.test(plan)) {
+        parts.push(
+            '',
+            'For a coming moment from the GM PLAN that this reply plays out, or that can no longer happen where the story has gone, a line each (its id as given, e.g. m2):',
+            'BEAT | <moment id> | done | <how it plays out, a few words>',
+            'BEAT | <moment id> | skipped | <why, a few words>',
+        );
+    }
     if (creating) {
         parts.push(
             '',
@@ -473,14 +483,16 @@ export function splitNote(note) {
 
 // A value the model copied from the format instead of filling in: a
 // <...> placeholder, "none", or one of the words the format used to show.
-const PLACEHOLDER = /^(?:none|n\/?a|null|nothing|no|-+|—|same|unchanged|unknown|not applicable|place name|names?|name, name|the debt comes due)$/i;
+const PLACEHOLDER = /^(?:none|n\/?a|null|nothing|no|-+|—|same|unchanged|unknown|not applicable|(?:place|location) ?names?|name of (?:the )?(?:place|location)|names?|name, name|the debt comes due)$/i;
 export function isPlaceholder(value) {
     const v = clean(value).replace(/^["'*]+|["'*.]+$/g, '');
-    return !v || /[<>]/.test(v) || PLACEHOLDER.test(v);
+    // "[Place name]", "place_name", "Place-Name" are the same template words.
+    const bare = clean(v.replace(/^[[({]+|[\])}]+$/g, '').replace(/[_-]+/g, ' '));
+    return !v || /[<>]/.test(v) || PLACEHOLDER.test(v) || PLACEHOLDER.test(bare);
 }
 
 // A format line, whether or not it could be read - never left in the prose.
-const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|LEAVES|NEW|RENAME)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|LEAVES|NEW|RENAME|BEAT)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
@@ -500,7 +512,13 @@ export function parseDirectorNote(raw) {
     const renames = [];
     const enters = [];
     const leaves = [];
+    const beats = [];
     for (const line of text.split('\n')) {
+        const bt = line.match(/^\s*(?:[-*]\s*)?\**BEAT\**\s*:?\s*\|\s*\[?(m\d+)\]?\s*\|\s*(done|skipped)\s*(?:\|\s*(.*?)\s*)?$/i);
+        if (bt) {
+            if (!beats.some((b) => b.id === bt[1].toLowerCase())) beats.push({ id: bt[1].toLowerCase(), status: bt[2].toLowerCase(), note: bt[3] && !isPlaceholder(bt[3]) ? clean(bt[3]) : '' });
+            continue;
+        }
         const t = line.match(/^\s*(?:[-*]\s*)?\**TIME\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
         if (t) {
             if (!time && !isPlaceholder(t[1])) time = { text: clean(t[1]).replace(/^["']|["']$/g, ''), why: clean(t[2]) };
@@ -577,5 +595,5 @@ export function parseDirectorNote(raw) {
         .replace(/^\s*#+\s+/gm, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-    return { note: text, ...splitNote(text), created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames };
+    return { note: text, ...splitNote(text), created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats };
 }

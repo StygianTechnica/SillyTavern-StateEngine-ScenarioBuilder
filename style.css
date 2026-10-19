@@ -464,3 +464,19 @@
 /* Secrets and oaths (src/ui/sheet.js secretsCard). */
 .sb-multi { min-width: 12em; max-width: 100%; }
 .sb-badge-warn { border-color: #d08a3a; color: #e8a65a; }
+
+/* GM Plan tab (src/ui/gm-plan.js). */
+.sb-gm-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.sb-gm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 0; border-top: 1px solid var(--sb-line); }
+.sb-gm-text { flex: 1 1 16em; min-width: 0; line-height: 1.4; }
+.sb-gm-past { opacity: 0.55; }
+.sb-gm-veiled { font-style: italic; }
+.sb-gm-veiled > i { color: var(--sb-accent); }
+.sb-gm-peek { margin-left: auto; font-size: 0.85em; }
+.sb-gm-sub { margin-top: 6px; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.06em; opacity: 0.65; }
+.sb-gm-done { color: #7fc48a; }
+.sb-gm-skipped, .sb-gm-withdrawn { opacity: 0.7; }
+.sb-gm-planned { color: var(--sb-accent); }
+.sb-gm-insp { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px solid var(--sb-line); }
+.sb-gm-insp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sb-gm-log { font-size: 0.88em; }

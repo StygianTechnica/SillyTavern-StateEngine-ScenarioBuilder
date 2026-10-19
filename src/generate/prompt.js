@@ -270,6 +270,11 @@ export function setJsonParser(fn) {
     pluggedParser = typeof fn === 'function' ? fn : null;
 }
 
+// A model's JSON answer as an object, or undefined (src/planner/ uses it too).
+export function readModelJson(text) {
+    return readJson(text);
+}
+
 function readJson(text) {
     if (pluggedParser) {
         try {

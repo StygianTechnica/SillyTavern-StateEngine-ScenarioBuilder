@@ -66,6 +66,8 @@
 //     candidates: [{ id, objectId, type, name, field, source, at }],
 //     rejected: [{ type, name, threadId? }], suppressed names (SB-225); threadId: the
 //                                           Archivist thread a rejected quest came from
+//     gm: the GM planner's day plan, guidance queue, inspirations and pacing
+//                                           (src/planner/model.js)
 //     factionsWritten: { [characterId]: [factionId] }   memberships Scenario Builder wrote
 //                                           into characters' runtime factions (src/library/faction-sync.js)
 //     held: [{ field, op?, objectId?, value?, until }]   scene changes the user made by
@@ -78,6 +80,7 @@
 //     history: [historyEntry],              every automated or manual change (SB-226)
 //     turn }                                AI replies reconciled so far
 
+import { emptyGm, normalizeGm } from '../planner/model.js';
 import { emptyMagic, emptyTech, normalizeMagic, normalizeTech } from '../library/world-options.js';
 import { emptyQuestMeta, normalizeQuestMeta } from '../quests/model.js';
 import { normalizeKnowledgeItem } from '../library/knowledge.js';
@@ -334,6 +337,7 @@ export function emptyChatDoc() {
         corrections: [],
         history: [],
         turn: 0,
+        gm: emptyGm(),
     };
 }
 
@@ -366,6 +370,7 @@ export function normalizeChatDoc(doc) {
         corrections: Array.isArray(d.corrections) ? d.corrections.filter(isObject) : [],
         history: Array.isArray(d.history) ? d.history.filter(isObject).slice(-HISTORY_LIMIT) : [],
         turn: Number.isInteger(d.turn) && d.turn >= 0 ? d.turn : 0,
+        gm: normalizeGm(d.gm),
     };
 }
 
