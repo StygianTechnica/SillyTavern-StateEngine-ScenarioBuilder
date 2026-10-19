@@ -29,7 +29,7 @@ import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { checkQuestEnds, fillMissingEnds } from '../quests/ends.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
-import { directBeforeReply } from '../director/run.js';
+import { directBeforeReply, addNamedPeople } from '../director/run.js';
 import { ensureClock, advanceBy, setTime, perTurnDefault, followStoryTimeOfDay } from '../calendar/clock.js';
 import { getChatDoc } from '../store/chat-store.js';
 import { healMissing } from './canonical.js';
@@ -228,6 +228,8 @@ export function startLifecycle() {
             const ref = getCurrentChatRef();
             if (ref && isActive()) void afterReply(ref.chatId, chatKeyFor(ref));
             if (ref && isActive()) void followQuestEnds(ref.chatId, chatKeyFor(ref));
+            // People the story just named become characters (src/director/people.js).
+            if (ref && isActive()) void addNamedPeople(ref.chatId, chatKeyFor(ref));
         });
     }
     if (eventTypes.MESSAGE_SWIPED) eventSource.on(eventTypes.MESSAGE_SWIPED, safely((index) => revertFromMessage(Number(index))));

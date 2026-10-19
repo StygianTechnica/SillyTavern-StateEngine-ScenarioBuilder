@@ -27,6 +27,7 @@ import { callModelFirst } from '../generate/llm.js';
 import { gatherInputs } from '../guidance/sync.js';
 import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
+import { buildPeoplePrompt, readPeople } from './people.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
 import { directorPlan, takeBeats, markActive } from '../planner/run.js';
 
@@ -538,4 +539,49 @@ export async function directBeforeReply(chatId, chatKey, type) {
     clearTimeout(timer);
     if (outcome === 'late') console.info(LOG_PREFIX, `the director took longer than ${ms / 1000}s; the previous briefing is used for this reply`);
     return outcome !== 'late' && !!outcome?.note;
+}
+
+// After a reply: the people the last few messages name who are not in the
+// library yet become characters (src/director/people.js) - when the
+// setting allows the game master to add things. Background, queued; one
+// question per reply. Never throws. -> the names made.
+let peopleStamp = '';
+export async function addNamedPeople(chatId, chatKey) {
+    try {
+        const settings = getSettings();
+        if (!settings.director.enabled || !settings.director.allowCreate) return [];
+        const settingId = await getBoundSettingId(chatId);
+        if (!settingId || isCanonOnly(settingId)) return [];
+        const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system && typeof m.mes === 'string');
+        const last = chat[chat.length - 1];
+        if (!last || last.is_user) return [];
+        const stamp = `${chatKey}|${chat.length}|${last.mes.length}|${last.mes.slice(0, 40)}`;
+        if (stamp === peopleStamp) return [];
+        peopleStamp = stamp;
+        const text = chat.slice(-4).map((m) => `${m.name ?? ''}: ${m.mes}`).join('\n\n');
+        const everything = [];
+        for (const t of await getObjectTypes().catch(() => [])) {
+            for (const e of await listEntries(chatId, settingId, t.id).catch(() => [])) everything.push({ id: e.id, type: t.id, name: e.name, aliases: e.aliases ?? e.base?.aliases ?? [] });
+        }
+        const known = everything.flatMap((e) => [e.name, ...e.aliases]).filter((n) => typeof n === 'string');
+        const playerNames = [clean(SillyTavern.getContext().name1)].filter(Boolean);
+        const { askReliably } = await import('../generate/run.js');
+        const input = { text, known, playerNames };
+        const result = await askReliably(buildPeoplePrompt(input), (_p, answer) => {
+            const people = readPeople(answer, input);
+            return people ? { values: { people }, dropped: [], error: null } : { values: {}, dropped: [], error: 'no "Name | ..." lines' };
+        }, 250);
+        if (result.error) return [];
+        // The same guards as the game master's own additions.
+        const wanted = result.values.people
+            .filter((p) => !knownAs(p.name, everything))
+            .map((p) => ({ kind: 'character', name: p.name, description: p.description, here: false }));
+        if (!wanted.length) return [];
+        const made = await createNeeded(chatId, chatKey, settingId, wanted, null);
+        if (made.length) console.info(LOG_PREFIX, `the story named new people: ${made.map((m) => m.name).join(', ')}`);
+        return made.map((m) => m.name);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not look for newly named people', err);
+        return [];
+    }
 }
