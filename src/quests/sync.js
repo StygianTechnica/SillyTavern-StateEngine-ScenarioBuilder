@@ -31,8 +31,8 @@ import { listEntries, createEntry, updateEntry, setEntryMeta, mayAddGeneratedDet
 import { PRESET_NAME } from '../preset/blueprint.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import {
-    isQuestThread, statusFromThread, typeFromThread, objectivesFromThread, mergeObjectives, effectiveStatus,
-    questProgress, currentObjective, questPriority, sortQuests, normalizeQuestMeta,
+    isQuestThread, statusFromThread, typeFromThread, objectivesFromThread, mergeObjectives, tidyObjectives, foreignStepTest,
+    effectiveStatus, questProgress, currentObjective, questPriority, sortQuests, normalizeQuestMeta,
 } from './model.js';
 
 export const QUESTS_EVENT = 'scenario_builder_quests';
@@ -46,6 +46,19 @@ function announce() {
 }
 
 const lower = (s) => String(s ?? '').trim().toLowerCase();
+
+// Which steps of `thread` belong to another quest thread (Archivist copies
+// other threads into a plan now and then): tested against the thread's own
+// title, goal and summary and the quest's name and description. Threads
+// linked to the same quest are not "other". -> (text) => boolean
+function foreignTest(thread, quest, threads, links) {
+    if (!thread) return null;
+    const sameQuest = (t) => t.id === thread.id || (quest && links[t.id] === quest.id);
+    const others = threads.filter(isQuestThread).filter((t) => !sameQuest(t)).map((t) => [
+        t.title, t.goal, t.text, ...(t.steps ?? []).map((s) => s?.text), ...(t.involved ?? []).map((e) => e?.name),
+    ].map((x) => String(x ?? '')));
+    return foreignStepTest([quest?.name, quest?.description, thread.title, thread.goal, thread.text].map((x) => String(x ?? '')), others);
+}
 
 // Archivist's compiled story threads for the open chat, or [].
 async function archivistThreads() {
@@ -108,7 +121,8 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
 
             if (qid) {
                 const meta = questMeta(settingId, qid);
-                const objectives = mergeObjectives(meta.objectives, objectivesFromThread(thread));
+                const foreign = foreignTest(thread, quests.find((q) => q.id === qid), threads, links);
+                const objectives = tidyObjectives(mergeObjectives(meta.objectives, objectivesFromThread(thread), { foreign }), { foreign });
                 const changed = JSON.stringify(objectives) !== JSON.stringify(meta.objectives) || meta.threadId !== thread.id;
                 if (changed) {
                     setEntryMeta(settingId, qid, { quest: { ...meta, threadId: thread.id, type: meta.type || typeFromThread(thread), objectives } });
@@ -122,7 +136,7 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
             const finished = thread.status === 'resolved' || thread.status === 'abandoned';
             if (finished && !scan) continue;
 
-            const objectives = objectivesFromThread(thread);
+            const objectives = tidyObjectives(objectivesFromThread(thread), { foreign: foreignTest(thread, null, threads, links) });
             const involved = (thread.involved ?? []).map((e) => e?.id).filter(Boolean);
             const created = await createEntry(chatId, settingId, 'quest', {
                 name: thread.title || 'Untitled quest',
@@ -139,6 +153,19 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
             quests = [...quests, created];
             out.created += 1;
             adopted.push({ id: newLocalId('a'), objectId: created.id, type: 'quest', name: created.name, at: new Date().toISOString(), placedUnder: '', enrich: 'off', error: '' });
+        }
+
+        // Quests whose objectives piled up near-duplicates (or another
+        // quest's steps) before matching was tolerant are tidied once.
+        for (const q of quests) {
+            const meta = questMeta(settingId, q.id);
+            if (!meta.objectives.length) continue;
+            const thread = threads.find((t) => t.id === meta.threadId) ?? null;
+            const objectives = tidyObjectives(meta.objectives, { foreign: foreignTest(thread, q, threads, links) });
+            if (JSON.stringify(objectives) === JSON.stringify(meta.objectives)) continue;
+            setEntryMeta(settingId, q.id, { quest: { ...meta, objectives } });
+            await mirrorObjectives(chatId, settingId, q.id, objectives);
+            out.updated += 1;
         }
 
         // Quests the story started itself (State Engine created them from
@@ -210,7 +237,9 @@ export async function questBoard(chatId, chatKey, settingId) {
         const thread = meta.threadId ? byThread.get(meta.threadId) ?? null : null;
         const runtime = (await readField(chatId, q.id, 'se__quest.status', 'status')) || q.runtime?.values?.status || '';
         const state = effectiveStatus({ override: meta.status, runtime, thread });
-        const objectives = meta.objectives.length ? meta.objectives : (q.base?.objectives ?? q.objectives ?? []).map((t) => ({ text: String(t), status: 'pending' }));
+        const stored = meta.objectives.length ? meta.objectives : (q.base?.objectives ?? q.objectives ?? []).map((t) => ({ text: String(t), status: 'pending' }));
+        // Shown tidied; the next sync stores the tidy.
+        const objectives = tidyObjectives(stored, { foreign: foreignTest(thread, q, threads, doc.questLinks ?? {}) });
         const involved = [...new Set([...(q.related_entity_ids ?? []), ...(thread?.involved ?? []).map((e) => e?.id).filter(Boolean)])];
         out.push({
             id: q.id,

@@ -311,8 +311,12 @@ function questsSection(quests) {
     return { full: [lead, ...list.map((q) => line(q, false))].join('\n'), compact: [lead, ...list.map((q) => line(q, true))].join('\n') };
 }
 
+// A correction written before names were checked may hold an object id:
+// the model never reads one, so such a line is left out.
+const HOLDS_ID = /\b[a-z]{3}_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/i;
+
 function correctionsSection(corrections) {
-    const list = [...new Set((corrections ?? []).map(clean).filter(Boolean))];
+    const list = [...new Set((corrections ?? []).map(clean).filter((c) => c && !HOLDS_ID.test(c)))];
     if (!list.length) return null;
     return { full: `Recent replies got some facts wrong. Hold to these: ${list.map(sentence).join(' ')}`, compact: '' };
 }

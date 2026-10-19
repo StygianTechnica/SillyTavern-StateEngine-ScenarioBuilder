@@ -120,12 +120,14 @@ export async function pushCanonicalToObserved(chatId, chatKey, { fields = null }
 // Display helpers for correction lines and queue text.
 async function namers(chatId, settingId, objects) {
     const names = new Map([...objects.values()].map((o) => [o.id, o.name]));
-    const nameOf = (id) => names.get(id) ?? id;
+    // '' for an object that can't be found: correction lines leave it out
+    // and the queue text says so in words - never an id.
+    const nameOf = (id) => names.get(id) ?? '';
     const paths = new Map();
     for (const o of objects.values()) {
         if (o.type === 'location') paths.set(o.id, (await getLocationPathNames(chatId, settingId, o.id)).join(' > ') || o.name);
     }
-    return { nameOf, placeOf: (id) => paths.get(id) ?? nameOf(id) };
+    return { nameOf, placeOf: (id) => paths.get(id) || nameOf(id) };
 }
 
 let running = false;

@@ -29,8 +29,9 @@ import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
 import { directBeforeReply } from '../director/run.js';
-import { ensureClock, advanceBy, setTime, perTurnDefault } from '../calendar/clock.js';
+import { ensureClock, advanceBy, setTime, perTurnDefault, followStoryTimeOfDay } from '../calendar/clock.js';
 import { getChatDoc } from '../store/chat-store.js';
+import { healMissing } from './canonical.js';
 import { fillRoles } from '../preset/role-fill.js';
 import { setReplying } from '../generate/llm.js';
 import { syncFactions } from '../library/faction-sync.js';
@@ -67,6 +68,8 @@ function scheduleValidation(chatId) {
     clearTimeout(timer);
     timer = setTimeout(async () => {
         await reconcileOpenChat();
+        // The scene never points at something deleted meanwhile.
+        await healMissing(ref.chatId, chatKeyFor(ref));
         await intakeOpenChat();
         await syncNow();
     }, VALIDATE_DEBOUNCE_MS);
@@ -114,6 +117,7 @@ async function prepareReply(ref, type) {
     try {
         if (!(await getPresetStatus(ref.chatId)).active) return;
         await reconcileOpenChat();
+        await healMissing(ref.chatId, chatKeyFor(ref));
         await pushCanonicalToObserved(ref.chatId, chatKeyFor(ref));
         const chatKey = chatKeyFor(ref);
         const settingId = await getBoundSettingId(ref.chatId);
@@ -123,6 +127,14 @@ async function prepareReply(ref, type) {
         const settings = getSettings();
         const newTurn = !type || type === 'normal';
         if (settings.time.enabled && settingId) await ensureClock(ref.chatId, chatKey, settingId);
+        // A time skip the player narrates ("It was morning at last", "he was
+        // unconscious until well after daybreak") moves the clock before the
+        // reply, so the game master and the narrator start from it.
+        if (settings.time.enabled && settingId && newTurn) {
+            const chat = SillyTavern.getContext().chat ?? [];
+            const userText = [...chat].reverse().find((m) => m?.is_user && typeof m.mes === 'string')?.mes ?? '';
+            if (userText) await followStoryTimeOfDay(ref.chatId, chatKey, settingId, userText);
+        }
         // The game master thinks before the reply (src/director/): the one
         // step here that waits on a model, bounded by its timeout. It also
         // moves the clock on by what the reply will cover.
@@ -157,6 +169,7 @@ async function onChatChanged() {
         console.warn(LOG_PREFIX, 'could not bind the chat\'s setting', err);
     }
     await intakeOpenChat();
+    if (active) await healMissing(ref.chatId, chatKeyFor(ref));
     await syncNow();
     // Displays bound to familiar roles show the canonical state here.
     if (active) await fillRoles(ref.chatId);

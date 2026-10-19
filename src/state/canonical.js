@@ -12,7 +12,8 @@
 import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { normalizeCanonical, newLocalId, HISTORY_LIMIT } from '../store/schema.js';
-import { markObjectPresent, markObjectAbsent } from '../api/objects.js';
+import { markObjectPresent, markObjectAbsent, getObject } from '../api/objects.js';
+import { missingPatch, idsToCheck } from './missing.js';
 
 const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
@@ -92,4 +93,37 @@ export function undoHistoryEntry(chatKey, entryId, chatId = null) {
 
 export function getCanonical(chatKey) {
     return getChatDoc(chatKey).canonical;
+}
+
+// The scene pointing at objects that no longer exist (deleted outside
+// Scenario Builder - State Engine's review rejects a detected place by
+// deleting it): the location falls back to the last place in the history
+// that still exists (else none), and people and creatures who are gone are
+// taken out. Never throws.
+export async function healMissing(chatId, chatKey) {
+    try {
+        if (!chatId || !chatKey) return null;
+        const doc = getChatDoc(chatKey);
+        const found = new Map();
+        for (const id of idsToCheck(doc.canonical, doc.history)) {
+            try {
+                found.set(id, await getObject(chatId, id));
+            } catch {
+                // Unknown: treated as still there - never drop on a failed read.
+                found.set(id, { id });
+            }
+        }
+        const { patch, gone } = missingPatch(doc.canonical, doc.history, (id) => !!found.get(id));
+        if (!Object.keys(patch).length) return null;
+        const back = patch.locationId ? found.get(patch.locationId)?.name : '';
+        const notes = [
+            gone.locationId ? `The place the scene was at no longer exists${back ? `; back at ${back}` : ''}` : '',
+            gone.castIds.length + gone.creatureIds.length === 1 ? 'Someone who no longer exists left the scene' : '',
+            gone.castIds.length + gone.creatureIds.length > 1 ? `${gone.castIds.length + gone.creatureIds.length} who no longer exist left the scene` : '',
+        ].filter(Boolean);
+        return setCanonical(chatKey, patch, { source: 'review', chatId, note: notes.join('; ') });
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not check the scene for missing objects', err);
+        return null;
+    }
 }

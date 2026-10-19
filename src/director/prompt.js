@@ -61,6 +61,13 @@ export function matchPlace(name, places, nearIds = []) {
     const ranked = [...(places ?? [])].sort((a, b) => Number(near.has(b.id)) - Number(near.has(a.id)));
     const exact = ranked.find((p) => [p.name, ...(p.aliases ?? p.base?.aliases ?? [])].some((n) => bareName(n) === target));
     if (exact) return exact;
+    // A known place inside a longer name ("Niamh's fortress gate chamber"
+    // is Niamh's fortress gate): the longest such name wins.
+    const within = ranked
+        .map((p) => ({ p, len: Math.max(0, ...[p.name, ...(p.aliases ?? p.base?.aliases ?? [])].map(bareName).filter((n) => n.length >= 5 && target.includes(n)).map((n) => n.length)) }))
+        .filter((x) => x.len > 0)
+        .sort((a, b) => b.len - a.len)[0];
+    if (within) return within.p;
     const words = target.split(/[^a-z0-9'\u00c0-\u024f]+/).filter((w) => w.length >= 3 && !['the', 'and', 'of'].includes(w));
     if (!words.length) return null;
     return ranked.find((p) => words.every((w) => bareName(p.name).includes(w))) ?? null;
@@ -335,6 +342,7 @@ export function buildDirectorPrompt(input) {
         'Never contradict the facts you are given. Only use what fits the world\'s rules.',
         here ? `The scene is at ${here}${path.length > 1 ? ` (${path.join(' > ')})` : ''}: call it by that name. Other places named in these notes - a faction's home, another settlement, somewhere the story only talked about - are elsewhere; the scene never moves there or takes their name unless a MOVE line takes it there.` : '',
         'Something that is somewhere else - a far-off place, an object kept elsewhere, a goal that needs a journey - can be talked about, worried over or planned for, but it cannot be reached, found or used in this scene until the story actually travels there. Keep the people busy with what is in front of them here.',
+        `Never loop: each reply must change something that stays changed - ground taken or lost, someone down, a foe broken, a turn in the plan. Do not answer ${userName} with the same threat again (fresh waves of the same enemies, "one more time", "it is not over yet"). A fight or ordeal builds to a turn and then ends within a few replies - the enemy breaks, flees, falls or wins - and when ${userName} has spent everything or is down, the others carry it through or the story moves on; never press ${userName} to push past their limits again.`,
         'People act as the story has shown them: never give someone a betrayal, an attack or a hidden scheme the story has not set up.',
         'People know only what they have learned: a secret stays hidden from those who do not know it - they never act on it, hint at it or guess it - unless the story reveals it in front of them; an oath binds those who swore it.',
         clean(input.overview?.gmStyle) ? `How the user wants this story run - follow it: ${cut(input.overview.gmStyle, 800)}` : '',
@@ -414,7 +422,7 @@ export function buildDirectorPrompt(input) {
         parts.push(
             '',
             'Anything your briefing relies on that the facts above do not have - a place the characters are about to go to, a person, creature or group about to matter, a piece of lore or history, an event that is happening or coming - give it its details, mention it in the briefing, and add one line per thing (at most two). The last part says what it is TIED to: a person, place, faction or thread named above (by name), or the message that brought it up:',
-            'NEW location | <name> | <one-sentence description> | <tied to>',
+            'NEW location | <name> | <one-sentence description that says where it is - a room or part of the place the scene is in names that place> | <tied to>',
             'NEW character | <name> | <one-sentence description> | <here or nearby> | <tied to>',
             'Someone who takes part in the scene - speaks, acts, is spoken to, or is singled out by a description - but has no name yet is a character too: give them a short descriptive name from how the story describes them ("The Eyepatched Man", "The Heavyset Man") and add the word unnamed as the last part. Background crowds ("several others", "the guards") are not.',
             'NEW character | <descriptive name, e.g. The Eyepatched Man> | <one-sentence description> | here | unnamed',
@@ -571,7 +579,8 @@ export function parseDirectorNote(raw) {
         }
         const mv = line.match(/^\s*(?:[-*]\s*)?\**MOVE\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?$/i);
         if (mv) {
-            const place = clean(mv[1]).replace(/^["'*]+|["'*.]+$/g, '');
+            // "Still inside the gate, indoors" is the gate.
+            const place = cleanPlaceName(mv[1]);
             if (!move && place && !isPlaceholder(place)) {
                 const along = /^(none|no one|nobody|alone|-)?$/i.test(clean(mv[2])) ? [] : clean(mv[2]).split(/,| and /i).map((n) => clean(n).replace(/^["'*]+|["'*.]+$/g, '')).filter((n) => n && !isPlaceholder(n));
                 const io = clean(mv[3]).toLowerCase();
@@ -639,4 +648,69 @@ export function strayName(text, { known = [], allowedText = '' } = {}) {
         }
     }
     return '';
+}
+
+// A MOVE line's place as a place name: lead-ins and tags the model adds
+// ("Still inside", "Back to the", ", indoors", "(outdoors)") come off.
+export function cleanPlaceName(text) {
+    let t = clean(text).replace(/^["'*]+|["'*.]+$/g, '');
+    t = t.replace(/\s*[,;(-]\s*(?:indoors?|outdoors?|inside|outside)\)?\s*$/i, '').trim();
+    t = t.replace(/^(?:(?:still|now|back|right)\s+)?(?:(?:in|inside|within|into|at|to|toward|towards|near|by|outside|on|onto|up|down)\s+)+/i, '').trim();
+    return t;
+}
+
+const SENTENCE_WORDS = /\b(?:is|are|was|were|be|leans?|leaning|stands?|standing|sits?|sitting|waits?|waiting|walks?|walking|remains?|stays?|still|while|where|who|with)\b/i;
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// Whether a MOVE place could name a new location: a short name, not a
+// sentence about someone ("Remus leans against a pole inside the gate").
+export function looksLikePlaceName(name, playerNames = []) {
+    const n = clean(name);
+    if (!n || n.length > 60 || /[,;:!?]/.test(n)) return false;
+    if (n.split(/\s+/).length > 6) return false;
+    if (SENTENCE_WORDS.test(n)) return false;
+    return !(playerNames ?? []).some((p) => clean(p).length >= 3 && new RegExp(`(^|[^\\p{L}])${escapeRe(clean(p))}(?=$|[^\\p{L}])`, 'iu').test(n));
+}
+
+// Whether `text` names a creature: every distinctive word of one of its
+// names, a word stem allowed ("skeletal warriors" names "Skeleton
+// Warriors", "a zombie" names "zombies").
+export function creatureNamedIn(text, creature) {
+    const said = String(text ?? '').toLowerCase();
+    if (!said.trim()) return false;
+    const stems = (w) => [w, ...(w.length >= 6 ? [w.slice(0, -2), w.slice(0, -3)] : []), ...(w.endsWith('s') && w.length >= 5 ? [w.slice(0, -1)] : [])];
+    return [creature?.name, ...(creature?.aliases ?? creature?.base?.aliases ?? [])].some((n) => {
+        const words = String(n ?? '').toLowerCase().split(/[^a-z0-9'À-ɏ]+/).filter((w) => w.length >= 4 && !STOP.has(w));
+        return words.length > 0 && words.every((w) => stems(w).some((s) => new RegExp(`(^|[^a-z])${escapeRe(s)}`).test(said)));
+    });
+}
+
+// Where a place the director adds belongs: inside the place the scene is
+// in (or one it is part of) only when its name, description or tie names
+// that place - a room of the fortress says so. A place the story is only
+// heading for (a temple far to the north) goes under the top of the
+// current region instead, never inside the room the scene happens to be in.
+// chain: the scene's place and the places it is in, nearest first:
+// [{ id, names: [name, aliases...] }]. -> a parent id, or null.
+export function parentForNewPlace(item, chain = []) {
+    const text = [item?.name, item?.description, item?.why].map(clean).filter(Boolean).join(' ');
+    for (const place of chain ?? []) {
+        if ((place.names ?? []).some((n) => clean(n).length >= 4 && mentionedWhole(text, n))) return place.id;
+    }
+    return chain?.length ? chain[chain.length - 1].id : null;
+}
+
+// The library place a new item's own words put it in ("hidden in the
+// graveyard near the ruined temple"), the longest name named first - or
+// null. places: [{ id, name, aliases }].
+export function placeNamedIn(item, places = []) {
+    const text = [item?.name, item?.description, item?.why].map(clean).filter(Boolean).join(' ');
+    let best = null;
+    for (const p of places ?? []) {
+        for (const n of [p.name, ...(p.aliases ?? [])]) {
+            const name = clean(n);
+            if (name.length >= 4 && mentionedWhole(text, name) && (!best || name.length > best.len)) best = { id: p.id, len: name.length };
+        }
+    }
+    return best?.id ?? null;
 }

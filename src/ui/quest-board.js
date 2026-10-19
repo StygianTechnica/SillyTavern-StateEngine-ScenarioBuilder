@@ -80,7 +80,8 @@ export async function renderQuestTab(entry) {
     const q = (await questBoard(chatId, chatKey, settingId)).find((x) => x.id === entry.id);
     const meta = questMeta(settingId, entry.id);
     const save = (patch) => { setQuestMeta(settingId, entry.id, patch); void syncNow(); rerender(); };
-    const objectives = meta.objectives.length ? meta.objectives : (q?.objectives ?? []);
+    // The board's list is tidied (near-duplicates collapsed); an edit saves it so.
+    const objectives = q ? q.objectives : meta.objectives;
     const setObjectives = (list) => save({ objectives: list });
     const newObjective = h('input', { class: 'text_pole', placeholder: 'Add an objective…', onkeydown: (e) => { if (e.key === 'Enter' && e.target.value.trim()) setObjectives([...objectives, { text: e.target.value.trim(), status: 'pending', byUser: true }]); } });
     return h('div', { class: 'sb-tabpane' },

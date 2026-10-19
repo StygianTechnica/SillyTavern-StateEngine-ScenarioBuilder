@@ -56,17 +56,138 @@ export function objectivesFromThread(thread) {
     return clean(thread?.goal) ? [{ text: clean(thread.goal), status: thread.status === 'resolved' ? 'done' : 'pending' }] : [];
 }
 
-// Objectives kept in step with a thread's steps: matched by text, a step's
-// newer status updates its objective (unless the user set that objective by
-// hand), new steps are added, the user's own objectives kept.
-export function mergeObjectives(current, fromThread) {
+// Matching objectives. Archivist rewords its plan steps from one compile to
+// the next ("Confront Maren about Elyon's influence" -> the same with "(Maren
+// explained the visions)" appended, "[Highly classified]" put in front, or a
+// " - ..." tail), so an objective is matched on its core: the text without
+// bracketed notes or a dash tail, then on its distinctive words.
+const STOP = new Set(('a an the and or but of to in on at by for with from into onto about as is are was were be been being '
+    + 'this that these those his her their its your our my him them they he she it you we i who whom which what '
+    + 'how whether while then than so if not no any some all more most over under after before during between '
+    + 'through toward towards out up down off there here will would can could should must may might has have had do does did').split(' '));
+
+// The part of an objective that says what it is: no (notes), [notes] or
+// " - tail", no closing punctuation.
+export function objectiveCore(text) {
+    let t = clean(text).replace(/\([^)]*\)|\[[^\]]*\]/g, ' ');
+    t = t.split(/\s[-–—]\s/)[0];
+    return clean(t).replace(/[.,;:!?\s]+$/, '');
+}
+
+const stem = (w) => w.replace(/'s$/, '').replace(/(?<=\w{3})s$/, '');
+function words(text) {
+    return new Set(clean(text).toLowerCase().replace(/[‘’]/g, "'").split(/[^a-z0-9']+/)
+        .map((w) => stem(w.replace(/^'+|'+$/g, ''))).filter((w) => w.length > 1 && !STOP.has(w)));
+}
+
+// How alike two objectives are, 0..1: 1 for the same core; otherwise the
+// share of the shorter one's distinctive words the other has too (at least
+// three of them, and most of both).
+export function objectiveLikeness(a, b) {
+    const ca = key(objectiveCore(a));
+    const cb = key(objectiveCore(b));
+    if (!ca || !cb) return 0;
+    if (ca === cb) return 1;
+    const wa = words(objectiveCore(a));
+    const wb = words(objectiveCore(b));
+    const small = Math.min(wa.size, wb.size);
+    if (small < 3) return 0;
+    const shared = [...wa].filter((w) => wb.has(w)).length;
+    const contained = shared / small;
+    const dice = (2 * shared) / (wa.size + wb.size);
+    return contained >= 0.8 && dice >= 0.5 ? contained * 0.99 : 0;
+}
+
+export const sameObjective = (a, b) => objectiveLikeness(a, b) > 0;
+
+// The existing objective a text matches best, or null.
+function bestMatch(list, text) {
+    let best = null;
+    let score = 0;
+    for (const o of list) {
+        const s = key(o.text) === key(text) ? 2 : objectiveLikeness(o.text, text);
+        if (s > score) { best = o; score = s; }
+    }
+    return best ? { hit: best, exact: score === 2 } : null;
+}
+
+// Objectives kept in step with a thread's steps: matched by text (tolerant
+// of rewording, see objectiveLikeness), a step's newer status updates its
+// objective (unless the user set that objective by hand; a reworded step
+// never reopens a done one), new steps are added, the user's own
+// objectives kept. Steps `foreign` says belong to another quest are left out.
+export function mergeObjectives(current, fromThread, { foreign = null } = {}) {
     const out = (current ?? []).map((o) => ({ ...o }));
     for (const t of fromThread ?? []) {
-        const hit = out.find((o) => key(o.text) === key(t.text));
-        if (!hit) out.push({ ...t, from: 'archivist' });
-        else if (!hit.byUser && hit.status !== t.status) hit.status = t.status;
+        const match = bestMatch(out, t.text);
+        if (!match) {
+            if (!foreign?.(t.text)) out.push({ ...t, from: 'archivist' });
+            continue;
+        }
+        const { hit, exact } = match;
+        if (hit.byUser || hit.status === t.status) continue;
+        if (!exact && hit.status === 'done') continue;
+        hit.status = t.status;
     }
     return out;
+}
+
+const STATUS_WEIGHT = { done: 3, failed: 2, pending: 1, optional: 0 };
+
+// Near-duplicate objectives collapsed into one (in the place of the first):
+// the user's own objective wins as it is; otherwise the earliest wording
+// without notes (or the first one's core) and the furthest status (done
+// stays done).
+// Archivist's pending objectives that `foreign` says belong to another
+// quest are dropped. -> a new list (the input is left alone).
+export function tidyObjectives(objectives, { foreign = null } = {}) {
+    const groups = [];
+    for (const o of objectives ?? []) {
+        if (!o || !clean(o.text)) continue;
+        if (!o.byUser && (o.status === 'pending' || o.status === 'optional') && foreign?.(o.text)) continue;
+        const group = groups.find((g) => g.some((x) => sameObjective(x.text, o.text) && !(x.byUser && o.byUser)));
+        if (group) group.push(o); else groups.push([o]);
+    }
+    return groups.map((g) => {
+        const mine = g.find((o) => o.byUser);
+        if (mine) return { ...mine };
+        const plain = g.find((o) => clean(o.text).replace(/[.!?]+$/, '') === objectiveCore(o.text));
+        const text = plain ? plain.text : objectiveCore(g[0].text) || g[0].text;
+        const status = g.reduce((s, o) => (STATUS_WEIGHT[o.status] ?? 0) > (STATUS_WEIGHT[s] ?? 0) ? o.status : s, g[0].status);
+        return { text, status, ...(g[0].from ? { from: g[0].from } : {}) };
+    });
+}
+
+// Whether a step belongs to another quest thread rather than its own.
+// Archivist sometimes copies other threads into a thread's plan, as
+// "Other thread's title - its summary", as another thread's title or step,
+// or retold ("Remus is heading to Liston's walls..."). A step counts as
+// foreign when its " - " head or its core is another thread's title, when
+// it is another thread's goal or step with no word of its own thread, or
+// when it shares at least three distinctive words with another thread and
+// fewer than half as many with its own. `own`: the thread's own texts
+// (title, goal, summary, the quest's name and description - not its steps,
+// which may be the copies); `others`: per other quest thread, its texts
+// (title, goal, summary, steps, people). -> (text) => boolean
+export function foreignStepTest(own, others) {
+    const ownTexts = (own ?? []).filter((t) => clean(t));
+    const ownWords = new Set(ownTexts.flatMap((t) => [...words(t)]));
+    const ownHeads = new Set(ownTexts.map((t) => key(objectiveCore(t))));
+    const heads = new Set((others ?? []).map((texts) => key(objectiveCore((texts ?? [])[0]))).filter((h) => h && !ownHeads.has(h)));
+    const otherWords = (others ?? []).map((texts) => new Set((texts ?? []).flatMap((t) => [...words(t)])));
+    const otherCores = new Set((others ?? []).flat().map((t) => key(objectiveCore(t))).filter(Boolean));
+    return (text) => {
+        const t = clean(text);
+        if (heads.has(key(objectiveCore(t))) || heads.has(key(objectiveCore(t.split(/\s[-–—]\s/)[0])))) return true;
+        const w = [...words(t)];
+        const mine = w.filter((x) => ownWords.has(x)).length;
+        // Another thread's step or goal word for word, nothing of its own.
+        if (!mine && otherCores.has(key(objectiveCore(t)))) return true;
+        return otherWords.some((o) => {
+            const theirs = w.filter((x) => o.has(x)).length;
+            return theirs >= 3 && mine < theirs / 2;
+        });
+    };
 }
 
 // -> { status, from: 'user' | 'story' | 'archivist' | 'none', conflict }

@@ -25,7 +25,7 @@ import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import { callModelFirst } from '../generate/llm.js';
 import { gatherInputs } from '../guidance/sync.js';
-import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName } from './prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
 import { directorPlan, takeBeats, markActive } from '../planner/run.js';
@@ -126,7 +126,7 @@ export function factionsAtPlay(factions, { cast = [], placeIds = [], relations =
 // location; items, creatures and people who are here are placed in it;
 // what a new thing is tied to becomes its related entries. Never adds a
 // duplicate of something the library already has.
-async function createNeeded(chatId, chatKey, settingId, created, locationId) {
+async function createNeeded(chatId, chatKey, settingId, created, locationId, chain = [], places = []) {
     const made = [];
     for (const item of created) {
         try {
@@ -134,22 +134,30 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId) {
             const data = { name: item.name, description: item.description };
             if (item.tiedIds?.length) data.related_entity_ids = [...new Set(item.tiedIds)];
             if (item.kind === 'quest') data.startValues = { status: 'Active' };
-            // Only things that are physically here are put in the place.
-            if (locationId && ['character', 'item', 'creature'].includes(item.kind) && item.here) {
+            // Only people and creatures the briefing has here are put in the
+            // place. An item is never placed by default: a cache the story
+            // only talks about is not in the room the talk happens in.
+            if (locationId && ['character', 'creature'].includes(item.kind) && item.here) {
                 const field = await locationFieldOf(settingId, item.kind);
                 if (field) data[field] = locationId;
+            } else if (item.kind === 'item') {
+                // Where its own words put it, when that is a known place.
+                const at = placeNamedIn(item, places);
+                const field = at ? await locationFieldOf(settingId, item.kind) : null;
+                if (field) data[field] = at;
             }
             const obj = await createEntry(chatId, settingId, item.kind, data, { origin: 'director', ...(item.provisional ? { provisional: true } : {}) });
             if (!obj) continue;
-            if (item.kind === 'location' && locationId) setParent(settingId, obj.id, locationId);
-            made.push({ id: obj.id, kind: item.kind, name: obj.name });
+            const parent = item.kind === 'location' ? parentForNewPlace(item, chain) : null;
+            if (parent) setParent(settingId, obj.id, parent);
+            made.push({ id: obj.id, kind: item.kind, name: obj.name, parent });
         } catch (err) {
             console.warn(LOG_PREFIX, `the director could not add ${item.name}`, err);
         }
     }
     if (!made.length) return made;
     const at = new Date().toISOString();
-    const adopted = made.map((m) => ({ id: newLocalId('a'), objectId: m.id, type: m.kind, name: m.name, at, placedUnder: m.kind === 'location' ? locationId ?? '' : '', enrich: 'off', error: '' }));
+    const adopted = made.map((m) => ({ id: newLocalId('a'), objectId: m.id, type: m.kind, name: m.name, at, placedUnder: m.kind === 'location' ? m.parent ?? '' : '', enrich: 'off', error: '' }));
     updateChatDoc(chatKey, (d) => {
         const known = new Set(d.adopted.map((a) => a.objectId));
         d.adopted = [...d.adopted, ...adopted.filter((a) => !known.has(a.objectId))];
@@ -233,7 +241,7 @@ function castAfter(characters, castIds, { enters, leaves }, made, playerId = '')
 
 // Moves the scene: finds (or makes) the place, takes the player character
 // and the named companions along. -> { from, castIds } or null.
-async function moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, known = [], canCreate }) {
+async function moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, known = [], canCreate, playerNames = [] }) {
     const doc = getChatDoc(chatKey);
     const from = doc.canonical.locationId || guidance.location?.id || '';
     const places = await listEntries(chatId, settingId, 'location');
@@ -246,7 +254,9 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
     ];
     let place = matchPlace(move.place, places, nearIds);
     if (place?.id === from) return null;
-    if (!place && canCreate && mentionedIn(move.place, recentText) && !knownAs(move.place, known)) {
+    // Only a real place name - never a sentence the model wrote as one
+    // ("Remus leans against a pole inside the gate").
+    if (!place && canCreate && looksLikePlaceName(move.place, playerNames) && mentionedIn(move.place, recentText) && !knownAs(move.place, known)) {
         // A place the chat named that the library lacks (under any type):
         // beside this one.
         place = await createEntry(chatId, settingId, 'location', { name: move.place, description: '' }, { origin: 'director' });
@@ -378,7 +388,7 @@ async function run(chatId, chatKey, type, force) {
     }
     if (wanted.length < created.length) console.info(LOG_PREFIX, `the director left out ${created.length - wanted.length} new thing(s): not brought up by the chat or tied to the setting, or an item that is only flavour`);
     const made = settingId && settings.director.allowCreate && !canonOnly
-        ? await createNeeded(chatId, chatKey, settingId, wanted, guidance.location?.id ?? null)
+        ? await createNeeded(chatId, chatKey, settingId, wanted, guidance.location?.id ?? null, placeIds.map((id) => ({ id, names: [known.find((e) => e.id === id)?.name, ...(known.find((e) => e.id === id)?.aliases ?? [])].filter(Boolean) })), known.filter((e) => e.type === 'location'))
         : [];
     if (settingId) enrichThin(chatId, chatKey, settingId, guidance);
     if (settingId && isNewTurn(type)) await renameNamed(chatId, chatKey, settingId, parsed.renames, characters, recentText);
@@ -416,7 +426,7 @@ async function run(chatId, chatKey, type, force) {
     let movedFrom = null;
     let baseCast = castIds;
     if (isNewTurn(type) && settingId && parsed.move) {
-        const moved = await moveScene(chatId, chatKey, settingId, parsed.move, { guidance, characters, castIds, recentText, known, canCreate: settings.director.allowCreate && !canonOnly });
+        const moved = await moveScene(chatId, chatKey, settingId, parsed.move, { guidance, characters, castIds, recentText, known, playerNames, canCreate: settings.director.allowCreate && !canonOnly });
         if (moved) {
             movedFrom = moved.from;
             baseCast = moved.castIds;
@@ -442,6 +452,10 @@ async function run(chatId, chatKey, type, force) {
         const creatureNames = { in: [], out: [] };
         for (const name of parsed.enters) { const c = !characters.some((x) => x.name.toLowerCase() === name.toLowerCase()) && findCreature(name); if (c && !creatureIds.has(c.id)) { creatureIds.add(c.id); creatureNames.in.push(c.name); } }
         for (const name of parsed.leaves) { const c = findCreature(name); if (c && creatureIds.has(c.id)) { creatureIds.delete(c.id); creatureNames.out.push(c.name); } }
+        // Creatures the SITUATION line has in the scene ("skeletal warriors
+        // surge at the breach") are here, as the people it names are.
+        const gone = new Set(creatureNames.out);
+        for (const c of creatures) if (!creatureIds.has(c.id) && !gone.has(c.name) && creatureNamedIn(parsed.situation, c)) { creatureIds.add(c.id); creatureNames.in.push(c.name); }
         if (creatureNames.in.length || creatureNames.out.length) {
             setCanonical(chatKey, { creatureIds: [...creatureIds] }, { chatId, source: 'director', note: [creatureNames.in.length ? `${creatureNames.in.join(', ')} appear` : '', creatureNames.out.length ? `${creatureNames.out.join(', ')} gone` : ''].filter(Boolean).join('; ') });
         }

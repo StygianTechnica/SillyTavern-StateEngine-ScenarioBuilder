@@ -11,7 +11,7 @@ import { listEntries, getParents, getObjectTypes } from '../library/library.js';
 import { pathOf } from '../library/hierarchy.js';
 import { undoHistoryEntry } from '../state/canonical.js';
 import { pushCanonicalToObserved, resolveDrift, promoteCandidate, mergeCandidate, rejectCandidate, forgetRejection, dismissAdopted, removeAdopted } from '../validate/reconcile.js';
-import { readObserved, FIELD_LABELS } from '../validate/drift.js';
+import { readObserved, FIELD_LABELS, UNKNOWN_PLACE, UNKNOWN_ONE, scrubIds } from '../validate/drift.js';
 import { OBSERVED_NAMES } from '../preset/blueprint.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getLastBuild, syncNow } from '../guidance/sync.js';
@@ -94,11 +94,12 @@ export async function renderScene() {
     if (status.active) {
         const raw = await getVariableValues(chatId, OBSERVED_NAMES);
         const obs = readObserved(raw);
-        const nameOf = async (id) => (id ? (await getObject(chatId, id))?.name ?? id : '');
+        const nameOf = async (id, unknown) => (id ? (await getObject(chatId, id))?.name ?? unknown : '');
+        const one = (id) => nameOf(id, UNKNOWN_ONE);
         const rows = [
-            ['Location', await nameOf(obs.location)],
-            ['Characters', (await Promise.all(obs.cast.map(nameOf))).join(', ')],
-            ['Creatures', (await Promise.all(obs.creatures.map(nameOf))).join(', ')],
+            ['Location', await nameOf(obs.location, UNKNOWN_PLACE)],
+            ['Characters', (await Promise.all(obs.cast.map(one))).join(', ')],
+            ['Creatures', (await Promise.all(obs.creatures.map(one))).join(', ')],
             ['Weather', obs.weather.join(', ')],
             ['Temperature', obs.temperature],
             ['Indoors', obs.indoor === null ? '' : (obs.indoor ? 'yes' : 'no')],
@@ -173,7 +174,7 @@ export async function renderReview() {
     });
 
     const questions = pending.map((d) => h('div', { class: 'sb-review-item' },
-        h('div', {}, d.text),
+        h('div', {}, scrubIds(d.text)),
         h('div', { class: 'sb-actions' },
             button('Go with the story', () => void resolveDrift(chatId, chatKey, d.id, 'accept').then(done), { iconName: 'fa-check', cls: 'sb-primary' }),
             button('Keep it as it was', () => void resolveDrift(chatId, chatKey, d.id, 'keep').then(done), { iconName: 'fa-rotate-left', title: 'Write the canonical value back and correct the next reply' }))));
@@ -210,7 +211,7 @@ export async function renderReview() {
             h('span', {}, `${r.name} (${r.type})`), button('Allow again', () => forgetRejection(chatKey, i), { iconName: 'fa-rotate-left' }))), '') : null,
         h('h3', {}, icon('fa-list-check'), ' Recently followed'),
         resolved.length ? h('div', { class: 'sb-list' }, resolved.map((d) => h('div', { class: 'sb-log' },
-            h('span', { class: `sb-badge sb-badge-${d.classification}` }, d.classification.replace('_', ' ')), ` ${d.text}`, h('small', { class: 'sb-hint' }, ` - ${d.resolution}`))))
+            h('span', { class: `sb-badge sb-badge-${d.classification}` }, d.classification.replace('_', ' ')), ` ${scrubIds(d.text)}`, h('small', { class: 'sb-hint' }, ` - ${d.resolution}`))))
             : h('div', { class: 'sb-muted' }, 'Nothing yet.'));
 }
 
@@ -224,12 +225,12 @@ export async function renderHistory() {
     const doc = getChatDoc(chatKey);
     const names = new Map();
     const nameOf = async (id) => {
-        if (!names.has(id)) names.set(id, (await getObject(chatId, id))?.name ?? id);
+        if (!names.has(id)) names.set(id, (await getObject(chatId, id))?.name ?? '');
         return names.get(id);
     };
     const show = async (key, value) => {
-        if (key === 'locationId') return value ? nameOf(value) : '(none)';
-        if (key === 'castIds') return value?.length ? (await Promise.all(value.map(nameOf))).join(', ') : '(none)';
+        if (key === 'locationId') return value ? (await nameOf(value)) || UNKNOWN_PLACE : '(none)';
+        if (key === 'castIds') return value?.length ? (await Promise.all(value.map(async (id) => (await nameOf(id)) || UNKNOWN_ONE))).join(', ') : '(none)';
         if (key === 'indoor') return value === true ? 'indoors' : (value === false ? 'outdoors' : '(unset)');
         if (Array.isArray(value)) return value.join(', ') || '(none)';
         if (value === null || value === '') return '(unset)';

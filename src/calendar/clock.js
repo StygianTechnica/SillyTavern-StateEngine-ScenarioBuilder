@@ -16,7 +16,7 @@ import { emptyCalendar } from '../store/schema.js';
 import { getSetting, updateSetting } from '../api/objects.js';
 import { setCanonical } from '../state/canonical.js';
 import { getDateTimeParts, formatDateTime, formatDateTimePartial, advanceDateTime, getCalendarDefinition } from '../api/calendar.js';
-import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance, timeOfDayFraction, storyTimeCue, cueTarget } from './moment.js';
+import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance, timeOfDayFraction, storyTimeCue, cueTarget, storyDelta } from './moment.js';
 import { getRawValues } from '../api/variables.js';
 import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.js';
 import { weatherAt } from './weather.js';
@@ -255,9 +255,11 @@ export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, so
     const planned = doc.clock.planned;
     updateChatDoc(chatKey, (d) => { d.clock.planned = null; });
     const now = doc.canonical.time;
-    if (!Number.isFinite(now) || !String(deltaText ?? '').trim()) return null;
+    // A span, or a jump the story asks for - never the moment described.
+    const delta = storyDelta(deltaText);
+    if (!Number.isFinite(now) || !delta) return null;
     const from = planned?.from ?? now;
-    const target = await advanceFrom(settingId, from, String(deltaText));
+    const target = await advanceFrom(settingId, from, delta);
     if (target === null) return null;
     const { def } = await calendarFor(settingId);
     const tolerance = Math.max(15 * (def.secondsPerMinute || 60), 0.25 * ((planned?.to ?? now) - from));

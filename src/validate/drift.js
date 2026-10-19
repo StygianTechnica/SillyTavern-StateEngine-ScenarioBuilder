@@ -312,38 +312,64 @@ export function observedRestore(canonical) {
     };
 }
 
+// What stands in for a name that can't be found (an object deleted since):
+// never its id.
+export const UNKNOWN_PLACE = 'a place no longer in the library';
+export const UNKNOWN_ONE = 'someone no longer in the library';
+
 // A short correction line for the guidance after an adjustment (SB-221),
 // written for the model. `nameOf(id)` -> display name, `placeOf(id)` ->
-// the location's path text.
-export function correctionText(item, { nameOf = (id) => id, placeOf = (id) => nameOf(id) } = {}) {
+// the location's path text; '' for one that can't be found, which leaves
+// that part (or the whole line) out - the model never reads an id.
+export function correctionText(item, { nameOf = () => '', placeOf = (id) => nameOf(id) } = {}) {
     switch (item.field) {
-        case 'location':
-            if (!item.canonical) return '';
-            return `The scene is still at ${placeOf(item.canonical)}${item.observed ? `, not ${nameOf(item.observed)}` : ''}.`;
-        case 'cast':
-            if (item.op === 'add') return `${nameOf(item.objectId)} is not present in this scene.`;
-            if (item.op === 'remove') return `${nameOf(item.objectId)} is still present in this scene.`;
+        case 'location': {
+            const at = item.canonical ? placeOf(item.canonical) : '';
+            if (!at) return '';
+            const not = item.observed ? nameOf(item.observed) : '';
+            return `The scene is still at ${at}${not ? `, not ${not}` : ''}.`;
+        }
+        case 'cast': {
+            const who = nameOf(item.objectId);
+            if (!who) return '';
+            if (item.op === 'add') return `${who} is not present in this scene.`;
+            if (item.op === 'remove') return `${who} is still present in this scene.`;
             return '';
+        }
         case 'weather': return item.canonical?.length ? `The weather is ${item.canonical.join(', ').toLowerCase()}.` : '';
         case 'temperature': return item.canonical ? `It is ${String(item.canonical).toLowerCase()}.` : '';
         case 'indoor': return item.canonical === true ? 'The scene is indoors.' : (item.canonical === false ? 'The scene is outdoors.' : '');
         case 'title': return '';
-        case 'creatures': return item.canonical?.length ? `The creatures present are: ${item.canonical.map(nameOf).join(', ')}.` : 'There are no creatures in this scene.';
+        case 'creatures': {
+            if (!item.canonical?.length) return 'There are no creatures in this scene.';
+            const named = item.canonical.map(nameOf).filter(Boolean);
+            return named.length ? `The creatures present are: ${named.join(', ')}.` : '';
+        }
         default: return '';
     }
 }
 
 // How an item reads in the review queue and history: "Location: Old Quarter
 // -> Harbor (moved to an unconnected place)".
-export function describeItem(item, nameOf = (id) => id) {
+export function describeItem(item, nameOf = () => '') {
     const label = FIELD_LABELS[item.field] ?? item.field;
+    const place = (id) => nameOf(id) || UNKNOWN_PLACE;
+    const one = (id) => nameOf(id) || UNKNOWN_ONE;
     const show = (value) => {
-        if (Array.isArray(value)) return value.length ? value.map(nameOf).join(', ') : '(none)';
+        if (Array.isArray(value)) return value.length ? value.map(one).join(', ') : '(none)';
         if (value === true) return 'indoors';
         if (value === false) return 'outdoors';
-        return value ? (item.field === 'location' ? nameOf(value) : String(value)) : '(unset)';
+        return value ? (item.field === 'location' ? place(value) : String(value)) : '(unset)';
     };
-    if (item.field === 'cast' && item.op === 'add') return `${label}: ${nameOf(item.objectId)} joined (${item.reason})`;
-    if (item.field === 'cast' && item.op === 'remove') return `${label}: ${nameOf(item.objectId)} left`;
+    if (item.field === 'cast' && item.op === 'add') return `${label}: ${one(item.objectId)} joined (${item.reason})`;
+    if (item.field === 'cast' && item.op === 'remove') return `${label}: ${one(item.objectId)} left`;
     return `${label}: ${show(item.canonical)} → ${show(item.observed)}${item.reason ? ` (${item.reason})` : ''}`;
+}
+
+// An object id as it appears in stored text ("loc_822af7b3-25fb-...").
+export const OBJECT_ID = /\b[a-z]{3}_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b/gi;
+
+// Text written before names were checked can hold ids: they read as words.
+export function scrubIds(text) {
+    return String(text ?? '').replace(OBJECT_ID, (id) => (id.toLowerCase().startsWith('loc_') ? UNKNOWN_PLACE : UNKNOWN_ONE));
 }
