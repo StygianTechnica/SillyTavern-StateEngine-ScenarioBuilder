@@ -565,6 +565,9 @@ export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString()
                 if (like) prev = old.get(like.id) ?? null;
                 else if (everyOld.some((b) => b.status === 'done' && sameBeat(b.text, raw.text))) continue;
             }
+            // The answer naming a skipped beat is only echoing the old
+            // outline: it is dropped, not kept as if it were history.
+            if (prev?.status === 'skipped' && !(keepLocked && prev.locked)) { used.add(prev.id); continue; }
             if (!prev && finished(i)) continue;
             if (prev && !used.has(prev.id)) {
                 used.add(prev.id);
@@ -656,6 +659,15 @@ export function startAt(gm, act) {
     });
     const first = acts.slice(act).flatMap((a) => a.beats).find((b) => b.status === 'pending');
     if (first) first.status = 'active';
+}
+
+// A skipped beat brought back by the user: still to come again.
+export function restoreBeat(gm, id) {
+    const b = beatsOf(gm.outline).find((x) => x.id === id);
+    if (!b || b.status !== 'skipped') return;
+    b.status = 'pending';
+    b.note = '';
+    settleActive(gm.outline);
 }
 
 export function finishBeat(gm, id) {

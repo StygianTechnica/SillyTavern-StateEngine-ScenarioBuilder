@@ -33,7 +33,7 @@ import { dossierText, knownAs, relevance } from '../director/prompt.js';
 import { triggerSection,
     duePasses, setDayPlan, applyCheck, applyBeats, trackPace, paceAim, planSection, motifsOf, addLog,
     addRequest, setRequestStatus, waitingRequests,
-    setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, editBeat, lockBeat, removeBeat, addBeat,
+    setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, restoreBeat, editBeat, lockBeat, removeBeat, addBeat,
     mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText,
     addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines,
@@ -561,6 +561,10 @@ export function addOutlineBeat(chatKey, actId, text) {
     let beat = null;
     updateChatDoc(chatKey, (d) => { beat = addBeat(d.gm, actId, text); });
     return beat;
+}
+
+export function restoreOutlineBeat(chatKey, id) {
+    updateChatDoc(chatKey, (d) => restoreBeat(d.gm, id));
 }
 
 export function finishOutlineBeat(chatKey, id) {

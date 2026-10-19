@@ -12,7 +12,7 @@ import { SHAPES, shapeCurve, targetAt } from '../planner/shapes.js';
 import {
     getPlannerStatus, runDay, runCheck, runInspire, runOutline, runBeat, queueRequest, withdrawRequest, addInspiration, removeInspiration,
     setMotifs, peek, setHold, storyState, setShape, editOutlineBeat, lockOutlineBeat, removeOutlineBeat, addOutlineBeat,
-    finishOutlineBeat, setOutlineText, setJoin, finishVolume, editFinishedVolume,
+    finishOutlineBeat, restoreOutlineBeat, setOutlineText, setJoin, finishVolume, editFinishedVolume,
     runIdeas, acceptIdea, dismissIdea, editProposal, addAgendaItem, removeAgendaItem, setCreationMode,
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
@@ -195,6 +195,10 @@ function beatRow(gm, beat, { veiled, chatId, chatKey, busy }) {
             open ? h('div', { class: 'sb-iconbtn', title: beat.locked ? 'Locked: the planner keeps it as written. Click to unlock.' : 'Lock it: the planner keeps it as written', onclick: () => lockOutlineBeat(chatKey, beat.id, !beat.locked) }, icon(beat.locked ? 'fa-lock' : 'fa-lock-open')) : null,
             open ? h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: () => startEdit(`beat:${beat.id}`, beat.text) }, icon('fa-pen')) : null,
             open ? h('div', { class: 'sb-iconbtn', title: 'Regenerate this beat', onclick: busy ? null : () => startEdit(`regen:${beat.id}`, ''), 'aria-disabled': off }, icon('fa-dice')) : null,
+            // A skipped beat (the planner judged it could no longer happen):
+            // bring it back, or remove it.
+            beat.status === 'skipped' ? h('div', { class: 'sb-iconbtn', title: 'Skipped by the planner - bring it back as a beat still to come', onclick: () => restoreOutlineBeat(chatKey, beat.id), 'aria-disabled': off }, icon('fa-rotate-left')) : null,
+            beat.status === 'skipped' ? h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction('Remove this skipped beat from the outline?')) removeOutlineBeat(chatKey, beat.id); } }, icon('fa-trash')) : null,
             beat.status === 'active' ? h('div', { class: 'sb-iconbtn', title: 'The story has played this out', onclick: () => finishOutlineBeat(chatKey, beat.id), 'aria-disabled': off }, icon('fa-check')) : null,
             open ? h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction('Remove this beat from the outline?')) removeOutlineBeat(chatKey, beat.id); } }, icon('fa-trash')) : null));
 }

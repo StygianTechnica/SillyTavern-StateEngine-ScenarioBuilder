@@ -24,3 +24,11 @@ describe('a skipped beat in a rewrite', () => {
         expect(maziel.status).not.toBe('skipped');
     });
 });
+
+describe('a skipped beat the answer echoes back', () => {
+    it('is dropped all the same', () => {
+        const g = gm();
+        setOutline(g, { acts: [{ title: 'Departure', beats: [{ id: 'b2', text: 'They ride out.', status: 'active' }] }, { title: 'The great danger', beats: [{ id: 'b3', text: 'Maziel appears and engages them.', status: 'skipped' }, { text: 'They reach the cache.', status: 'pending' }] }] });
+        expect(beatsOf(g.outline).some((b) => b.id === 'b3')).toBe(false);
+    });
+});
