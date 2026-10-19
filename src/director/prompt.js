@@ -393,7 +393,7 @@ export function buildDirectorPrompt(input) {
             '',
             'After the briefing, on its own line, how much in-story time this reply will cover from the latest message on:',
             'TIME | <how long, e.g. 5 minutes> | <why>',
-            'A few minutes for talk; longer when people travel, wait, work or sleep, or when the scene moves on (a duration like "2 hours" or "3 days", or a time of day like "the next morning"). A journey along one of the ways on takes its travel time. Follow any time skip the latest message asks for.',
+            'A few minutes for talk; longer when people travel, wait, work or sleep, or when the scene moves on (a duration like "2 hours" or "3 days", or a time of day like "the next morning"). A journey along one of the ways on takes its travel time. Follow any time skip the latest message asks for - waking someone for the next watch, or sleeping, means hours have passed (to dawn, or "the next morning", when the night is late).',
             '',
             `Only if the story needs the weather to change now (a storm rolling in that the plot calls for), a line naming the new weather from these: ${WEATHER_VALUES.join(', ')}.`,
             'WEATHER | <values from the list> | <why>',

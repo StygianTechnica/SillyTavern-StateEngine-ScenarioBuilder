@@ -95,7 +95,18 @@ export function fallbackAdvance(def, scalar, text) {
 // meeting in the morning", "by nightfall", "would", "tomorrow") does not.
 const TIME_CUES = [
     ['morning', 0.33, [/\b(?:it|the day) (?:was|is) (?:morning|full day)\b/, /\bmorning (?:came|had come|arrived|had arrived|broke|had broken)\b/, /\b(?:well|long) (?:after|past) (?:dawn|daybreak|sunrise)\b/, /\bthe morning sun(?:'s)? (?:\w+ ){0,3}(?:bathed|lit|warmed|spilled|shone|shines|rose|climbed|glowed|glows)\b/]],
-    ['dawn', 0.25, [/\b(?:dawn|daybreak) (?:broke|breaks|had broken|came|comes|arrived|crept|creeps)\b/, /\bthe sun (?:rose|rises|had risen|came up|comes up|crested|crests|climbed above)\b/, /\bthe first light of (?:dawn|day|morning) (?:crept|spilled|broke|touched)\b/]],
+    ['dawn', 0.25, [
+        /\b(?:dawn|daybreak) (?:broke|breaks|had broken|came|comes|arrived|crept|creeps)\b/,
+        /\bthe sun (?:rose|rises|had risen|came up|comes up|crested|crests|climbed above)\b/,
+        /\bthe first light of (?:dawn|day|morning) (?:crept|spilled|broke|touched)\b/,
+        // The scene lit by it: "the dim light of dawn", "the first pale light
+        // of sunrise", "the dawn's early light" (never "the light of day").
+        /\blight of (?:dawn|daybreak|sunrise)\b/,
+        /\b(?:dawn|daybreak|sunrise)'s (?:\w+ ){0,2}light\b/,
+        /\bfirst (?:\w+ ){0,2}light of (?:day|morning)\b/,
+        /\b(?:sunrise|first light) (?:\w+ ){0,2}(?:crept|creeps|spread|spreads|broke|breaks|touched|touches|spilled|spills|painted|paints)\b/,
+        /\b(?:light|glow|sun|sunlight|daylight) (?:\w+ ){0,3}(?:crept|creeps|crested|crests|rose|rises|spilled|spills|broke|breaks|peeked|peeks) over the horizon\b/,
+    ]],
     ['noon', 0.5, [/\bthe (?:noon|midday) sun (?:beat|beats|blazed|blazes|hung|hangs)\b/]],
     ['sunset', 0.77, [/\bthe sun (?:began|begins|started|starts|was beginning|is beginning) to (?:set|sink|go down|dip)\b/, /\bthe sun (?:set|sets|was setting|is setting|sank|sinks|was sinking|is sinking|dipped|dips|went down|goes down|had set)\b/, /\b(?:dusk|twilight) (?:fell|falls|had fallen|settled|settles|gathered|gathers|crept|creeps|descended|descends)\b/, /\bas (?:the )?(?:daylight|the light|the day) (?:faded|fades|waned|wanes|died|dies)\b/]],
     ['night', 0.88, [/\b(?:night|darkness) (?:fell|falls|had fallen|has fallen|settled|settles|descended|descends|closed in|closes in)\b/]],
@@ -105,15 +116,21 @@ const NOT_NOW = /\b(?:will|would|tomorrow|until|by the time|before|by nightfall|
 // daybreak") reaches its end now, though it says "until".
 const PAST_SPAN = /\b(?:was|were|had|lay|slept|stayed|remained)\b[^.!?]*\b(?:until|till)\b/i;
 const FUTURE = /\b(?:will|would|shall|tomorrow|tonight|soon|later)\b/i;
+// Waiting for it, or a likeness ("eyes bright as the light of dawn"), is
+// not the day turning.
+const NOT_REACHED = /\b(?:wait(?:s|ed|ing)? for|await(?:s|ed|ing)?|longed for|hoped for)\b|\b(?:like|as if|as though|bright as)\s+(?:a |an |the )?(?:\w+ ){0,2}(?:light|dawn|daybreak|sunrise|sun)\b/i;
+// Speech is what someone says, not the scene: "We ride at first light."
+const SPEECH = /"[^"]*"|“[^”]*”/g;
 
 // The latest part of the day a reply shows the scene reaching:
 // { phrase, fraction } (fraction of the day: sunset 0.77), or null.
 export function storyTimeCue(text) {
-    const sentences = String(text ?? '').replace(/\s+/g, ' ').match(/[^.!?…]+[.!?…]*/g) ?? [];
+    const sentences = String(text ?? '').replace(SPEECH, ' ').replace(/[‘’]/g, "'").replace(/\s+/g, ' ').match(/[^.!?…]+[.!?…]*/g) ?? [];
     let found = null;
     for (const sentence of sentences) {
         const t = sentence.toLowerCase();
         if (NOT_NOW.test(t) && !(PAST_SPAN.test(t) && !FUTURE.test(t))) continue;
+        if (NOT_REACHED.test(t)) continue;
         for (const [phrase, fraction, patterns] of TIME_CUES) {
             if (patterns.some((re) => re.test(t))) found = { phrase, fraction };
         }
@@ -149,6 +166,9 @@ export function storyDelta(text) {
     if (!t) return '';
     const counted = t.match(/(\d+(?:\.\d+)?|a|an|one|two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty|thirty|few|several|half)\s*(?:an?\s+)?(?:minute|min|hour|hr|day|week|month)s?/);
     if (counted) return counted[0];
+    // "from late night through dawn": on to that dawn.
+    const reached = t.match(/\b(?:through|till|until|to)\s+(?:the\s+)?(dawn|daybreak|sunrise|first light|morning)\b/);
+    if (reached) return `until ${reached[1] === 'morning' ? 'morning' : 'dawn'}`;
     if (/\b(?:next|following|tomorrow|overnight|until|till|through the night|all night)\b/.test(t)) return t;
     const bare = t.match(/\b(minute|hour|day|week)s\b/);
     if (bare) return `a few ${bare[1]}s`;
