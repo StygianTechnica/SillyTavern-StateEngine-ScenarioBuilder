@@ -460,6 +460,9 @@ export async function removeAdopted(chatId, chatKey, adoptedId) {
         patch.locationId = brought?.before?.locationId ?? '';
     }
     if (doc.canonical.castIds.includes(a.objectId)) patch.castIds = doc.canonical.castIds.filter((id) => id !== a.objectId);
+    // A rejected quest keeps what it was about, so the same quest reworded
+    // is known again (quests/model.js rejectedLike).
+    const text = a.type === 'quest' ? String((await getObject(chatId, a.objectId).catch(() => null))?.description ?? '').slice(0, 400) : '';
     setCanonical(chatKey, patch, {
         source: 'review', note: `${a.name} rejected`, chatId,
         alsoMutate: (d) => {
@@ -476,7 +479,7 @@ export async function removeAdopted(chatId, chatKey, adoptedId) {
                 d[linkKey] = links;
             }
             const known = d.rejected.some((r) => r.type === a.type && String(r.name).toLowerCase() === String(a.name).toLowerCase());
-            if (!known) d.rejected = [...d.rejected, { type: a.type, name: a.name, ...(threadId ? { threadId } : {}) }];
+            if (!known) d.rejected = [...d.rejected, { type: a.type, name: a.name, ...(threadId ? { threadId } : {}), ...(text ? { text } : {}) }];
         },
     });
     const settingId = await getBoundSettingId(chatId);

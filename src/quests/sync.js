@@ -31,7 +31,7 @@ import { listEntries, createEntry, updateEntry, setEntryMeta, mayAddGeneratedDet
 import { PRESET_NAME } from '../preset/blueprint.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import {
-    isQuestThread, threadDormant, statusFromThread, typeFromThread, objectivesFromThread, mergeObjectives, tidyObjectives, foreignStepTest,
+    isQuestThread, threadDormant, rejectedLike, statusFromThread, typeFromThread, objectivesFromThread, mergeObjectives, tidyObjectives, foreignStepTest,
     effectiveStatus, questProgress, currentObjective, questPriority, sortQuests, normalizeQuestMeta,
 } from './model.js';
 
@@ -108,6 +108,8 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
         // quest whose name was rejected is never made or taken in again.
         const dismissed = new Set(doc.questsDismissed);
         const rejectedName = (name) => doc.rejected.some((r) => r.type === 'quest' && lower(r.name) === lower(name));
+        // A rejected quest reworded by Archivist is still rejected.
+        const rejectedQuests = doc.rejected.filter((r) => r.type === 'quest');
 
         for (const thread of threads) {
             if (dismissed.has(thread.id)) continue;
@@ -135,7 +137,7 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
                 if (links[thread.id] !== qid) { links[thread.id] = qid; out.linked += 1; }
                 continue;
             }
-            if (!create || rejectedName(thread.title)) continue;
+            if (!create || rejectedName(thread.title) || rejectedLike(thread, rejectedQuests)) continue;
             // Nothing new from a thread the story left behind long ago.
             if (thread.dormant && !scan) continue;
             const finished = thread.status === 'resolved' || thread.status === 'abandoned';
@@ -178,11 +180,11 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
         const seen = doc.questsSeen;
         const fresh = seen ? quests.filter((q) => !seen.includes(q.id) && !Object.values(links).includes(q.id) && !getEntryMeta(settingId, q.id).origin) : [];
         // A quest the story starts again under a rejected name is removed.
-        for (const q of fresh.filter((x) => rejectedName(x.name))) {
+        for (const q of fresh.filter((x) => rejectedName(x.name) || rejectedLike({ title: x.name, text: x.description }, rejectedQuests))) {
             await deleteEntry(chatId, settingId, q.id);
             quests = quests.filter((x) => x.id !== q.id);
         }
-        for (const q of fresh.filter((x) => !rejectedName(x.name))) {
+        for (const q of fresh.filter((x) => quests.some((y) => y.id === x.id))) {
             setEntryMeta(settingId, q.id, { origin: 'story' });
             adopted.push({ id: newLocalId('a'), objectId: q.id, type: 'quest', name: q.name, at: new Date().toISOString(), placedUnder: '', enrich: 'off', error: '' });
             out.taken += 1;

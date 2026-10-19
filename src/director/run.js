@@ -29,6 +29,7 @@ import { gatherInputs } from '../guidance/sync.js';
 import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { buildPeoplePrompt, readPeople } from './people.js';
+import { unknownsFor, PERSPECTIVE_TOKENS } from './perspective.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
 import { directorPlan, takeBeats, markActive } from '../planner/run.js';
 
@@ -95,6 +96,24 @@ function memoriesFor(ids) {
         }
     }
     return out.slice(0, 12);
+}
+
+// Perspective (src/director/perspective.js): for each person here other
+// than the player, the recent memories they did not witness. [] when it is
+// off or Archivist is not there.
+async function unknownsHere(cast, recentText, characters) {
+    const director = getSettings().director;
+    const archivist = window.StateEngineArchivist;
+    if (director.perspective === false || typeof archivist?.getAllMemories !== 'function') return [];
+    try {
+        const memories = await archivist.getAllMemories();
+        const names = new Map([...(characters ?? []), ...(cast ?? [])].filter((c) => c?.id).map((c) => [c.id, c.name]));
+        const budget = Number(director.perspectiveTokens);
+        return unknownsFor(memories, { cast, recentText, nameOf: (id) => names.get(id) ?? '', maxTokens: Number.isFinite(budget) && budget > 0 ? budget : PERSPECTIVE_TOKENS });
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not read who knows what from Archivist', err);
+        return [];
+    }
 }
 
 // The ref field on `typeId` that points at a location ('location' first).
@@ -360,6 +379,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         timeKeeping: settings.time.enabled && !!settingId,
         askNow: settings.time.enabled && !!settingId && doc.clock.needsNow,
         gmPlan: settingId ? directorPlan(chatKey, messages) : '',
+        unknowns: await unknownsHere(guidance.cast ?? [], messages.slice(-6).map((m) => m.text).join('\n'), characters),
         ahead,
     });
     if (ahead) {

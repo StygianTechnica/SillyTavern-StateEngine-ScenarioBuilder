@@ -279,3 +279,27 @@ export function threadDormant(thread, newest, after = DORMANT_AFTER) {
     const last = thread?.message_range?.to;
     return Number.isInteger(last) && Number.isInteger(newest) && newest - last > after;
 }
+
+// Whether a thread is a quest the user rejected, reworded. Archivist keeps
+// re-making a thread under a new id and title ("Negotiate passage terms with
+// Niamh", "Niamh's Fortress and Passage", "Negotiate Favorable Terms with
+// Niamh"): matched by title, by name alone, its next wording got through.
+// thread: { title, text }; rejected: [{ name, text? }] (the quests rejected).
+const QUEST_STOP = new Set('the and for with from into onto that this their them they his her its him she are was were has have had will would can could must about over under after before while then than when where which who whom what how also just only very more most some any all each other another again quest'.split(' '));
+const questWords = (text) => new Set((String(text ?? '').toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).map((w) => w.replace(/(?:'s|s)$/, '')).filter((w) => w.length >= 3 && !QUEST_STOP.has(w)));
+const overlap = (a, b) => {
+    if (!a.size || !b.size) return { shared: 0, ofSmaller: 0, jaccard: 0 };
+    const shared = [...a].filter((w) => b.has(w)).length;
+    return { shared, ofSmaller: shared / Math.min(a.size, b.size), jaccard: shared / (a.size + b.size - shared) };
+};
+export function rejectedLike(thread, rejected) {
+    const title = questWords(thread?.title);
+    const all = questWords(`${thread?.title ?? ''} ${thread?.text ?? ''}`);
+    return (rejected ?? []).some((r) => {
+        const t = overlap(title, questWords(r.name));
+        if (t.shared >= 2 && t.ofSmaller >= 0.6) return true;
+        if (!r.text) return false;
+        const whole = overlap(all, questWords(`${r.name} ${r.text}`));
+        return whole.shared >= 3 && whole.jaccard >= 0.45;
+    });
+}

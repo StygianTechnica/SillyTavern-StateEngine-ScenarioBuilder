@@ -50,7 +50,7 @@ describe('secrets and oaths', () => {
         const withKnowledge = cast.map((c) => ({ ...c, ...members.get(c.id) }));
         expect(buildCast({ cast: withKnowledge })).toContain('Knows: Remus Watt is the chosen champion of Elyon');
         const built = buildGuidance({ cast: withKnowledge, secrets: rules, budget: 800 });
-        expect(guidanceParts(built).guidance_scene).toContain('People know only what they have learned in the story.');
+        expect(guidanceParts(built).guidance_scene).toContain('People know only what they saw, heard or were told in the story.');
         const dossier = dossierText({ cast: withKnowledge, secrets: rules });
         expect(dossier).toContain('SECRETS AND OATHS');
         expect(dossier).toContain('knows: Remus Watt is the chosen champion of Elyon');

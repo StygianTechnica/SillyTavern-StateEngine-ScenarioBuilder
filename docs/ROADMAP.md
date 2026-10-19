@@ -14,9 +14,13 @@ From a review of what is left, in the user's words where it matters:
   the fly, checks now and then whether any has borne fruit, and retires
   them - flags especially); a toggleable "think after each reply" mode for
   the game master.
-- **Wanted next:** perspective - people know only what they witnessed or
-  were told ("Graxx keeps talking about Remus's divine power before he ever
-  saw it"); "an impressive feat" if done well.
+- **Under way (2026-10-19):** perspective - people know only what they
+  witnessed or were told ("Graxx keeps talking about Remus's divine power
+  before he ever saw it"); "an impressive feat" if done well. A standing
+  narrator and director rule, Archivist recording who was present for every
+  memory (a dream, vision or thought only for the one who had it), and the
+  director told, per person here, what they did not witness - no extra
+  call. See the Perspective item below.
 - **Wanted:** current descriptions updated from the story ("would be
   amazing"); revert an enrichment, a field or all of it ("I need to be able
   to"); a contextual place lookup - "the ruins" should find "Roadside
@@ -324,8 +328,8 @@ calls (one entry at a time, retry, and the entry text as a fallback).
 - [ ] GM planner, phase 5: tuning (custom shapes, per-pass budgets, how often
   planned moments land).
 - [x] Director: a "think after each reply" mode (settings.director.thinkAhead,
-  src/director/ahead.js) - done; still open: per-character perspective
-  briefings. Was: a "think after each reply" mode (zero wait, written before
+  src/director/ahead.js) - done; per-character perspective briefings:
+  see Perspective below. Was: a "think after each reply" mode (zero wait, written before
   the player's next message), and per-character perspective briefings once
   State Engine offers perspectives.
 - [x] Director: people it says arrive (ENTERS) or adds as here join the
@@ -338,7 +342,28 @@ calls (one entry at a time, retry, and the entry text as a fallback).
   here does not know it (they never act on it, hint at it or guess it);
   the director is given the same and told people act only on what they
   know. Revealed secrets and released or kept oaths drop out.
-- [ ] Perspective and knowledge boundaries beyond secrets, POV modes (9.4, OPEN-5).
+- [~] Perspective and knowledge boundaries beyond secrets (9.4, OPEN-5) -
+  progressed 2026-10-19, no new model calls:
+  - Narrator (src/guidance/build.js, secrets section) and director system
+    prompt: people know only what they saw, heard or were told; inner
+    experiences are the owner's alone.
+  - Archivist: "present" is always asked for (it was optional and given for
+    under 1% of memories), and `private: true` marks one person's inner
+    experience - a dream, vision, thought, unspoken feeling, something seen
+    alone - whose witness is only that person (src/extraction/
+    memory-variable.js, converter.js, src/memory/schema.js).
+  - Director (src/director/perspective.js): for each person here other than
+    the player, the important recent memories about people in the scene
+    they did not witness and were not told later (WHAT EACH PERSON DOES NOT
+    KNOW, each memory once with who lacks it), at most 3 per person and
+    settings.director.perspectiveTokens (600) in all; the briefing is told
+    to say it plainly ("Varyn did not see the vision - he only saw Remus
+    sleep restlessly"). Older memories with no witnesses count only when
+    they read as someone's vision or dream, and not once a later memory
+    shows it was told. Toggle: "Perspective" in the settings (on).
+  - Still open: chats extracted before this have almost no witness data
+    (God War: 6 of 867) - a re-extraction would fill it in; things a person
+    was told are only detected from later memories' wording; POV modes.
 - [x] Quests (9.5): made automatically from Archivist's quest seeds, goals,
   plans and hooks (plus a "Scan Archivist for quests" catch-up), objectives
   kept in step with the plan's steps, type and base priority, effective

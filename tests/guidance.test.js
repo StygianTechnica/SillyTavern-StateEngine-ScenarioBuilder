@@ -38,7 +38,7 @@ describe('guidance', () => {
 
     it('is empty when there is nothing to say (SB-304)', () => {
         expect(buildGuidance({ budget: 600 }).text).toBe('');
-        expect(buildGuidance({ ...input, sections: { director: false, overview: false, location: false, scene: false, corrections: false } }).text).toBe('');
+        expect(buildGuidance({ ...input, sections: { director: false, overview: false, location: false, scene: false, corrections: false, secrets: false } }).text).toBe('');
     });
 
     it('marks sections switched off', () => {

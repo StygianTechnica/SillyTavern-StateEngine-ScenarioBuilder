@@ -71,7 +71,10 @@ const DEFAULTS = {
     // thinkAhead: the briefing is written right after each AI reply, in
     // the background, so the player's next message goes out without a wait
     // (src/director/ahead.js) - it cannot see that message.
-    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false },
+    // perspective: each person here is listed with the recent memories they
+    // did not witness (src/director/perspective.js), at most
+    // perspectiveTokens of the director's prompt - no extra call.
+    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600 },
     // The clock (src/calendar/clock.js): on = Scenario Builder keeps the
     // time and weather; perTurn = how much time a reply covers when the
     // director does not say.

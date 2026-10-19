@@ -16,6 +16,7 @@
 import { WEATHER_VALUES } from '../store/schema.js';
 import { lookLines } from '../library/world-options.js';
 import { shortTitle } from '../validate/drift.js';
+import { unknownsLines } from './perspective.js';
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
@@ -312,6 +313,8 @@ export function dossierText(input) {
         section('SECRETS AND OATHS (people act only on what they know)');
         for (const r of input.secrets.slice(0, 8)) lines.push(`- ${r}`);
     }
+    const unknown = unknownsLines(input.unknowns);
+    if (unknown.length) { section(unknown[0]); lines.push(...unknown.slice(1)); }
     if (input.absent?.length) {
         section('TAKEN OUT OF THE SCENE BY THE PLAYER (they must not appear, speak or act in this reply)');
         lines.push(`- ${input.absent.map(clean).join(', ')}`);
@@ -346,7 +349,7 @@ export function buildDirectorPrompt(input) {
         'Something that is somewhere else - a far-off place, an object kept elsewhere, a goal that needs a journey - can be talked about, worried over or planned for, but it cannot be reached, found or used in this scene until the story actually travels there. Keep the people busy with what is in front of them here.',
         `Never loop: each reply must change something that stays changed - ground taken or lost, someone down, a foe broken, a turn in the plan. Do not answer ${userName} with the same threat again (fresh waves of the same enemies, "one more time", "it is not over yet"). A fight or ordeal builds to a turn and then ends within a few replies - the enemy breaks, flees, falls or wins - and when ${userName} has spent everything or is down, the others carry it through or the story moves on; never press ${userName} to push past their limits again.`,
         'People act as the story has shown them: never give someone a betrayal, an attack or a hidden scheme the story has not set up.',
-        'People know only what they have learned: a secret stays hidden from those who do not know it - they never act on it, hint at it or guess it - unless the story reveals it in front of them; an oath binds those who swore it.',
+        'People know only what they saw, heard or were told: what happens inside someone - thoughts, dreams, visions, unspoken feelings - is theirs alone; others see only outward signs and learn the rest only if told. A secret stays hidden from those who do not know it - they never act on it, hint at it or guess it - unless the story reveals it in front of them; an oath binds those who swore it.',
         clean(input.overview?.gmStyle) ? `How the user wants this story run - follow it: ${cut(input.overview.gmStyle, 800)}` : '',
     ].filter(Boolean).join(' ');
 
@@ -370,6 +373,7 @@ export function buildDirectorPrompt(input) {
         'WRITE THE BRIEFING',
         `In a few paragraphs of natural prose (no headings, lists or tables), tell the narrator where things stand ${input.ahead ? `as ${userName}'s turn comes` : `now that ${userName} has spoken`}${alone ? `. ${people}` : `, and ${people}`} Let the place come through in a few concrete details of what can be seen, heard or smelled, and anything here that matters now. Draw on everything above that bears on this moment - factions, lore, events, threads and the other entries - but fold each into the narrative in a few words where it matters; never list them, and leave out what does not touch this moment. Vary how you open; do not start with a stock phrase.`,
         'If someone not here (OTHERS WHO COULD TURN UP) has a plan that will matter soon, say in a sentence what they are doing about it off-screen.',
+        ...(unknownsLines(input.unknowns).length ? ['Where someone here does not know something that bears on this moment (WHAT EACH PERSON DOES NOT KNOW), say so plainly in the briefing, with what they did see instead (e.g. "Varyn did not see the vision - he only saw Remus sleep restlessly"), so the narrator never has them speak of it.'] : []),
         'End with a paragraph that begins "Next:" saying where this reply should probably go - one or two natural developments driven by what the other characters want, as direction rather than a script, leaning toward an open thread when it fits.',
         'Keep it under 400 words in all.',
     );

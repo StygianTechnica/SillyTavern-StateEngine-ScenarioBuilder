@@ -326,6 +326,9 @@ function correctionsSection(corrections) {
     return { full: `Recent replies got some facts wrong. Hold to these: ${list.map(sentence).join(' ')}`, compact: '' };
 }
 
+// Perspective (the narrator's standing rule, at no cost).
+export const PERSPECTIVE = 'People know only what they saw, heard or were told in the story. What happens inside someone - their thoughts, dreams, visions, memories and unspoken feelings - is theirs alone: others see only outward signs (a restless sleep, a far-off look) and learn the rest only if told, in the scene.';
+
 const BUILDERS = {
     summary: (input) => directorPart(input.director, 'summary'),
     absent: (input) => absentSection(input.absent),
@@ -341,8 +344,12 @@ const BUILDERS = {
     quests: (input) => questsSection(input.quests),
     lore: (input) => loreSection(input.lore),
     corrections: (input) => correctionsSection(input.corrections),
-    // Who here must not know a secret; the oaths that bind those present.
-    secrets: (input) => ((input.secrets ?? []).length ? { full: ['People know only what they have learned in the story.', ...input.secrets.slice(0, 8)].join(' '), compact: '' } : null),
+    // What people can know - always: no one knows another's dreams, visions
+    // or unspoken thoughts (Varyn knowing the vision Remus had asleep) - then
+    // who here must not know a secret, and the oaths that bind those present.
+    secrets: (input) => ((input.secrets ?? []).length || (input.cast ?? []).length
+        ? { full: [PERSPECTIVE, ...(input.secrets ?? []).slice(0, 8)].join(' '), compact: PERSPECTIVE }
+        : null),
 };
 
 // input: { overview, location: { path, description, environment, indoor },
