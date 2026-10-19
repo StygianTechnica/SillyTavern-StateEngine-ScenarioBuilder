@@ -18,6 +18,15 @@
 //   pace: { sceneKey, sceneReplies, idleReplies, baselineWords, hold }
 //   checkWanted                                 a beat was skipped: CHECK on the next pass
 //   peeked: [momentId]                          spoilers the user looked at one by one
+//   shape                                       story shape id (src/planner/shapes.js); '' = none chosen
+//   outline: { premise, themes: [text], acts: [{ id, title, beats: [beat] }],
+//              seeds: [{ id, text, payoff }], updatedAt, madeTurn } | null
+//     beat = { id, text, ties: [name], status: 'pending' | 'active' | 'done' | 'skipped',
+//              locked, by: 'planner' | 'user', note }
+//   tension: [{ at, index, threat, uncertainty, emotional, overall, reason, source }]
+//                                               readings, oldest first (Archivist's, or the
+//                                               planner's own without it); the last TENSION_LIMIT
+//   outlineWanted                               Archivist compiled: OUTLINE on the next pass
 // }
 
 export const URGENCIES = Object.freeze([['soon', 'Soon'], ['today', 'Today'], ['whenever', 'Whenever it fits']]);
@@ -26,18 +35,25 @@ export const PACINGS = Object.freeze([['off', 'Off'], ['gentle', 'Gentle'], ['br
 
 // Background passes per level (§4): CHECK every n replies (0: only when
 // the director reports a skipped beat); a day plan is re-made as "the rest
-// of the day" after dayExpire replies.
+// of the day" after dayExpire replies; OUTLINE every n replies (0: on
+// demand), and after Archivist compiles (compile).
 export const LEVEL_CADENCE = Object.freeze({
-    light: { check: 0, dayExpire: 40 },
-    moderate: { check: 3, dayExpire: 25 },
-    heavy: { check: 1, dayExpire: 15 },
+    light: { check: 0, dayExpire: 40, outline: 0, compile: false },
+    moderate: { check: 3, dayExpire: 25, outline: 15, compile: true },
+    heavy: { check: 1, dayExpire: 15, outline: 8, compile: true },
 });
+// The first outline once the story has had this many replies to show what
+// it is about (or on demand).
+export const FIRST_OUTLINE_AFTER = 5;
 
 const LOG_LIMIT = 30;
 const QUEUE_DONE_LIMIT = 20;
 const INSPIRATION_LIMIT = 12;
 const INSPIRATION_CHARS = 12000;
 const MOMENT_LIMIT = 8;
+const BEAT_LIMIT = 10;
+const TENSION_LIMIT = 50;
+const BEAT_STATUSES = ['pending', 'active', 'done', 'skipped'];
 
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' ? v : '');
@@ -48,10 +64,14 @@ const int = (v, fallback = 0) => (Number.isInteger(v) && v >= 0 ? v : fallback);
 export function emptyGm() {
     return {
         day: null, queue: [], inspirations: [], log: [],
-        counters: { sinceCheck: 0, turn: 0, lastCheck: '' },
+        counters: { sinceCheck: 0, turn: 0, lastCheck: '', sinceOutline: 0, lastCompiled: '' },
         pace: emptyPace(),
         checkWanted: false,
         peeked: [],
+        shape: '',
+        outline: null,
+        tension: [],
+        outlineWanted: false,
     };
 }
 
@@ -115,11 +135,59 @@ export function normalizeGm(value) {
         queue: trimQueue(queue),
         inspirations: (Array.isArray(g.inspirations) ? g.inspirations : []).map(normalizeInspiration).filter(Boolean).slice(0, INSPIRATION_LIMIT),
         log: (Array.isArray(g.log) ? g.log : []).filter((l) => isObject(l) && clean(l.pass)).slice(-LOG_LIMIT),
-        counters: { sinceCheck: int(c.sinceCheck), turn: int(c.turn), lastCheck: str(c.lastCheck) },
+        counters: { sinceCheck: int(c.sinceCheck), turn: int(c.turn), lastCheck: str(c.lastCheck), sinceOutline: int(c.sinceOutline), lastCompiled: str(c.lastCompiled) },
         pace: { sceneKey: str(p.sceneKey), sceneReplies: int(p.sceneReplies), idleReplies: int(p.idleReplies), baselineWords: Number.isFinite(p.baselineWords) && p.baselineWords > 0 ? p.baselineWords : 0, hold: p.hold === true },
         checkWanted: g.checkWanted === true,
         peeked: strList(g.peeked).slice(-40),
+        shape: clean(g.shape),
+        outline: normalizeOutline(g.outline),
+        tension: (Array.isArray(g.tension) ? g.tension : []).map(normalizeReading).filter(Boolean).slice(-TENSION_LIMIT),
+        outlineWanted: g.outlineWanted === true,
     };
+}
+
+function normalizeBeat(b, i) {
+    if (!isObject(b) || !clean(b.text)) return null;
+    return {
+        id: clean(b.id) || `b${i + 1}`,
+        text: clean(b.text).slice(0, 400),
+        ties: strList(b.ties).slice(0, 6),
+        status: BEAT_STATUSES.includes(b.status) ? b.status : 'pending',
+        locked: b.locked === true,
+        by: b.by === 'user' ? 'user' : 'planner',
+        note: clean(b.note),
+    };
+}
+
+function normalizeOutline(o) {
+    if (!isObject(o) || !Array.isArray(o.acts)) return null;
+    let n = 0;
+    const acts = o.acts.filter(isObject).map((a, i) => ({
+        id: clean(a.id) || `a${i + 1}`,
+        title: clean(a.title),
+        beats: (Array.isArray(a.beats) ? a.beats : []).map((b) => normalizeBeat(b, n++)).filter(Boolean).slice(0, BEAT_LIMIT),
+    }));
+    if (!acts.length) return null;
+    return {
+        premise: clean(o.premise).slice(0, 1200),
+        themes: strList(o.themes).slice(0, 8),
+        acts,
+        seeds: (Array.isArray(o.seeds) ? o.seeds : []).filter((x) => isObject(x) && clean(x.text))
+            .map((x, i) => ({ id: clean(x.id) || `s${i + 1}`, text: clean(x.text), payoff: clean(x.payoff) })).slice(0, 8),
+        updatedAt: str(o.updatedAt),
+        madeTurn: int(o.madeTurn),
+    };
+}
+
+const score = (v) => (Number.isFinite(v) ? Math.round(Math.min(5, Math.max(0, v)) * 10) / 10 : null);
+
+function normalizeReading(r) {
+    if (!isObject(r)) return null;
+    const parts = { threat: score(r.threat), uncertainty: score(r.uncertainty), emotional: score(r.emotional) };
+    const known = Object.values(parts).filter((v) => v !== null);
+    const overall = score(r.overall) ?? (known.length ? score(known.reduce((a, b) => a + b, 0) / known.length) : null);
+    if (overall === null) return null;
+    return { at: str(r.at), index: Number.isInteger(r.index) ? r.index : null, ...parts, overall, reason: clean(r.reason).slice(0, 300), source: r.source === 'archivist' ? 'archivist' : 'planner' };
 }
 
 // Finished and withdrawn requests are kept a while, then dropped.
@@ -287,26 +355,38 @@ export function paceAim(gm, { level = 'gentle', recentUser = [], tense = false, 
 
 // ---------------------------------------------------------------- cadence (§4)
 
-// Which passes are due after a reply. -> ['day'] | ['check'] | [] (DAY
-// replaces CHECK: a new plan needs no check).
-export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null, dayExpire = null } = {}) {
+// Which passes are due after a reply, in the order to run them: OUTLINE
+// first (the day plan follows the story's direction), then DAY or CHECK
+// (DAY replaces CHECK: a new plan needs no check). OUTLINE only once a
+// story shape is chosen.
+export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null, dayExpire = null, outlineEvery = null } = {}) {
     const cadence = LEVEL_CADENCE[level] ?? LEVEL_CADENCE.moderate;
+    const out = [];
+    if (gm.shape) {
+        const often = Number.isInteger(outlineEvery) ? outlineEvery : cadence.outline;
+        if (!gm.outline ? turn >= FIRST_OUTLINE_AFTER
+            : (often > 0 && gm.counters.sinceOutline >= often) || (cadence.compile && gm.outlineWanted)) out.push('outline');
+    }
     const every = Number.isInteger(checkEvery) ? checkEvery : cadence.check;
     const expire = Number.isInteger(dayExpire) ? dayExpire : cadence.dayExpire;
-    if (!gm.day || gm.day.day !== day || (expire > 0 && turn - gm.day.madeTurn >= expire)) return ['day'];
+    if (!gm.day || gm.day.day !== day || (expire > 0 && turn - gm.day.madeTurn >= expire)) return [...out, 'day'];
     const pending = gm.day.moments.some((m) => m.status === 'pending');
     // A request newer than the last pass: once, not after every reply.
-    if (gm.checkWanted || waitingRequests(gm).some((r) => r.at > gm.counters.lastCheck)) return ['check'];
-    if (every > 0 && gm.counters.sinceCheck >= every && pending) return ['check'];
-    return [];
+    if (gm.checkWanted || waitingRequests(gm).some((r) => r.at > gm.counters.lastCheck)) return [...out, 'check'];
+    if (every > 0 && gm.counters.sinceCheck >= every && pending) return [...out, 'check'];
+    return out;
 }
 
 // ---------------------------------------------------------------- the director's section (§6)
 
 // The private GM PLAN section, or '' when there is nothing to say.
-// pace: paceAim(); motifs: [text].
-export function planSection(gm, { pace = null, motifs = [] } = {}) {
+// pace: paceAim(); aim: shapes.js tensionAim(); story: { shape (label),
+// act (title) } for the outline's line; motifs: [text].
+export function planSection(gm, { pace = null, aim = null, story = null, motifs = [] } = {}) {
     const lines = [];
+    const beat = activeBeat(gm.outline);
+    if (beat) lines.push(`- Story: ${story?.shape ? `${story.shape}, ` : ''}${story?.act ? `in "${story.act}" - ` : ''}the beat now: ${beat.text}`);
+    if (aim) lines.push(`- Aim: ${aim.word} (${aim.lean}) - ${aim.why}.`);
     if (pace && pace.aim !== 'steady') {
         lines.push(pace.aim === 'move on'
             ? `- Pace: move on - ${pace.why}. Bring the scene to a natural close from the world's side (the others wrap up, something calls them away, night falls) and let time pass to the next moment worth playing, with a TIME line that covers it. End on a hook that hands the choice back to the player. Never decide for the player character.`
@@ -338,3 +418,160 @@ export function motifsOf(gm, max = 6) {
 // What is veiled while spoilers are hidden: a moment's or agenda's text,
 // unless the user peeked at it.
 export const isVeiled = (gm, id, showSpoilers) => !showSpoilers && !gm.peeked.includes(id);
+
+// ---------------------------------------------------------------- the outline (§3.1)
+
+export const beatsOf = (outline) => (outline?.acts ?? []).flatMap((a) => a.beats);
+export const activeBeat = (outline) => beatsOf(outline).find((b) => b.status === 'active') ?? null;
+const beatNumber = (id) => Number(/^b(\d+)$/.exec(id)?.[1] ?? 0);
+
+// The act holding the active beat (or the first with a beat still to
+// come): { act, index } or null.
+export function currentAct(outline) {
+    const acts = outline?.acts ?? [];
+    let index = acts.findIndex((a) => a.beats.some((b) => b.status === 'active'));
+    if (index < 0) index = acts.findIndex((a) => a.beats.some((b) => b.status === 'pending'));
+    if (index < 0) index = Math.max(0, acts.length - 1);
+    return acts[index] ? { act: acts[index], index } : null;
+}
+
+// The story's position, 0-1: beats done (half for the active one) out of
+// the beats that count (skipped ones don't).
+export function positionOf(outline) {
+    const beats = beatsOf(outline).filter((b) => b.status !== 'skipped');
+    if (!beats.length) return 0;
+    const done = beats.filter((b) => b.status === 'done').length + (beats.some((b) => b.status === 'active') ? 0.5 : 0);
+    return Math.round((done / beats.length) * 1000) / 1000;
+}
+
+// One active beat at most; with none, the first beat still to come.
+function settleActive(outline) {
+    const beats = beatsOf(outline);
+    const active = beats.filter((b) => b.status === 'active');
+    for (const b of active.slice(1)) b.status = 'pending';
+    if (!active.length) {
+        const next = beats.find((b) => b.status === 'pending');
+        if (next) next.status = 'active';
+    }
+}
+
+const kept = (b) => b.locked || b.status === 'done' || b.status === 'skipped';
+const past = (b) => b.status === 'done' || b.status === 'skipped';
+
+// Takes an OUTLINE pass's answer in. parsed: { premise, themes, acts:
+// [{ title, beats: [{ id?, text, ties, status }] }], seeds }. What the
+// story has done stays done; locked beats (the user's) keep their words;
+// beats the answer leaves out are dropped unless done, skipped or locked.
+export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString() } = {}) {
+    const old = new Map(beatsOf(gm.outline).map((b) => [b.id, b]));
+    const used = new Set();
+    let next = Math.max(0, ...[...old.keys()].map(beatNumber)) + 1;
+    const acts = (parsed.acts ?? []).map((a, i) => {
+        const beats = [];
+        for (const raw of a.beats ?? []) {
+            const prev = raw.id ? old.get(clean(raw.id)) : null;
+            if (prev && !used.has(prev.id)) {
+                used.add(prev.id);
+                const status = past(prev) ? prev.status : (BEAT_STATUSES.includes(raw.status) ? raw.status : prev.status);
+                const keepWords = prev.locked || past(prev);
+                beats.push({ ...prev, text: keepWords ? prev.text : clean(raw.text) || prev.text, ties: keepWords ? prev.ties : strList(raw.ties).slice(0, 6), status });
+            } else {
+                const b = normalizeBeat({ ...raw, id: `b${next++}`, locked: false, by: 'planner' }, 0);
+                if (b) beats.push(b);
+            }
+        }
+        // History and the user's beats are never lost: back in their act,
+        // what is past before what is still to come.
+        const oldAct = gm.outline?.acts?.[i];
+        for (const b of oldAct?.beats ?? []) {
+            if (used.has(b.id) || !kept(b)) continue;
+            used.add(b.id);
+            const before = past(b) ? beats.findIndex((x) => !past(x)) : -1;
+            if (before >= 0) beats.splice(before, 0, b); else beats.push(b);
+        }
+        return { id: `a${i + 1}`, title: clean(a.title) || clean(oldAct?.title) || `Act ${i + 1}`, beats: beats.slice(0, BEAT_LIMIT) };
+    });
+    // Kept beats of acts the answer no longer has go to the last act.
+    for (const b of old.values()) {
+        if (used.has(b.id) || !kept(b) || !acts.length) continue;
+        acts[acts.length - 1].beats.push(b);
+    }
+    gm.outline = normalizeOutline({
+        premise: clean(parsed.premise) || gm.outline?.premise || '',
+        themes: parsed.themes?.length ? parsed.themes : gm.outline?.themes ?? [],
+        acts,
+        seeds: parsed.seeds?.length ? parsed.seeds : gm.outline?.seeds ?? [],
+        updatedAt: at,
+        madeTurn: turn,
+    });
+    if (gm.outline) settleActive(gm.outline);
+}
+
+// The user's own changes. An edited or added beat is locked: the planner
+// keeps its words.
+export function editBeat(gm, id, text) {
+    const b = beatsOf(gm.outline).find((x) => x.id === id);
+    if (b && clean(text)) { b.text = clean(text).slice(0, 400); b.by = 'user'; b.locked = true; }
+}
+
+export function lockBeat(gm, id, locked) {
+    const b = beatsOf(gm.outline).find((x) => x.id === id);
+    if (b) b.locked = locked === true;
+}
+
+export function removeBeat(gm, id) {
+    if (!gm.outline) return;
+    for (const a of gm.outline.acts) a.beats = a.beats.filter((b) => b.id !== id || b.status === 'done');
+    settleActive(gm.outline);
+}
+
+export function addBeat(gm, actId, text) {
+    const act = gm.outline?.acts.find((a) => a.id === actId);
+    if (!act || !clean(text) || act.beats.length >= BEAT_LIMIT) return null;
+    const beat = normalizeBeat({ id: `b${Math.max(0, ...beatsOf(gm.outline).map((b) => beatNumber(b.id))) + 1}`, text, status: 'pending', locked: true, by: 'user' }, 0);
+    act.beats.push(beat);
+    settleActive(gm.outline);
+    return beat;
+}
+
+// A beat the story has played out (the user says so, or a pass does).
+export function finishBeat(gm, id) {
+    const b = beatsOf(gm.outline).find((x) => x.id === id);
+    if (!b || b.status === 'done') return;
+    b.status = 'done';
+    settleActive(gm.outline);
+}
+
+// ---------------------------------------------------------------- tension (§5)
+
+// Archivist's readings (its compiled tension), merged into ours by message
+// index: a Rebuild that starts its graph over keeps our copy of the past.
+// -> true when something changed.
+export function mergeArchivistTension(gm, readings) {
+    const fresh = (readings ?? []).map((r) => normalizeReading({ ...r, index: r.message_index ?? r.index, source: 'archivist' })).filter(Boolean);
+    if (!fresh.length) return false;
+    const list = gm.tension.filter((r) => r.source === 'archivist');
+    const byIndex = new Map(list.filter((r) => r.index !== null).map((r) => [r.index, r]));
+    let changed = list.length !== gm.tension.length;
+    for (const r of fresh) {
+        const prev = r.index !== null ? byIndex.get(r.index) : null;
+        if (prev && prev.overall === r.overall && prev.reason === r.reason) continue;
+        if (prev) Object.assign(prev, r); else { list.push(r); if (r.index !== null) byIndex.set(r.index, r); }
+        changed = true;
+    }
+    if (changed) gm.tension = list.sort((a, b) => (a.index ?? 0) - (b.index ?? 0)).slice(-TENSION_LIMIT);
+    return changed;
+}
+
+// The planner's own reading (a CHECK pass), when Archivist gives none.
+export function addOwnReading(gm, reading, { index = null, at = new Date().toISOString() } = {}) {
+    const r = normalizeReading({ ...reading, index, at, source: 'planner' });
+    if (r) gm.tension = [...gm.tension.filter((x) => x.source === 'planner'), r].slice(-TENSION_LIMIT);
+    return r;
+}
+
+// -> { now, recent } (recent: the readings before now, oldest first).
+export function tensionNow(gm) {
+    const list = gm.tension;
+    return { now: list[list.length - 1] ?? null, recent: list.slice(-8, -1) };
+}

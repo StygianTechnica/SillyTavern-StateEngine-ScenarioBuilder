@@ -1,9 +1,12 @@
 # Design: the GM Planner
 
-Status: **phase 1 built** (2026-10-18): the day plan, CHECK and INSPIRE
-passes, the guidance queue, inspiration texts, pacing, the GM PLAN section
-with BEAT lines, and the GM Plan tab (src/planner/, src/ui/gm-plan.js).
-Phases 2-4 are still design.
+Status: **phases 1 and 2 built** (2026-10-18). Phase 1: the day plan,
+CHECK and INSPIRE passes, the guidance queue, inspiration texts, pacing,
+the GM PLAN section with BEAT lines and the GM Plan tab (src/planner/,
+src/ui/gm-plan.js). Phase 2: story shapes and the tension aim
+(src/planner/shapes.js), Archivist's tension readings (or CHECK's own),
+the OUTLINE pass, and the outline with its chart in the GM Plan tab.
+Phases 3-5 are still design (volumes and recaps, §5.1, added after phase 2).
 
 Today the game master (src/director/) works one reply at a time. Before each
 reply it reads the recent chat and the scene, then briefs the narrator on
@@ -38,6 +41,10 @@ out silently.
 7. **Time keeps moving.** When a scene idles or the user's posts turn short
    and passive, the director closes the scene from the world's side and
    moves time on. It never rushes a user who is deeply engaged (§6.1).
+8. **Volumes.** When a story reaches its end, the user can go on with a
+   new volume of chapters. The finished volume is written up as a
+   narrative recap, so the user has the full picture of what has happened
+   so far, and the next volume grows out of it (§5.1).
 
 ## 2. Decisions so far
 
@@ -47,6 +54,7 @@ out silently.
 | Spoilers | **Veiled by default, with an override.** The details (day plan, scheduled surprises, people's hidden agendas) are veiled, and the user can reveal them. It is a per-user preference: some people love surprises, some hate them. |
 | Background model use | **Configurable.** Light / Moderate (default) / Heavy, plus per-pass overrides for those who want to tune further. |
 | Target tension | **The user picks a story shape** for each chat (slow burn, adventure serial, thriller, mystery, intrigue...). The shape sets the target curve. |
+| When a story ends | **The user may continue with a new volume.** A narrative recap of the finished volume is written and kept; the next volume starts a new outline (on the same or another shape) that grows out of it. |
 
 Existing rules still hold:
 
@@ -175,6 +183,27 @@ romance", "a quiet scene".
 - A request with *soon* urgency also goes straight into the next director
   briefing as a private nudge, so it doesn't wait for a background pass.
 
+**From the chat: `/sb-request`.** The user can queue a request without
+opening Scenario Builder, by typing a slash command in the chat box:
+
+```
+/sb-request add an NPC - a rival smuggler
+/sb-request urgency=soon a quiet scene by the fire
+/sb-request urgency=today I want a new quest
+```
+
+- `urgency` is `soon`, `today` or `whenever` (the default, as in the tab).
+- The request goes into the open chat's queue exactly as if it was added
+  in the GM Plan tab. The command shows a short toast ("Queued for the game
+  master") and returns the request's id, so STscript can chain it. Nothing
+  is posted in the chat.
+- `quiet=true` skips the toast.
+- `/sb-requests` lists the open chat's open requests with their status, in
+  a toast or as the command's result. It is an easy way to check what is
+  still waiting.
+- Without an open chat, a bound setting, or with the planner off, the
+  command says why and queues nothing.
+
 ## 4. Passes and cadence
 
 Every pass is a background call through `generate/llm.js callModel()`.
@@ -243,6 +272,70 @@ reading comes from.
 
 **Graph.** The GM Plan tab draws the target band along the outline next to
 the readings: a small chart of the story so far against the shape.
+
+### 5.1 Volumes: when a story ends
+
+One outline on one shape is a **volume**; its acts are shown as its
+**chapters**. A volume ends; the story need not. (SillyTavern's Story Mode
+extension does something similar: it summarises the story so far and
+starts a fresh one. Here the summary is written from the planner's own
+record and the new volume carries on in the same world, with the same
+library and the same chat.)
+
+**When a volume is complete.** A volume is complete when every beat of its
+last chapter is done or skipped. The planner notices (no extra call) and
+stops reviewing the outline. The Outline view says the volume is complete
+and offers:
+
+- **Continue with a new volume**: writes the recap, then starts the next
+  volume (below).
+- **Keep going in this one**: an epilogue. The director keeps winding the
+  story down at the last chapter's tension, and nothing changes until the
+  user chooses.
+
+The user can also **close a volume early** at any point ("this arc is
+done; let's move on"). The beats still to come are kept in the record as
+*not reached*.
+
+**The recap (RECAP pass).** A narrative of the finished volume for the
+user: several paragraphs of prose in the past tense, telling what happened
+from beginning to end. Who did what, what was won and lost, what changed
+between people, what was left unresolved. It is written for the user, not
+for the narrator, so it may tell what the player character did (as
+history, never as a decision for the future). The pass draws on:
+
+- the volume's outline: premise, themes, every beat with how it played out
+  (the notes the director's BEAT lines and the CHECK pass leave);
+- the volume's **chronicle**: one line kept for each beat or moment the
+  story played out, and each quest finished, while the volume ran (cheap,
+  no call);
+- Archivist, when it has compiled: its story summary and the major events
+  of its timeline within the volume's messages;
+- the quests opened, finished, failed or still open.
+
+The same pass names the volume (a title the user can change) and lists the
+**threads carried forward**: what is still open and should matter in the
+next volume. The user can edit the recap and the threads; their edits are
+kept.
+
+**The next volume.** The user picks a shape (the same one by default) and
+may add a line of direction ("the war comes to Redhaven", "something
+quieter"). The first OUTLINE pass of the new volume gets the previous
+volumes as background: the latest recap in full, earlier ones as their
+first paragraph, and the threads carried forward. It is asked to grow the
+new volume out of them, not to retell them. The tension chart starts again
+at the new volume's beginning. Readings belong to the volume they were
+taken in, and the chart shows the current volume's. The day plan, the
+queue, the inspirations and pacing carry on unchanged.
+
+**The story so far.** A **Volumes** section in the GM Plan tab lists the
+finished volumes, newest first. Each has its title, shape, in-game dates
+and reply span, and its recap, collapsed until opened. Recaps are never
+veiled: they are the past. The whole story so far, every recap in order,
+can be copied, or saved as a Markdown file. The planner's passes get a
+short "story so far" (the latest recap's first paragraph and the threads
+carried forward). The director gets nothing more than the outline it
+already has, so the guidance stays lean.
 
 ## 6. How the director uses the plan
 
@@ -361,11 +454,16 @@ retold plot.
 
 A **GM Plan** workspace tab:
 
-- **Outline**: acts and beats on the shape's tension chart. The user can
-  edit, lock, add or remove beats and ask for a rewrite. Their first view of
-  the outline is veiled the same way as the rest (see *Spoilers* below).
+- **Outline**: the current volume's chapters (acts) and beats on the
+  shape's tension chart. The user can edit, lock, add, finish or remove
+  beats and ask for a rewrite. Chapters still to come are veiled (see
+  *Spoilers* below). When the volume is complete (or the user closes it):
+  continue with a new volume, or keep going in this one.
+- **Volumes**: the finished volumes with their recaps (§5.1), to read,
+  edit, copy or save.
 - **Queue**: add a request (with urgency), see each one's status
-  (*waiting*, *planned*, *done*), withdraw.
+  (*waiting*, *planned*, *done*), withdraw. Requests can also be added from
+  the chat with `/sb-request` (§3.5).
 - **Inspiration**: add or remove texts; see the motifs drawn from each and
   edit them.
 - **GM ideas** (Proposals mode): proposed quests, enrichments, happenings
@@ -416,6 +514,11 @@ CHAT DOCUMENT  + gm: {
     dismissedIdeas: [nameKey],
     tensionOwn: [{ at, threat, uncertainty, emotional, overall }],   // without Archivist; last 50
     log: [{ pass, at, ms, outcome, error }],                     // last 30
+    volume: { number, startedTurn, startedDay, startedIndex,   // the volume under way
+              chronicle: [{ at, day, text }] },                // what played out; last 80
+    volumes: [{ number, title, shape, premise, themes, recap, threads: [text],
+                beats: [{ text, status }], startedTurn, endedTurn, startedDay, endedDay,
+                startedIndex, endedIndex, endedAt, closedEarly, editedByUser }],
     counters: { repliesSinceCheck, repliesSinceOutline, repliesSinceIdeas },
     pace: { sceneStartedAt, sceneReplies, idleReplies, userBaselineWords, aim, hold } }
 
@@ -437,13 +540,15 @@ and then trimmed.
   cadence decisions, the pace signals and aim, trimming, the private
   director section. Fully tested.
 - `src/planner/prompts.js`: pure. Prompt builders and parsers for the
-  CHECK, DAY, OUTLINE, IDEAS and INSPIRE passes (JSON replies through
+  CHECK, DAY, OUTLINE, RECAP, IDEAS and INSPIRE passes (JSON replies through
   `generate/json.js parseModelJson`).
 - `src/planner/run.js`: scheduling (counters, day rollover from the
   clock, Archivist compile events), the calls, and applying the results
   through the library (creation mode, guards).
 - `src/director/prompt.js`: the GM PLAN section and the BEAT line parser.
 - `src/ui/gm-plan.js`: the tab; Calendar tab shows the agenda.
+- `src/ui/slash-commands.js`: `/sb-request` and `/sb-requests`, registered
+  through SillyTavern's SlashCommandParser at startup.
 - `src/store/schema.js`: `gm` normalisers for the chat and setting
   documents.
 
@@ -461,10 +566,16 @@ reading and typing.
 2. **Story outline and tension.** Story shapes, reading Archivist's
    tension (or the planner's own), the OUTLINE pass, the Outline view with
    its chart, and editing and locking beats.
-3. **Proactive worldbuilding.** The IDEAS pass, GM ideas (Proposals) and
+3. **Volumes and recaps** (§5.1), and the `/sb-request` and
+   `/sb-requests` slash commands (§3.5). Completing or closing a volume, the
+   chronicle, the RECAP pass with title and threads carried forward,
+   starting the next volume on a chosen shape with the previous volumes as
+   background, per-volume tension readings, and the Volumes section (read,
+   edit, copy, save as Markdown).
+4. **Proactive worldbuilding.** The IDEAS pass, GM ideas (Proposals) and
    silent creation per setting, the agenda with its Calendar tab display,
    and quest enrichment.
-4. **Tuning.** Custom shapes, per-pass token budgets, and measuring how
+5. **Tuning.** Custom shapes, per-pass token budgets, and measuring how
    often moments land versus get skipped, to tune the prompts.
 
 ## 12. Open questions
@@ -485,3 +596,13 @@ reading and typing.
 5. **Ideas in canon-only settings.** No new objects. Should happenings and
    moments (which only live in the plan) still be allowed? Proposal: yes,
    since they add no detail to the canon. Quest enrichments are off.
+6. **A new volume in a new chat?** Story Mode starts a fresh chat. Long
+   chats get slow and costly, so a user may want the next volume in a new
+   chat that starts from the recap. Proposal: the next volume stays in the
+   same chat by default. A later option, **Continue in a new chat**,
+   carries the volumes, the canonical scene (place, time, cast) and the
+   planner's state into a new chat of the same character, and opens it
+   with the recap as its first message.
+7. **How long should a recap be?** Proposal: about 400-800 words for a
+   volume, more for a very long one, set by the planner's token budget. The
+   user can always edit it.

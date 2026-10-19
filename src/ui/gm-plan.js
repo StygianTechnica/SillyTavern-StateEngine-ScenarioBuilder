@@ -1,14 +1,17 @@
-// The GM Plan tab (docs/DESIGN - GM PLANNER.md §8): what the planner has
-// in mind for today (veiled unless the user shows spoilers or peeks at one
-// item), the user's guidance queue, inspiration texts and their motifs,
-// pacing, the pass log and the planner's settings.
+// The GM Plan tab (docs/DESIGN - GM PLANNER.md §8): the story's shape and
+// long-term outline on its tension chart, what the planner has in mind for
+// today (veiled unless the user shows spoilers or peeks at one item), the
+// user's guidance queue, inspiration texts and their motifs, pacing, the
+// pass log and the planner's settings.
 
 import { getSettings, saveSettings } from '../settings.js';
 import { getChatDoc } from '../store/chat-store.js';
-import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, isVeiled, openRequests } from '../planner/model.js';
+import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeiled, openRequests, currentAct } from '../planner/model.js';
+import { SHAPES, shapeCurve, targetAt } from '../planner/shapes.js';
 import {
-    getPlannerStatus, runDay, runCheck, runInspire, queueRequest, withdrawRequest, addInspiration, removeInspiration,
-    setMotifs, peek, setHold,
+    getPlannerStatus, runDay, runCheck, runInspire, runOutline, queueRequest, withdrawRequest, addInspiration, removeInspiration,
+    setMotifs, peek, setHold, storyState, setShape, editOutlineBeat, lockOutlineBeat, removeOutlineBeat, addOutlineBeat,
+    finishOutlineBeat, setOutlineText,
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
 import { ws, rerender, markDirty } from './ws.js';
@@ -25,6 +28,150 @@ async function running(label, fn) {
     if (out) toast('success', `${label}: ${out}`);
     else if (getPlannerStatus().error) toast('warning', `${label} failed: ${getPlannerStatus().error}`);
     rerender();
+}
+
+// ---- the story outline (§3.1, §5)
+
+const SVG = 'http://www.w3.org/2000/svg';
+function svg(tag, attrs = {}, ...children) {
+    const el = document.createElementNS(SVG, tag);
+    for (const [k, v] of Object.entries(attrs)) if (v !== null && v !== undefined) el.setAttribute(k, String(v));
+    for (const c of children.flat()) if (c) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    return el;
+}
+
+const AIM_ICON = { build: 'fa-arrow-trend-up', hold: 'fa-equals', ease: 'fa-arrow-trend-down' };
+const BEAT_ICON = { done: 'fa-circle-check', active: 'fa-circle-play', pending: 'fa-circle', skipped: 'fa-circle-minus' };
+
+// The shape's target band across the story, the acts, where the story is
+// and the newest reading - and, beside it, the recent readings against the
+// band where the story is now.
+function tensionChart(shape, state, readings) {
+    const W = 560, H = 150, pad = { l: 26, r: 8, t: 18, b: 20 };
+    const x = (pos) => pad.l + pos * (W - pad.l - pad.r);
+    const y = (v) => pad.t + (1 - v / 5) * (H - pad.t - pad.b);
+    const curve = shapeCurve(shape, 60);
+    const band = [...curve.map((p) => `${x(p.pos)},${y(p.max)}`), ...curve.slice().reverse().map((p) => `${x(p.pos)},${y(p.min)}`)].join(' ');
+    const center = curve.map((p, i) => `${i ? 'L' : 'M'}${x(p.pos)},${y((p.min + p.max) / 2)}`).join(' ');
+    let start = 0;
+    const acts = shape.acts.map((a, i) => {
+        const at = start;
+        start += a.share;
+        return svg('g', {},
+            i ? svg('line', { x1: x(at), x2: x(at), y1: pad.t - 4, y2: H - pad.b, class: 'sb-gm-chart-act' }) : null,
+            svg('text', { x: x(at + a.share / 2), y: pad.t - 6, class: 'sb-gm-chart-label', 'text-anchor': 'middle' }, a.title));
+    });
+    const now = readings[readings.length - 1];
+    const here = x(state.position);
+    const grid = [0, 1, 2, 3, 4, 5].map((v) => svg('g', {},
+        svg('line', { x1: pad.l, x2: W - pad.r, y1: y(v), y2: y(v), class: 'sb-gm-chart-grid' }),
+        svg('text', { x: pad.l - 6, y: y(v) + 4, class: 'sb-gm-chart-label', 'text-anchor': 'end' }, String(v))));
+    const main = svg('svg', { viewBox: `0 0 ${W} ${H}`, class: 'sb-gm-chart', role: 'img', 'aria-label': `${shape.label}: target tension across the story` },
+        ...grid,
+        svg('polygon', { points: band, class: 'sb-gm-chart-band' }),
+        svg('path', { d: center, class: 'sb-gm-chart-center' }),
+        ...acts,
+        svg('line', { x1: here, x2: here, y1: pad.t, y2: H - pad.b, class: 'sb-gm-chart-here' }),
+        now ? svg('circle', { cx: here, cy: y(now.overall), r: 5, class: 'sb-gm-chart-now' }, svg('title', {}, `Tension now: ${now.overall}${now.reason ? ` - ${now.reason}` : ''}`)) : null,
+        svg('text', { x: Math.min(W - 40, here + 4), y: H - 6, class: 'sb-gm-chart-label' }, 'now'));
+    // The recent readings against the band at the story's position.
+    const recent = readings.slice(-20);
+    const t = targetAt(shape, state.position);
+    const RW = 200;
+    const rx = (i) => pad.l + (recent.length > 1 ? i / (recent.length - 1) : 0.5) * (RW - pad.l - pad.r);
+    const spark = svg('svg', { viewBox: `0 0 ${RW} ${H}`, class: 'sb-gm-chart sb-gm-spark', role: 'img', 'aria-label': 'Recent tension readings' },
+        ...[0, 5].map((v) => svg('text', { x: pad.l - 6, y: y(v) + 4, class: 'sb-gm-chart-label', 'text-anchor': 'end' }, String(v))),
+        svg('rect', { x: pad.l, y: y(t.max), width: RW - pad.l - pad.r, height: Math.max(1, y(t.min) - y(t.max)), class: 'sb-gm-chart-band' }),
+        svg('text', { x: pad.l, y: pad.t - 6, class: 'sb-gm-chart-label' }, 'Recent readings'),
+        recent.length > 1 ? svg('path', { d: recent.map((r, i) => `${i ? 'L' : 'M'}${rx(i)},${y(r.overall)}`).join(' '), class: 'sb-gm-chart-line' }) : null,
+        ...recent.map((r, i) => svg('circle', { cx: rx(i), cy: y(r.overall), r: i === recent.length - 1 ? 4 : 2.5, class: 'sb-gm-chart-dot' },
+            svg('title', {}, `${r.overall}${Number.isFinite(r.threat) ? ` (threat ${r.threat}, uncertainty ${r.uncertainty}, emotional ${r.emotional})` : ''}${r.reason ? ` - ${r.reason}` : ''}`))),
+        !recent.length ? svg('text', { x: RW / 2, y: H / 2, class: 'sb-gm-chart-label', 'text-anchor': 'middle' }, 'no readings yet') : null);
+    return h('div', { class: 'sb-gm-charts' }, main, spark);
+}
+
+function shapePicker(current, onPick) {
+    return h('div', { class: 'sb-gm-shapes' }, SHAPES.map((s) => h('div', {
+        class: `sb-gm-shape${s.id === current ? ' active' : ''}`,
+        title: `Leans on ${s.lean} tension`,
+        onclick: () => onPick(s.id),
+    }, h('b', {}, s.label), h('small', {}, s.blurb))));
+}
+
+function beatRow(gm, beat, { veiled, chatKey, busy }) {
+    if (veiled) {
+        return h('div', { class: 'sb-gm-row sb-gm-veiled' }, icon('fa-mask'), h('span', { class: 'sb-muted' }, 'A beat to come'),
+            h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); peek(chatKey, beat.id); } }, 'peek'));
+    }
+    const edit = () => {
+        const text = window.prompt('The beat (your words are kept - it will be locked):', beat.text);
+        if (text !== null && text.trim()) editOutlineBeat(chatKey, beat.id, text);
+    };
+    const open = beat.status === 'pending' || beat.status === 'active';
+    return h('div', { class: `sb-gm-row sb-gm-beat sb-gm-beat-${beat.status}` },
+        icon(BEAT_ICON[beat.status] ?? 'fa-circle'),
+        h('div', { class: 'sb-gm-text' }, beat.text, beat.note ? h('small', { class: 'sb-hint' }, ` (${beat.note})`) : null),
+        h('div', { class: 'sb-chips' },
+            beat.by === 'user' ? h('span', { class: 'sb-chip', title: 'Your beat' }, icon('fa-user-pen')) : null,
+            ...beat.ties.slice(0, 3).map((t) => h('span', { class: 'sb-chip' }, t)),
+            open ? h('div', { class: 'sb-iconbtn', title: beat.locked ? 'Locked: the planner keeps it as written. Click to unlock.' : 'Lock it: the planner keeps it as written', onclick: () => lockOutlineBeat(chatKey, beat.id, !beat.locked) }, icon(beat.locked ? 'fa-lock' : 'fa-lock-open')) : null,
+            open ? h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: edit }, icon('fa-pen')) : null,
+            beat.status === 'active' ? h('div', { class: 'sb-iconbtn', title: 'The story has played this out', onclick: () => finishOutlineBeat(chatKey, beat.id), 'aria-disabled': busy ? 'true' : null }, icon('fa-check')) : null,
+            open ? h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction('Remove this beat from the outline?')) removeOutlineBeat(chatKey, beat.id); } }, icon('fa-trash')) : null));
+}
+
+function outlineCard(gm, show) {
+    const { chatId, chatKey } = ws.ctx;
+    const st = getPlannerStatus();
+    const busy = !!st.running && st.chatKey === chatKey;
+    const state = storyState(gm);
+    if (!state.shape) {
+        return h('div', { class: 'sb-card' },
+            h('div', { class: 'sb-card-title' }, icon('fa-route'), 'The story\'s shape'),
+            h('small', { class: 'sb-hint' }, 'Pick the kind of story this is. Its shape sets the tension the game master steers toward; the outline follows it. You can change it any time.'),
+            shapePicker('', (id) => setShape(chatKey, id)));
+    }
+    const outline = gm.outline;
+    const cur = currentAct(outline);
+    const aim = state.aim;
+    const readings = gm.tension;
+    const source = readings.length ? (readings[readings.length - 1].source === 'archivist' ? 'from Archivist' : 'the game master\'s own reading') : '';
+    const addTo = (act) => {
+        const text = window.prompt(`A beat for "${act.title}":`);
+        if (text && text.trim()) addOutlineBeat(chatKey, act.id, text);
+    };
+    const editPremise = () => {
+        const text = window.prompt('What this story is about:', outline.premise);
+        if (text !== null) setOutlineText(chatKey, { premise: text });
+    };
+    const rewrite = async () => {
+        if (!await confirmAction('Write the outline over? What the story has done and the beats you locked are kept.')) return;
+        void running('Rewriting the outline', () => runOutline(chatId, chatKey, { rewrite: true }));
+    };
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-route'), 'The story',
+            h('span', { class: 'sb-gm-title-tools' },
+                select(SHAPES.map((s) => ({ value: s.id, label: s.label })), state.shape.id, { onchange: (e) => setShape(chatKey, e.target.value), title: 'The story\'s shape' }),
+                aim ? h('span', { class: `sb-chip sb-gm-aim-${aim.word}`, title: aim.why }, icon(AIM_ICON[aim.word]), `${aim.word} · ${aim.lean}`) : null)),
+        tensionChart(state.shape, state, readings),
+        h('small', { class: 'sb-hint' }, readings.length
+            ? `Tension ${readings[readings.length - 1].overall} of 5 (${source}); the band is where the ${state.shape.label.toLowerCase()} wants it.${aim ? ` Aim: ${aim.word} - ${aim.why}.` : ''}`
+            : 'No tension readings yet: they come from Archivist\'s compiles, or from the game master\'s checks.'),
+        !outline ? h('p', { class: 'sb-muted' }, `No outline yet. One is written after ${FIRST_OUTLINE_AFTER} replies, or now:`) : null,
+        outline?.premise ? h('div', { class: 'sb-gm-premise' }, h('span', {}, outline.premise), h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: editPremise }, icon('fa-pen'))) : null,
+        outline?.themes?.length ? h('div', { class: 'sb-chips' }, outline.themes.map((t) => h('span', { class: 'sb-chip' }, t))) : null,
+        ...(outline?.acts ?? []).map((act, i) => {
+            // Spoilers: the current act and what is done show; acts to come are veiled.
+            const ahead = cur && i > cur.index;
+            return h('div', { class: `sb-gm-act${cur && i === cur.index ? ' current' : ''}` },
+                h('div', { class: 'sb-gm-sub' }, `Act ${i + 1}: ${act.title}`,
+                    act.beats.length < 10 ? h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); addTo(act); } }, '+ beat') : null),
+                ...act.beats.map((b) => beatRow(gm, b, { veiled: ahead && b.status === 'pending' && isVeiled(gm, b.id, show), chatKey, busy })));
+        }),
+        h('div', { class: 'sb-actions' },
+            button(outline ? 'Review against the story' : 'Write the outline now', () => void running(outline ? 'Reviewing the outline' : 'Writing the outline', () => runOutline(chatId, chatKey)), { iconName: 'fa-feather', disabled: busy }),
+            outline ? button('Rewrite', () => void rewrite(), { iconName: 'fa-rotate', disabled: busy }) : null),
+        gm.outlineWanted && outline ? h('small', { class: 'sb-hint' }, icon('fa-clock'), ' A review is due on the next pass.') : null);
 }
 
 // ---- today
@@ -177,7 +324,8 @@ function settingsCard(gm) {
             'How readily a quiet scene moves on in time.'),
         h('div', { class: 'sb-row' },
             num('checkEvery', cadence.check, 'Check every (replies)', '0: only when a planned moment falls through'),
-            num('dayExpire', cadence.dayExpire, 'Re-plan after (replies)', 'when one day runs long')),
+            num('dayExpire', cadence.dayExpire, 'Re-plan after (replies)', 'when one day runs long'),
+            num('outlineEvery', cadence.outline, 'Review outline every (replies)', '0: only on demand')),
         log.length ? h('div', { class: 'sb-gm-sub' }, 'Recent passes') : null,
         ...log.map((l) => h('div', { class: 'sb-gm-row sb-gm-log' },
             h('span', { class: 'sb-chip' }, l.pass), h('span', {}, l.error ? `failed: ${l.error}` : l.outcome),
@@ -191,6 +339,6 @@ export async function renderGmPlan() {
     const show = getSettings().planner.showSpoilers === true;
     return h('div', { class: 'sb-gm-plan' },
         h('div', { class: 'sb-scene-cols' },
-            h('div', { class: 'sb-gm-col' }, todayCard(gm, show), queueCard(gm), inspirationCard(gm)),
+            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), todayCard(gm, show), queueCard(gm), inspirationCard(gm)),
             h('div', { class: 'sb-gm-col' }, paceCard(gm), settingsCard(gm))));
 }

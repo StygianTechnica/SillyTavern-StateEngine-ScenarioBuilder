@@ -6,7 +6,10 @@
 //   DAY      plans one in-game day: moments, agendas, off-screen moves,
 //            and which queued requests they answer
 //   CHECK    keeps the day's plan in step with the story: moments done or
-//            gone, new ones (for queued requests)
+//            gone, new ones (for queued requests); whether the outline's
+//            beat has played out; a tension reading without Archivist
+//   OUTLINE  writes or reviews the long-term outline along the story's
+//            shape and tension (src/planner/shapes.js)
 //   INSPIRE  distils an inspiration text into motifs - never its plot
 
 const clean = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
@@ -25,6 +28,17 @@ function rules(userName) {
 
 function recentText(messages, userName) {
     return list(messages).slice(-8).map((m) => `${clean(m.name) || (m.isUser ? userName : 'Narrator')}: ${cut(m.text, 700)}`).join('\n\n') || '(the story has not started yet)';
+}
+
+// story: { shape, act, beat, next, aim: { word, lean, why } } -> lines.
+function storyText(story) {
+    if (!story) return '';
+    return [
+        clean(story.shape) ? `- The story's shape: ${clean(story.shape)}${clean(story.act) ? `, now in "${clean(story.act)}"` : ''}.` : '',
+        clean(story.beat) ? `- The beat now: ${clean(story.beat)}` : '',
+        clean(story.next) ? `- The beat after it: ${clean(story.next)}` : '',
+        story.aim ? `- Tension: ${story.aim.word} (${story.aim.lean}) - ${clean(story.aim.why)}.` : '',
+    ].filter(Boolean).join('\n');
 }
 
 function requestsText(requests) {
@@ -50,6 +64,8 @@ export function buildDayPrompt(input) {
     }
     if (input.requests?.length) parts.push('', `WHAT THE USER WOULD LIKE TO SEE (fit these in where they are natural; each id is the request's)`, requestsText(input.requests));
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (echo them as images and turns of fate, never as literal events)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));
+    const story = storyText(input.story);
+    if (story) parts.push('', 'WHERE THE STORY IS GOING (let today serve this beat and this aim, without forcing it)', story);
     parts.push(
         '',
         `PLAN ${input.rest ? 'THE REST OF THE DAY' : 'THE DAY'}${clean(input.dateText) ? ` - ${clean(input.dateText)}` : ''}${clean(input.dayPart) ? `, starting ${clean(input.dayPart)}` : ''}`,
@@ -88,7 +104,9 @@ export function readDayPlan(json) {
 }
 
 // input: { userName, messages, moments: [moment] (pending and done),
-//   requests: [{ id, text, urgency }], dayPart }
+//   requests: [{ id, text, urgency }], dayPart, beat (the outline's beat
+//   now, to ask whether it has played out), askTension (no Archivist: the
+//   pass reads the tension itself) }
 export function buildCheckPrompt(input) {
     const userName = clean(input.userName) || 'the player';
     const system = [
@@ -98,27 +116,113 @@ export function buildCheckPrompt(input) {
     const parts = ['THE LATEST CHAT', recentText(input.messages, userName), '', `TODAY'S PLAN${clean(input.dayPart) ? ` (it is now ${clean(input.dayPart)})` : ''}`];
     for (const m of list(input.moments)) parts.push(`- [${m.id}] ${m.text}${m.when ? ` (${m.when})` : ''} - ${m.status}`);
     if (input.requests?.length) parts.push('', 'WHAT THE USER WOULD LIKE TO SEE, NOT YET PLANNED (each id is the request\'s)', requestsText(input.requests));
+    if (clean(input.beat)) parts.push('', 'THE STORY\'S BEAT NOW (from the long-term outline)', `- ${clean(input.beat)}`);
     parts.push(
         '',
         'Which pending moments has the story already played out ("done"), and which can no longer happen or no longer fit where the story went ("skipped")? Leave the rest alone.',
         'Add a new moment only for a request above, or when the story has opened something the plan lacks (at most two).',
+    );
+    if (clean(input.beat)) parts.push('Say whether the story has now played out the beat above ("beat_done": true), or not yet (false).');
+    if (input.askTension) parts.push('Rate the story\'s tension as the latest chat leaves it, each from 0 (none) to 5 (unbearable): threat (danger to people), uncertainty (open questions, mistrust, the unknown) and emotional (what is at stake between people), with a few words on what drives it.');
+    parts.push(
         'Answer in this JSON shape:',
         '{"done":[{"id":"<moment id>","how":"<a few words>"}],"skipped":[{"id":"<moment id>","why":"<a few words>"}],',
         ' "add":[{"text":"<what happens>","when":"<time of day or any time>","trigger":"<condition or empty>","ties":["<names>"],"droppable":true}],',
-        ' "requests":[{"request":"<request id>","moments":[<number of each added moment that answers it, from 1>]}]}',
+        ` "requests":[{"request":"<request id>","moments":[<number of each added moment that answers it, from 1>]}]${clean(input.beat) ? ',\n "beat_done":false' : ''}${input.askTension ? ',\n "tension":{"threat":0,"uncertainty":0,"emotional":0,"reason":"<what drives it>"}' : ''}}`,
     );
     return { system, prompt: parts.join('\n') };
 }
 
-// -> { done: [{ id, how }], skipped: [{ id, why }], add: [moment], requests }
+const rating = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && v !== '' && v !== null ? Math.min(5, Math.max(0, n)) : null;
+};
+
+// A tension reading from a pass, or null.
+function readTension(t) {
+    if (!isObject(t)) return null;
+    const r = { threat: rating(t.threat), uncertainty: rating(t.uncertainty), emotional: rating(t.emotional), reason: cut(t.reason, 200) };
+    return [r.threat, r.uncertainty, r.emotional].some((v) => v !== null) ? r : null;
+}
+
+// -> { done: [{ id, how }], skipped: [{ id, why }], add: [moment], requests,
+//      beatDone, tension }
 export function readCheck(json) {
-    if (!isObject(json)) return { done: [], skipped: [], add: [], requests: [] };
+    if (!isObject(json)) return { done: [], skipped: [], add: [], requests: [], beatDone: false, tension: null };
     const ids = (v, key) => list(v).map((x) => (typeof x === 'string' ? { id: clean(x).toLowerCase(), [key]: '' } : isObject(x) ? { id: clean(x.id).toLowerCase(), [key]: cut(x[key], 160) } : null)).filter((x) => x?.id);
     return {
         done: ids(json.done, 'how'),
         skipped: ids(json.skipped, 'why'),
         add: list(json.add).map(readMoment).filter(Boolean).slice(0, 2),
         requests: readLinks(json.requests),
+        beatDone: json.beat_done === true || json.beatDone === true,
+        tension: readTension(json.tension),
+    };
+}
+
+// input: { dossier, userName, messages, shape: { label, blurb, lean, acts:
+//   [{ title, share, band }] }, outline (current, or null), tension:
+//   { now, recent } (readings), motifs, gmStyle, rewrite (start over,
+//   keeping only what is done and what the user locked) }
+export function buildOutlinePrompt(input) {
+    const userName = clean(input.userName) || 'the player';
+    const shape = input.shape;
+    const system = [
+        'You are the game master of an ongoing roleplay, keeping the long-term outline of the story in private. Another writer narrates; you steer through briefings. The outline is where the story could go - a direction, never a script: the player may take it anywhere, and the outline follows.',
+        rules(userName),
+        clean(input.gmStyle) ? `How the user wants this story run - follow it: ${cut(input.gmStyle, 600)}` : '',
+    ].filter(Boolean).join(' ');
+    const parts = [clean(input.dossier), '', 'THE LATEST CHAT', recentText(input.messages, userName)];
+    parts.push('', `THE STORY'S SHAPE: ${clean(shape.label)} - ${clean(shape.blurb)}`, `It leans on ${shape.lean} tension. Its acts, in order (share of the story; target tension 0-5):`);
+    for (const a of shape.acts) parts.push(`- ${a.title} (${Math.round(a.share * 100)}%; ${a.band[0]}-${a.band[1]})`);
+    const t = input.tension?.now;
+    if (t) parts.push('', 'THE STORY\'S TENSION NOW (0-5)', `- overall ${t.overall}${Number.isFinite(t.threat) ? `; threat ${t.threat}, uncertainty ${t.uncertainty}, emotional ${t.emotional}` : ''}${clean(t.reason) ? ` - ${clean(t.reason)}` : ''}`);
+    const outline = input.outline;
+    if (outline && !input.rewrite) {
+        parts.push('', 'THE OUTLINE SO FAR (each beat has its id and status; [locked] beats are the user\'s - keep their words)');
+        if (clean(outline.premise)) parts.push(`Premise: ${clean(outline.premise)}`);
+        outline.acts.forEach((a, i) => {
+            parts.push(`Act ${i + 1}: ${a.title}`);
+            for (const b of a.beats) parts.push(`- [${b.id}] ${b.text} - ${b.status}${b.locked ? ' [locked]' : ''}`);
+        });
+    } else if (outline) {
+        const keep = outline.acts.flatMap((a) => a.beats.filter((b) => b.locked || b.status === 'done'));
+        if (keep.length) {
+            parts.push('', 'START THE OUTLINE OVER, BUT KEEP THESE (done, or the user\'s own - same ids, same words)');
+            for (const b of keep) parts.push(`- [${b.id}] ${b.text} - ${b.status}${b.locked ? ' [locked]' : ''}`);
+        }
+    }
+    if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (weave them in as recurring images, echoes and turns of fate - never as literal events or retold plot)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));
+    parts.push(
+        '',
+        outline && !input.rewrite ? 'REVIEW THE OUTLINE' : 'WRITE THE OUTLINE',
+        `${outline && !input.rewrite ? 'Bring it up to date with the story: mark the beats the story has played out "done", the one under way "active", and any the story has made impossible "skipped". Rewrite or replace beats still to come if the story has moved somewhere better - keep each kept beat\'s id. ' : ''}One act per act of the shape, in its order, two to four beats each. A beat is a turn in the story, loose enough to happen many ways ("the alliance is tested by a betrayal from within"), growing out of the threads, factions, frictions and people above. Let each act's beats reach that act's target tension. Add a few seeds: small things to plant early so a later beat pays off.`,
+        'Answer in this JSON shape:',
+        '{"premise":"<what this story is about, two or three sentences>","themes":["<theme>"],',
+        ' "acts":[{"title":"<act title>","beats":[{"id":"<the id of a beat kept from above, or empty for a new one>","text":"<the beat>","ties":["<names>"],"status":"pending|active|done|skipped"}]}],',
+        ' "seeds":[{"text":"<what to plant>","payoff":"<the beat it pays off>"}]}',
+    );
+    return { system, prompt: parts.join('\n') };
+}
+
+// -> { premise, themes, acts, seeds } or null.
+export function readOutline(json) {
+    if (!isObject(json)) return null;
+    const acts = list(json.acts).filter(isObject).map((a) => ({
+        title: cut(a.title, 80),
+        beats: list(a.beats).filter((b) => isObject(b) && clean(b.text)).map((b) => ({
+            id: clean(b.id).replace(/^\[|\]$/g, ''),
+            text: cut(b.text, 300),
+            ties: texts(b.ties, 6),
+            status: ['pending', 'active', 'done', 'skipped'].includes(clean(b.status).toLowerCase()) ? clean(b.status).toLowerCase() : 'pending',
+        })).slice(0, 8),
+    })).filter((a) => a.beats.length);
+    if (!acts.length) return null;
+    return {
+        premise: cut(json.premise, 800),
+        themes: texts(json.themes, 6).map((t) => cut(t, 80)),
+        acts: acts.slice(0, 8),
+        seeds: list(json.seeds).filter((x) => isObject(x) && clean(x.text)).map((x) => ({ text: cut(x.text, 200), payoff: cut(x.payoff, 200) })).slice(0, 6),
     };
 }
 

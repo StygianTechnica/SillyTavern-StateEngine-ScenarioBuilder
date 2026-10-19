@@ -198,7 +198,7 @@ describe('planner passes', () => {
         const { prompt } = buildCheckPrompt({ moments: [{ id: 'm1', text: 'Envoy arrives', status: 'pending' }], messages: [{ name: 'Narrator', text: 'The envoy bows.' }] });
         expect(prompt).toContain('[m1] Envoy arrives - pending');
         expect(readCheck({ done: ['M1', { id: 'm2', how: 'fast' }], skipped: [{ id: 'm3' }], add: [{ text: 'x' }, { text: 'y' }, { text: 'z' }] }))
-            .toEqual({ done: [{ id: 'm1', how: '' }, { id: 'm2', how: 'fast' }], skipped: [{ id: 'm3', why: '' }], add: [expect.objectContaining({ text: 'x' }), expect.objectContaining({ text: 'y' })], requests: [] });
+            .toEqual({ done: [{ id: 'm1', how: '' }, { id: 'm2', how: 'fast' }], skipped: [{ id: 'm3', why: '' }], add: [expect.objectContaining({ text: 'x' }), expect.objectContaining({ text: 'y' })], requests: [], beatDone: false, tension: null });
     });
 
     it('distils inspiration into motifs and drops any that quote the text', () => {

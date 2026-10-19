@@ -282,8 +282,14 @@ calls (one entry at a time, retry, and the entry text as a fallback).
   the background and kept in step with the story, the user's guidance queue,
   inspiration texts distilled into motifs, pacing that moves an idle scene
   on, a private GM PLAN section with BEAT lines, and the GM Plan tab.
-- [ ] GM planner, phases 2-4: story outline and shapes on Archivist's
-  tension, proactive ideas and the agenda, tuning.
+- [x] GM planner, phase 2: story shapes and the tension aim from Archivist's
+  readings (or the planner's own), the OUTLINE pass, and the outline with
+  its tension chart (edit, lock, add, finish or remove beats; rewrite).
+- [ ] GM planner, phase 3: volumes - when a story ends, a narrative recap of
+  it and a new volume of chapters that grows out of it.
+- [ ] GM planner: /sb-request and /sb-requests - queue and list requests for
+  the game master from the chat box.
+- [ ] GM planner, phases 4-5: proactive ideas and the agenda, tuning.
 - [ ] Director: a "think after each reply" mode (zero wait, written before
   the player's next message), and per-character perspective briefings once
   State Engine offers perspectives.

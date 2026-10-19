@@ -72,10 +72,11 @@ const DEFAULTS = {
     // The GM planner (src/planner/, docs/DESIGN - GM PLANNER.md): background
     // passes that plan each in-game day and keep it in step with the story.
     // level: 'light' | 'moderate' | 'heavy' (how often it checks; null
-    // overrides take the level's own numbers); pacing: 'off' | 'gentle' |
+    // overrides take the level's own numbers: checkEvery, dayExpire,
+    // outlineEvery); pacing: 'off' | 'gentle' |
     // 'brisk' | 'fast' (how readily an idle scene moves on); showSpoilers:
     // the day plan is shown in the GM Plan tab (off: veiled).
-    planner: { enabled: true, level: 'moderate', checkEvery: null, dayExpire: null, pacing: 'gentle', showSpoilers: false, maxTokens: 1200 },
+    planner: { enabled: true, level: 'moderate', checkEvery: null, dayExpire: null, outlineEvery: null, pacing: 'gentle', showSpoilers: false, maxTokens: 1200 },
     // Settings migrations already applied.
     migrated: [],
     // { [settingId]: library document } - src/store/setting-store.js.

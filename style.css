@@ -489,3 +489,33 @@
 .sb-gm-insp { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; border-top: 1px solid var(--sb-line); }
 .sb-gm-insp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .sb-gm-log { font-size: 0.88em; }
+
+/* GM Plan tab: the story outline and its tension chart. */
+.sb-gm-title-tools { margin-left: auto; display: flex; align-items: center; gap: 8px; font-weight: normal; }
+.sb-gm-title-tools select { width: auto; margin: 0; }
+.sb-gm-shapes { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.sb-gm-shape { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--sb-line); border-radius: var(--sb-radius); cursor: pointer; background: var(--sb-soft); }
+.sb-gm-shape:hover, .sb-gm-shape.active { border-color: var(--sb-gold); }
+.sb-gm-shape small { opacity: 0.75; line-height: 1.35; }
+.sb-gm-charts { display: grid; grid-template-columns: 3fr 1fr; gap: 8px; }
+.sb-gm-chart { width: 100%; height: auto; display: block; }
+.sb-gm-chart-grid { stroke: var(--sb-line); stroke-width: 1; opacity: 0.5; }
+.sb-gm-chart-band { fill: var(--sb-gold); fill-opacity: 0.18; stroke: none; }
+.sb-gm-chart-center { fill: none; stroke: var(--sb-gold); stroke-opacity: 0.55; stroke-width: 1.5; stroke-dasharray: 4 3; }
+.sb-gm-chart-act { stroke: var(--sb-line); stroke-dasharray: 3 3; }
+.sb-gm-chart-label { fill: currentColor; opacity: 0.6; font-size: 10px; }
+.sb-gm-chart-here { stroke: var(--sb-gold); stroke-width: 1.5; }
+.sb-gm-chart-now { fill: var(--sb-gold); stroke: var(--SmartThemeBlurTintColor, #1c1c22); stroke-width: 2; }
+.sb-gm-chart-line { fill: none; stroke: currentColor; stroke-opacity: 0.7; stroke-width: 1.5; }
+.sb-gm-chart-dot { fill: currentColor; opacity: 0.85; }
+.sb-gm-premise { display: flex; align-items: flex-start; gap: 8px; line-height: 1.45; font-style: italic; }
+.sb-gm-act { display: flex; flex-direction: column; }
+.sb-gm-act.current > .sb-gm-sub { opacity: 1; color: var(--sb-gold); }
+.sb-gm-act .sb-gm-sub { display: flex; align-items: center; gap: 8px; }
+.sb-gm-beat > i { opacity: 0.7; }
+.sb-gm-beat-active > i { color: var(--sb-gold); opacity: 1; }
+.sb-gm-beat-done, .sb-gm-beat-skipped { opacity: 0.6; }
+.sb-gm-aim-build { color: #e8a65a; }
+.sb-gm-aim-ease { color: #7fb6e8; }
+.sb-gm-aim-hold { color: #7fc48a; }
+@container (max-width: 900px) { .sb-gm-charts { grid-template-columns: 1fr; } }
