@@ -163,16 +163,27 @@ export function readCheck(json) {
 // input: { dossier, userName, messages, shape: { label, blurb, lean, acts:
 //   [{ title, share, band }] }, outline (current, or null), tension:
 //   { now, recent } (readings), motifs, gmStyle, rewrite (start over,
-//   keeping only what is done and what the user locked) }
+//   keeping only what is done and what the user locked), storySoFar (what
+//   has happened: the user's note, Archivist's summary and major events,
+//   threads and quests), underWay (the story is well past its beginning),
+//   startAct: { index, title } (the user says the story is in this act now),
+//   keepLocked (a rewrite keeps the user's locked beats; default true),
+//   wish (the user's steer for a rewrite, or '') }
 export function buildOutlinePrompt(input) {
     const userName = clean(input.userName) || 'the player';
     const shape = input.shape;
+    const writing = !input.outline || input.rewrite;
+    const joining = writing && (input.underWay || !!input.startAct || !!String(input.storySoFar ?? '').trim());
     const system = [
         'You are the game master of an ongoing roleplay, keeping the long-term outline of the story in private. Another writer narrates; you steer through briefings. The outline is where the story could go - a direction, never a script: the player may take it anywhere, and the outline follows.',
+        joining ? 'This story is already under way: you are taking over a game in progress. Never start it over or go back to its beginning - the outline begins where the story already is.' : '',
         rules(userName),
         clean(input.gmStyle) ? `How the user wants this story run - follow it: ${cut(input.gmStyle, 600)}` : '',
     ].filter(Boolean).join(' ');
-    const parts = [clean(input.dossier), '', 'THE LATEST CHAT', recentText(input.messages, userName)];
+    const parts = [clean(input.dossier)];
+    const sofar = String(input.storySoFar ?? '').trim();
+    if (sofar) parts.push('', 'THE STORY SO FAR (what has already happened - it matters more than how the setting describes the start)', sofar.slice(0, 6000));
+    parts.push('', 'THE LATEST CHAT', recentText(input.messages, userName));
     parts.push('', `THE STORY'S SHAPE: ${clean(shape.label)} - ${clean(shape.blurb)}`, `It leans on ${shape.lean} tension. Its acts, in order (share of the story; target tension 0-5):`);
     for (const a of shape.acts) parts.push(`- ${a.title} (${Math.round(a.share * 100)}%; ${a.band[0]}-${a.band[1]})`);
     const t = input.tension?.now;
@@ -186,13 +197,26 @@ export function buildOutlinePrompt(input) {
             for (const b of a.beats) parts.push(`- [${b.id}] ${b.text} - ${b.status}${b.locked ? ' [locked]' : ''}`);
         });
     } else if (outline) {
-        const keep = outline.acts.flatMap((a) => a.beats.filter((b) => b.locked || b.status === 'done'));
+        const keepLocked = input.keepLocked !== false;
+        const keep = outline.acts.flatMap((a) => a.beats.filter((b) => (keepLocked && b.locked) || b.status === 'done'));
         if (keep.length) {
-            parts.push('', 'START THE OUTLINE OVER, BUT KEEP THESE (done, or the user\'s own - same ids, same words)');
+            parts.push('', `START THE OUTLINE OVER, BUT KEEP THESE (${keepLocked ? 'done, or the user\'s own' : 'what the story has done'} - same ids, same words)`);
             for (const b of keep) parts.push(`- [${b.id}] ${b.text} - ${b.status}${b.locked ? ' [locked]' : ''}`);
         }
     }
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (weave them in as recurring images, echoes and turns of fate - never as literal events or retold plot)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));
+    if (joining) {
+        const start = input.startAct;
+        parts.push(
+            '',
+            'TAKING OVER A STORY IN PROGRESS',
+            start
+                ? `The user says the story is now in act ${start.index + 1}, "${clean(start.title)}". For the acts before it, write one or two beats each that sum up what has already happened, marked "done". In act ${start.index + 1}, mark "done" what has already happened in it, then the beat under way now "active", then what could come next "pending".`
+                : 'Judge from the story so far and the latest chat which act of the shape the story is in now. For the acts it has already passed, write one or two beats each that sum up what has already happened, marked "done". In the current act, mark what has happened "done", the beat under way now "active", and what could come next "pending".',
+            'The beats still to come grow out of where the story is now - its open threads and the people\'s agendas - not out of how the setting or the first messages introduced it.',
+        );
+    }
+    if (clean(input.wish)) parts.push('', 'WHAT THE USER WANTS FROM THIS OUTLINE (follow it)', `- ${cut(input.wish, 600)}`);
     parts.push(
         '',
         outline && !input.rewrite ? 'REVIEW THE OUTLINE' : 'WRITE THE OUTLINE',
@@ -203,6 +227,44 @@ export function buildOutlinePrompt(input) {
         ' "seeds":[{"text":"<what to plant>","payoff":"<the beat it pays off>"}]}',
     );
     return { system, prompt: parts.join('\n') };
+}
+
+// BEAT: one beat of the outline written afresh. input: { dossier,
+//   userName, messages, shape, outline, beatId, wish (the user's steer, or
+//   ''), storySoFar }
+export function buildBeatPrompt(input) {
+    const userName = clean(input.userName) || 'the player';
+    const outline = input.outline;
+    const system = [
+        'You are the game master of an ongoing roleplay, keeping the long-term outline of the story in private. The user did not like one beat of it: write that one beat again, differently.',
+        rules(userName),
+    ].join(' ');
+    const parts = [clean(input.dossier)];
+    const sofar = String(input.storySoFar ?? '').trim();
+    if (sofar) parts.push('', 'THE STORY SO FAR', sofar.slice(0, 3000));
+    parts.push('', 'THE LATEST CHAT', recentText(list(input.messages).slice(-6), userName), '', `THE OUTLINE (${clean(input.shape?.label)}) - the beat to write again is marked >>`);
+    let old = null;
+    outline.acts.forEach((a, i) => {
+        parts.push(`Act ${i + 1}: ${a.title}`);
+        for (const b of a.beats) {
+            if (b.id === input.beatId) old = b;
+            parts.push(`${b.id === input.beatId ? '>>' : '-'} ${b.text} - ${b.status}`);
+        }
+    });
+    parts.push(
+        '',
+        'WRITE IT AGAIN',
+        `A different turn in the story for the same place in the outline: it follows from the beats before it and leads toward the ones after. Not a rewording of "${clean(old?.text)}" - a different idea.`,
+        ...(clean(input.wish) ? [`The user wants: ${clean(input.wish)}`] : []),
+        'Answer in this JSON shape: {"text":"<the beat, one sentence>","ties":["<names of the people, places, factions or threads it involves>"]}',
+    );
+    return { system, prompt: parts.join('\n') };
+}
+
+// -> { text, ties } or null.
+export function readBeat(json) {
+    if (!isObject(json) || !clean(json.text)) return null;
+    return { text: cut(json.text, 300), ties: texts(json.ties, 6) };
 }
 
 // -> { premise, themes, acts, seeds } or null.

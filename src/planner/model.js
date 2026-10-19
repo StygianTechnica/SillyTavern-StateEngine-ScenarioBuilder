@@ -27,6 +27,9 @@
 //                                               readings, oldest first (Archivist's, or the
 //                                               planner's own without it); the last TENSION_LIMIT
 //   outlineWanted                               Archivist compiled: OUTLINE on the next pass
+//   join: { act, note }                         a story already under way: the chapter (act
+//                                               index, -1 = let the planner judge) it is in
+//                                               now, and the user's note on the story so far
 // }
 
 export const URGENCIES = Object.freeze([['soon', 'Soon'], ['today', 'Today'], ['whenever', 'Whenever it fits']]);
@@ -72,6 +75,7 @@ export function emptyGm() {
         outline: null,
         tension: [],
         outlineWanted: false,
+        join: { act: -1, note: '' },
     };
 }
 
@@ -143,6 +147,7 @@ export function normalizeGm(value) {
         outline: normalizeOutline(g.outline),
         tension: (Array.isArray(g.tension) ? g.tension : []).map(normalizeReading).filter(Boolean).slice(-TENSION_LIMIT),
         outlineWanted: g.outlineWanted === true,
+        join: { act: Number.isInteger(g.join?.act) && g.join.act >= 0 ? g.join.act : -1, note: str(g.join?.note).trim().slice(0, 4000) },
     };
 }
 
@@ -455,15 +460,17 @@ function settleActive(outline) {
     }
 }
 
-const kept = (b) => b.locked || b.status === 'done' || b.status === 'skipped';
 const past = (b) => b.status === 'done' || b.status === 'skipped';
 
 // Takes an OUTLINE pass's answer in. parsed: { premise, themes, acts:
 // [{ title, beats: [{ id?, text, ties, status }] }], seeds }. What the
 // story has done stays done; locked beats (the user's) keep their words;
 // beats the answer leaves out are dropped unless done, skipped or locked.
-export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString() } = {}) {
-    const old = new Map(beatsOf(gm.outline).map((b) => [b.id, b]));
+// keepLocked false (a regenerate that starts afresh): locked beats still
+// to come are dropped too - only what the story has done is kept.
+export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString(), keepLocked = true } = {}) {
+    const kept = (b) => (keepLocked && b.locked) || past(b);
+    const old = new Map(beatsOf(gm.outline).filter((b) => keepLocked || past(b)).map((b) => [b.id, b]));
     const used = new Set();
     let next = Math.max(0, ...[...old.keys()].map(beatNumber)) + 1;
     const acts = (parsed.acts ?? []).map((a, i) => {
@@ -534,7 +541,32 @@ export function addBeat(gm, actId, text) {
     return beat;
 }
 
+// A regenerated beat (the BEAT pass): new words from the planner, so it is
+// no longer the user's or locked.
+export function replaceBeat(gm, id, { text, ties = [] }) {
+    const b = beatsOf(gm.outline).find((x) => x.id === id);
+    if (!b || !clean(text) || past(b)) return false;
+    Object.assign(b, { text: clean(text).slice(0, 400), ties: strList(ties).slice(0, 6), by: 'planner', locked: false, note: '' });
+    return true;
+}
+
 // A beat the story has played out (the user says so, or a pass does).
+// A story joined in progress: every beat of the chapters before `act` has
+// played out, and the story is now in chapter `act` - its first beat still
+// to come is the active one. Nothing the story has done is undone.
+export function startAt(gm, act) {
+    const acts = gm.outline?.acts ?? [];
+    if (!Number.isInteger(act) || act < 0 || act >= acts.length) return;
+    acts.forEach((a, i) => {
+        for (const b of a.beats) {
+            if (i < act && (b.status === 'pending' || b.status === 'active')) b.status = 'done';
+            if (i >= act && b.status === 'active') b.status = 'pending';
+        }
+    });
+    const first = acts.slice(act).flatMap((a) => a.beats).find((b) => b.status === 'pending');
+    if (first) first.status = 'active';
+}
+
 export function finishBeat(gm, id) {
     const b = beatsOf(gm.outline).find((x) => x.id === id);
     if (!b || b.status === 'done') return;

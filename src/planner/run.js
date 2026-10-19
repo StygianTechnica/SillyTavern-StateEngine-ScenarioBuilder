@@ -31,11 +31,12 @@ import {
     duePasses, setDayPlan, applyCheck, applyBeats, trackPace, paceAim, planSection, motifsOf, addLog,
     addRequest, setRequestStatus, waitingRequests,
     setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, editBeat, lockBeat, removeBeat, addBeat,
-    mergeArchivistTension, addOwnReading, tensionNow,
+    mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
 import {
     buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline,
+    buildBeatPrompt, readBeat,
 } from './prompts.js';
 
 export const PLANNER_EVENT = 'scenario_builder_planner';
@@ -152,9 +153,36 @@ async function refreshTension(chatKey) {
 
 const hasArchivistTension = (gm) => gm.tension.some((r) => r.source === 'archivist');
 
+// A chat this long is well past its beginning: the outline takes the story
+// over where it is.
+const UNDER_WAY_AFTER = 12;
+
+// What has happened so far, for an outline written onto a story already
+// under way: the user's own note, Archivist's story summary, its major
+// events and open threads, and the quests. '' when there is nothing.
+async function storySoFar(gm, guidance) {
+    const lines = [];
+    if (gm.join.note) lines.push(`From the user: ${gm.join.note}`);
+    try {
+        const compiled = typeof window.StateEngineArchivist?.getCompiledMemory === 'function' ? await window.StateEngineArchivist.getCompiledMemory() : null;
+        if (compiled?.story_summary) lines.push(`Summary: ${compiled.story_summary}`);
+        const major = (compiled?.timeline ?? []).filter((e) => e?.major && e.text).slice(-15);
+        if (major.length) lines.push('Major events, in order:', ...major.map((e) => `- ${e.text}`));
+        const open = (compiled?.threads ?? []).filter((t) => t?.title && (t.status === 'open' || t.status === 'active')).slice(0, 10);
+        if (open.length) lines.push('Open threads:', ...open.map((t) => `- ${t.title}${t.progress ? `: ${t.progress}` : ''}`));
+        if (compiled?.scene_summary) lines.push(`Where things stand: ${compiled.scene_summary}`);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'no story summary from Archivist', err);
+    }
+    const quests = (guidance.quests ?? []).filter((q) => q?.name).slice(0, 8);
+    if (quests.length) lines.push('Quests in play:', ...quests.map((q) => `- ${q.name}${q.current ? `: now - ${q.current}` : ''}`));
+    return lines.join('\n');
+}
+
 // Writes the outline, or reviews it against the story (`rewrite`: starts
-// it over, keeping what is done and what the user locked).
-export async function runOutline(chatId, chatKey, { rewrite = false } = {}) {
+// it over, keeping what is done and - unless keepLocked is false - what
+// the user locked).
+export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked = true, wish = '' } = {}) {
     return runPass('outline', chatKey, async () => {
         await refreshTension(chatKey);
         const doc = getChatDoc(chatKey);
@@ -165,25 +193,65 @@ export async function runOutline(chatId, chatKey, { rewrite = false } = {}) {
         const guidance = inputs.guidance;
         const { sceneContext } = await import('../director/run.js');
         const ctx = await sceneContext(chatId, chatKey, settingId, guidance);
+        const writing = !doc.gm.outline || rewrite;
+        const chatLength = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).length;
+        const startIndex = writing && doc.gm.join.act >= 0 && doc.gm.join.act < shape.acts.length ? doc.gm.join.act : -1;
         const parsed = readOutline(await ask(buildOutlinePrompt({
             dossier: dossierText({ ...guidance, ...ctx }),
             userName: userName(),
-            messages: chatMessages(),
+            messages: chatMessages(writing ? 12 : 8),
             shape,
             outline: doc.gm.outline,
             tension: tensionNow(doc.gm),
             motifs: motifsOf(doc.gm),
             gmStyle: guidance.overview?.gmStyle ?? '',
             rewrite,
+            keepLocked,
+            wish,
+            storySoFar: await storySoFar(doc.gm, guidance),
+            underWay: chatLength > UNDER_WAY_AFTER,
+            startAct: startIndex >= 0 ? { index: startIndex, title: shape.acts[startIndex].title } : null,
         })));
         if (!parsed) throw new Error('The outline had no beats in it.');
         updateChatDoc(chatKey, (d) => {
-            setOutline(d.gm, parsed, { turn: d.gm.counters.turn });
+            setOutline(d.gm, parsed, { turn: d.gm.counters.turn, keepLocked: !rewrite || keepLocked });
+            // The user said where the story is: the outline starts there,
+            // whatever the model made of it.
+            if (startIndex >= 0) startAt(d.gm, startIndex);
             d.gm.counters.sinceOutline = 0;
             d.gm.outlineWanted = false;
         });
         const beats = beatsOf(getChatDoc(chatKey).gm.outline).length;
         return `${parsed.acts.length} act${parsed.acts.length === 1 ? '' : 's'}, ${beats} beats`;
+    });
+}
+
+// Writes one beat of the outline again (the user did not like it). wish:
+// the user's steer, or ''.
+export async function runBeat(chatId, chatKey, beatId, wish = '') {
+    return runPass('beat', chatKey, async () => {
+        const doc = getChatDoc(chatKey);
+        const shape = shapeOf(doc.gm.shape);
+        if (!shape || !beatsOf(doc.gm.outline).some((b) => b.id === beatId)) return 'that beat is gone';
+        const settingId = await getBoundSettingId(chatId);
+        const inputs = await gatherInputs(chatId, chatKey);
+        const guidance = inputs.guidance;
+        const { sceneContext } = await import('../director/run.js');
+        const ctx = await sceneContext(chatId, chatKey, settingId, guidance);
+        const beat = readBeat(await ask(buildBeatPrompt({
+            dossier: dossierText({ ...guidance, ...ctx }),
+            userName: userName(),
+            messages: chatMessages(6),
+            shape,
+            outline: doc.gm.outline,
+            beatId,
+            wish,
+            storySoFar: await storySoFar(doc.gm, guidance),
+        })));
+        if (!beat) throw new Error('No beat came back.');
+        let changed = false;
+        updateChatDoc(chatKey, (d) => { changed = replaceBeat(d.gm, beatId, beat); });
+        return changed ? 'beat rewritten' : 'that beat has already played out';
     });
 }
 
@@ -450,5 +518,15 @@ export function setOutlineText(chatKey, patch) {
     updateChatDoc(chatKey, (d) => {
         if (!d.gm.outline) return;
         if (typeof patch.premise === 'string') d.gm.outline.premise = patch.premise.trim();
+    });
+}
+
+// Where a story already under way stands, for the next outline written:
+// act (index into the shape's acts; -1 = let the planner judge) and the
+// user's note on the story so far.
+export function setJoin(chatKey, patch) {
+    updateChatDoc(chatKey, (d) => {
+        if (Number.isInteger(patch.act)) d.gm.join.act = patch.act;
+        if (typeof patch.note === 'string') d.gm.join.note = patch.note.trim();
     });
 }

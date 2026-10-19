@@ -104,6 +104,18 @@ what is veiled):
 - **Motifs**: images and symbols distilled from the inspiration texts (§7)
   that recur through the story.
 
+**A story already under way.** Many chats are joined in the middle, so the
+first outline must not start the story over. When the chat is already long
+(more than 12 messages), or the user says so, the OUTLINE pass is told it is
+taking over a game in progress. It gets **the story so far**: the user's own
+note, Archivist's story summary, its major events and open threads, and the
+quests in play. It sums up the chapters already passed as *done* beats and
+puts the active beat where the story is now. The user can also pick the
+chapter the story is in ("The story is now in: Chapter 2"). The planner then
+enforces it: every beat before that chapter is marked done, and the story
+picks up there (`model.js startAt`). Both are used the next time the outline
+is written or rewritten, so a wrong first outline is fixed with **Rewrite**.
+
 Beats are deliberately loose ("the alliance with Graxx is tested by a
 betrayal from within"). The day plan decides *how* and *when*. The user may
 edit any beat or lock it so the planner keeps it as written. They may also
@@ -456,7 +468,10 @@ A **GM Plan** workspace tab:
 
 - **Outline**: the current volume's chapters (acts) and beats on the
   shape's tension chart. The user can edit, lock, add, finish or remove
-  beats and ask for a rewrite. Chapters still to come are veiled (see
+  beats (edited in place, never in a pop-up), **regenerate one beat** (a
+  small BEAT pass, with an optional steer), or **regenerate the outline**
+  with an optional steer, keeping or dropping the beats they locked or
+  wrote (what the story has done is always kept). Chapters still to come are veiled (see
   *Spoilers* below). When the volume is complete (or the user closes it):
   continue with a new volume, or keep going in this one.
 - **Volumes**: the finished volumes with their recaps (§5.1), to read,
@@ -514,6 +529,7 @@ CHAT DOCUMENT  + gm: {
     dismissedIdeas: [nameKey],
     tensionOwn: [{ at, threat, uncertainty, emotional, overall }],   // without Archivist; last 50
     log: [{ pass, at, ms, outcome, error }],                     // last 30
+    join: { act, note },        // a story under way: the chapter it is in (-1: judge), the user's note
     volume: { number, startedTurn, startedDay, startedIndex,   // the volume under way
               chronicle: [{ at, day, text }] },                // what played out; last 80
     volumes: [{ number, title, shape, premise, themes, recap, threads: [text],

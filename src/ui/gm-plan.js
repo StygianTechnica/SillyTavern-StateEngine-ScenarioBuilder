@@ -9,9 +9,9 @@ import { getChatDoc } from '../store/chat-store.js';
 import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeiled, openRequests, currentAct } from '../planner/model.js';
 import { SHAPES, shapeCurve, targetAt } from '../planner/shapes.js';
 import {
-    getPlannerStatus, runDay, runCheck, runInspire, runOutline, queueRequest, withdrawRequest, addInspiration, removeInspiration,
+    getPlannerStatus, runDay, runCheck, runInspire, runOutline, runBeat, queueRequest, withdrawRequest, addInspiration, removeInspiration,
     setMotifs, peek, setHold, storyState, setShape, editOutlineBeat, lockOutlineBeat, removeOutlineBeat, addOutlineBeat,
-    finishOutlineBeat, setOutlineText,
+    finishOutlineBeat, setOutlineText, setJoin,
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
 import { ws, rerender, markDirty } from './ws.js';
@@ -28,6 +28,68 @@ async function running(label, fn) {
     if (out) toast('success', `${label}: ${out}`);
     else if (getPlannerStatus().error) toast('warning', `${label} failed: ${getPlannerStatus().error}`);
     rerender();
+}
+
+// ---- inline editing
+//
+// One thing is edited at a time, in place: { key, text, flag } ('beat:b3',
+// 'add:a2', 'premise', 'motifs:<id>', 'regen:b3', 'regen-outline'). While
+// it is open the tab is "dirty", so background updates don't redraw under
+// the user's typing.
+let editing = null;
+
+function startEdit(key, text = '', flag = true) {
+    editing = { key, text, flag };
+    rerender();
+    markDirty();
+}
+
+function stopEdit() {
+    editing = null;
+    done();
+}
+
+const isEditing = (key) => editing?.key === key;
+
+// A textarea that grows with its text, focused once it is on the page.
+function growing(attrs) {
+    const el = h('textarea', { class: 'text_pole sb-gm-edit-text', ...attrs });
+    const fit = () => { el.style.height = 'auto'; el.style.height = `${el.scrollHeight + 2}px`; };
+    el.addEventListener('input', fit);
+    let tries = 0;
+    const settle = () => {
+        if (el.isConnected) { fit(); el.focus(); el.setSelectionRange(el.value.length, el.value.length); return; }
+        if (++tries < 60) requestAnimationFrame(settle);
+    };
+    requestAnimationFrame(settle);
+    return el;
+}
+
+// The editor for `key`: a growing text box with Save and Cancel (Ctrl+Enter
+// saves, Escape cancels). onSave(text) - an empty text is not saved unless
+// allowEmpty. extra: more controls under the box.
+function inlineEditor(key, { onSave, placeholder = '', saveLabel = 'Save', saveIcon = 'fa-check', allowEmpty = false, hint = null, extra = null } = {}) {
+    const save = () => {
+        const text = editing?.text ?? '';
+        if (!allowEmpty && !text.trim()) return;
+        const flag = editing?.flag;
+        stopEdit();
+        onSave(text.trim(), flag);
+    };
+    return h('div', { class: 'sb-gm-edit' },
+        growing({
+            value: editing?.text ?? '', placeholder, rows: 2,
+            oninput: (e) => { if (editing) editing.text = e.target.value; markDirty(); },
+            onkeydown: (e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); save(); }
+                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); stopEdit(); }
+            },
+        }),
+        extra,
+        h('div', { class: 'sb-actions' },
+            button(saveLabel, save, { iconName: saveIcon, cls: 'sb-primary' }),
+            button('Cancel', stopEdit, { iconName: 'fa-xmark' }),
+            h('small', { class: 'sb-hint' }, hint ?? 'Ctrl+Enter to save, Esc to cancel')));
 }
 
 // ---- the story outline (§3.1, §5)
@@ -98,26 +160,72 @@ function shapePicker(current, onPick) {
     }, h('b', {}, s.label), h('small', {}, s.blurb))));
 }
 
-function beatRow(gm, beat, { veiled, chatKey, busy }) {
+function beatRow(gm, beat, { veiled, chatId, chatKey, busy }) {
     if (veiled) {
         return h('div', { class: 'sb-gm-row sb-gm-veiled' }, icon('fa-mask'), h('span', { class: 'sb-muted' }, 'A beat to come'),
             h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); peek(chatKey, beat.id); } }, 'peek'));
     }
-    const edit = () => {
-        const text = window.prompt('The beat (your words are kept - it will be locked):', beat.text);
-        if (text !== null && text.trim()) editOutlineBeat(chatKey, beat.id, text);
-    };
+    const head = icon(BEAT_ICON[beat.status] ?? 'fa-circle');
+    if (isEditing(`beat:${beat.id}`)) {
+        return h('div', { class: `sb-gm-row sb-gm-beat sb-gm-beat-${beat.status}` }, head,
+            inlineEditor(`beat:${beat.id}`, { onSave: (text) => editOutlineBeat(chatKey, beat.id, text), placeholder: 'What happens in this beat', hint: 'Your words are kept: the beat is locked. Ctrl+Enter to save, Esc to cancel.' }));
+    }
+    if (isEditing(`regen:${beat.id}`)) {
+        return h('div', { class: `sb-gm-row sb-gm-beat sb-gm-beat-${beat.status}` }, head,
+            h('div', { class: 'sb-gm-text' }, h('s', { class: 'sb-hint' }, beat.text),
+                inlineEditor(`regen:${beat.id}`, {
+                    onSave: (wish) => void running('Regenerating the beat', () => runBeat(chatId, chatKey, beat.id, wish)),
+                    placeholder: 'What should it be instead? (optional - leave empty for something different)',
+                    saveLabel: 'Regenerate', saveIcon: 'fa-dice', allowEmpty: true, hint: 'Ctrl+Enter to regenerate, Esc to cancel',
+                })));
+    }
     const open = beat.status === 'pending' || beat.status === 'active';
+    const off = busy ? 'true' : null;
     return h('div', { class: `sb-gm-row sb-gm-beat sb-gm-beat-${beat.status}` },
-        icon(BEAT_ICON[beat.status] ?? 'fa-circle'),
+        head,
         h('div', { class: 'sb-gm-text' }, beat.text, beat.note ? h('small', { class: 'sb-hint' }, ` (${beat.note})`) : null),
         h('div', { class: 'sb-chips' },
             beat.by === 'user' ? h('span', { class: 'sb-chip', title: 'Your beat' }, icon('fa-user-pen')) : null,
             ...beat.ties.slice(0, 3).map((t) => h('span', { class: 'sb-chip' }, t)),
             open ? h('div', { class: 'sb-iconbtn', title: beat.locked ? 'Locked: the planner keeps it as written. Click to unlock.' : 'Lock it: the planner keeps it as written', onclick: () => lockOutlineBeat(chatKey, beat.id, !beat.locked) }, icon(beat.locked ? 'fa-lock' : 'fa-lock-open')) : null,
-            open ? h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: edit }, icon('fa-pen')) : null,
-            beat.status === 'active' ? h('div', { class: 'sb-iconbtn', title: 'The story has played this out', onclick: () => finishOutlineBeat(chatKey, beat.id), 'aria-disabled': busy ? 'true' : null }, icon('fa-check')) : null,
+            open ? h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: () => startEdit(`beat:${beat.id}`, beat.text) }, icon('fa-pen')) : null,
+            open ? h('div', { class: 'sb-iconbtn', title: 'Regenerate this beat', onclick: busy ? null : () => startEdit(`regen:${beat.id}`, ''), 'aria-disabled': off }, icon('fa-dice')) : null,
+            beat.status === 'active' ? h('div', { class: 'sb-iconbtn', title: 'The story has played this out', onclick: () => finishOutlineBeat(chatKey, beat.id), 'aria-disabled': off }, icon('fa-check')) : null,
             open ? h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction('Remove this beat from the outline?')) removeOutlineBeat(chatKey, beat.id); } }, icon('fa-trash')) : null));
+}
+
+// Regenerate the whole outline: keep the beats the user locked or wrote, or
+// start afresh (only what the story has done is ever kept), with an
+// optional steer.
+function regeneratePanel(chatId, chatKey) {
+    return h('div', { class: 'sb-gm-regen' },
+        h('div', { class: 'sb-card-title' }, icon('fa-dice'), 'Regenerate the outline'),
+        inlineEditor('regen-outline', {
+            onSave: (wish, keepLocked) => void running('Regenerating the outline', () => runOutline(chatId, chatKey, { rewrite: true, keepLocked, wish })),
+            placeholder: 'Anything it should do differently? (optional - e.g. "more intrigue", "Niamh should betray them")',
+            saveLabel: 'Regenerate', saveIcon: 'fa-dice', allowEmpty: true, hint: 'What the story has already done is always kept.',
+            extra: h('label', { class: 'checkbox_label' },
+                h('input', { type: 'checkbox', checked: editing?.flag !== false, onchange: (e) => { if (editing) editing.flag = e.target.checked; } }),
+                h('span', {}, 'Keep the beats I locked or wrote')),
+        }));
+}
+
+// A story already under way: which chapter it is in now, and what has
+// happened so far - so the outline picks the story up where it is instead
+// of starting it from the beginning. Open until there is an outline.
+function joinPanel(gm, shape, chatKey) {
+    let note = gm.join.note;
+    const save = () => { setJoin(chatKey, { note }); ws.dirty = false; };
+    return h('details', { class: 'sb-gm-join', open: !gm.outline || null },
+        h('summary', {}, icon('fa-book-open'), ' Joining a story already under way?'),
+        h('small', { class: 'sb-hint' }, 'Say where the story is now, so the outline picks it up there instead of starting from the beginning. Earlier chapters are summed up as already done. Used the next time the outline is written or rewritten.'),
+        field('The story is now in', select([{ value: -1, label: 'Let the game master judge' }, ...shape.acts.map((a, i) => ({ value: i, label: `Chapter ${i + 1}: ${a.title}` }))], gm.join.act, {
+            onchange: (e) => setJoin(chatKey, { act: Number(e.target.value) }),
+        })),
+        field('The story so far (optional)', h('textarea', {
+            class: 'text_pole', rows: 4, placeholder: 'What has happened so far, in a few lines - who the characters are to each other now, what they have done, what is unresolved.',
+            value: note, oninput: (e) => { note = e.target.value; markDirty(); }, onchange: save, onblur: save,
+        }), 'Archivist\'s summary, major events and open threads are added when it has compiled.'));
 }
 
 function outlineCard(gm, show) {
@@ -136,18 +244,10 @@ function outlineCard(gm, show) {
     const aim = state.aim;
     const readings = gm.tension;
     const source = readings.length ? (readings[readings.length - 1].source === 'archivist' ? 'from Archivist' : 'the game master\'s own reading') : '';
-    const addTo = (act) => {
-        const text = window.prompt(`A beat for "${act.title}":`);
-        if (text && text.trim()) addOutlineBeat(chatKey, act.id, text);
-    };
-    const editPremise = () => {
-        const text = window.prompt('What this story is about:', outline.premise);
-        if (text !== null) setOutlineText(chatKey, { premise: text });
-    };
-    const rewrite = async () => {
-        if (!await confirmAction('Write the outline over? What the story has done and the beats you locked are kept.')) return;
-        void running('Rewriting the outline', () => runOutline(chatId, chatKey, { rewrite: true }));
-    };
+    const premise = !outline?.premise && !isEditing('premise') ? null
+        : isEditing('premise')
+            ? inlineEditor('premise', { onSave: (text) => setOutlineText(chatKey, { premise: text }), placeholder: 'What this story is about', allowEmpty: true })
+            : h('div', { class: 'sb-gm-premise' }, h('span', {}, outline.premise), h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: () => startEdit('premise', outline.premise) }, icon('fa-pen')));
     return h('div', { class: 'sb-card' },
         h('div', { class: 'sb-card-title' }, icon('fa-route'), 'The story',
             h('span', { class: 'sb-gm-title-tools' },
@@ -158,19 +258,22 @@ function outlineCard(gm, show) {
             ? `Tension ${readings[readings.length - 1].overall} of 5 (${source}); the band is where the ${state.shape.label.toLowerCase()} wants it.${aim ? ` Aim: ${aim.word} - ${aim.why}.` : ''}`
             : 'No tension readings yet: they come from Archivist\'s compiles, or from the game master\'s checks.'),
         !outline ? h('p', { class: 'sb-muted' }, `No outline yet. One is written after ${FIRST_OUTLINE_AFTER} replies, or now:`) : null,
-        outline?.premise ? h('div', { class: 'sb-gm-premise' }, h('span', {}, outline.premise), h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: editPremise }, icon('fa-pen'))) : null,
+        joinPanel(gm, state.shape, chatKey),
+        premise,
         outline?.themes?.length ? h('div', { class: 'sb-chips' }, outline.themes.map((t) => h('span', { class: 'sb-chip' }, t))) : null,
         ...(outline?.acts ?? []).map((act, i) => {
             // Spoilers: the current act and what is done show; acts to come are veiled.
             const ahead = cur && i > cur.index;
             return h('div', { class: `sb-gm-act${cur && i === cur.index ? ' current' : ''}` },
-                h('div', { class: 'sb-gm-sub' }, `Act ${i + 1}: ${act.title}`,
-                    act.beats.length < 10 ? h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); addTo(act); } }, '+ beat') : null),
-                ...act.beats.map((b) => beatRow(gm, b, { veiled: ahead && b.status === 'pending' && isVeiled(gm, b.id, show), chatKey, busy })));
+                h('div', { class: 'sb-gm-sub' }, `Chapter ${i + 1}: ${act.title}`,
+                    act.beats.length < 10 && !isEditing(`add:${act.id}`) ? h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); startEdit(`add:${act.id}`, ''); } }, '+ beat') : null),
+                ...act.beats.map((b) => beatRow(gm, b, { veiled: ahead && b.status === 'pending' && isVeiled(gm, b.id, show), chatId, chatKey, busy })),
+                isEditing(`add:${act.id}`) ? inlineEditor(`add:${act.id}`, { onSave: (text) => addOutlineBeat(chatKey, act.id, text), placeholder: `A new beat for "${act.title}"`, saveLabel: 'Add', saveIcon: 'fa-plus', hint: 'Your beat is locked: the planner keeps it. Ctrl+Enter to add, Esc to cancel.' }) : null);
         }),
+        isEditing('regen-outline') ? regeneratePanel(chatId, chatKey) : null,
         h('div', { class: 'sb-actions' },
             button(outline ? 'Review against the story' : 'Write the outline now', () => void running(outline ? 'Reviewing the outline' : 'Writing the outline', () => runOutline(chatId, chatKey)), { iconName: 'fa-feather', disabled: busy }),
-            outline ? button('Rewrite', () => void rewrite(), { iconName: 'fa-rotate', disabled: busy }) : null),
+            outline && !isEditing('regen-outline') ? button('Regenerate…', () => startEdit('regen-outline', '', true), { iconName: 'fa-dice', disabled: busy, title: 'Write the outline again - with a steer if you like' }) : null),
         gm.outlineWanted && outline ? h('small', { class: 'sb-hint' }, icon('fa-clock'), ' A review is due on the next pass.') : null);
 }
 
@@ -275,11 +378,6 @@ function inspirationCard(gm) {
         toast('info', 'Reading it for motifs in the background…');
         done();
     };
-    const editMotifs = (x) => {
-        const answer = window.prompt('Motifs, one per line:', x.motifs.join('\n'));
-        if (answer === null) return;
-        setMotifs(chatKey, x.id, answer.split('\n').map((s) => s.trim()).filter(Boolean));
-    };
     return h('div', { class: 'sb-card' },
         h('div', { class: 'sb-card-title' }, icon('fa-feather-pointed'), 'Inspiration'),
         h('small', { class: 'sb-hint' }, 'A story, a poem, song lyrics - read for its images and themes, which the game master echoes symbolically. It is never retold or quoted.'),
@@ -289,10 +387,11 @@ function inspirationCard(gm) {
         ...gm.inspirations.map((x) => h('div', { class: 'sb-gm-insp' },
             h('div', { class: 'sb-gm-insp-head' }, h('b', {}, x.title || 'Untitled'),
                 h('div', { class: 'sb-actions' },
-                    h('div', { class: 'sb-iconbtn', title: 'Edit the motifs', onclick: () => editMotifs(x) }, icon('fa-pen')),
+                    h('div', { class: 'sb-iconbtn', title: 'Edit the motifs', onclick: () => startEdit(`motifs:${x.id}`, x.motifs.join('\n')) }, icon('fa-pen')),
                     h('div', { class: 'sb-iconbtn', title: 'Read it again for motifs', onclick: () => void running('Reading', () => runInspire(chatKey, x.id)) }, icon('fa-rotate')),
                     h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction(`Remove "${x.title || 'this inspiration'}"?`)) removeInspiration(chatKey, x.id); } }, icon('fa-trash')))),
-            x.motifs.length ? h('div', { class: 'sb-chips' }, x.motifs.map((m) => h('span', { class: 'sb-chip' }, m)))
+            isEditing(`motifs:${x.id}`) ? inlineEditor(`motifs:${x.id}`, { onSave: (text) => setMotifs(chatKey, x.id, text.split('\n').map((m) => m.trim()).filter(Boolean)), placeholder: 'One motif per line', allowEmpty: true, hint: 'One motif per line. Ctrl+Enter to save, Esc to cancel.' })
+                : x.motifs.length ? h('div', { class: 'sb-chips' }, x.motifs.map((m) => h('span', { class: 'sb-chip' }, m)))
                 : h('small', { class: 'sb-hint' }, x.error ? `Could not read it: ${x.error}` : 'Being read for motifs…'))));
 }
 

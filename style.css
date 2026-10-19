@@ -519,3 +519,14 @@
 .sb-gm-aim-ease { color: #7fb6e8; }
 .sb-gm-aim-hold { color: #7fc48a; }
 @container (max-width: 900px) { .sb-gm-charts { grid-template-columns: 1fr; } }
+.sb-gm-join { display: flex; flex-direction: column; gap: 6px; padding: 6px 0; }
+.sb-gm-join > summary { cursor: pointer; opacity: 0.85; }
+.sb-gm-join[open] > summary { margin-bottom: 4px; }
+
+/* GM Plan tab: inline editing. */
+.sb-gm-edit { flex: 1 1 0; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sb-gm-edit-text { width: 100%; min-height: 3.2em; resize: vertical; line-height: 1.45; font: inherit; padding: 6px 8px; margin: 0; box-sizing: border-box; overflow: hidden; border-radius: 6px; }
+.sb-gm-edit-text:focus { border-color: var(--sb-gold); outline: none; }
+.sb-gm-edit .sb-actions .sb-hint { margin-left: auto; font-size: 0.85em; }
+.sb-gm-regen { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px dashed var(--sb-gold); border-radius: var(--sb-radius); }
+.sb-gm-beat .sb-gm-text s { opacity: 0.6; display: block; margin-bottom: 4px; }
