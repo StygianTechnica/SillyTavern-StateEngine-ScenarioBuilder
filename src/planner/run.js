@@ -41,7 +41,7 @@ import { shapeOf, tensionAim } from './shapes.js';
 import { questBoard } from '../quests/sync.js';
 import {
     buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline,
-    buildBeatPrompt, readBeat, buildRecapPrompt, readRecap, readRecapText, buildIdeasPrompt, readIdeas,
+    buildBeatPrompt, readBeat, buildRecapPrompt, readRecap, readRecapText, closeCutJson, buildIdeasPrompt, readIdeas,
 } from './prompts.js';
 
 export const PLANNER_EVENT = 'scenario_builder_planner';
@@ -235,7 +235,7 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
             underWay: chatLength > UNDER_WAY_AFTER,
             startAct: startIndex >= 0 ? { index: startIndex, title: shape.acts[startIndex].title } : null,
             newVolume,
-        })));
+        }), OUTLINE_TOKENS, { salvage: (raw) => readModelJson(closeCutJson(raw)) }));
         if (!parsed) throw new Error('The outline had no beats in it.');
         updateChatDoc(chatKey, (d) => {
             setOutline(d.gm, parsed, { turn: d.gm.counters.turn, keepLocked: !rewrite || keepLocked });
@@ -567,6 +567,9 @@ export function setJoin(chatKey, patch) {
 const recapWords = (replies) => Math.max(400, Math.min(1000, 300 + replies * 6));
 // Room for the longest recap and its JSON.
 const RECAP_TOKENS = 2000;
+// A whole outline - several chapters of beats - needs more room than a
+// small pass: cut off, it was no JSON at all.
+const OUTLINE_TOKENS = 2400;
 
 // Writes the recap of the volume under way, files it away and begins the
 // next volume on `shape` with the user's steer. Nothing changes if the

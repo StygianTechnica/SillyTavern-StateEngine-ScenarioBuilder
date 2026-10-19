@@ -239,7 +239,7 @@ export function buildOutlinePrompt(input) {
             'The beats still to come grow out of where the story is now - its open threads and the people\'s agendas - not out of how the setting or the first messages introduced it.',
         );
     }
-    if (clean(input.wish)) parts.push('', 'WHAT THE USER WANTS FROM THIS OUTLINE (follow it)', `- ${cut(input.wish, 600)}`);
+    if (clean(input.wish)) parts.push('', 'WHAT THE USER WANTS FROM THIS OUTLINE (follow it)', `- ${cut(input.wish, 4000)}`);
     parts.push(
         '',
         outline && !input.rewrite ? 'REVIEW THE OUTLINE' : 'WRITE THE OUTLINE',
@@ -302,6 +302,38 @@ export function readRecap(json) {
     const recap = String(json.recap ?? '').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim();
     if (recap.length < 40) return null;
     return { title: cut(json.title, 80), recap: recap.slice(0, 8000), threads: texts(json.threads, 10).map((t) => cut(t, 200)) };
+}
+
+// A JSON answer cut off before its end (the model ran out of tokens): the
+// part up to its last complete object, with what was left open closed.
+// -> the repaired text, or '' when there is no complete object in it.
+export function closeCutJson(raw) {
+    const text = String(raw ?? '');
+    const start = text.indexOf('{');
+    if (start < 0) return '';
+    const stack = [];
+    let inString = false;
+    let escaped = false;
+    let lastGood = -1;
+    let lastStack = null;
+    for (let i = start; i < text.length; i++) {
+        const ch = text[i];
+        if (inString) {
+            if (escaped) escaped = false;
+            else if (ch === '\\') escaped = true;
+            else if (ch === '"') inString = false;
+            continue;
+        }
+        if (ch === '"') inString = true;
+        else if (ch === '{' || ch === '[') stack.push(ch === '{' ? '}' : ']');
+        else if (ch === '}' || ch === ']') {
+            stack.pop();
+            if (ch === '}') { lastGood = i; lastStack = [...stack]; }
+            if (!stack.length) return text.slice(start, i + 1);
+        }
+    }
+    if (lastGood < 0) return '';
+    return text.slice(start, lastGood + 1).replace(/,\s*$/, '') + lastStack.reverse().join('');
 }
 
 // A recap answer that is not clean JSON - long prose with an unescaped

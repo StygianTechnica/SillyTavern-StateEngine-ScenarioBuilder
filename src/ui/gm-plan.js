@@ -5,9 +5,9 @@
 // pass log and the planner's settings.
 
 import { getSettings, saveSettings } from '../settings.js';
-import { getChatDoc } from '../store/chat-store.js';
+import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { getSettingDoc } from '../store/setting-store.js';
-import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeiled, openRequests, currentAct, volumeComplete, volumeReadings, storyMarkdown, openIdeas } from '../planner/model.js';
+import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeiled, openRequests, currentAct, volumeComplete, volumeReadings, storyMarkdown, openIdeas, sameBeat } from '../planner/model.js';
 import { SHAPES, shapeCurve, targetAt } from '../planner/shapes.js';
 import {
     getPlannerStatus, runDay, runCheck, runInspire, runOutline, runBeat, queueRequest, withdrawRequest, addInspiration, removeInspiration,
@@ -262,7 +262,10 @@ function outlineCard(gm, show) {
             ? `Tension ${readings[readings.length - 1].overall} of 5 (${source}); the band is where the ${state.shape.label.toLowerCase()} wants it.${aim ? ` Aim: ${aim.word} - ${aim.why}.` : ''}`
             : 'No tension readings yet: they come from Archivist\'s compiles, or from the game master\'s checks.'),
         !outline ? h('p', { class: 'sb-muted' }, `No outline yet. One is written after ${FIRST_OUTLINE_AFTER} replies, or now:`) : null,
-        joinPanel(gm, state.shape, chatKey),
+        // Joining a story under way is for its first volume; a later one
+        // starts from the recap before it, steered by the user's text.
+        gm.volume.number > 1 || gm.volumes.length ? null : joinPanel(gm, state.shape, chatKey),
+        volumeSteer(gm, chatKey),
         premise,
         outline?.themes?.length ? h('div', { class: 'sb-chips' }, outline.themes.map((t) => h('span', { class: 'sb-chip' }, t))) : null,
         ...(outline?.acts ?? []).map((act, i) => {
@@ -288,6 +291,23 @@ function outlineCard(gm, show) {
 }
 
 // ---- volumes (§5.1)
+
+// Where the user wants this volume to go (written when it began): shown,
+// and editable - the outline follows it.
+function volumeSteer(gm, chatKey) {
+    const text = gm.volume?.direction ?? '';
+    if (isEditing('vsteer')) {
+        return inlineEditor('vsteer', {
+            onSave: (t) => { updateChatDoc(chatKey, (d) => { d.gm.volume.direction = t; d.gm.outlineWanted = true; }); done(); },
+            placeholder: 'Where this volume should go', allowEmpty: true,
+            hint: 'The next outline pass follows it. Ctrl+Enter to save, Esc to cancel.',
+        });
+    }
+    if (!text) return null;
+    return h('div', { class: 'sb-gm-premise' },
+        h('span', {}, h('b', {}, 'Your steer: '), text),
+        h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: () => startEdit('vsteer', text) }, icon('fa-pen')));
+}
 
 // The next volume: its shape and an optional steer; the volume under way is
 // recapped and filed first.
@@ -371,7 +391,8 @@ function momentRow(gm, m, show) {
     return h('div', { class: `sb-gm-row${m.status !== 'pending' ? ' sb-gm-past' : ''}` },
         h('div', { class: 'sb-gm-text' }, h('span', {}, m.text),
             m.trigger ? h('small', { class: 'sb-hint' }, ` - ${m.trigger}`) : null,
-            m.note ? h('small', { class: 'sb-hint' }, ` (${m.note})`) : null),
+            // A note that only repeats the moment says nothing.
+            m.note && !sameBeat(m.note, m.text) ? h('small', { class: 'sb-hint' }, ` (${m.note})`) : null),
         h('div', { class: 'sb-chips' }, when, state, ...m.ties.map((t) => h('span', { class: 'sb-chip' }, t))));
 }
 

@@ -293,13 +293,16 @@ export function applyCheck(gm, check) {
         if (m && m.status === 'pending') {
             m.status = status;
             if (note) m.note = clean(note);
-            if (status === 'done') addChronicle(gm, m.note ? `${m.text} (${m.note})` : m.text);
+            if (status === 'done') addChronicle(gm, m.note && !sameBeat(m.note, m.text) ? `${m.text} (${m.note})` : m.text);
         }
     };
     for (const id of check.done ?? []) mark(typeof id === 'object' ? id?.id : id, 'done', typeof id === 'object' ? id?.how : '');
     for (const s of check.skipped ?? []) mark(typeof s === 'object' ? s?.id : s, 'skipped', typeof s === 'object' ? s?.why : '');
     const start = gm.day.moments.length;
-    const added = (check.add ?? []).map((m, i) => normalizeMoment({ ...m, id: `m${start + i + 1}`, status: 'pending' }, start + i)).filter(Boolean);
+    // Never a moment the plan already has, played out or not, in other words.
+    const fresh = (check.add ?? []).filter((m, i, all) => clean(m?.text) && !gm.day.moments.some((x) => sameBeat(x.text, m.text))
+        && !all.slice(0, i).some((y) => sameBeat(clean(y?.text), m.text)));
+    const added = fresh.map((m, i) => normalizeMoment({ ...m, id: `m${start + i + 1}`, status: 'pending' }, start + i)).filter(Boolean);
     gm.day.moments = [...gm.day.moments, ...added].slice(-MOMENT_LIMIT);
     planRequests(gm, check.requests, added);
     settleRequests(gm);
@@ -317,7 +320,7 @@ export function applyBeats(gm, beats) {
         m.status = b.status === 'done' ? 'done' : 'skipped';
         m.note = clean(b.note);
         if (m.status === 'skipped') skipped = true;
-        else addChronicle(gm, m.note ? `${m.text} (${m.note})` : m.text);
+        else addChronicle(gm, m.note && !sameBeat(m.note, m.text) ? `${m.text} (${m.note})` : m.text);
     }
     settleRequests(gm);
     settleAgenda(gm);
@@ -412,6 +415,9 @@ export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null
     const expire = Number.isInteger(dayExpire) ? dayExpire : cadence.dayExpire;
     if (!gm.day || gm.day.day !== day || (expire > 0 && turn - gm.day.madeTurn >= expire)) return [...out, 'day'];
     const pending = gm.day.moments.some((m) => m.status === 'pending');
+    // Every moment played out (a day the clock has not left): a fresh plan,
+    // not a finished one shown on and on.
+    if (gm.day.moments.length && !pending && turn - gm.day.madeTurn >= 2) return [...out, 'day'];
     // A request newer than the last pass: once, not after every reply.
     if (gm.checkWanted || waitingRequests(gm).some((r) => r.at > gm.counters.lastCheck)) return [...out, 'check'];
     if (every > 0 && gm.counters.sinceCheck >= every && pending) return [...out, 'check'];
@@ -693,7 +699,7 @@ function normalizeVolume(v) {
         startedTurn: int(v.startedTurn),
         startedDay: Number.isInteger(v.startedDay) && v.startedDay > 0 ? v.startedDay : 1,
         startedIndex: int(v.startedIndex),
-        direction: clean(v.direction).slice(0, 600),
+        direction: clean(v.direction).slice(0, 4000),
         chronicle: (Array.isArray(v.chronicle) ? v.chronicle : []).filter((c) => isObject(c) && clean(c.text))
             .map((c) => ({ at: str(c.at), day: Number.isInteger(c.day) ? c.day : null, text: clean(c.text).slice(0, 300) })).slice(-CHRONICLE_LIMIT),
     };
@@ -772,9 +778,15 @@ export function closeVolume(gm, recap, end = {}) {
 // inspirations and pacing carry on.
 export function startVolume(gm, { shape = gm.shape, direction = '', turn = gm.counters.turn, day = 1, index = 0 } = {}) {
     const number = Math.max(gm.volume.number, ...gm.volumes.map((x) => x.number)) + 1;
-    gm.volume = { ...emptyVolume(number, { turn, day, index }), direction: clean(direction).slice(0, 600) };
+    gm.volume = { ...emptyVolume(number, { turn, day, index }), direction: clean(direction).slice(0, 4000) };
     gm.shape = clean(shape);
     gm.outline = null;
+    // The day goes on, but what the last volume's plan played out does not
+    // carry over: only moments still to come stay (none left - a new plan).
+    if (gm.day) {
+        gm.day.moments = gm.day.moments.filter((m) => m.status === 'pending');
+        if (!gm.day.moments.length) gm.day = null;
+    }
     gm.join = { act: -1, note: '' };
     gm.outlineWanted = false;
     gm.counters.sinceOutline = 0;
