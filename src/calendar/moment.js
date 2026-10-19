@@ -188,15 +188,29 @@ const ELAPSED = [
     new RegExp(String.raw`\b${COUNT}\s+${UNIT}\s+(?:later|passed|had passed|went by|had gone by|crept by|crawled by|slipped by|dragged on|dragged by)\b`, 'i'),
     new RegExp(String.raw`\b(?:after|over)\s+(?:${COUNT}\s+)?(?:long\s+)?${UNIT}\b`, 'i'),
 ];
-const NOT_PASSED = /\b(?:will|would|shall|going to|tomorrow|tonight|soon|might|could)\b/i;
+// "Over the next hour, they packed": told by the narration, never in speech
+// ("We ride for the next two hours").
+const SPENT = new RegExp(String.raw`\b(?:over|for|during|throughout)\s+the\s+(?:next|following)\s+(?:${COUNT}\s+)?(?:long\s+)?${UNIT}\b`, 'i');
+const NOT_PASSED = /\b(?:will|would|shall|going to|tomorrow|tonight|soon|might|could)\b|'ll\b/i;
 export function storyElapsed(text) {
-    for (const sentence of String(text ?? '').split(/(?<=[.!?”"])\s+/)) {
+    const narration = String(text ?? '').replace(/"[^"]*"|“[^”]*”/g, ' ');
+    for (const [source, patterns] of [[String(text ?? ''), ELAPSED], [narration, [SPENT]]]) {
+        const span = spanIn(source, patterns);
+        if (span) return span;
+    }
+    return '';
+}
+
+function spanIn(text, patterns) {
+    for (const sentence of text.replace(/’/g, "'").split(/(?<=[.!?”"])\s+/)) {
         if (NOT_PASSED.test(sentence)) continue;
-        for (const re of ELAPSED) {
+        for (const re of patterns) {
             const m = sentence.match(re);
             if (!m) continue;
             const unit = m.groups.u.toLowerCase().replace(/s$/, '');
             const n = String(m.groups.n ?? '').toLowerCase();
+            // "over the next hour" is one; "for hours", a few.
+            if (!n && !/s$/i.test(m.groups.u)) return `one ${unit}`;
             if (!n || ['few', 'a few', 'several', 'many', 'some'].includes(n)) return `a few ${unit}s`;
             if (['a', 'an', 'one'].includes(n)) return `one ${unit}`;
             return `${n} ${unit}s`;

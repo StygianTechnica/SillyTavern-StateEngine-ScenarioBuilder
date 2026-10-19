@@ -32,8 +32,8 @@ import { checkTriggers } from '../triggers/run.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage, followContinuedReply } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
 import { directBeforeReply, addNamedPeople, thinkAfterReply } from '../director/run.js';
-import { ensureClock, advanceBy, setTime, perTurnDefault, followStoryTimeOfDay } from '../calendar/clock.js';
-import { getChatDoc } from '../store/chat-store.js';
+import { ensureClock, advanceBy, setTime, perTurnDefault, followStoryTimeOfDay, followStoryElapsed } from '../calendar/clock.js';
+import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { healMissing } from './canonical.js';
 import { fillRoles } from '../preset/role-fill.js';
 import { setReplying } from '../generate/llm.js';
@@ -135,12 +135,18 @@ async function prepareReply(ref, type) {
         const newTurn = !type || type === 'normal';
         if (settings.time.enabled && settingId) await ensureClock(ref.chatId, chatKey, settingId);
         // A time skip the player narrates ("It was morning at last", "he was
-        // unconscious until well after daybreak") moves the clock before the
-        // reply, so the game master and the narrator start from it.
+        // unconscious until well after daybreak", "over the next hour, they
+        // packed") moves the clock before the reply, so the game master and
+        // the narrator start from it.
         if (settings.time.enabled && settingId && newTurn) {
             const chat = SillyTavern.getContext().chat ?? [];
             const userText = [...chat].reverse().find((m) => m?.is_user && typeof m.mes === 'string')?.mes ?? '';
-            if (userText) await followStoryTimeOfDay(ref.chatId, chatKey, settingId, userText);
+            const turnFrom = getChatDoc(chatKey).canonical.time;
+            updateChatDoc(chatKey, (d) => { d.clock.turnFrom = Number.isFinite(turnFrom) ? turnFrom : null; });
+            if (userText) {
+                await followStoryTimeOfDay(ref.chatId, chatKey, settingId, userText);
+                await followStoryElapsed(ref.chatId, chatKey, settingId, userText, turnFrom);
+            }
         }
         // The game master thinks before the reply (src/director/): the one
         // step here that waits on a model, bounded by its timeout. It also

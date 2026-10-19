@@ -40,6 +40,36 @@ export function routeForMove(fromId, toId, routes, pathOf) {
     return null;
 }
 
+// The way on the player's message sets out along, when the game master
+// left no MOVE line: the message names a place one route away ("mounted up
+// for the next leg of their journey... The blackened bridge") and tells of
+// leaving for it. Never a trip only planned or talked of ("we'll ride for
+// the bridge tomorrow", or in speech). `ways`: [{ id, names }] of the
+// places the routes from here lead to.
+// -> { id, name, together } (together: the party goes as one) or null.
+const SETTING_OUT = /\b(?:set(?:s|ting)? out|set off|mount(?:s|ed|ing)? up|rode|ride(?:s)? (?:out|off|on)|head(?:s|ed|ing)? (?:out|off|for|to|toward|towards)|(?:made|make|makes|making) (?:their|our|his|her|my|the) way|journey(?:s|ed)?|travel(?:s|led|ed|ling|ing)?|depart(?:s|ed|ing)?|(?:left|leave|leaves|leaving) for|on the road|hit the road|march(?:es|ed|ing)? (?:out|off|on|for|to)|next leg)\b/i;
+const NOT_YET = /\b(?:will|would|shall|should|tomorrow|tonight|later|soon|plan(?:s|ned)?|going to|could|might|if)\b|'ll\b/i;
+const TOGETHER = /\b(?:they|we|the group|the party|everyone|together|all of (?:us|them)|companions)\b/i;
+export function headingAlong(text, ways) {
+    const plain = String(text ?? '').replace(/"[^"]*"|“[^”]*”/g, ' ').replace(/’/g, "'");
+    const sentences = plain.replace(/\s+/g, ' ').match(/[^.!?…]+[.!?…]*/g) ?? [];
+    const going = sentences.filter((s) => SETTING_OUT.test(s) && !NOT_YET.test(s));
+    if (!going.length) return null;
+    const bare = (n) => String(n ?? '').toLowerCase().replace(/^the\s+/, '').replace(/[^a-z0-9'À-ɏ]+/g, ' ').trim();
+    const lower = ` ${bare(plain)} `;
+    let best = null;
+    for (const w of ways ?? []) {
+        for (const n of w.names ?? []) {
+            const name = bare(n);
+            if (name.length >= 4 && lower.includes(` ${name} `) && (!best || name.length > best.len)) best = { id: w.id, name: String(n), len: name.length };
+        }
+    }
+    // Spoken of only where the plan is told ("we'll reach the bridge by
+    // nightfall") is not setting out.
+    if (!best || sentences.filter((s) => ` ${bare(s)} `.includes(` ${bare(best.name)} `)).every((s) => NOT_YET.test(s))) return null;
+    return { id: best.id, name: best.name, together: going.some((s) => TOGETHER.test(s)) };
+}
+
 // ---- stored
 
 export function listRoutes(settingId) {

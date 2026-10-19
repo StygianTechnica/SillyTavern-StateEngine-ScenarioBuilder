@@ -248,17 +248,18 @@ export async function advanceBy(chatId, chatKey, settingId, text, { planned = fa
 }
 
 // After a reply: how much time the story says passed (sb__scene_deltatime,
-// counted from before the player's message). When that is clearly more than
-// the clock moved, it catches up. -> the history entry, or null.
+// counted from before the player's message - before what that message
+// itself moved the clock). When that is clearly more than the clock moved,
+// it catches up. -> the history entry, or null.
 export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, sourceMessage = '') {
     const doc = getChatDoc(chatKey);
     const planned = doc.clock.planned;
-    updateChatDoc(chatKey, (d) => { d.clock.planned = null; });
+    updateChatDoc(chatKey, (d) => { d.clock.planned = null; d.clock.turnFrom = null; });
     const now = doc.canonical.time;
     // A span, or a jump the story asks for - never the moment described.
     const delta = storyDelta(deltaText);
     if (!Number.isFinite(now) || !delta) return null;
-    const from = planned?.from ?? now;
+    const from = doc.clock.turnFrom ?? planned?.from ?? now;
     const target = await advanceFrom(settingId, from, delta);
     if (target === null) return null;
     const { def } = await calendarFor(settingId);

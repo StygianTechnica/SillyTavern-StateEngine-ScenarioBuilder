@@ -370,16 +370,7 @@ export function buildDirectorPrompt(input) {
         : `what the people around ${userName} want, feel toward one another and are likely to do about it - woven together, not person by person. Give each of them an agenda of their own and show it moving: in this reply at least one of them takes the initiative - starts something, presses their own plan, pursues what they want, or acts on someone else - without waiting to be asked. They answer ${userName} only as far as it serves their own aims.`;
     parts.push(
         '',
-        'WRITE THE BRIEFING',
-        `In a few paragraphs of natural prose (no headings, lists or tables), tell the narrator where things stand ${input.ahead ? `as ${userName}'s turn comes` : `now that ${userName} has spoken`}${alone ? `. ${people}` : `, and ${people}`} Let the place come through in a few concrete details of what can be seen, heard or smelled, and anything here that matters now. Draw on everything above that bears on this moment - factions, lore, events, threads and the other entries - but fold each into the narrative in a few words where it matters; never list them, and leave out what does not touch this moment. Vary how you open; do not start with a stock phrase.`,
-        'If someone not here (OTHERS WHO COULD TURN UP) has a plan that will matter soon, say in a sentence what they are doing about it off-screen.',
-        ...(unknownsLines(input.unknowns).length ? ['Where someone here does not know something that bears on this moment (WHAT EACH PERSON DOES NOT KNOW), say so plainly in the briefing, with what they did see instead (e.g. "Varyn did not see the vision - he only saw Remus sleep restlessly"), so the narrator never has them speak of it.'] : []),
-        'End with a paragraph that begins "Next:" saying where this reply should probably go - one or two natural developments driven by what the other characters want, as direction rather than a script, leaning toward an open thread when it fits.',
-        'Keep it under 400 words in all.',
-    );
-    parts.push(
-        '',
-        'FORMAT LINES: the lines below are filled in only when they apply. Replace each <...> with the real value; never copy a <...> or an example, and never write "none" for a line that does not apply - leave the line out entirely.',
+        'START WITH THE FORMAT LINES: write them first, at the very top of your reply, each on its own line, before the briefing. They are filled in only when they apply. Replace each <...> with the real value; never copy a <...> or an example, and never write "none" for a line that does not apply - leave the line out entirely.',
     );
     if (input.askNow) {
         parts.push(
@@ -391,7 +382,7 @@ export function buildDirectorPrompt(input) {
     if (input.timeKeeping !== false) {
         parts.push(
             '',
-            'After the briefing, on its own line, how much in-story time this reply will cover from the latest message on:',
+            'On its own line, how much in-story time this reply will cover from the latest message on:',
             'TIME | <how long, e.g. 5 minutes> | <why>',
             'A few minutes for talk; longer when people travel, wait, work or sleep, or when the scene moves on (a duration like "2 hours" or "3 days", or a time of day like "the next morning"). A journey along one of the ways on takes its travel time. Follow any time skip the latest message asks for - waking someone for the next watch, or sleeping, means hours have passed (to dawn, or "the next morning", when the night is late).',
             '',
@@ -447,6 +438,18 @@ export function buildDirectorPrompt(input) {
     } else {
         parts.push('', 'Use only the places, people, creatures, factions, lore, events, quests and items named above; do not invent new named ones.');
     }
+    // Format lines first: a reply that runs long or drifts into telling the
+    // story is cut off at the end, and the lines must survive that.
+    parts.push(
+        '',
+        'THEN WRITE THE BRIEFING',
+        `After the format lines, in a few paragraphs of natural prose (no headings, lists or tables), tell the narrator where things stand ${input.ahead ? `as ${userName}'s turn comes` : `now that ${userName} has spoken`}${alone ? `. ${people}` : `, and ${people}`} Let the place come through in a few concrete details of what can be seen, heard or smelled, and anything here that matters now. Draw on everything above that bears on this moment - factions, lore, events, threads and the other entries - but fold each into the narrative in a few words where it matters; never list them, and leave out what does not touch this moment. Vary how you open; do not start with a stock phrase.`,
+        'If someone not here (OTHERS WHO COULD TURN UP) has a plan that will matter soon, say in a sentence what they are doing about it off-screen.',
+        ...(unknownsLines(input.unknowns).length ? ['Where someone here does not know something that bears on this moment (WHAT EACH PERSON DOES NOT KNOW), say so plainly in the briefing, with what they did see instead (e.g. "Varyn did not see the vision - he only saw Remus sleep restlessly"), so the narrator never has them speak of it.'] : []),
+        'End with a paragraph that begins "Next:" saying where this reply should probably go - one or two natural developments driven by what the other characters want, as direction rather than a script, leaning toward an open thread when it fits.',
+        'This is a briefing, not the story: never write the reply itself - no lines of dialogue in quotes, no narrating it as it happens. Say what people want and are likely to do, and let the narrator write it.',
+        'Keep it under 400 words in all.',
+    );
     return { system, prompt: parts.join('\n') };
 }
 
@@ -519,6 +522,47 @@ export function splitNote(note) {
         }
     }
     return { summary: text, direction: '' };
+}
+
+// A line of quoted speech: four words or more between quotes. A briefing
+// may quote a name ("the Blackened Bridge"), not dialogue.
+const spoken = (text) => (text.match(/["“][^"“”\n]*["”]/g) ?? []).filter((q) => q.trim().split(/\s+/).length >= 4).length;
+// The end of a sentence, with any closing quote or bracket.
+const SENTENCE_END = /[.!?…]+["'”’)\]]*(?=\s|$)/g;
+
+// A briefing that went wrong, made usable: a small model runs out of
+// room mid-sentence, or tells the story (dialogue and all) instead of
+// briefing it - the God War chat's #452 did both. Cut off: the unfinished
+// sentence at the end goes (a last paragraph with no sentence end at all is
+// kept - that is a missing full stop, not a cut). Narrated: two or more lines
+// of dialogue; the paragraphs that hold dialogue go, since the narrator
+// would copy them as its script, and what is left says where things stand.
+// -> { text, flaws: ['cut off', 'narrated'] }.
+export function tidyBriefing(note) {
+    let text = String(note ?? '').trim();
+    const flaws = [];
+    if (!text) return { text, flaws };
+    if (!/[.!?…]["'”’)\]]*$/.test(text)) {
+        const lastPara = text.split(/\n\s*\n/).at(-1);
+        const ends = [...lastPara.matchAll(SENTENCE_END)];
+        if (ends.length) {
+            const last = ends.at(-1);
+            text = text.slice(0, text.length - lastPara.length + last.index + last[0].length).trim();
+            flaws.push('cut off');
+        }
+    }
+    if (spoken(text) >= 2) {
+        flaws.push('narrated');
+        const paragraphs = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+        const plain = paragraphs.filter((p) => !spoken(p));
+        if (plain.length) text = plain.join('\n\n');
+        else {
+            const sentences = text.match(/[^.!?…]+(?:[.!?…]+["'”’)\]]*|$)\s*/g) ?? [];
+            const quiet = sentences.filter((s) => !/["“”]/.test(s)).join('').trim();
+            if (quiet) text = quiet;
+        }
+    }
+    return { text, flaws };
 }
 
 // A value the model copied from the format instead of filling in: a
@@ -636,7 +680,12 @@ export function parseDirectorNote(raw) {
         .replace(/^\s*#+\s+/gm, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
-    return { note: text, ...splitNote(text), created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats };
+    const tidy = tidyBriefing(text);
+    text = tidy.text;
+    // A briefing cut off or told as story lost its "Next:" end; any other
+    // paragraph is not direction.
+    const parts = tidy.flaws.length && !MARKER.test(text) ? { summary: text, direction: '' } : splitNote(text);
+    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats };
 }
 
 // The first library entry `text` names that nothing the scene stands on

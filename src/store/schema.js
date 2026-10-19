@@ -305,8 +305,10 @@ function normalizeNarrative(value) {
 // passed), and a weather the story set, kept until a later watch.
 // needsNow: the clock started without knowing the story's time of day -
 // the director is asked for it (a NOW line) on its next briefing.
+// turnFrom: the time before the player's message moved it - what the
+// story's own reading of the time passed is counted from.
 export function emptyClock() {
-    return { planned: null, override: null, needsNow: false, readTo: null };
+    return { planned: null, override: null, needsNow: false, readTo: null, turnFrom: null };
 }
 
 function normalizeClock(value) {
@@ -317,7 +319,7 @@ function normalizeClock(value) {
     // How much of the latest reply has been read for time: a continue adds
     // to the same message, and only the new part is read.
     const readTo = isObject(c.readTo) && typeof c.readTo.source === 'string' && Number.isFinite(c.readTo.length) ? { source: c.readTo.source, length: c.readTo.length } : null;
-    return { planned, override, needsNow: c.needsNow === true, readTo };
+    return { planned, override, needsNow: c.needsNow === true, readTo, turnFrom: Number.isFinite(c.turnFrom) ? c.turnFrom : null };
 }
 
 export function emptyDirector() {

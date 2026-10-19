@@ -100,3 +100,41 @@ describe('a watch that ends at dawn', () => {
         expect(cueTarget(storyTimeCue(reply), 0.5)).toBeNull();
     });
 });
+
+// God War #452: the player packs up "over the next hour" and sets out for
+// the Blackened Bridge, one route away; the director wrote no format lines.
+import { headingAlong } from '../src/library/routes.js';
+
+describe('time the player narrates spending', () => {
+    it('reads "over the next hour" as an hour passed', () => {
+        expect(storyElapsed('Over the next hour, they gathered and packed their belongings back onto the horses.')).toBe('one hour');
+        expect(storyElapsed('For the next two hours they rode in silence.')).toBe('two hours');
+        expect(storyElapsed('Throughout the following hours, the rain kept on.')).toBe('a few hours');
+    });
+
+    it('leaves a span that is only planned or said', () => {
+        expect(storyElapsed('"We ride for the next two hours," Niamh said.')).toBe('');
+        expect(storyElapsed("We'll rest over the next hour.")).toBe('');
+        expect(storyElapsed('Over the next few minutes, he caught his breath.')).toBe('');
+    });
+});
+
+describe('the player setting out along a way on', () => {
+    const ways = [{ id: 'bridge', names: ['The Blackened Bridge'] }, { id: 'mill', names: ['Old Windmill'] }];
+
+    it('reads #452 as setting out for the bridge, together', () => {
+        const text = 'Remus nodded, offering her knowledge due respect. She had been right so far and that was good neough for him. Over the next hour, they gathered and packed their belongings back onto the horses and mounted up for the next leg of their journey... The blackened bridge.';
+        expect(headingAlong(text, ways)).toEqual({ id: 'bridge', name: 'The Blackened Bridge', together: true });
+    });
+
+    it('leaves a trip that is only planned, spoken of, or elsewhere', () => {
+        expect(headingAlong("We'll ride for the Blackened Bridge tomorrow.", ways)).toBeNull();
+        expect(headingAlong('"We set out for the Blackened Bridge at dawn," Niamh said. Remus nodded.', ways)).toBeNull();
+        expect(headingAlong('Remus looked at the map of the Blackened Bridge.', ways)).toBeNull();
+        expect(headingAlong('They set out for the coast.', ways)).toBeNull();
+    });
+
+    it('goes alone when the message says nothing of the others', () => {
+        expect(headingAlong('Remus mounted up and rode out toward the old windmill.', ways)).toEqual({ id: 'mill', name: 'Old Windmill', together: false });
+    });
+});

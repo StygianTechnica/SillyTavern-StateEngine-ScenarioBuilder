@@ -15,7 +15,7 @@ import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
 import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf } from '../library/library.js';
-import { routesFrom, listRoutes } from '../library/routes.js';
+import { routesFrom, listRoutes, headingAlong } from '../library/routes.js';
 import { pathOf } from '../library/hierarchy.js';
 import { listRelations, relationsFor } from '../library/relations-edit.js';
 import { setCanonical } from '../state/canonical.js';
@@ -395,6 +395,12 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     }
     const raw = preRaw ?? await callModelFirst([{ role: 'system', content: system }, { role: 'user', content: prompt }], settings.director.maxTokens);
     const parsed = parseDirectorNote(raw);
+    // A small model now and then tells the story instead of briefing it and
+    // runs out of room before any format line (SCENE, TIME, MOVE...).
+    const wroteLines = !!(parsed.scene || parsed.situation || parsed.time || parsed.move || parsed.enters.length || parsed.leaves.length);
+    // Cut off or told as story: parseDirectorNote trimmed it to whole
+    // sentences and took out the dialogue; what is left still goes on.
+    if (parsed.flaws.length) console.warn(LOG_PREFIX, `the briefing was ${parsed.flaws.join(' and ')}${wroteLines ? '' : ', with no format lines'}; trimmed to:`, parsed.note);
     // Whatever the director wrote of the player character's own actions,
     // thoughts or feelings goes - the narrator would copy it.
     const playerChar = settingId ? characters.find((c) => c.id === playerIdOf(settingId, characters)) : null;
@@ -467,6 +473,24 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         if (moved) {
             movedFrom = moved.from;
             baseCast = moved.castIds;
+        }
+    }
+    // No format lines at all: the player's message setting out along one of
+    // the ways on from here still moves the scene there (and the clock by
+    // its travel time, below). No extra call.
+    if (isNewTurn(type) && settingId && !wroteLines) {
+        const from = getChatDoc(chatKey).canonical.locationId || guidance.location?.id || '';
+        const ways = from ? routesFrom(from, listRoutes(settingId)).map((r) => known.find((e) => e.id === r.otherId)).filter(Boolean).map((e) => ({ id: e.id, names: [e.name, ...e.aliases] })) : [];
+        const heading = headingAlong(latestUserText, ways);
+        if (heading) {
+            console.info(LOG_PREFIX, `the director wrote no format lines; the player's message sets out for ${heading.name}`);
+            const along = heading.together ? (guidance.cast ?? []).filter((c) => !c.player).map((c) => c.name) : [];
+            const place = known.find((e) => e.id === heading.id)?.name ?? heading.name;
+            const moved = await moveScene(chatId, chatKey, settingId, { place, along, indoor: null }, { guidance, characters, castIds, recentText, known, playerNames, canCreate: false });
+            if (moved) {
+                movedFrom = moved.from;
+                baseCast = moved.castIds;
+            }
         }
     }
 
