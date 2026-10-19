@@ -32,11 +32,13 @@ import {
     addRequest, setRequestStatus, waitingRequests,
     setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, editBeat, lockBeat, removeBeat, addBeat,
     mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat,
+    volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
+import { questBoard } from '../quests/sync.js';
 import {
     buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline,
-    buildBeatPrompt, readBeat,
+    buildBeatPrompt, readBeat, buildRecapPrompt, readRecap,
 } from './prompts.js';
 
 export const PLANNER_EVENT = 'scenario_builder_planner';
@@ -97,8 +99,8 @@ async function runPass(kind, chatKey, fn) {
     }
 }
 
-async function ask({ system, prompt }) {
-    const raw = await callModel([{ role: 'system', content: system }, { role: 'user', content: prompt }], plannerSettings().maxTokens || 1200);
+async function ask({ system, prompt }, maxTokens = 0) {
+    const raw = await callModel([{ role: 'system', content: system }, { role: 'user', content: prompt }], Math.max(plannerSettings().maxTokens || 1200, maxTokens));
     const json = readModelJson(raw);
     if (!json) throw new Error('The model\'s answer was not JSON.');
     return json;
@@ -162,6 +164,9 @@ const UNDER_WAY_AFTER = 12;
 // events and open threads, and the quests. '' when there is nothing.
 async function storySoFar(gm, guidance) {
     const lines = [];
+    // The finished volumes come first: the story's own record of itself.
+    const earlier = previousVolumesText(gm);
+    if (earlier) lines.push('Earlier volumes:', earlier);
     if (gm.join.note) lines.push(`From the user: ${gm.join.note}`);
     try {
         const compiled = typeof window.StateEngineArchivist?.getCompiledMemory === 'function' ? await window.StateEngineArchivist.getCompiledMemory() : null;
@@ -196,6 +201,11 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
         const writing = !doc.gm.outline || rewrite;
         const chatLength = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).length;
         const startIndex = writing && doc.gm.join.act >= 0 && doc.gm.join.act < shape.acts.length ? doc.gm.join.act : -1;
+        // A new volume's first outline (nothing played out in it yet)
+        // starts at its first chapter, steered by what the user asked for.
+        const volume = doc.gm.volume;
+        const newVolume = writing && volume.number > 1 && !beatsOf(doc.gm.outline).some((b) => b.status === 'done') ? { number: volume.number } : null;
+        if (newVolume && !wish) wish = volume.direction;
         const parsed = readOutline(await ask(buildOutlinePrompt({
             dossier: dossierText({ ...guidance, ...ctx }),
             userName: userName(),
@@ -211,6 +221,7 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
             storySoFar: await storySoFar(doc.gm, guidance),
             underWay: chatLength > UNDER_WAY_AFTER,
             startAct: startIndex >= 0 ? { index: startIndex, title: shape.acts[startIndex].title } : null,
+            newVolume,
         })));
         if (!parsed) throw new Error('The outline had no beats in it.');
         updateChatDoc(chatKey, (d) => {
@@ -529,4 +540,63 @@ export function setJoin(chatKey, patch) {
         if (Number.isInteger(patch.act)) d.gm.join.act = patch.act;
         if (typeof patch.note === 'string') d.gm.join.note = patch.note.trim();
     });
+}
+
+// ---------------------------------------------------------------- volumes (§5.1)
+
+// A recap's length: longer for a longer volume, within reason.
+const recapWords = (replies) => Math.max(400, Math.min(1000, 300 + replies * 6));
+// Room for the longest recap and its JSON.
+const RECAP_TOKENS = 2000;
+
+// Writes the recap of the volume under way, files it away and begins the
+// next volume on `shape` with the user's steer. Nothing changes if the
+// recap fails. -> an outcome line, or null on failure.
+export async function finishVolume(chatId, chatKey, { shape = '', direction = '' } = {}) {
+    return runPass('recap', chatKey, async () => {
+        const doc = getChatDoc(chatKey);
+        const gm = doc.gm;
+        const settingId = await getBoundSettingId(chatId);
+        let summary = '';
+        let events = [];
+        try {
+            const compiled = typeof window.StateEngineArchivist?.getCompiledMemory === 'function' ? await window.StateEngineArchivist.getCompiledMemory() : null;
+            summary = compiled?.story_summary ?? '';
+            events = (compiled?.timeline ?? []).filter((e) => e?.major && e.text && (!Number.isInteger(e.message_index) || e.message_index >= gm.volume.startedIndex)).map((e) => e.text).slice(-20);
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'no Archivist summary for the recap', err);
+        }
+        let quests = [];
+        try {
+            quests = settingId ? (await questBoard(chatId, chatKey, settingId)).map((q) => ({ name: q.name, status: q.status })) : [];
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'no quests for the recap', err);
+        }
+        const complete = volumeComplete(gm.outline);
+        const recap = readRecap(await ask(buildRecapPrompt({
+            userName: userName(),
+            number: gm.volume.number,
+            shape: shapeOf(gm.shape)?.label ?? '',
+            outline: gm.outline,
+            chronicle: gm.volume.chronicle,
+            summary,
+            events,
+            quests,
+            previous: previousVolumesText(gm, { full: false }),
+            closedEarly: !complete,
+            words: recapWords(gm.counters.turn - gm.volume.startedTurn),
+        }), RECAP_TOKENS));
+        if (!recap) throw new Error('The recap came back empty.');
+        const index = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).length;
+        let record = null;
+        updateChatDoc(chatKey, (d) => {
+            record = closeVolume(d.gm, recap, { shape: shapeOf(d.gm.shape)?.label ?? '', turn: d.gm.counters.turn, day: d.canonical.day, index, closedEarly: !complete });
+            startVolume(d.gm, { shape: shapeOf(shape) ? shape : d.gm.shape, direction, turn: d.gm.counters.turn, day: d.canonical.day, index });
+        });
+        return `"${record.title}" filed; volume ${record.number + 1} begins`;
+    });
+}
+
+export function editFinishedVolume(chatKey, number, patch) {
+    updateChatDoc(chatKey, (d) => editVolume(d.gm, number, patch));
 }

@@ -6,12 +6,12 @@
 
 import { getSettings, saveSettings } from '../settings.js';
 import { getChatDoc } from '../store/chat-store.js';
-import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeiled, openRequests, currentAct } from '../planner/model.js';
+import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeiled, openRequests, currentAct, volumeComplete, volumeReadings, storyMarkdown } from '../planner/model.js';
 import { SHAPES, shapeCurve, targetAt } from '../planner/shapes.js';
 import {
     getPlannerStatus, runDay, runCheck, runInspire, runOutline, runBeat, queueRequest, withdrawRequest, addInspiration, removeInspiration,
     setMotifs, peek, setHold, storyState, setShape, editOutlineBeat, lockOutlineBeat, removeOutlineBeat, addOutlineBeat,
-    finishOutlineBeat, setOutlineText, setJoin,
+    finishOutlineBeat, setOutlineText, setJoin, finishVolume, editFinishedVolume,
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
 import { ws, rerender, markDirty } from './ws.js';
@@ -242,14 +242,15 @@ function outlineCard(gm, show) {
     const outline = gm.outline;
     const cur = currentAct(outline);
     const aim = state.aim;
-    const readings = gm.tension;
+    const readings = volumeReadings(gm);
+    const complete = volumeComplete(outline);
     const source = readings.length ? (readings[readings.length - 1].source === 'archivist' ? 'from Archivist' : 'the game master\'s own reading') : '';
     const premise = !outline?.premise && !isEditing('premise') ? null
         : isEditing('premise')
             ? inlineEditor('premise', { onSave: (text) => setOutlineText(chatKey, { premise: text }), placeholder: 'What this story is about', allowEmpty: true })
             : h('div', { class: 'sb-gm-premise' }, h('span', {}, outline.premise), h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: () => startEdit('premise', outline.premise) }, icon('fa-pen')));
     return h('div', { class: 'sb-card' },
-        h('div', { class: 'sb-card-title' }, icon('fa-route'), 'The story',
+        h('div', { class: 'sb-card-title' }, icon('fa-route'), gm.volume.number > 1 || gm.volumes.length ? `Volume ${gm.volume.number}` : 'The story',
             h('span', { class: 'sb-gm-title-tools' },
                 select(SHAPES.map((s) => ({ value: s.id, label: s.label })), state.shape.id, { onchange: (e) => setShape(chatKey, e.target.value), title: 'The story\'s shape' }),
                 aim ? h('span', { class: `sb-chip sb-gm-aim-${aim.word}`, title: aim.why }, icon(AIM_ICON[aim.word]), `${aim.word} · ${aim.lean}`) : null)),
@@ -271,10 +272,82 @@ function outlineCard(gm, show) {
                 isEditing(`add:${act.id}`) ? inlineEditor(`add:${act.id}`, { onSave: (text) => addOutlineBeat(chatKey, act.id, text), placeholder: `A new beat for "${act.title}"`, saveLabel: 'Add', saveIcon: 'fa-plus', hint: 'Your beat is locked: the planner keeps it. Ctrl+Enter to add, Esc to cancel.' }) : null);
         }),
         isEditing('regen-outline') ? regeneratePanel(chatId, chatKey) : null,
+        complete && !isEditing('next-volume') ? h('div', { class: 'sb-gm-complete' },
+            h('div', {}, icon('fa-flag-checkered'), h('b', {}, ' This volume is complete.'), ' Every beat of its last chapter has played out.'),
+            h('small', { class: 'sb-hint' }, 'Continue with a new volume - its recap is written first - or keep going in this one: the game master keeps winding it down until you choose.'),
+            h('div', { class: 'sb-actions' }, button('Continue with a new volume…', () => startEdit('next-volume', '', state.shape.id), { iconName: 'fa-book', cls: 'sb-primary', disabled: busy }))) : null,
+        isEditing('next-volume') ? nextVolumePanel(gm, chatId, chatKey, complete) : null,
         h('div', { class: 'sb-actions' },
             button(outline ? 'Review against the story' : 'Write the outline now', () => void running(outline ? 'Reviewing the outline' : 'Writing the outline', () => runOutline(chatId, chatKey)), { iconName: 'fa-feather', disabled: busy }),
-            outline && !isEditing('regen-outline') ? button('Regenerate…', () => startEdit('regen-outline', '', true), { iconName: 'fa-dice', disabled: busy, title: 'Write the outline again - with a steer if you like' }) : null),
+            outline && !isEditing('regen-outline') ? button('Regenerate…', () => startEdit('regen-outline', '', true), { iconName: 'fa-dice', disabled: busy, title: 'Write the outline again - with a steer if you like' }) : null,
+            outline && !complete && !isEditing('next-volume') ? button('Close this volume…', () => startEdit('next-volume', '', state.shape.id), { iconName: 'fa-book', disabled: busy, title: 'End this arc now and go on with a new volume' }) : null),
         gm.outlineWanted && outline ? h('small', { class: 'sb-hint' }, icon('fa-clock'), ' A review is due on the next pass.') : null);
+}
+
+// ---- volumes (§5.1)
+
+// The next volume: its shape and an optional steer; the volume under way is
+// recapped and filed first.
+function nextVolumePanel(gm, chatId, chatKey, complete) {
+    const next = gm.volume.number + 1;
+    return h('div', { class: 'sb-gm-regen' },
+        h('div', { class: 'sb-card-title' }, icon('fa-book'), complete ? `Volume ${next}` : `Close volume ${gm.volume.number} and begin volume ${next}`),
+        !complete ? h('small', { class: 'sb-hint' }, 'The beats this volume has not reached are kept in its record as not reached.') : null,
+        inlineEditor('next-volume', {
+            onSave: (direction, shape) => void running(`Writing the recap of volume ${gm.volume.number}`, () => finishVolume(chatId, chatKey, { shape, direction })),
+            placeholder: 'Where should the next volume go? (optional - e.g. "the war comes to Redhaven", "something quieter")',
+            saveLabel: `Write the recap and begin volume ${next}`, saveIcon: 'fa-feather', allowEmpty: true,
+            hint: 'The recap is written in the background; the new outline follows on the next pass.',
+            extra: field('Story shape', select(SHAPES.map((sh) => ({ value: sh.id, label: sh.label })), editing?.flag ?? gm.shape, {
+                onchange: (e) => { if (editing) editing.flag = e.target.value; },
+            })),
+        }));
+}
+
+function volumeRecord(gm, v, chatKey) {
+    const key = (what) => `${what}:${v.number}`;
+    const meta = [v.shape, v.startedDay === v.endedDay ? `day ${v.startedDay}` : `days ${v.startedDay}-${v.endedDay}`, `${Math.max(0, v.endedTurn - v.startedTurn)} replies`, v.closedEarly ? 'closed early' : ''].filter(Boolean).join(' · ');
+    const tools = h('span', { class: 'sb-gm-title-tools' },
+        h('div', { class: 'sb-iconbtn', title: 'Rename', onclick: () => startEdit(key('vtitle'), v.title) }, icon('fa-heading')),
+        h('div', { class: 'sb-iconbtn', title: 'Edit the recap', onclick: () => startEdit(key('vrecap'), v.recap) }, icon('fa-pen')),
+        h('div', { class: 'sb-iconbtn', title: 'Edit the threads carried forward', onclick: () => startEdit(key('vthreads'), v.threads.join('\n')) }, icon('fa-list')));
+    const open = ['vtitle', 'vrecap', 'vthreads'].some((w) => isEditing(key(w))) || null;
+    return h('details', { class: 'sb-gm-volume', open },
+        h('summary', {}, h('b', {}, `Volume ${v.number}: ${v.title}`), h('small', { class: 'sb-hint' }, ` ${meta}`)),
+        h('div', { class: 'sb-gm-volume-body' },
+            tools,
+            isEditing(key('vtitle')) ? inlineEditor(key('vtitle'), { onSave: (text) => editFinishedVolume(chatKey, v.number, { title: text }), placeholder: 'The volume\'s title' }) : null,
+            isEditing(key('vrecap'))
+                ? inlineEditor(key('vrecap'), { onSave: (text) => editFinishedVolume(chatKey, v.number, { recap: text }), placeholder: 'The recap', allowEmpty: true })
+                : h('div', { class: 'sb-gm-recap' }, (v.recap || '(no recap)').split(/\n\s*\n/).map((para) => h('p', {}, para.trim()))),
+            isEditing(key('vthreads'))
+                ? inlineEditor(key('vthreads'), { onSave: (text) => editFinishedVolume(chatKey, v.number, { threads: text.split('\n').map((t) => t.trim()).filter(Boolean) }), placeholder: 'One thread per line', allowEmpty: true, hint: 'One thread per line. Ctrl+Enter to save, Esc to cancel.' })
+                : v.threads.length ? h('div', {}, h('div', { class: 'sb-gm-sub' }, 'Threads carried forward'), h('ul', { class: 'sb-gm-threads' }, v.threads.map((t) => h('li', {}, t)))) : null,
+            v.editedByUser ? h('small', { class: 'sb-hint' }, icon('fa-user-pen'), ' Edited by you') : null));
+}
+
+// The finished volumes, newest first, with the story so far to copy or save.
+function volumesCard(gm) {
+    if (!gm.volumes.length) return null;
+    const { chatKey } = ws.ctx;
+    const markdown = () => storyMarkdown(gm);
+    const copy = async () => {
+        try { await navigator.clipboard.writeText(markdown()); toast('success', 'The story so far is copied.'); } catch { toast('warning', 'Could not copy - your browser blocked it.'); }
+    };
+    const save = () => {
+        const url = URL.createObjectURL(new Blob([markdown()], { type: 'text/markdown' }));
+        const a = h('a', { href: url, download: 'story-so-far.md' });
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    };
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-book-bookmark'), 'The story so far',
+            h('span', { class: 'sb-gm-title-tools' },
+                button('Copy', () => void copy(), { iconName: 'fa-copy', title: 'Copy every recap, in order, as Markdown' }),
+                button('Save', save, { iconName: 'fa-download', title: 'Save every recap as a Markdown file' }))),
+        ...gm.volumes.slice().reverse().map((v) => volumeRecord(gm, v, chatKey)));
 }
 
 // ---- today
@@ -438,6 +511,6 @@ export async function renderGmPlan() {
     const show = getSettings().planner.showSpoilers === true;
     return h('div', { class: 'sb-gm-plan' },
         h('div', { class: 'sb-scene-cols' },
-            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), todayCard(gm, show), queueCard(gm), inspirationCard(gm)),
+            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), volumesCard(gm), todayCard(gm, show), queueCard(gm), inspirationCard(gm)),
             h('div', { class: 'sb-gm-col' }, paceCard(gm), settingsCard(gm))));
 }

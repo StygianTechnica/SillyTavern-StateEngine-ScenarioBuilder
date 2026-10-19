@@ -530,3 +530,13 @@
 .sb-gm-edit .sb-actions .sb-hint { margin-left: auto; font-size: 0.85em; }
 .sb-gm-regen { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px dashed var(--sb-gold); border-radius: var(--sb-radius); }
 .sb-gm-beat .sb-gm-text s { opacity: 0.6; display: block; margin-bottom: 4px; }
+
+/* GM Plan tab: volumes. */
+.sb-gm-complete { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--sb-gold); border-radius: var(--sb-radius); background: rgba(232, 176, 74, 0.08); }
+.sb-gm-complete i { color: var(--sb-gold); }
+.sb-gm-volume { border-top: 1px solid var(--sb-line); padding: 6px 0; }
+.sb-gm-volume > summary { cursor: pointer; }
+.sb-gm-volume-body { display: flex; flex-direction: column; gap: 6px; padding: 6px 0 2px 14px; }
+.sb-gm-volume-body > .sb-gm-title-tools { margin-left: 0; justify-content: flex-end; }
+.sb-gm-recap p { margin: 0 0 8px; line-height: 1.5; }
+.sb-gm-threads { margin: 2px 0 0; padding-left: 18px; }

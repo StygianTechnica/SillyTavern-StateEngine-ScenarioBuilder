@@ -168,12 +168,15 @@ export function readCheck(json) {
 //   threads and quests), underWay (the story is well past its beginning),
 //   startAct: { index, title } (the user says the story is in this act now),
 //   keepLocked (a rewrite keeps the user's locked beats; default true),
-//   wish (the user's steer for a rewrite, or '') }
+//   wish (the user's steer for a rewrite, or ''), newVolume: { number }
+//   (the first outline of a new volume: it starts at its first act, growing
+//   out of the volumes before) }
 export function buildOutlinePrompt(input) {
     const userName = clean(input.userName) || 'the player';
     const shape = input.shape;
     const writing = !input.outline || input.rewrite;
-    const joining = writing && (input.underWay || !!input.startAct || !!String(input.storySoFar ?? '').trim());
+    const fresh = writing && !!input.newVolume;
+    const joining = writing && !fresh && (input.underWay || !!input.startAct || !!String(input.storySoFar ?? '').trim());
     const system = [
         'You are the game master of an ongoing roleplay, keeping the long-term outline of the story in private. Another writer narrates; you steer through briefings. The outline is where the story could go - a direction, never a script: the player may take it anywhere, and the outline follows.',
         joining ? 'This story is already under way: you are taking over a game in progress. Never start it over or go back to its beginning - the outline begins where the story already is.' : '',
@@ -205,6 +208,13 @@ export function buildOutlinePrompt(input) {
         }
     }
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (weave them in as recurring images, echoes and turns of fate - never as literal events or retold plot)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));
+    if (fresh) {
+        parts.push(
+            '',
+            `A NEW VOLUME - VOLUME ${input.newVolume.number}`,
+            'The volumes before this one are finished (see the story so far). This is a new arc in the same world, with the same people and their history: it begins at the first act of the shape, now. Grow it out of where the last volume left things - its threads carried forward, the people\'s changed relationships, what was won and lost - without retelling it. Every beat starts "pending" except the first, which is "active".',
+        );
+    }
     if (joining) {
         const start = input.startAct;
         parts.push(
@@ -227,6 +237,58 @@ export function buildOutlinePrompt(input) {
         ' "seeds":[{"text":"<what to plant>","payoff":"<the beat it pays off>"}]}',
     );
     return { system, prompt: parts.join('\n') };
+}
+
+// RECAP: the narrative of a finished volume, for the user (§5.1).
+// input: { userName, number, shape (label), outline, chronicle: [{ day,
+//   text }], summary (Archivist's story summary, or ''), events: [text]
+//   (its major events in the volume), quests: [{ name, status }],
+//   previous (the volumes before, short), closedEarly, words (a target) }
+export function buildRecapPrompt(input) {
+    const userName = clean(input.userName) || 'the player';
+    const outline = input.outline;
+    const system = [
+        'You are the chronicler of an ongoing roleplay. A volume of the story has ended, and you write its recap for the person who plays it - so they have the full picture of what has happened.',
+        `Write it as narrative prose in the past tense, like the "previously" of a novel series: what happened from the beginning to the end of this volume, who did what, what was won and lost, what changed between people, and what was left unresolved. ${userName} is the player character; tell what ${userName} did as history.`,
+        'Use only what the material below says happened; never invent events. Answer with JSON only.',
+    ].join(' ');
+    const parts = [];
+    if (clean(input.previous)) parts.push('THE VOLUMES BEFORE (for context only - do not recap them again)', String(input.previous).slice(0, 3000), '');
+    parts.push(`VOLUME ${input.number}${clean(input.shape) ? ` (${clean(input.shape)})` : ''}${input.closedEarly ? ' - closed before its outline was finished' : ''}`);
+    if (clean(outline?.premise)) parts.push(`What it was about: ${clean(outline.premise)}`);
+    if (outline?.acts?.length) {
+        parts.push('', 'ITS OUTLINE (what the story played out, and what it never reached)');
+        outline.acts.forEach((a, i) => {
+            parts.push(`Chapter ${i + 1}: ${a.title}`);
+            for (const b of a.beats) parts.push(`- ${b.text} - ${b.status === 'done' ? 'happened' : b.status === 'skipped' ? 'did not happen' : 'not reached'}${b.note ? ` (${b.note})` : ''}`);
+        });
+    }
+    const chronicle = list(input.chronicle);
+    if (chronicle.length) {
+        parts.push('', 'WHAT PLAYED OUT, IN ORDER');
+        for (const c of chronicle) parts.push(`- ${Number.isInteger(c.day) ? `[day ${c.day}] ` : ''}${clean(c.text)}`);
+    }
+    if (clean(input.summary)) parts.push('', 'THE STORY\'S OWN SUMMARY (from its memory)', cut(input.summary, 2500));
+    const events = texts(input.events, 20);
+    if (events.length) parts.push('', 'MAJOR EVENTS', ...events.map((e) => `- ${e}`));
+    const quests = list(input.quests).filter((q) => clean(q?.name));
+    if (quests.length) parts.push('', 'QUESTS', ...quests.map((q) => `- ${clean(q.name)}: ${clean(q.status) || 'open'}`));
+    const words = Number.isInteger(input.words) ? input.words : 600;
+    parts.push(
+        '',
+        'WRITE THE RECAP',
+        `About ${words} words in several paragraphs, the first one a short overview of the whole volume. Then give the volume a title of two to six words, and list the threads still open that should matter in the next volume (one short line each).`,
+        'Answer in this JSON shape: {"title":"<title>","recap":"<the recap; paragraphs separated by \\n\\n>","threads":["<an open thread>"]}',
+    );
+    return { system, prompt: parts.join('\n') };
+}
+
+// -> { title, recap, threads } or null.
+export function readRecap(json) {
+    if (!isObject(json)) return null;
+    const recap = String(json.recap ?? '').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim();
+    if (recap.length < 40) return null;
+    return { title: cut(json.title, 80), recap: recap.slice(0, 8000), threads: texts(json.threads, 10).map((t) => cut(t, 200)) };
 }
 
 // BEAT: one beat of the outline written afresh. input: { dossier,

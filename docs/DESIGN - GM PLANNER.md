@@ -1,12 +1,15 @@
 # Design: the GM Planner
 
-Status: **phases 1 and 2 built** (2026-10-18). Phase 1: the day plan,
+Status: **phases 1-3 built** (2026-10-18). Phase 1: the day plan,
 CHECK and INSPIRE passes, the guidance queue, inspiration texts, pacing,
 the GM PLAN section with BEAT lines and the GM Plan tab (src/planner/,
 src/ui/gm-plan.js). Phase 2: story shapes and the tension aim
 (src/planner/shapes.js), Archivist's tension readings (or CHECK's own),
 the OUTLINE pass, and the outline with its chart in the GM Plan tab.
-Phases 3-5 are still design (volumes and recaps, §5.1, added after phase 2).
+Phase 3: volumes (§5.1) - the chronicle, the RECAP pass, finishing or
+closing a volume and beginning the next, the story so far - and the
+/sb-request and /sb-requests slash commands (src/ui/slash-commands.js).
+Phases 4-5 are still design.
 
 Today the game master (src/director/) works one reply at a time. Before each
 reply it reads the recent chat and the scene, then briefs the narrator on

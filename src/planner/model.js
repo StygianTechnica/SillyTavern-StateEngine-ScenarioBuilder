@@ -27,6 +27,15 @@
 //                                               readings, oldest first (Archivist's, or the
 //                                               planner's own without it); the last TENSION_LIMIT
 //   outlineWanted                               Archivist compiled: OUTLINE on the next pass
+//   volume: { number, startedTurn, startedDay, startedIndex, direction,
+//             chronicle: [{ at, day, text }] }  the volume under way (§5.1): where it began
+//                                               (reply count, in-game day, message index), the
+//                                               user's steer for its first outline, and one line
+//                                               per beat or moment the story played out
+//   volumes: [{ number, title, shape, premise, themes, recap, threads: [text],
+//               beats: [{ text, status }], startedTurn, endedTurn, startedDay, endedDay,
+//               startedIndex, endedIndex, endedAt, closedEarly, editedByUser }]
+//                                               finished volumes, oldest first
 //   join: { act, note }                         a story already under way: the chapter (act
 //                                               index, -1 = let the planner judge) it is in
 //                                               now, and the user's note on the story so far
@@ -76,6 +85,8 @@ export function emptyGm() {
         tension: [],
         outlineWanted: false,
         join: { act: -1, note: '' },
+        volume: emptyVolume(1),
+        volumes: [],
     };
 }
 
@@ -148,6 +159,8 @@ export function normalizeGm(value) {
         tension: (Array.isArray(g.tension) ? g.tension : []).map(normalizeReading).filter(Boolean).slice(-TENSION_LIMIT),
         outlineWanted: g.outlineWanted === true,
         join: { act: Number.isInteger(g.join?.act) && g.join.act >= 0 ? g.join.act : -1, note: str(g.join?.note).trim().slice(0, 4000) },
+        volume: normalizeVolume(g.volume),
+        volumes: (Array.isArray(g.volumes) ? g.volumes : []).map(normalizeVolumeRecord).filter(Boolean),
     };
 }
 
@@ -263,7 +276,11 @@ export function applyCheck(gm, check) {
     if (!gm.day) return;
     const mark = (id, status, note) => {
         const m = gm.day.moments.find((x) => x.id === clean(id));
-        if (m && m.status === 'pending') { m.status = status; if (note) m.note = clean(note); }
+        if (m && m.status === 'pending') {
+            m.status = status;
+            if (note) m.note = clean(note);
+            if (status === 'done') addChronicle(gm, m.note ? `${m.text} (${m.note})` : m.text);
+        }
     };
     for (const id of check.done ?? []) mark(typeof id === 'object' ? id?.id : id, 'done', typeof id === 'object' ? id?.how : '');
     for (const s of check.skipped ?? []) mark(typeof s === 'object' ? s?.id : s, 'skipped', typeof s === 'object' ? s?.why : '');
@@ -285,6 +302,7 @@ export function applyBeats(gm, beats) {
         m.status = b.status === 'done' ? 'done' : 'skipped';
         m.note = clean(b.note);
         if (m.status === 'skipped') skipped = true;
+        else addChronicle(gm, m.note ? `${m.text} (${m.note})` : m.text);
     }
     settleRequests(gm);
     if (skipped) gm.checkWanted = true;
@@ -367,7 +385,7 @@ export function paceAim(gm, { level = 'gentle', recentUser = [], tense = false, 
 export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null, dayExpire = null, outlineEvery = null } = {}) {
     const cadence = LEVEL_CADENCE[level] ?? LEVEL_CADENCE.moderate;
     const out = [];
-    if (gm.shape) {
+    if (gm.shape && !volumeComplete(gm.outline)) {
         const often = Number.isInteger(outlineEvery) ? outlineEvery : cadence.outline;
         if (!gm.outline ? turn >= FIRST_OUTLINE_AFTER
             : (often > 0 && gm.counters.sinceOutline >= often) || (cadence.compile && gm.outlineWanted)) out.push('outline');
@@ -469,6 +487,7 @@ const past = (b) => b.status === 'done' || b.status === 'skipped';
 // keepLocked false (a regenerate that starts afresh): locked beats still
 // to come are dropped too - only what the story has done is kept.
 export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString(), keepLocked = true } = {}) {
+    const wasDone = new Set(beatsOf(gm.outline).filter((b) => b.status === 'done').map((b) => b.id));
     const kept = (b) => (keepLocked && b.locked) || past(b);
     const old = new Map(beatsOf(gm.outline).filter((b) => keepLocked || past(b)).map((b) => [b.id, b]));
     const used = new Set();
@@ -512,6 +531,7 @@ export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString()
         madeTurn: turn,
     });
     if (gm.outline) settleActive(gm.outline);
+    for (const b of beatsOf(gm.outline)) if (b.status === 'done' && !wasDone.has(b.id) && !b.locked) addChronicle(gm, `Beat: ${b.text}`, { at });
 }
 
 // The user's own changes. An edited or added beat is locked: the planner
@@ -571,6 +591,7 @@ export function finishBeat(gm, id) {
     const b = beatsOf(gm.outline).find((x) => x.id === id);
     if (!b || b.status === 'done') return;
     b.status = 'done';
+    addChronicle(gm, `Beat: ${b.text}`);
     settleActive(gm.outline);
 }
 
@@ -604,6 +625,150 @@ export function addOwnReading(gm, reading, { index = null, at = new Date().toISO
 
 // -> { now, recent } (recent: the readings before now, oldest first).
 export function tensionNow(gm) {
-    const list = gm.tension;
+    const list = volumeReadings(gm);
     return { now: list[list.length - 1] ?? null, recent: list.slice(-8, -1) };
+}
+
+// ---------------------------------------------------------------- volumes (§5.1)
+
+const CHRONICLE_LIMIT = 80;
+const RECAP_CHARS = 8000;
+
+function emptyVolume(number, start = {}) {
+    return { number, startedTurn: start.turn ?? 0, startedDay: start.day ?? 1, startedIndex: start.index ?? 0, direction: '', chronicle: [] };
+}
+
+function normalizeVolume(v) {
+    if (!isObject(v)) return emptyVolume(1);
+    return {
+        number: Number.isInteger(v.number) && v.number > 0 ? v.number : 1,
+        startedTurn: int(v.startedTurn),
+        startedDay: Number.isInteger(v.startedDay) && v.startedDay > 0 ? v.startedDay : 1,
+        startedIndex: int(v.startedIndex),
+        direction: clean(v.direction).slice(0, 600),
+        chronicle: (Array.isArray(v.chronicle) ? v.chronicle : []).filter((c) => isObject(c) && clean(c.text))
+            .map((c) => ({ at: str(c.at), day: Number.isInteger(c.day) ? c.day : null, text: clean(c.text).slice(0, 300) })).slice(-CHRONICLE_LIMIT),
+    };
+}
+
+function normalizeVolumeRecord(r) {
+    if (!isObject(r) || !Number.isInteger(r.number)) return null;
+    return {
+        number: r.number,
+        title: clean(r.title).slice(0, 120) || `Volume ${r.number}`,
+        shape: clean(r.shape),
+        premise: clean(r.premise).slice(0, 1200),
+        themes: strList(r.themes).slice(0, 8),
+        recap: str(r.recap).trim().slice(0, RECAP_CHARS),
+        threads: strList(r.threads).slice(0, 12),
+        beats: (Array.isArray(r.beats) ? r.beats : []).filter((b) => isObject(b) && clean(b.text))
+            .map((b) => ({ text: clean(b.text).slice(0, 300), status: ['done', 'skipped', 'not reached'].includes(b.status) ? b.status : 'not reached' })).slice(0, 60),
+        startedTurn: int(r.startedTurn), endedTurn: int(r.endedTurn),
+        startedDay: int(r.startedDay, 1), endedDay: int(r.endedDay, 1),
+        startedIndex: int(r.startedIndex), endedIndex: int(r.endedIndex),
+        endedAt: str(r.endedAt),
+        closedEarly: r.closedEarly === true,
+        editedByUser: r.editedByUser === true,
+    };
+}
+
+// One line in the volume's chronicle: something the story played out.
+export function addChronicle(gm, text, { day = gm.day?.day ?? null, at = new Date().toISOString() } = {}) {
+    if (!clean(text)) return;
+    const last = gm.volume.chronicle[gm.volume.chronicle.length - 1];
+    if (last && last.text === clean(text)) return;
+    gm.volume.chronicle = [...gm.volume.chronicle, { at, day, text: clean(text).slice(0, 300) }].slice(-CHRONICLE_LIMIT);
+}
+
+// A volume is complete when every beat of its last chapter has played out
+// (done or skipped).
+export function volumeComplete(outline) {
+    const acts = outline?.acts ?? [];
+    const last = acts[acts.length - 1];
+    return !!last && last.beats.length > 0 && last.beats.every((b) => b.status === 'done' || b.status === 'skipped');
+}
+
+// The tension readings taken in the volume under way: Archivist's by
+// message index, the planner's own by reply count.
+export function volumeReadings(gm) {
+    const v = gm.volume;
+    return gm.tension.filter((r) => r.index === null || (r.source === 'archivist' ? r.index >= v.startedIndex : r.index >= v.startedTurn));
+}
+
+// Files the volume under way away. recap: a RECAP pass's answer (or the
+// user's own) { title, recap, threads }; end: { turn, day, index, shape
+// (label), closedEarly }. -> the record.
+export function closeVolume(gm, recap, end = {}) {
+    const v = gm.volume;
+    const record = normalizeVolumeRecord({
+        number: v.number,
+        title: recap.title,
+        shape: end.shape ?? '',
+        premise: gm.outline?.premise ?? '',
+        themes: gm.outline?.themes ?? [],
+        recap: recap.recap,
+        threads: recap.threads,
+        beats: beatsOf(gm.outline).map((b) => ({ text: b.text, status: b.status === 'done' || b.status === 'skipped' ? b.status : 'not reached' })),
+        startedTurn: v.startedTurn, endedTurn: end.turn ?? gm.counters.turn,
+        startedDay: v.startedDay, endedDay: end.day ?? v.startedDay,
+        startedIndex: v.startedIndex, endedIndex: end.index ?? v.startedIndex,
+        endedAt: end.at ?? new Date().toISOString(),
+        closedEarly: end.closedEarly === true || !volumeComplete(gm.outline),
+    });
+    gm.volumes = [...gm.volumes.filter((x) => x.number !== record.number), record].sort((a, b) => a.number - b.number);
+    return record;
+}
+
+// Begins the next volume: a new outline on `shape` (the planner writes it on
+// its next pass), with the user's steer. The day plan, the queue, the
+// inspirations and pacing carry on.
+export function startVolume(gm, { shape = gm.shape, direction = '', turn = gm.counters.turn, day = 1, index = 0 } = {}) {
+    const number = Math.max(gm.volume.number, ...gm.volumes.map((x) => x.number)) + 1;
+    gm.volume = { ...emptyVolume(number, { turn, day, index }), direction: clean(direction).slice(0, 600) };
+    gm.shape = clean(shape);
+    gm.outline = null;
+    gm.join = { act: -1, note: '' };
+    gm.outlineWanted = false;
+    gm.counters.sinceOutline = 0;
+    gm.peeked = [];
+}
+
+// The user's edits to a finished volume: title, recap, threads.
+export function editVolume(gm, number, patch) {
+    const v = gm.volumes.find((x) => x.number === number);
+    if (!v) return;
+    if (typeof patch.title === 'string' && clean(patch.title)) v.title = clean(patch.title).slice(0, 120);
+    if (typeof patch.recap === 'string') v.recap = patch.recap.trim().slice(0, RECAP_CHARS);
+    if (Array.isArray(patch.threads)) v.threads = strList(patch.threads).slice(0, 12);
+    v.editedByUser = true;
+}
+
+const firstParagraph = (text) => str(text).trim().split(/\n\s*\n/)[0]?.trim() ?? '';
+
+// The earlier volumes for the passes' prompts: the latest recap in full,
+// earlier ones by their first paragraph, and the threads carried forward.
+// full false: the short form (the latest recap's first paragraph only).
+export function previousVolumesText(gm, { full = true } = {}) {
+    const list = gm.volumes;
+    if (!list.length) return '';
+    const latest = list[list.length - 1];
+    const lines = [];
+    for (const v of list.slice(0, -1)) lines.push(`Volume ${v.number}, "${v.title}": ${firstParagraph(v.recap)}`);
+    lines.push(`Volume ${latest.number}, "${latest.title}" (the volume before this one): ${full ? latest.recap : firstParagraph(latest.recap)}`);
+    if (latest.threads.length) lines.push('Threads carried forward:', ...latest.threads.map((t) => `- ${t}`));
+    return lines.join('\n');
+}
+
+// The whole story so far as Markdown: every finished volume's recap, in
+// order.
+export function storyMarkdown(gm, title = 'The story so far') {
+    const out = [`# ${title}`, ''];
+    for (const v of gm.volumes) {
+        out.push(`## Volume ${v.number}: ${v.title}`, '');
+        const meta = [v.shape, `days ${v.startedDay}-${v.endedDay}`, v.closedEarly ? 'closed early' : ''].filter(Boolean).join(' · ');
+        if (meta) out.push(`*${meta}*`, '');
+        out.push(v.recap || '(no recap)', '');
+        if (v.threads.length) out.push('**Threads carried forward:**', ...v.threads.map((t) => `- ${t}`), '');
+    }
+    return out.join('\n').trim() + '\n';
 }

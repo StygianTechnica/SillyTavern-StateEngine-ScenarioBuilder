@@ -23,6 +23,7 @@ import { startLifecycle } from './state/lifecycle.js';
 import { addSettingsDrawer } from './ui/settings-drawer.js';
 import { exposeScenarioBuilderApi } from './public-api.js';
 import { startReviewNotice } from './ui/review-notice.js';
+import { registerSlashCommands } from './ui/slash-commands.js';
 import { pruneSettingDocs } from './store/setting-store.js';
 import { listAllSettings } from './library/library.js';
 
@@ -96,5 +97,7 @@ export async function initExtension() {
     } catch (err) {
         console.error(`${LOG_PREFIX} the review notification failed to start.`, err);
     }
+    // /sb-request and /sb-requests (best-effort; never stops loading).
+    registerSlashCommands();
     exposeScenarioBuilderApi();
 }
