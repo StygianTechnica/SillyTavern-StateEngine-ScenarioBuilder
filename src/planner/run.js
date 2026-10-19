@@ -293,6 +293,8 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             previous: sameDay ? doc.gm.day : null,
             rest: rest || sameDay,
             story: storyWords(doc.gm),
+            place: (guidance.location?.path ?? []).slice(-1)[0] ?? '',
+            situation: doc.canonical.sceneSummary,
             happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today' })),
         });
         const plan = readDayPlan(await ask({ system, prompt }));

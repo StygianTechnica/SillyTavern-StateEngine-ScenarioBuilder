@@ -25,7 +25,7 @@ import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import { callModelFirst } from '../generate/llm.js';
 import { gatherInputs } from '../guidance/sync.js';
-import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs } from './prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
 import { directorPlan, takeBeats, markActive } from '../planner/run.js';
@@ -326,7 +326,7 @@ async function run(chatId, chatKey, type, force) {
         ...(guidance.lore ?? []).map((x) => x.id),
         ...[...(guidance.location?.places ?? []), ...factions, ...eventObjects, ...scenes, ...(guidance.quests ?? [])].map((x) => String(x.name ?? '').trim().toLowerCase()),
     ].filter(Boolean));
-    const relevant = alsoRelevant(everything, { recentText: messages.slice(-6).map((m) => m.text).join('\n'), sceneIds: [...placeIds, ...castIds], covered, typeLabel: (t) => labelOf.get(t) ?? t });
+    const relevant = alsoRelevant(everything, { recentText: messages.slice(-6).map((m) => m.text).join('\n'), sceneIds: [...placeIds, ...castIds], covered, typeLabel: (t) => labelOf.get(t) ?? t, placeName: (id) => everything.find((e) => e.id === id)?.name ?? '' });
     const { system, prompt } = buildDirectorPrompt({
         ...guidance,
         messages,
@@ -386,6 +386,17 @@ async function run(chatId, chatKey, type, force) {
     // The scene's title: the game master names it, and renames it when the
     // scene moves on (sb__canon_scene; also written into sb__scene_title).
     const currentTitle = getChatDoc(chatKey).canonical.sceneTitle;
+    // Never a title or situation that names something the scene doesn't
+    // stand on (a place only the notes mention): the model drifting. The
+    // names and aliases of where the scene is and who is here count.
+    const allowedText = [...messages.filter((m) => m.isUser).map((m) => m.text), ...(guidance.location?.path ?? []), ...(guidance.cast ?? []).map((c) => c.name), ...known.filter((e) => placeIds.includes(e.id) || castIds.includes(e.id)).flatMap((e) => [e.name, ...e.aliases]), currentTitle, parsed.move?.place ?? ''].join('\n');
+    for (const key of ['scene', 'situation']) {
+        const stray = parsed[key] ? strayName(parsed[key], { known, allowedText }) : '';
+        if (stray) {
+            console.info(LOG_PREFIX, `the director's ${key} line names "${stray}", which the scene does not stand on - not taken: ${parsed[key]}`);
+            parsed[key] = '';
+        }
+    }
     if (parsed.scene && parsed.scene !== currentTitle && (isNewTurn(type) || !currentTitle)) {
         setCanonical(chatKey, { sceneTitle: parsed.scene }, { chatId, source: 'director', note: `Scene: ${parsed.scene}` });
     }

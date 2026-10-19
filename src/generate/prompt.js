@@ -83,10 +83,10 @@ function formOf(def, refNames) {
         case 'boolean': return { prose: 'Answer yes or no.', json: 'true' };
         case 'enum': return { prose: `Answer with exactly one of: ${def.values.join(', ')}.`, json: `"<one of: ${def.values.join(' | ')}>"` };
         case 'ref': return names.length
-            ? { prose: `Answer with the name of one of these existing ${def.refType}s: ${names.join(', ')}.`, json: `"<one of: ${names.join(' | ')}>"` }
+            ? { prose: `Answer with the name of one of these existing ${def.refType}s - only one the facts above actually tie to it; nothing if none is: ${names.join(', ')}.`, json: `"<one of: ${names.join(' | ')} - or empty>"` }
             : { prose: `Answer with nothing - no ${def.refType} exists yet.`, json: '""' };
         case 'refs': return names.length
-            ? { prose: `Answer with a comma-separated list of names chosen from these existing ${def.refType}s: ${names.join(', ')}.`, json: `["<names from: ${names.join(' | ')}>"]` }
+            ? { prose: `Answer with names chosen from these existing ${def.refType}s - only ones the facts above actually tie to it (an empty list is fine; never pick names just to fill it): ${names.join(', ')}.`, json: `["<only names from: ${names.join(' | ')} that are tied to it - or none>"]` }
             : { prose: `Answer with nothing - no ${def.refType} exists yet.`, json: '[]' };
         default: return { prose: '', json: '"..."' };
     }
@@ -131,6 +131,12 @@ export function buildGenerationPrompt(input) {
     const subject = entry.name ? `${type.noun} "${entry.name}"` : `new ${type.noun}`;
 
     const parts = [...worldBlocks(input.overview ?? {})];
+    const place = input.place;
+    if (place?.path?.length) {
+        const lines = place.path.map((x, i) => `- ${i === 0 ? 'Inside' : 'Which is inside'}: ${x.name}${x.description ? ` - ${cut(x.description, 500)}` : ''}`);
+        if (place.factions?.length) lines.push(...place.factions.map((f) => `- Tied to it: ${f.name} (faction)${f.description ? ` - ${cut(f.description, 240)}` : ''}`));
+        parts.push(`# Where it is (it belongs to this place - what it is like, who holds it and whose side it is on follow from here)\n${lines.join('\n')}`);
+    }
     if (input.neighbours?.length) {
         parts.push(`# Related entries already in the setting\n${input.neighbours.slice(0, 16).map((n) => `- ${n.relation ? `${n.relation}: ` : ''}${n.name} (${n.type})${n.description ? ` - ${cut(n.description, 160)}` : ''}`).join('\n')}`);
     }
@@ -143,6 +149,9 @@ export function buildGenerationPrompt(input) {
         parts.push(`# The ${subject} - what is written so far\n${known.length ? known.join('\n') : '(Nothing else written yet.)'}${entry.narrative ? `\nWhat has happened to it in the story: ${cut(entry.narrative, 400)}` : ''}${input.parentName ? `\nIt is located inside: ${input.parentName}` : ''}`);
     }
 
+    const placeRule = place?.path?.length
+        ? `It is part of ${place.path[0].name}: keep it true to that place and the people tied to it - their side, their enemies, their mood - unless the user says otherwise. Never make it serve a side the place it is in stands against.`
+        : '';
     if (plain) {
         const f = targets[0];
         const current = entry.values?.[f.name];
@@ -156,6 +165,7 @@ export function buildGenerationPrompt(input) {
                 ? `Reply with just the name.${input.similarNames?.length ? ` Do not reuse any of these existing names: ${input.similarNames.slice(0, 40).join(', ')}.` : ''}`
                 : (isText(f) ? `Length: ${length}.` : form.prose),
             input.creating && !entry.name && f.name !== 'name' ? 'This is a brand-new entry being created now.' : '',
+            placeRule,
             input.brief ? `${input.creating ? 'What the user wants' : "The user's direction"}: ${cut(input.brief, 400)}` : '',
         ].filter(Boolean).join('\n');
         parts.push(`# Your task\n${job}`, REPLY_PLAIN);
@@ -176,6 +186,7 @@ export function buildGenerationPrompt(input) {
         job = `Enrich the ${subject}: write every field. Where a field already has text (shown above), keep every fact in it and add new, specific detail. Where it is empty, write it from scratch.`;
     }
     if (input.brief && task !== 'create') job += `\nThe user's direction: ${cut(input.brief, 400)}`;
+    if (placeRule) job += `\n${placeRule}`;
     job += `\nEach text field: ${length}.`;
 
     const template = [...(task === 'create' ? [['name', '"..."']] : []), ...targets.map((f) => [f.name, formOf(f, refNames).json])];
@@ -504,4 +515,39 @@ export function mergeGenerated(existing, generated, task) {
         out[key] = key === 'aliases' ? mergeAliases(existing[key], value) : value;
     }
     return out;
+}
+
+// The references a generation answer may keep (a faction's members, a
+// place's factions): each must be tied to the entry by something - already
+// there, a related entry, or named in its own text, the user's direction,
+// the story's memories or the GM notes. Names picked off the offered list
+// just to fill the field are dropped. values: the parsed answer (ids);
+// fields: the type's field defs; existing: the entry's values before.
+// -> { values, dropped: [text] }
+export function groundRefs(values, fields, { existing = {}, relatedNames = [], text = '', nameOf = () => '' } = {}) {
+    const out = { ...values };
+    const dropped = [];
+    const related = new Set((relatedNames ?? []).map((n) => clean(n).toLowerCase()).filter(Boolean));
+    const named = (name) => {
+        const n = clean(name);
+        if (n.length < 3) return false;
+        const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}(?=$|[^\\p{L}\\p{N}])`, 'iu').test(String(text ?? ''));
+    };
+    for (const f of fields ?? []) {
+        if ((f.kind !== 'ref' && f.kind !== 'refs') || out[f.name] === undefined) continue;
+        const had = new Set((Array.isArray(existing[f.name]) ? existing[f.name] : [existing[f.name]]).filter(Boolean));
+        const ok = (id) => had.has(id) || related.has(clean(nameOf(id)).toLowerCase()) || named(nameOf(id));
+        if (f.kind === 'refs') {
+            const ids = Array.isArray(out[f.name]) ? out[f.name] : [];
+            const kept = ids.filter(ok);
+            const left = ids.filter((id) => !ok(id)).map((id) => nameOf(id) || id);
+            if (left.length) dropped.push(`${f.label ?? f.name}: ${left.join(', ')} (nothing ties them to it)`);
+            out[f.name] = kept;
+        } else if (out[f.name] && !ok(out[f.name])) {
+            dropped.push(`${f.label ?? f.name}: ${nameOf(out[f.name]) || out[f.name]} (nothing ties it to it)`);
+            out[f.name] = '';
+        }
+    }
+    return { values: out, dropped };
 }

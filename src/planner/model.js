@@ -444,7 +444,7 @@ export function planSection(gm, { pace = null, aim = null, story = null, motifs 
     const m = motifs.filter(Boolean).slice(0, 3);
     if (m.length) lines.push(`- Motifs to echo, as images rather than events: ${m.join('; ')}.`);
     if (!lines.length) return '';
-    return ['GM PLAN (private - never mention it; it guides what you choose, it is not a script. A coming moment happens only where the player\'s actions leave room for it; drop one that no longer fits.)', ...lines].join('\n');
+    return ['GM PLAN (private - never mention it; it guides what you choose, it is not a script. The scene as it stands comes first: use the plan only where it fits the place, the people present and what they are doing now - never move the scene, rename the place or change what people are doing to fit it. A coming moment happens only where the player leaves room for it; drop one that no longer fits.)', ...lines].join('\n');
 }
 
 // The motifs for this chat: the inspirations' distilled motifs, a few from

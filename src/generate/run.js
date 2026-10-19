@@ -15,7 +15,7 @@ import { getObjectTypes, getParents, getOverview, getPlaceOverview, isCanonOnly,
 import { getEntryMeta } from '../store/setting-store.js';
 import { pathOf, childrenOf } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
-import { buildGenerationPrompt, parseGenerationResponse, buildOverviewPrompt, parseOverviewResponse } from './prompt.js';
+import { buildGenerationPrompt, parseGenerationResponse, buildOverviewPrompt, parseOverviewResponse, groundRefs } from './prompt.js';
 import { callModel } from './llm.js';
 import { storyRelationships, relationshipLine } from '../library/story-relations.js';
 import { relationsFor, pairCovered, authoredLine } from '../library/relations-edit.js';
@@ -85,6 +85,40 @@ export function neighboursOf(entry, all, parents, parentId) {
     return out;
 }
 
+// The place an entry belongs to, as prompt context (SB-131): the places it
+// is inside, nearest first, with their descriptions, and the factions tied
+// to them (a faction whose fields hold one of those places, one a place's
+// own fields or per-chat state name, or one the user related to it). A new
+// room of a fortress that fights the death god must not come out as a haven
+// for the death god's minions. -> { path: [{ name, description }],
+// factions: [{ name, description }] } or null.
+export function placeContext(placeId, all, parents, relations = []) {
+    if (!placeId) return null;
+    const allEntries = Object.values(all).flat();
+    const byId = new Map(allEntries.map((e) => [e.id, e]));
+    const pathIds = [...pathOf(parents, placeId)].reverse().slice(0, 3);
+    const inPath = new Set(pathIds);
+    const path = pathIds.map((id) => byId.get(id)).filter(Boolean).map((e) => ({ name: e.name, description: e.description ?? e.base?.description ?? '' }));
+    if (!path.length) return null;
+    const factionIds = new Set();
+    for (const f of all.faction ?? []) {
+        const record = f.base ?? f;
+        if (Object.entries(record).some(([k, v]) => k !== 'id' && (Array.isArray(v) ? v : [v]).some((x) => inPath.has(x)))) factionIds.add(f.id);
+    }
+    for (const id of pathIds) {
+        const place = byId.get(id);
+        for (const r of runtimeRefs(place)) for (const ref of r.ids) if (byId.get(ref)?.type === 'faction') factionIds.add(ref);
+        const record = place?.base ?? place ?? {};
+        for (const v of Object.values(record)) for (const x of Array.isArray(v) ? v : [v]) if (typeof x === 'string' && byId.get(x)?.type === 'faction') factionIds.add(x);
+    }
+    for (const r of relations ?? []) {
+        if (inPath.has(r.from) && byId.get(r.to)?.type === 'faction') factionIds.add(r.to);
+        if (inPath.has(r.to) && byId.get(r.from)?.type === 'faction') factionIds.add(r.from);
+    }
+    const factions = [...factionIds].map((id) => byId.get(id)).filter(Boolean).slice(0, 4).map((f) => ({ name: f.name, description: f.description ?? f.base?.description ?? '' }));
+    return { path, factions };
+}
+
 // Generates for one entry of `type`.
 //   task: 'field' | 'fill' | 'enrich' | 'create'
 //   ctx: { chatId, chatKey, settingId }
@@ -125,7 +159,10 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     }
 
     const values = draft ? { description: draft.description, aliases: draft.aliases, ...draft.fields } : {};
-    const parentForPrompt = parentId || (type.id === 'location' ? null : (draft?.fields?.location ?? null));
+    // The place it is in: the chosen parent; a saved location's own parent
+    // (enriching an existing room keeps its fortress in view); another
+    // entry's location field.
+    const parentForPrompt = parentId || (type.id === 'location' ? (entry?.id ? parents[entry.id] ?? null : null) : (draft?.fields?.location ?? entry?.base?.location ?? entry?.location ?? null));
     const base = {
         type, fields, brief,
         // The world as it holds where the entry is: a place's own realm, or
@@ -141,6 +178,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         parentName: parentForPrompt ? pathOf(parents, parentForPrompt).map((id) => nameOfId.get(id)).filter(Boolean).join(' › ') || nameOfId.get(parentForPrompt) : '',
         creating: task === 'create',
         relationNames: allEntries.filter((e) => e.id !== entry?.id).map((e) => e.name).slice(0, 25),
+        place: placeContext(parentForPrompt, all, parents, getSettingDoc(ctx.settingId).relations),
     };
     const narrative = entry?.id ? getChatDoc(ctx.chatKey).narrative[entry.id]?.text ?? '' : '';
     const promptWith = (t, field, name, vals) => buildGenerationPrompt({ ...base, task: t, targetField: field, entry: { name, values: vals, narrative } });
@@ -176,6 +214,18 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         result = Object.keys(got).length ? { values: got, dropped, error: null } : { values: {}, dropped, error: result.error };
     }
     if (result.error) throw new Error(`${result.error} (asked twice, then field by field - try a larger model in the drawer's Generation settings)`);
+    // A reference the model picked must be tied to the entry by something:
+    // already there, a related entry, or named in what it is (its text,
+    // the user's direction, the story's memories, the GM notes) - never a
+    // name picked off the list to fill it (a faction's members).
+    const grounded = groundRefs(result.values, fields, {
+        existing: values,
+        relatedNames: base.neighbours.map((n) => n.name),
+        text: [result.values.description, values.description, ...fields.filter((f) => f.kind !== 'ref' && f.kind !== 'refs').map((f) => result.values[f.name] ?? values[f.name]), brief, ...memories, base.gmNotes, draft?.name ?? entry?.name].filter((t) => typeof t === 'string').join('\n'),
+        nameOf: (id) => nameOfId.get(id) ?? '',
+    });
+    result.values = grounded.values;
+    result.dropped = [...(result.dropped ?? []), ...grounded.dropped];
     // Relationships to existing entries, by name (at most three).
     if (result.values.relations !== undefined) {
         const list = Array.isArray(result.values.relations) ? result.values.relations : [];

@@ -137,7 +137,7 @@ function mentionedWhole(text, name) {
 // before tied), at most `max`.
 // entries: [{ id, type, name, aliases, description, base }]; typeLabel(type).
 // -> [{ name, type, description, why }]
-export function alsoRelevant(entries, { recentText = '', sceneIds = [], covered = new Set(), typeLabel = (t) => t } = {}, max = 10) {
+export function alsoRelevant(entries, { recentText = '', sceneIds = [], covered = new Set(), typeLabel = (t) => t, placeName = () => '' } = {}, max = 10) {
     const scene = new Set(sceneIds);
     const out = [];
     for (const e of entries ?? []) {
@@ -146,7 +146,12 @@ export function alsoRelevant(entries, { recentText = '', sceneIds = [], covered 
         const record = e.base ?? e;
         const tied = Object.entries(record).some(([k, v]) => k !== 'id' && (Array.isArray(v) ? v : [v]).some((x) => typeof x === 'string' && scene.has(x)));
         if (!named && !tied) continue;
-        out.push({ name: clean(e.name), type: typeLabel(e.type), description: cut(record.description ?? e.description ?? '', 140), why: named ? 'named in the chat' : 'tied to this place or someone here', rank: named ? 0 : 1 });
+        // Whether it is somewhere else (an item kept at a far-off place):
+        // the narrator is told only that it is not here - never where, which
+        // may be a secret (who knows it is the secrets' business).
+        const at = Object.entries(record).filter(([k]) => k !== 'id').flatMap(([, v]) => (Array.isArray(v) ? v : [v])).find((x) => typeof x === 'string' && x.startsWith('loc_') && !scene.has(x));
+        const where = at && e.type !== 'location' ? clean(placeName(at)) : '';
+        out.push({ name: clean(e.name), type: typeLabel(e.type), description: cut(record.description ?? e.description ?? '', 140), why: named ? 'named in the chat' : 'tied to this place or someone here', ...(where ? { where } : {}), rank: named ? 0 : 1 });
     }
     return out.sort((a, b) => a.rank - b.rank).slice(0, max).map(({ rank, ...x }) => x);
 }
@@ -265,7 +270,7 @@ export function dossierText(input) {
     const relevantEntries = (input.relevant ?? []).filter((x) => clean(x?.name));
     if (relevantEntries.length) {
         section('ALSO RELEVANT (named in the chat, or tied to this place or the people here)');
-        for (const x of relevantEntries) lines.push(`- ${clean(x.name)}${clean(x.type) ? ` (${clean(x.type).toLowerCase()})` : ''}${clean(x.description) ? `: ${bare(x.description)}` : ''}`);
+        for (const x of relevantEntries) lines.push(`- ${clean(x.name)}${clean(x.type) ? ` (${clean(x.type).toLowerCase()})` : ''}${clean(x.where) ? ' - kept somewhere else, not here' : ''}${clean(x.description) ? `: ${bare(x.description)}` : ''}`);
     }
     const scenes = (input.scenes ?? []).filter((x) => clean(x?.name));
     if (scenes.length) {
@@ -318,12 +323,19 @@ export function dossierText(input) {
 export function buildDirectorPrompt(input) {
     const userName = clean((input.cast ?? []).find((c) => c.player)?.name) || clean(input.userName) || 'the player';
     const creating = input.allowCreate && !input.canonOnly;
+    // Where the scene is, pinned: the model must not rename it or slide it
+    // into somewhere the notes mention (a faction's home, another town).
+    const path = (input.location?.path ?? []).map(clean).filter(Boolean);
+    const here = path[path.length - 1] ?? '';
     const system = [
         'You are the game master of an ongoing roleplay. You do not write the story yourself: another writer (the narrator) writes the next reply.',
         'Your job is to brief that narrator before it writes, in plain narrative prose, so its reply is grounded in the actual state of the scene and moves the story forward sensibly.',
         `${userName} is the player character, played by a human. Never decide or suggest what ${userName} says, does, thinks, feels or will do next, and do not describe the scene through ${userName}'s eyes; brief the narrator on the other characters and the world, which react to ${userName}.`,
         `${userName} is never the subject of your sentences - not even a small gesture, a glance or a passing thought ("${userName} tightens his grip", "${userName}'s thoughts drift" are forbidden). Write what the others do to, at or around ${userName} instead ("Graxx fixes his gaze on ${userName}").`,
         'Never contradict the facts you are given. Only use what fits the world\'s rules.',
+        here ? `The scene is at ${here}${path.length > 1 ? ` (${path.join(' > ')})` : ''}: call it by that name. Other places named in these notes - a faction's home, another settlement, somewhere the story only talked about - are elsewhere; the scene never moves there or takes their name unless a MOVE line takes it there.` : '',
+        'Something that is somewhere else - a far-off place, an object kept elsewhere, a goal that needs a journey - can be talked about, worried over or planned for, but it cannot be reached, found or used in this scene until the story actually travels there. Keep the people busy with what is in front of them here.',
+        'People act as the story has shown them: never give someone a betrayal, an attack or a hidden scheme the story has not set up.',
         'People know only what they have learned: a secret stays hidden from those who do not know it - they never act on it, hint at it or guess it - unless the story reveals it in front of them; an oath binds those who swore it.',
         clean(input.overview?.gmStyle) ? `How the user wants this story run - follow it: ${cut(input.overview.gmStyle, 800)}` : '',
     ].filter(Boolean).join(' ');
@@ -438,10 +450,22 @@ export function withoutPlayerActions(text, names) {
     // player character (or "X and Y") as the subject, or their thoughts,
     // eyes, hands...
     const subject = new RegExp(`^["'*\\s]*(?:[^.!?,;:]{0,120},\\s+)?(?:(?:${who})(?:['\u2019]s\\s+\\w+)?|\\w+\\s+and\\s+${who}|${who}\\s+and\\s+\\w+)\\b(?!['\u2019])`, 'iu');
+    // Their inner life, told through a lead-in: "But for Remus, the battle
+    // brought fear", "To Remus, it felt...", "Inside Remus's mind, ...".
+    const inner = new RegExp(`^["'*\\s]*(?:(?:but|and|yet|still)\\s+)?(?:for|to|within|inside|in)\\s+${who}(?:['\u2019]s\\s+\\w+)?\\s*,`, 'iu');
+    // A sentence that only continues one just dropped ("His visions had
+    // prepared him", "He turns to Niamh") goes with it.
+    const pronoun = /^["'*\s]*(?:he|she|they|his|her|their|him|them)\b/i;
     return String(text ?? '').split(/(\n\s*\n)/).map((para) => {
         if (/^\n/.test(para)) return para;
         const sentences = para.match(/[^.!?…]+(?:[.!?…]+["'”)\]]*|$)\s*/g) ?? [para];
-        return sentences.filter((s) => !subject.test(s.trim())).join('').trim();
+        let dropping = false;
+        return sentences.filter((s) => {
+            const t = s.trim();
+            const drop = subject.test(t) || inner.test(t) || (dropping && pronoun.test(t));
+            dropping = drop;
+            return !drop;
+        }).join('').trim();
     }).filter((p, i, all) => !(p === '' && /^\n/.test(all[i + 1] ?? '\n'))).join('').replace(/\n{3,}/g, '\n\n').trim();
 }
 
@@ -596,4 +620,23 @@ export function parseDirectorNote(raw) {
         .replace(/\n{3,}/g, '\n\n')
         .trim();
     return { note: text, ...splitNote(text), created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats };
+}
+
+// The first library entry `text` names that nothing the scene stands on
+// mentions - the user's own messages, where the scene is, who is here -
+// or ''. A scene title or situation that names one ("besieging
+// Redhaven's breach point" while the scene is at Niamh's Fortress) is the
+// model drifting, and is not taken. known: [{ name, aliases }];
+// allowedText: what the scene stands on, as text.
+export function strayName(text, { known = [], allowedText = '' } = {}) {
+    const t = String(text ?? '');
+    if (!clean(t)) return '';
+    for (const e of known ?? []) {
+        for (const n of [e?.name, ...(e?.aliases ?? e?.base?.aliases ?? [])]) {
+            const name = clean(n);
+            if (name.length < 4 || !mentionedWhole(t, name)) continue;
+            if (!mentionedWhole(allowedText, name)) return name;
+        }
+    }
+    return '';
 }

@@ -14,6 +14,8 @@
 
 const clean = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
 const cut = (v, n) => { const t = clean(v); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
+// A sentence to follow a comma: lower-case start, no closing stop.
+const unstopFirst = (v) => { const t = clean(v).replace(/[.!?]+$/, ''); return t ? t.charAt(0).toLowerCase() + t.slice(1) : ''; };
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const list = (v) => (Array.isArray(v) ? v : []);
 const texts = (v, max) => list(v).map((x) => clean(typeof x === 'string' ? x : x?.text)).filter(Boolean).slice(0, max);
@@ -22,6 +24,8 @@ function rules(userName) {
     return [
         `${userName} is the player character, played by a human: never plan what ${userName} says, does, thinks or feels, and never make a moment depend on ${userName} choosing it. Plan what the world and the other characters do; ${userName} reacts as they please.`,
         'Use only the people, places, factions and threads given, or ones that grow plainly out of them. People know only what they have learned.',
+        'Call every place by its own name and never put one place inside another: a settlement or faction mentioned somewhere is not where the scene is. Something that is somewhere else - an object kept far away, a goal that needs a journey - cannot happen here until the story travels there.',
+        'People act as the story has shown them: no betrayals, attacks or hidden schemes the story has not set up.',
         'Answer with JSON only - no prose before or after it.',
     ].join(' ');
 }
@@ -76,6 +80,7 @@ export function buildDayPrompt(input) {
     parts.push(
         '',
         `PLAN ${input.rest ? 'THE REST OF THE DAY' : 'THE DAY'}${clean(input.dateText) ? ` - ${clean(input.dateText)}` : ''}${clean(input.dayPart) ? `, starting ${clean(input.dayPart)}` : ''}`,
+        ...(clean(input.place) ? [`The scene is at ${clean(input.place)}${clean(input.situation) ? `, where ${unstopFirst(input.situation)}` : ''}. The day starts from there and from what is going on now; moments elsewhere happen only if the story would plausibly go there today.`] : []),
         'Two to five moments, in the order they could happen: something someone does, an arrival, news, a discovery, a complication, a quiet beat. Each grows out of what is above, moves a thread, a person\'s agenda or a request along, and leaves the player free to respond. Vary them: not every moment is a crisis.',
         'Answer in this JSON shape:',
         `{"moments":[{"text":"<what happens, one sentence>","when":"<morning|midday|afternoon|evening|night|any time>","trigger":"<the condition, e.g. 'if the scene is at the forge'; empty if none>","ties":["<names of the people, places, factions or threads it involves>"],"droppable":true${happeningField}}],`,
