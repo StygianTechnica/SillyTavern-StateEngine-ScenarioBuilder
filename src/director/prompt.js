@@ -296,6 +296,7 @@ export function dossierText(input) {
         const bits = [
             clean(c.role), cut(c.description, 300),
             clean(c.personality) && `personality: ${cut(c.personality, 200)}`,
+            clean(c.voice) && `voice and mannerisms: ${cut(c.voice, 200)}`,
             clean(c.goals) && `wants: ${cut(c.goals, 200)}`,
             clean(c.mood) && `mood: ${clean(c.mood)}`,
             clean(c.intent) && `intends: ${cut(c.intent, 160)}`,

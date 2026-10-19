@@ -3,7 +3,7 @@
 // History (every change, with undo) and Preview (the exact outputs).
 
 import { getSettings } from '../settings.js';
-import { getChatDoc } from '../store/chat-store.js';
+import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { DAY_PARTS, TEMPERATURES, WEATHER_VALUES } from '../store/schema.js';
 import { getObject } from '../api/objects.js';
 import { getVariableValues } from '../api/variables.js';
@@ -104,6 +104,7 @@ export async function renderScene() {
             ['Temperature', obs.temperature],
             ['Indoors', obs.indoor === null ? '' : (obs.indoor ? 'yes' : 'no')],
             ['Title', obs.title],
+            ['Intimate', raw.scene_nsfw === true || raw.scene_nsfw === 'true' ? 'yes' : 'no'],
             ['Time passed', typeof raw.scene_deltatime === 'string' ? raw.scene_deltatime : ''],
         ];
         observedCol = h('dl', { class: 'sb-glance' }, rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v || '—')]));
@@ -134,6 +135,8 @@ export async function renderScene() {
                     field('Temperature', select([{ value: '', label: '—' }, ...TEMPERATURES.map((t) => ({ value: t, label: t }))], draft.temperature, { onchange: (e) => set('temperature', e.target.value) })),
                     field('Indoors / outdoors', select([{ value: '', label: '—' }, { value: 'true', label: 'Indoors' }, { value: 'false', label: 'Outdoors' }], draft.indoor === null ? '' : String(draft.indoor), { onchange: (e) => set('indoor', e.target.value === '' ? null : e.target.value === 'true') }))),
                 field('Scene title', h('input', { class: 'text_pole', value: draft.sceneTitle, oninput: (e) => set('sceneTitle', e.target.value) })),
+                // Saved at once: not part of the canonical scene.
+                field('Intimate scene (NSFW)', select([{ value: 'auto', label: 'Auto - as the story reads' }, { value: 'on', label: 'Yes' }, { value: 'off', label: 'No' }], doc.nsfwMode, { onchange: (e) => { updateChatDoc(chatKey, (d) => { d.nsfwMode = e.target.value; }); void syncNow(); } }), 'While it is, the characters\' intimate-scene notes are given to the narrator.'),
                 (() => { const el = h('textarea', { class: 'text_pole', rows: 3, oninput: (e) => set('scenePremise', e.target.value) }); el.value = draft.scenePremise; return field('Scene premise', el, 'What the scene is about: its stakes and tone.'); })(),
                 h('div', { class: 'sb-savebar' }, button('Save scene', () => void save(), { iconName: 'fa-floppy-disk', cls: 'sb-primary' }))),
             h('div', { class: 'sb-card' },

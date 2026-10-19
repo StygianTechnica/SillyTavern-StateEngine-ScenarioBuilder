@@ -44,7 +44,9 @@ const DEFAULTS = {
     // answer size.
     // autoEnrich: objects newly confirmed into the setting get their empty
     // fields written in the background (SB-133b; canon switches permitting).
-    generation: { detail: 'standard', maxTokens: 1200, autoEnrich: true },
+    // nsfwInEnrich: Enrich all / Fill empty on a character also writes its
+    // intimate-scene note (src/generate/intimacy.js).
+    generation: { detail: 'standard', maxTokens: 1200, autoEnrich: true, nsfwInEnrich: false },
     // Which version of the Scenario State preset blueprint is installed
     // (src/preset/blueprint.js, PRESET_VERSION). null = none yet.
     presetVersion: null,
@@ -114,6 +116,7 @@ export function getSettings() {
     settings.generation.detail ??= 'standard';
     settings.generation.maxTokens ??= 1200;
     settings.generation.autoEnrich ??= true;
+    settings.generation.nsfwInEnrich ??= false;
     settings.quests ??= { autoCreate: true, tracked: 5 };
     settings.quests.autoCreate ??= true;
     settings.quests.tracked ??= 5;

@@ -128,6 +128,105 @@ export function stripNames(text, names, kind = '') {
     return kind ? out.charAt(0).toUpperCase() + out.slice(1) : out;
 }
 
+// ---- what a picture can show
+// An image generator answers to what can be seen - looks, clothes, colours,
+// materials, light - and is confused by story: a role ("responsible for
+// maintaining order"), a history ("a memento from a brutal encounter"),
+// the names of other people, factions and gods. So the description is cut
+// down to its visual sentences, story clauses and every known name taken
+// out, whole sentences only (never cut mid-phrase).
+
+const VISUAL = /\b(?:hair|eyes?|skin|face|features|beard|stubble|scars?|scarred|tattoos?|freckles|brow|jaw|lips|teeth|horns?|wings?|tail|fur|scales|feathers|claws?|build|frame|physique|tall|short|lean|slender|stocky|muscular|broad|wiry|towering|hulking|wears?|wearing|worn|dressed|clad|garbed|armou?r|cloak|robes?|coat|leathers?|boots|gloves|bracers|sash|hood|mask|helm(?:et)?|belt|jewel(?:le)?ry|amulet|rings?|blade|sword|bow|staff|spear|shield|rifle|carries|wields|holds|walls?|windows?|towers?|gates?|roofs?|doors?|floors?|stairs?|stone|metal|wood(?:en)?|iron|steel|rust(?:ing|ed|y)?|concrete|brick|glass|scrap|ruins?|rubble|dust|moss|vines|smoke|fog|mist|candles?|torch(?:es|light)?|lamps?|lit|glow(?:s|ing)?|gleam(?:s|ing)?|shadows?|light|dark|dim(?:ly)?|bright|pale|black|white|grey|gray|silver|gold(?:en)?|bronze|copper|red|crimson|scarlet|blue|azure|green|emerald|brown|amber|orange|purple|violet|colou?r(?:ed)?|ornate|carved|engraved|etched|painted|tattered|ragged|polished|shattered|cracked|jagged|twisted|towering|looms?|sprawl(?:s|ing)?|perched|hall|chamber|room|courtyard|banners?|sigils?|emblem|symbols?)\b/gi;
+const STORY = /\b(?:responsible|must|seeks?|seeking|goals?|wants?|wishes|believes?|knows?|known|history|past|once|after|because|since|leader|leads|protector|serves?|serving|ally|allies|enemy|enemies|war|battles?|tale|tales|memento|invaluable|asset|conflict|influence|mission|duty|loyal(?:ty)?|trust(?:ed)?|betray(?:al|ed)?|role|order|people|community|resources|balance|reputation|feared|respected|decades|years of|journey|quest|plans?|secretly|rumou?red|result|speaks?|testament|survival|skills|hasty|desperate)\b/gi;
+const count = (re, text) => (String(text).match(re) ?? []).length;
+
+// Whether a sentence can be pictured: no story in it ("A burnt forest of
+// ash and blackened stumps"), or more of what is seen than of story.
+export function isVisual(sentence) {
+    if (!clean(sentence)) return false;
+    const story = count(STORY, sentence);
+    return story === 0 || count(VISUAL, sentence) >= story;
+}
+
+// A sentence with its story clauses dropped: a clause (between commas, or
+// from "that", "which", "while", "making", "marking"...) that tells story
+// rather than looks goes, with the separator before it.
+const CLAUSE = /(,\s+|;\s+|\s+(?=(?:that|which|while|whereas|making|marking|telling|as if|a memento|a reminder|a testament)\b))/i;
+function visualClauses(sentence) {
+    const bits = sentence.split(CLAUSE);
+    let out = '';
+    for (let i = 0; i < bits.length; i += 2) {
+        const part = bits[i];
+        const seen = count(VISUAL, part);
+        const story = count(STORY, part);
+        // After the first, a clause stays only for what it shows (a short
+        // neutral one - "and a crimson sash" - too).
+        const keep = i === 0 ? story <= seen
+            : seen > story || (story === 0 && !/^(?:that|which)\b/i.test(part) && part.split(/\s+/).length <= 4);
+        if (keep) out += (i === 0 ? '' : bits[i - 1]) + part;
+    }
+    return out.replace(/^[,;\s]+/, '');
+}
+
+// Whether a description has something to picture at all.
+const isVisualEnough = (text) => clean(text).split(/(?<=[.!?])\s+/).map(visualClauses).some(isVisual);
+
+// Every known name (the entry's own, people, factions, gods, places) out of
+// a text, with the "of"/"for"/"by" that tied it on; the entry's own
+// replaced by its kind when given ("the fortress").
+export function withoutNames(text, { own = [], others = [], kind = '' } = {}) {
+    let out = stripNames(text, own, kind);
+    // "Ferunox, the Sovereign of the Unbound Ember" is "Ferunox" too.
+    const short = others.flatMap((n) => [n, clean(n).split(/,|\s+the\s+/i)[0]]);
+    const list = [...new Set(short.map(clean).filter((n) => n.length > 2))].sort((a, b) => b.length - a.length);
+    for (const name of list) {
+        const n = escapeRe(name);
+        out = out.replace(new RegExp(`\\s*\\b(?:of|for|from|by|to|with|at|in)\\s+(?:the\\s+)?${n}(?:['’]s)?\\b`, 'gi'), (m) => (/\s(?:of|for|from|by|to|with|at|in)\s+an?\s/i.test(` ${m}`) ? m : ''))
+            .replace(new RegExp(`\\b${n}['’]s\\s+`, 'gi'), '')
+            .replace(new RegExp(`\\b(?:the\\s+)?${n}\\b`, 'gi'), (m, at, whole) => (/\ban?\s+(?:[\w-]+\s+)?$/i.test(whole.slice(0, at)) ? m : ''));
+    }
+    return out.replace(/\s+([,.;:])/g, '$1').replace(/([,;:])\s*([,.;:])/g, '$2').replace(/\(\s*\)/g, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+// The description as a picture: its visual sentences (story clauses and
+// names out), whole sentences, about `max` words; "He has"/"is a" made a
+// plain description. Falls back to the first sentence when none is visual.
+export function visualDescription(text, { own = [], others = [], kind = '', max = 60 } = {}) {
+    const sentences = clean(text).split(/(?<=[.!?])\s+/).filter(Boolean);
+    const visual = sentences.map(visualClauses).filter(isVisual);
+    const chosen = visual.length ? visual : sentences.slice(0, 1);
+    const out = [];
+    let used = 0;
+    for (const s of chosen) {
+        let t = withoutNames(s, { own, others, kind })
+            .replace(/^(?:is|was)\s+/i, '')
+            .replace(/^(?:now|once|today|still|yet),?\s+/i, '')
+            .replace(/[.!?]+$/, '');
+        if (!t) continue;
+        // A later sentence starts with a capital again ("he appears" -> "He appears").
+        if (out.length) t = t.charAt(0).toUpperCase() + t.slice(1);
+        const n = t.split(/\s+/).length;
+        if (used && used + n > max) break;
+        out.push(t);
+        used += n;
+    }
+    return out.join('. ');
+}
+
+// A role as a picture's subject: a short archetype ("Veteran fighter and
+// scout", "powerful Death Knight"), never a sentence about duties. '' when
+// the role is all story.
+export function roleArchetype(role, names = []) {
+    let r = clean(role);
+    if (!r) return '';
+    const as = r.match(/\b(?:serves|acts|works|stands)\s+as\s+(?:an?\s+|the\s+)?([^,.;]+)/i);
+    if (as) r = as[1];
+    if (/^(?:as|he|she|they|it|his|her|their)\b/i.test(r)) return '';
+    r = withoutNames(r.split(/[,.;:(]|\s+(?:who|which|that|for|of|to|in|from|serving|responsible)\b/i)[0], { others: names }).trim();
+    if (!r || r.split(/\s+/).length > 5 || count(STORY, r)) return '';
+    return r.toLowerCase();
+}
+
 const field = (entry, name) => {
     const v = entry?.base?.[name] ?? entry?.[name];
     return Array.isArray(v) ? v.filter((x) => typeof x === 'string').join(', ') : (typeof v === 'string' ? v : '');
@@ -136,10 +235,10 @@ const field = (entry, name) => {
 // The subject phrase for each type: what the picture is of.
 const article = (noun) => (/^[aeiou]/i.test(noun) ? `an ${noun}` : `a ${noun}`);
 
-function subjectOf(entry, description) {
-    const role = clean(field(entry, 'role'));
+function subjectOf(entry, description, names = []) {
+    const role = roleArchetype(field(entry, 'role'), [entry.name, ...(entry.aliases ?? []), ...names]);
     switch (entry.type) {
-        case 'character': return [`portrait of ${article(role || 'character')}`, description];
+        case 'character': return [role ? `portrait of ${article(role)}` : 'character portrait', description];
         case 'location': return [description || 'a place', 'establishing shot'];
         case 'faction': return [`heraldic emblem and banner of ${description ? `a faction: ${description}` : 'a faction'}`];
         case 'item': return [`${description || 'an object'}`, 'single object, detailed, isolated'];
@@ -177,19 +276,25 @@ export function styleOf(options, overview = {}) {
 // the base one when set), `environment` ({ climate, lighting } values,
 // inherited), `overview` (setting overview), `options`
 // (DEFAULT_IMAGE_OPTIONS shape). -> { prompt, negative, provider }
-export function buildImagePrompt({ entry, narrative = '', environment = {}, overview = {}, options = {} }) {
+// knownNames: every name in the library (people, factions, gods, places) -
+// none of them reaches the picture.
+export function buildImagePrompt({ entry, narrative = '', environment = {}, overview = {}, options = {}, knownNames = [] }) {
     const opts = { ...DEFAULT_IMAGE_OPTIONS, ...options, midjourney: { ...DEFAULT_IMAGE_OPTIONS.midjourney, ...(options.midjourney ?? {}) } };
     const names = opts.includeNames ? [] : [entry.name, ...(entry.aliases ?? [])];
     // A place's (or thing's) name taken out leaves its kind in its stead
     // ("Niamh's Fortress looms" - "The fortress looms"), so the picture
     // still knows what it is of. People's names just go.
-    const description = entry.type === 'character'
-        ? stripNames(words(narrative || entry.description || '', 60), names)
-        : stripNames(words(narrative || entry.description || '', 60), names, kindWord(entry.name));
+    // What can be seen, and nothing of the story: no other names, no role
+    // or history - whole sentences only. The chat's current description
+    // (a place burnt since) when it has anything to picture, else the base.
+    const ownNames = [entry.name, ...(entry.aliases ?? [])];
+    const others = (knownNames ?? []).filter((n) => !ownNames.some((o) => clean(o).toLowerCase() === clean(n).toLowerCase()));
+    const source = isVisualEnough(narrative) ? narrative : (entry.description || narrative || '');
+    const description = visualDescription(source, { own: names, others, kind: entry.type === 'character' ? '' : kindWord(entry.name) });
     const env = [clean(environment.climate), clean(environment.lighting)].filter(Boolean).join(', ');
     const parts = [
         opts.includeNames && entry.type === 'character' ? clean(entry.name) : '',
-        ...subjectOf(entry, description),
+        ...subjectOf(entry, description, others),
         entry.type === 'location' || entry.type === 'scene' ? env : '',
         flavourOf(overview),
         styleOf(opts, overview),

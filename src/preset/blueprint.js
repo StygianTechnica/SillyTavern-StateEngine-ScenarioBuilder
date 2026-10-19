@@ -42,7 +42,7 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 // 7: sb__scene_creatures (the creatures the story has in the scene).
 // 8: sb__canon_summary; scene summary and title instructions tightened.
 // 9: sb__scene_characters adds who the messages show here but the list lacks.
-export const PRESET_VERSION = 9;
+export const PRESET_VERSION = 10;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -85,6 +85,11 @@ export const OBSERVED_VARIABLES = Object.freeze([
     ['scene_deltatime', text('Time passed (story)', 'How much in-story time the last turn covered, as the story tells it - the clock catches up when it is more than was planned.', prompted(
         'How much in-story time passed across the whole Latest turn - every message in it, the user’s included. Count everything that takes time: talking (a few minutes), travel, waiting, work, sleep, and any skip the story makes (“hours later”, “the next day”). Answer a duration (“5 minutes”, “2 hours”, “3 days”) or, when the story moves on to a time of day, that time of day (“the next morning”, “that evening”, “tomorrow afternoon”, “until dawn”). Drop hedging words (“about half an hour” → “30 minutes”). Answer “” only if no time passed at all.',
     ))],
+    ['scene_nsfw', {
+        label: 'Intimate scene (story)', description: 'Whether the scene is sexual or intimate now - characters\' intimate-scene notes reach the narrator only then.',
+        type: 'boolean', defaultValue: 'false', scope: 'chat', showInTracker: true,
+        ...prompted('true only while the scene is sexual or physically intimate - under way, or clearly about to begin between the characters. false otherwise (flirting, a kiss in passing, talk about it). When it ends or the scene moves on, false.'),
+    }],
     ['scene_isindoor', {
         label: 'Indoors (story)', description: 'Whether the story puts the scene indoors.',
         type: 'boolean', defaultValue: '', scope: 'chat', showInTracker: true,

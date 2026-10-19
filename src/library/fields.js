@@ -11,7 +11,7 @@ export function editorKind(def) {
         const map = { text: 'text', longtext: 'longtext', list: 'list', enum: 'enum', ref: 'ref', refs: 'refs', timestamp: 'text' };
         return { name: def.name, label: def.label || def.name, kind: map[def.kind] ?? 'text', values: def.values ?? [], refType: def.refType };
     }
-    const base = { name: def.name, label: def.label || def.name, values: def.enumValues ?? [] };
+    const base = { name: def.name, label: def.label || def.name, values: def.enumValues ?? [], ...(def.description ? { about: def.description } : {}) };
     if (def.type === 'object') return { ...base, kind: 'ref', refType: def.objectType };
     if (def.type === 'array' && def.itemType === 'object') return { ...base, kind: 'refs', refType: def.itemObjectType };
     if (def.type === 'array') return { ...base, kind: 'list' };

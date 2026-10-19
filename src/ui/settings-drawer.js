@@ -160,6 +160,8 @@ export async function addSettingsDrawer() {
     connection.addEventListener('change', (e) => { settings.connectionProfileId = e.target.value; saveSettings(); });
     byId('sb_auto_enrich').checked = settings.generation.autoEnrich === true;
     byId('sb_auto_enrich').addEventListener('change', (e) => { settings.generation.autoEnrich = e.target.checked; saveSettings(); });
+    byId('sb_nsfw_enrich').checked = settings.generation.nsfwInEnrich === true;
+    byId('sb_nsfw_enrich').addEventListener('change', (e) => { settings.generation.nsfwInEnrich = e.target.checked; saveSettings(); });
     byId('sb_gen_detail').value = settings.generation.detail;
     byId('sb_gen_detail').addEventListener('change', (e) => { settings.generation.detail = e.target.value; saveSettings(); });
     byId('sb_gen_tokens').value = settings.generation.maxTokens;

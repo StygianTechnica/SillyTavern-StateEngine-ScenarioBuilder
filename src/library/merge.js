@@ -29,6 +29,7 @@ function mergeMeta(keep, dup) {
     const out = { ...d, ...k };
     const notes = [str(k.gmNotes).trim(), str(d.gmNotes).trim()].filter(Boolean);
     out.gmNotes = [...new Set(notes)].join('\n\n');
+    out.nsfw = [...new Set([str(k.nsfw).trim(), str(d.nsfw).trim()].filter(Boolean))].join('\n\n');
     out.tags = [...new Set([...(k.tags ?? []), ...(d.tags ?? [])])];
     out.pinned = k.pinned === true || d.pinned === true;
     out.canonLocked = k.canonLocked === true || d.canonLocked === true;

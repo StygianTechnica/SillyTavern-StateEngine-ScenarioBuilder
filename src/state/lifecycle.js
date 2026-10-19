@@ -27,6 +27,7 @@ import { runIntake } from '../library/intake.js';
 import { runLoreSync } from '../library/lore-sync.js';
 import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { checkQuestEnds, fillMissingEnds } from '../quests/ends.js';
+import { ensureCharacterFields } from '../library/character-fields.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage, followContinuedReply } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
 import { directBeforeReply, addNamedPeople } from '../director/run.js';
@@ -171,6 +172,8 @@ async function onChatChanged() {
     }
     await intakeOpenChat();
     if (active) await healMissing(ref.chatId, chatKeyFor(ref));
+    // Background and Voice & mannerisms on the setting's characters, once.
+    if (active) await ensureCharacterFields(await getBoundSettingId(ref.chatId));
     await syncNow();
     // Displays bound to familiar roles show the canonical state here.
     if (active) await fillRoles(ref.chatId);

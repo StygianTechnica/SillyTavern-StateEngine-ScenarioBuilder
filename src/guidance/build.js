@@ -13,6 +13,7 @@ import { REFERENCE_HEADER } from '../constants.js';
 import { fitToBudget, estimateTokens } from './budget.js';
 import { WORLD_TYPES, describeMagic, describeTech, lookLines } from '../library/world-options.js';
 import { isPlaceholder } from '../director/prompt.js';
+import { intimacySection } from './intimacy.js';
 
 const labelOf = (list, id) => list.find(([key]) => key === id)?.[1] ?? id;
 
@@ -35,6 +36,7 @@ export const SECTIONS = Object.freeze([
     { key: 'summary', title: 'Where things stand', priority: 7, keep: true },
     { key: 'style', title: 'How the story is run', priority: 8, keep: true },
     { key: 'direction', title: 'Where it should go', priority: 8, keep: true },
+    { key: 'intimacy', title: 'Intimate scene', priority: 8, keep: true },
     { key: 'absent', title: 'Not in this scene', priority: 9, keep: true },
     { key: 'alone', title: 'No one else here', priority: 9, keep: true },
 ]);
@@ -239,6 +241,7 @@ function castLine(c) {
     if (clean(c.role)) bits.push(firstUpper(unstop(c.role)));
     if (clean(c.description)) bits.push(unstop(truncate(c.description, 160)));
     if (clean(c.personality)) bits.push(unstop(truncate(c.personality, 90)));
+    if (clean(c.voice)) bits.push(`Voice: ${unstop(firstLower(truncate(c.voice, 120)))}`);
     if (clean(c.goals)) bits.push(`Wants: ${unstop(firstLower(truncate(c.goals, 110)))}`);
     const now = [clean(c.mood) ? lower(unstop(c.mood)) : '', clean(c.intent) ? `means to ${unstop(firstLower(truncate(c.intent, 100))).replace(/^to /i, '')}` : ''].filter(Boolean);
     if (now.length) bits.push(`Now: ${now.join(', ')}`);
@@ -271,6 +274,7 @@ function castParagraph(c) {
     const bits = [`${name}${role ? `, ${article}${firstLower(role)},` : ''} is here.`];
     if (clean(c.description)) bits.push(sentence(truncate(c.description, 320)));
     if (clean(c.personality)) bits.push(`By temperament: ${sentence(firstLower(truncate(c.personality, 200)))}`);
+    if (clean(c.voice)) bits.push(`How ${name} talks and moves: ${sentence(firstLower(truncate(c.voice, 240)))}`);
     if (clean(c.goals)) bits.push(`What ${name} wants: ${sentence(firstLower(truncate(c.goals, 200)))}`);
     const now = [
         clean(c.mood) ? `feels ${unstop(lower(c.mood))}` : '',
@@ -325,6 +329,7 @@ function correctionsSection(corrections) {
 const BUILDERS = {
     summary: (input) => directorPart(input.director, 'summary'),
     absent: (input) => absentSection(input.absent),
+    intimacy: (input) => intimacySection(input),
     alone: (input) => aloneSection(input),
     direction: (input) => directorPart(input.director, 'direction'),
     // The user's own standing instructions (the front page).
@@ -401,7 +406,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
     ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'secrets', 'corrections']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
-    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'absent', 'alone']],
+    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'intimacy', 'absent', 'alone']],
 ]);
 
 // buildGuidance()'s result -> { [variable]: text } ('' for an empty part).

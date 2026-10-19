@@ -17,6 +17,9 @@
 //         parentId,                 location hierarchy (SB-145: kept here until
 //                                   State Engine has a location.parent field)
 //         gmNotes,                  GM-only text, never in guidance (SB-123)
+//         nsfw,                     a character in intimate scenes - in the
+//                                   guidance only while one is flagged
+//                                   (src/guidance/intimacy.js)
 //         tags: [], pinned,
 //         origin,                   '' | 'user' | 'story' | 'import' - where it came from
 //         canonLocked,              never add generated detail to this entry
@@ -120,7 +123,7 @@ export function normalizeRealm(r) {
 }
 
 export function emptyEntryMeta() {
-    return { parentId: null, gmNotes: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, provisional: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '', realm: emptyRealm() };
+    return { parentId: null, gmNotes: '', nsfw: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, provisional: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '', realm: emptyRealm() };
 }
 
 export function normalizeEntryMeta(meta) {
@@ -129,6 +132,7 @@ export function normalizeEntryMeta(meta) {
     return {
         parentId: typeof m.parentId === 'string' && m.parentId ? m.parentId : null,
         gmNotes: str(m.gmNotes),
+        nsfw: str(m.nsfw),
         tags: strList(m.tags),
         pinned: m.pinned === true,
         excluded: m.excluded === true,
@@ -228,7 +232,7 @@ export function normalizeSettingDoc(doc) {
     const groups = Array.isArray(d.groups)
         ? d.groups.filter(isObject).filter((g) => typeof g.id === 'string' && g.id).map((g) => ({ id: g.id, name: str(g.name) || 'Group', entryIds: strList(g.entryIds) }))
         : [];
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true,
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, characterFieldsAdded: d.characterFieldsAdded === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true,
         imports: Array.isArray(d.imports) ? d.imports.filter(isObject).slice(-IMPORTS_KEPT) : [],
         relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions), map: normalizePositions(d.graph?.map) }, calendar: normalizeCalendar(d.calendar), playerId: str(d.playerId),
         // Secrets and oaths the user wrote (src/library/knowledge.js).
@@ -344,6 +348,7 @@ export function emptyChatDoc() {
         history: [],
         turn: 0,
         gm: emptyGm(),
+        nsfwMode: 'auto',
     };
 }
 
@@ -377,6 +382,8 @@ export function normalizeChatDoc(doc) {
         history: Array.isArray(d.history) ? d.history.filter(isObject).slice(-HISTORY_LIMIT) : [],
         turn: Number.isInteger(d.turn) && d.turn >= 0 ? d.turn : 0,
         gm: normalizeGm(d.gm),
+        // Whether the scene is intimate: the story's reading (auto) or the user's.
+        nsfwMode: ['auto', 'on', 'off'].includes(d.nsfwMode) ? d.nsfwMode : 'auto',
     };
 }
 

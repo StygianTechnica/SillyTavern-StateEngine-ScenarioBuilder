@@ -23,6 +23,7 @@ import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
 import { renderQuestTab } from './quest-board.js';
 import { suggestQuestEnds } from '../quests/ends.js';
+import { writeIntimacyNote } from '../generate/intimacy.js';
 import { questMeta, setQuestMeta } from '../quests/sync.js';
 import { baselineFields } from '../library/fields.js';
 import { CLIMATES } from '../calendar/weather.js';
@@ -74,6 +75,7 @@ function startDraft(entry, defs) {
             pinned: entry.meta?.pinned === true,
             canonLocked: entry.meta?.canonLocked === true,
             gmNotes: entry.meta?.gmNotes ?? '',
+            nsfw: entry.meta?.nsfw ?? '',
             parentId: entry.meta?.parentId ?? ws.newParent ?? '',
             environment: { climate: '', lighting: '', rules: '', ...(entry.meta?.environment ?? {}) },
             climate: entry.meta?.climate ?? '',
@@ -338,6 +340,8 @@ async function runGen(task, field = null) {
         // A quest's Fill empty / Enrich all also writes how it ends (its
         // Quest tab), when that is still empty - so it can finish.
         if (type.id === 'quest' && !isNew && (effective === 'fill' || effective === 'enrich')) await fillQuestEnds(entry);
+        // A character's intimate-scene note too, when the setting says so.
+        if (type.id === 'character' && (effective === 'fill' || effective === 'enrich') && getSettings().generation.nsfwInEnrich && !(ws.draft.meta.nsfw ?? '').trim()) await writeNsfw();
     } catch (err) {
         toast('error', `Could not generate: ${err?.message ?? err}`);
     } finally {
@@ -358,6 +362,35 @@ async function fillQuestEnds(entry) {
     const now = questMeta(settingId, entry.id);
     setQuestMeta(settingId, entry.id, { completion: now.completion.trim() ? now.completion : ends.completion, abandon: now.abandon.trim() ? now.abandon : ends.abandon });
     toast('info', 'Wrote how the quest completes and fails - see its Quest tab.');
+}
+
+// A character's intimate-scene note, from who they are (the draft as it
+// stands): written when empty, added to otherwise.
+async function writeNsfw() {
+    const d = ws.draft;
+    if (!d) return;
+    const f = d.fields ?? {};
+    const text = await writeIntimacyNote({
+        name: d.name, description: d.description, personality: f.personality, background: f.background,
+        voice: f.voice, goals: f.goals, relationships: f.relationships, existing: d.meta.nsfw,
+    });
+    if (!text) return toast('warning', 'Could not write the intimate-scene note - try again.');
+    d.meta.nsfw = text;
+    ws.dirty = true;
+}
+
+function nsfwSpark() {
+    const gate = canGenerateFor(ws.ctx.settingId, genCtx?.isNew ? null : genCtx?.entry?.id);
+    return sparkButton(async () => {
+        if (ws.generating) return;
+        ws.generating = { scope: 'sheet', field: 'meta.nsfw' };
+        rerender({ force: true });
+        try { await writeNsfw(); } finally { ws.generating = null; rerender({ force: true }); }
+    }, {
+        title: (ws.draft?.meta.nsfw ?? '').trim() ? 'Enrich - keep it and add more' : 'Write it from their personality, background and voice',
+        busy: ws.generating?.field === 'meta.nsfw',
+        disabledReason: gate.ok ? (ws.generating ? 'Writing…' : '') : gate.reason,
+    });
 }
 
 // The sparkle for one field: write it if empty, enrich it otherwise.
@@ -850,6 +883,9 @@ async function imageTab({ type, entry, isNew, doc, parents }) {
         narrative: doc.narrative[entry.id]?.text ?? '',
         environment: { climate: inherited.climate?.value ?? '', lighting: inherited.lighting?.value ?? '' },
         overview: getPlaceOverview(ws.ctx.settingId, entry.type === 'location' ? entry.id : (entry.base?.location ?? entry.location ?? null)),
+        // Every proper name in the library, kept out of the picture - not the
+        // names of kinds of creature or thing ("a death knight" is a look).
+        knownNames: Object.entries(genCtx?.all ?? {}).filter(([t]) => t !== 'item' && t !== 'creature').flatMap(([, list]) => list.flatMap((e) => [e.name, ...(e.aliases ?? e.base?.aliases ?? [])])),
     });
 }
 
@@ -857,6 +893,7 @@ function gmTab({ entry }) {
     if (ws.editing) {
         return h('div', { class: 'sb-tabpane' },
             field('Secrets and GM notes', textArea('meta.gmNotes', ws.draft.meta.gmNotes, 6), 'Never put into the guidance.'),
+            entry.type === 'character' ? fieldWithTools('Intimate scenes (NSFW, optional)', textArea('meta.nsfw', ws.draft.meta.nsfw ?? '', 4), [nsfwSpark()], 'How they are in an intimate scene - pace, wants, limits, manner. Given to the narrator only while a scene is flagged intimate (Scene tab).') : null,
             field('Tags', h('input', { class: 'text_pole', value: csv(ws.draft.meta.tags), placeholder: 'comma-separated', oninput: (e) => set('meta.tags', fromCsv(e.target.value)) })),
             h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: ws.draft.meta.pinned, onchange: (e) => set('meta.pinned', e.target.checked) }), h('span', {}, 'Pin to the top of the chapter')),
             h('label', { class: 'checkbox_label', title: 'For canon you do not want embellished: generated detail is never added to this entry.' },
@@ -870,7 +907,9 @@ function gmTab({ entry }) {
             entry.meta?.canonLocked ? h('span', { class: 'sb-chip' }, icon('fa-lock'), ' Canon - no generated detail') : null,
             origin ? h('span', { class: 'sb-chip' }, origin) : null,
             entry.meta?.generated?.length ? h('span', { class: 'sb-chip', title: 'Fields written by generation' }, icon('fa-wand-magic-sparkles'), ` ${entry.meta.generated.join(', ')}`) : null),
-        entry.meta?.gmNotes ? h('div', { class: 'sb-prose' }, entry.meta.gmNotes) : h('div', { class: 'sb-muted' }, 'No secrets yet.'));
+        entry.meta?.gmNotes ? h('div', { class: 'sb-prose' }, entry.meta.gmNotes) : h('div', { class: 'sb-muted' }, 'No secrets yet.'),
+        // Folded away: shown only when opened.
+        entry.type === 'character' && entry.meta?.nsfw ? h('details', { class: 'sb-nsfw' }, h('summary', {}, icon('fa-fire'), ' Intimate scenes (NSFW)'), h('div', { class: 'sb-prose' }, entry.meta.nsfw), h('small', { class: 'sb-hint' }, 'Given to the narrator only while a scene is flagged intimate.')) : null);
 }
 
 // ---- actions
@@ -882,6 +921,7 @@ async function saveSheet(type, entry, defs, isNew) {
     for (const def of defs) if (d.fields[def.name] !== undefined) patch[def.name] = d.fields[def.name] ?? (def.kind === 'refs' || def.kind === 'list' ? [] : '');
     if (!patch.name) return toast('warning', 'Give it a name first.');
     const meta = { tags: d.meta.tags, pinned: d.meta.pinned, canonLocked: d.meta.canonLocked, gmNotes: d.meta.gmNotes };
+    if (type.id === 'character') meta.nsfw = d.meta.nsfw ?? '';
     // Which fields came from generation (SB-136), shown on the GM tab.
     if (ws.generatedFields?.size) meta.generated = [...new Set([...(entry.meta?.generated ?? []), ...ws.generatedFields])].filter((f) => f !== 'name');
     if (isNew) meta.origin = 'user';

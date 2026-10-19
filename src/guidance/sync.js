@@ -26,6 +26,7 @@ import { getBoundSettingId, readField, listEntries, playerIdOf, allKnowledge } f
 import { sceneKnowledge } from '../library/knowledge.js';
 import { pathOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { buildGuidance, buildStateBlock, buildCast, guidanceParts, GUIDANCE_PARTS, timeText } from './build.js';
+import { isIntimate } from './intimacy.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { relevantLore } from '../library/lore.js';
 import { placeOverview } from '../library/world-options.js';
@@ -154,12 +155,15 @@ export async function gatherInputs(chatId, chatKey) {
             role: await readField(chatId, id, 'se__character.role', 'role'),
             description: doc.narrative[id]?.text || obj.description || '',
             personality: text(base.personality),
+            voice: text(base.voice),
             goals: text(base.goals),
             mood: await readField(chatId, id, 'se__character.mood', 'mood'),
             intent: await readField(chatId, id, 'se__character.intent', 'intent'),
             thought: await readField(chatId, id, 'se__character.thought', 'thought'),
             relations: [],
             id,
+            // Read only while the scene is intimate (src/guidance/intimacy.js).
+            nsfw: settingId ? library.entries?.[id]?.nsfw ?? '' : '',
             player: id === playerId,
             provisional: settingId ? (library.entries?.[id]?.provisional === true) : false,
             why: c.castIds.length ? 'canonically present' : 'present in the story',
@@ -318,6 +322,8 @@ export async function gatherInputs(chatId, chatKey) {
             weatherText: weatherText({ weather: c.weather, temperature: c.temperature }, { indoor: c.indoor === true, open: clock?.open !== false }),
             scene: { title: c.sceneTitle, premise: c.scenePremise },
             cast,
+            // An intimate scene: the people's own notes for it are given.
+            intimate: isIntimate(doc.nsfwMode, (await getVariableValues(chatId, ['scene_nsfw']).catch(() => ({}))).scene_nsfw),
             // Taken out of the scene by hand, while that holds.
             absent,
             othersTracked,

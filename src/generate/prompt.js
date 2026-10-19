@@ -34,6 +34,10 @@ const cut = (text, max) => {
 const isEmpty = (v) => v === undefined || v === null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && !v.length);
 const norm = (key) => String(key ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+// What a character's description is about when it has a Background beside
+// it (src/library/character-fields.js): looks only.
+export const APPEARANCE_ABOUT = 'what they look like and nothing of their story - age, build and height, face, hair, eyes, skin, scars and marks, clothing and gear, how they move';
+
 // The pseudo-fields every entry has, ahead of its type's own fields.
 export const BASE_FIELDS = Object.freeze([
     { name: 'description', label: 'Description', kind: 'longtext', about: 'what it is and what it is like - appearance, character, the details a storyteller needs' },
@@ -117,7 +121,11 @@ const REPLY_PLAIN = '# Reply\nReply with ONLY the text for this field. No title,
 export function buildGenerationPrompt(input) {
     const { task, type, entry = { values: {} } } = input;
     const nameField = { name: 'name', label: 'Name', kind: 'text', about: 'a memorable name that fits the setting' };
-    const allFields = [...(task === 'field' && input.targetField === 'name' ? [nameField] : []), ...BASE_FIELDS, ...(input.fields ?? [])];
+    // A character with a Background beside it: the description is looks only.
+    const base = type?.id === 'character' && (input.fields ?? []).some((f) => f.name === 'background')
+        ? BASE_FIELDS.map((f) => (f.name === 'description' ? { ...f, label: 'Appearance', about: APPEARANCE_ABOUT } : f))
+        : BASE_FIELDS;
+    const allFields = [...(task === 'field' && input.targetField === 'name' ? [nameField] : []), ...base, ...(input.fields ?? [])];
     const nameOf = input.nameOf ?? ((id) => id);
     const refNames = input.refNames ?? {};
     const length = DETAIL_LEVELS[input.detail] ?? DETAIL_LEVELS.standard;
