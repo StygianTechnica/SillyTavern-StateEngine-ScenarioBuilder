@@ -468,6 +468,19 @@ export async function removeAdopted(chatId, chatKey, adoptedId) {
 
 // Un-rejects a name.
 // Un-rejects a name - and lets a quest be made from its thread again.
+// Takes rejected entries off the Review list - all of them, or the one at
+// `index` - while they stay rejected: the story still never brings them back.
+export function hideRejections(chatKey, index = null) {
+    updateChatDoc(chatKey, (d) => {
+        d.rejected = d.rejected.map((r, i) => (index === null || i === index ? { ...r, hidden: true } : r));
+    });
+}
+
+// Shows the hidden ones on the list again.
+export function showRejections(chatKey) {
+    updateChatDoc(chatKey, (d) => { d.rejected = d.rejected.map(({ hidden, ...r }) => r); });
+}
+
 export function forgetRejection(chatKey, index) {
     updateChatDoc(chatKey, (d) => {
         const gone = d.rejected[index];

@@ -10,7 +10,7 @@ import { getVariableValues } from '../api/variables.js';
 import { listEntries, getParents, getObjectTypes } from '../library/library.js';
 import { pathOf } from '../library/hierarchy.js';
 import { undoHistoryEntry } from '../state/canonical.js';
-import { pushCanonicalToObserved, resolveDrift, promoteCandidate, mergeCandidate, rejectCandidate, forgetRejection, dismissAdopted, removeAdopted } from '../validate/reconcile.js';
+import { pushCanonicalToObserved, resolveDrift, promoteCandidate, mergeCandidate, rejectCandidate, forgetRejection, hideRejections, showRejections, dismissAdopted, removeAdopted } from '../validate/reconcile.js';
 import { readObserved, FIELD_LABELS, UNKNOWN_PLACE, UNKNOWN_ONE, scrubIds } from '../validate/drift.js';
 import { OBSERVED_NAMES } from '../preset/blueprint.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
@@ -210,12 +210,31 @@ export async function renderReview() {
         section('New in the setting', 'fa-seedling', adopted, 'Nothing new. Objects confirmed into the setting while you play land here.'),
         pending.length ? section('Questions', 'fa-circle-question', questions, '') : null,
         candidates.length ? section('Waiting for you', 'fa-inbox', candidates, '') : null,
-        doc.rejected.length ? section('Rejected', 'fa-ban', doc.rejected.map((r, i) => h('div', { class: 'sb-review-item sb-row' },
-            h('span', {}, `${r.name} (${r.type})`), button('Allow again', () => forgetRejection(chatKey, i), { iconName: 'fa-rotate-left' }))), '') : null,
+        ...rejectedSection(doc, chatKey, section),
         h('h3', {}, icon('fa-list-check'), ' Recently followed'),
         resolved.length ? h('div', { class: 'sb-list' }, resolved.map((d) => h('div', { class: 'sb-log' },
             h('span', { class: `sb-badge sb-badge-${d.classification}` }, d.classification.replace('_', ' ')), ` ${scrubIds(d.text)}`, h('small', { class: 'sb-hint' }, ` - ${d.resolution}`))))
             : h('div', { class: 'sb-muted' }, 'Nothing yet.'));
+}
+
+// What the user rejected: kept out of the story for good. Each can be
+// allowed again, or taken off the list (it stays rejected) - one at a time
+// or all at once; the hidden ones can be shown again.
+function rejectedSection(doc, chatKey, section) {
+    const shown = doc.rejected.map((r, i) => ({ r, i })).filter(({ r }) => !r.hidden);
+    const hidden = doc.rejected.length - shown.length;
+    if (!doc.rejected.length) return [];
+    const rerun = (fn) => () => { fn(); ws.dirty = false; rerender(); };
+    return [
+        ...section('Rejected', 'fa-ban', shown.map(({ r, i }) => h('div', { class: 'sb-review-item sb-row' },
+            h('span', {}, `${r.name} (${r.type})`),
+            button('Allow again', rerun(() => forgetRejection(chatKey, i)), { iconName: 'fa-rotate-left' }),
+            h('span', { class: 'sb-iconbtn', title: 'Take it off this list - it stays rejected', onclick: rerun(() => hideRejections(chatKey, i)) }, icon('fa-eye-slash')))),
+        'Nothing on the list.'),
+        h('div', { class: 'sb-actions' },
+            shown.length ? button('Clear the list', rerun(() => hideRejections(chatKey)), { iconName: 'fa-broom', title: 'Take them all off this list. They stay rejected: the story never brings them back.' }) : null,
+            hidden ? button(`Show ${hidden} hidden`, rerun(() => showRejections(chatKey)), { iconName: 'fa-eye' }) : null),
+    ];
 }
 
 // ---------------------------------------------------------------- history
