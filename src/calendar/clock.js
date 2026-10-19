@@ -16,7 +16,7 @@ import { emptyCalendar } from '../store/schema.js';
 import { getSetting, updateSetting } from '../api/objects.js';
 import { setCanonical } from '../state/canonical.js';
 import { getDateTimeParts, formatDateTime, formatDateTimePartial, advanceDateTime, getCalendarDefinition } from '../api/calendar.js';
-import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance, timeOfDayFraction, storyTimeCue, cueTarget, storyDelta } from './moment.js';
+import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance, timeOfDayFraction, storyTimeCue, cueTarget, storyDelta, storyElapsed } from './moment.js';
 import { getRawValues } from '../api/variables.js';
 import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.js';
 import { weatherAt } from './weather.js';
@@ -283,6 +283,20 @@ export async function followStoryTimeOfDay(chatId, chatKey, settingId, replyText
     const to = (day + (target.nextDay ? 1 : 0)) * perDay + Math.round(target.fraction * perDay);
     if (to <= now) return null;
     return setTime(chatId, chatKey, settingId, to, { source: 'story', note: `The story reached ${cue.phrase}`, sourceMessage });
+}
+
+// The reply says time has passed ("he has been gone for hours"): the clock
+// is at least that far on from where the reply began (`from`) - taken
+// with, not added to, what the story's own reading already moved it.
+// -> the history entry, or null.
+export async function followStoryElapsed(chatId, chatKey, settingId, text, from, sourceMessage = '') {
+    const now = getChatDoc(chatKey).canonical.time;
+    if (!settingId || !Number.isFinite(now)) return null;
+    const span = storyElapsed(text);
+    if (!span) return null;
+    const target = await advanceFrom(settingId, Number.isFinite(from) ? from : now, span);
+    if (target === null || target <= now) return null;
+    return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The story says ${span} passed`, sourceMessage });
 }
 
 // The default advance for a reply nobody planned.

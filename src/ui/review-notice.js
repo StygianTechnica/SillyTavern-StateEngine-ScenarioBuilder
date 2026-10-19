@@ -10,6 +10,8 @@
 //             (so the user is using Scenario Builder here) but the preset is
 //             off; its button activates the preset. Scenario Builder never
 //             activates it on its own (SB-203) - the click is the user's.
+//   ideas     "N new GM ideas to look at" - the planner's proposals waiting
+//             for a yes or no; its button opens the GM Plan tab.
 //
 // Each is one notification, replaced as it changes and cleared when it no
 // longer applies.
@@ -25,11 +27,12 @@ import { activateForOpenChat } from './activate.js';
 import { getBoundSettingId } from '../library/library.js';
 import { registerNotificationCallback, notify, clearNotification } from '../api/notifications.js';
 import { openWorkspace } from './workspace.js';
-import { noticeText } from './status-model.js';
+import { noticeText, ideasNoticeText } from './status-model.js';
 
 const REVIEW_ID = 'review';
 const INACTIVE_ID = 'inactive';
-const shown = { [REVIEW_ID]: null, [INACTIVE_ID]: null };
+const IDEAS_ID = 'ideas';
+const shown = { [REVIEW_ID]: null, [INACTIVE_ID]: null, [IDEAS_ID]: null };
 
 async function show(id, text, callbackId) {
     if (text === shown[id]) return;
@@ -49,6 +52,7 @@ async function update() {
     try {
         const key = getCurrentChatKey();
         await show(REVIEW_ID, key ? noticeText(getChatDoc(key)) : '', 'openReview');
+        await show(IDEAS_ID, key && isActive() ? ideasNoticeText(getChatDoc(key)) : '', 'openIdeas');
 
         const ref = getCurrentChatRef();
         let inactive = '';
@@ -67,6 +71,7 @@ async function update() {
 export async function startReviewNotice() {
     await registerNotificationCallback('openReview', () => openWorkspace({ tab: 'review' }));
     await registerNotificationCallback('activatePreset', () => activateForOpenChat());
+    await registerNotificationCallback('openIdeas', () => openWorkspace({ tab: 'plan' }));
     const { eventSource, eventTypes } = SillyTavern.getContext();
     let timer = null;
     const later = () => { clearTimeout(timer); timer = setTimeout(() => void update(), 800); };

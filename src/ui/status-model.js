@@ -2,6 +2,7 @@
 // SillyTavern imports, unit-tested).
 
 import { qualifiedNameOf } from './names.js';
+import { openIdeas } from '../planner/model.js';
 
 // Whether Curator injects the outputs (SB-315), read from Curator's own
 // settings (extension_settings.curator.variableInjections[name].enabled).
@@ -52,4 +53,11 @@ export function noticeText(doc) {
     if (fresh) parts.push(`${fresh} new ${fresh === 1 ? 'entry' : 'entries'} in the setting${doc.adopted.some((a) => a.enrich === 'done') ? ' (detail added)' : ''}`);
     if (questions) parts.push(`${questions} ${questions === 1 ? 'question' : 'questions'} about the scene`);
     return parts.length ? `Scenario Builder: ${parts.join(', ')} - click to review.` : '';
+}
+
+// The GM ideas waiting for a yes or no (GM Plan tab) - only how many, never
+// what they are (the plan may be veiled). '' when there are none.
+export function ideasNoticeText(doc) {
+    const n = doc?.gm ? openIdeas(doc.gm).length : 0;
+    return n ? `Scenario Builder: ${n} new GM ${n === 1 ? 'idea' : 'ideas'} to look at - click to open the GM Plan.` : '';
 }

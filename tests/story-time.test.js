@@ -37,3 +37,22 @@ describe('narrated morning', () => {
         expect(cueTarget(cue, 0.88)).toMatchObject({ nextDay: true });
     });
 });
+
+import { storyElapsed } from '../src/calendar/moment.js';
+
+describe('time the story says has passed', () => {
+    it('reads a span told as passed', () => {
+        expect(storyElapsed('"The stubborn fool has been gone for hours," Graxx grumbled.')).toBe('a few hours');
+        expect(storyElapsed('Two hours later they reached the gate.')).toBe('two hours');
+        expect(storyElapsed('After several hours of marching, they rested.')).toBe('a few hours');
+        expect(storyElapsed('An hour passed in silence.')).toBe('one hour');
+        expect(storyElapsed('Three days later, the envoy returned.')).toBe('three days');
+    });
+
+    it('leaves what will be, moments, and backstory days alone', () => {
+        expect(storyElapsed('We will rest for hours.')).toBe('');
+        expect(storyElapsed('She waited for a moment.')).toBe('');
+        expect(storyElapsed('It was hours before dawn.')).toBe('');
+        expect(storyElapsed('She had been travelling for days before they met.')).toBe('');
+    });
+});

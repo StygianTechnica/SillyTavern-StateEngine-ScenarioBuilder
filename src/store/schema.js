@@ -285,7 +285,7 @@ function normalizeNarrative(value) {
 // needsNow: the clock started without knowing the story's time of day -
 // the director is asked for it (a NOW line) on its next briefing.
 export function emptyClock() {
-    return { planned: null, override: null, needsNow: false };
+    return { planned: null, override: null, needsNow: false, readTo: null };
 }
 
 function normalizeClock(value) {
@@ -293,7 +293,10 @@ function normalizeClock(value) {
     const planned = isObject(c.planned) && Number.isFinite(c.planned.from) && Number.isFinite(c.planned.to) ? { from: c.planned.from, to: c.planned.to, text: str(c.planned.text) } : null;
     const o = c.override;
     const override = isObject(o) && Number.isFinite(o.until) ? { until: o.until, weather: strList(o.weather).filter((w) => WEATHER_VALUES.includes(w)), temperature: TEMPERATURES.includes(o.temperature) ? o.temperature : '' } : null;
-    return { planned, override, needsNow: c.needsNow === true };
+    // How much of the latest reply has been read for time: a continue adds
+    // to the same message, and only the new part is read.
+    const readTo = isObject(c.readTo) && typeof c.readTo.source === 'string' && Number.isFinite(c.readTo.length) ? { source: c.readTo.source, length: c.readTo.length } : null;
+    return { planned, override, needsNow: c.needsNow === true, readTo };
 }
 
 export function emptyDirector() {

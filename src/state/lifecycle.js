@@ -27,7 +27,7 @@ import { runIntake } from '../library/intake.js';
 import { runLoreSync } from '../library/lore-sync.js';
 import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { checkQuestEnds, fillMissingEnds } from '../quests/ends.js';
-import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage } from '../validate/reconcile.js';
+import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage, followContinuedReply } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
 import { directBeforeReply, addNamedPeople } from '../director/run.js';
 import { ensureClock, advanceBy, setTime, perTurnDefault, followStoryTimeOfDay } from '../calendar/clock.js';
@@ -228,6 +228,8 @@ export function startLifecycle() {
             const ref = getCurrentChatRef();
             if (ref && isActive()) void afterReply(ref.chatId, chatKeyFor(ref));
             if (ref && isActive()) void followQuestEnds(ref.chatId, chatKeyFor(ref));
+            // A continue's added text moves the clock too (src/validate/reconcile.js).
+            if (ref && isActive()) void followContinuedReply();
             // People the story just named become characters (src/director/people.js).
             if (ref && isActive()) void addNamedPeople(ref.chatId, chatKeyFor(ref));
         });

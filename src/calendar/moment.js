@@ -154,3 +154,33 @@ export function storyDelta(text) {
     if (bare) return `a few ${bare[1]}s`;
     return '';
 }
+
+// Time the story says has passed ("he has been gone for hours", "two hours
+// later", "after several hours") -> a span the clock can take ('a few
+// hours', 'two hours'), or ''. Only what the text tells as passed - never
+// what will be ("we will rest for hours"). Minutes are left to the
+// per-reply advance; "had been ... for days" is too often backstory, so
+// only hours count there.
+const COUNT = String.raw`(?<n>an?|one|two|three|four|five|six|seven|eight|nine|ten|twelve|a few|few|several|many|some|\d+)`;
+const UNIT = String.raw`(?<u>hours?|days?)`;
+const ELAPSED = [
+    new RegExp(String.raw`\b(?:has|had|have|'s|'d)\s+(?:been\s+)?(?:\w+\s+){0,4}?for\s+(?:${COUNT}\s+)?(?<u>hours?)\b`, 'i'),
+    new RegExp(String.raw`\b${COUNT}\s+${UNIT}\s+(?:later|passed|had passed|went by|had gone by|crept by|crawled by|slipped by|dragged on|dragged by)\b`, 'i'),
+    new RegExp(String.raw`\b(?:after|over)\s+(?:${COUNT}\s+)?(?:long\s+)?${UNIT}\b`, 'i'),
+];
+const NOT_PASSED = /\b(?:will|would|shall|going to|tomorrow|tonight|soon|might|could)\b/i;
+export function storyElapsed(text) {
+    for (const sentence of String(text ?? '').split(/(?<=[.!?”"])\s+/)) {
+        if (NOT_PASSED.test(sentence)) continue;
+        for (const re of ELAPSED) {
+            const m = sentence.match(re);
+            if (!m) continue;
+            const unit = m.groups.u.toLowerCase().replace(/s$/, '');
+            const n = String(m.groups.n ?? '').toLowerCase();
+            if (!n || ['few', 'a few', 'several', 'many', 'some'].includes(n)) return `a few ${unit}s`;
+            if (['a', 'an', 'one'].includes(n)) return `one ${unit}`;
+            return `${n} ${unit}s`;
+        }
+    }
+    return '';
+}
