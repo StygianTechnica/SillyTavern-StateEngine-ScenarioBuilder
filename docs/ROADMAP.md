@@ -4,6 +4,31 @@ What is deliberately not built yet, so we can circle back. Requirement IDs
 refer to the [requirements specification](SCENARIO%20BUILDER%20REQUIREMENTS%20SPECIFICATION.md).
 Newest decisions first in each section.
 
+## The user's priorities (2026-10-19)
+
+From a review of what is left, in the user's words where it matters:
+
+- **Under way:** people mentioned are not people present ("Graxx's men"
+  brought Graxx back); events that fire on conditions, built on State
+  Engine's prompted and calculated variables (Scenario Builder makes them on
+  the fly, checks now and then whether any has borne fruit, and retires
+  them - flags especially); a toggleable "think after each reply" mode for
+  the game master.
+- **Wanted next:** perspective - people know only what they witnessed or
+  were told ("Graxx keeps talking about Remus's divine power before he ever
+  saw it"); "an impressive feat" if done well.
+- **Wanted:** current descriptions updated from the story ("would be
+  amazing"); revert an enrichment, a field or all of it ("I need to be able
+  to"); a contextual place lookup - "the ruins" should find "Roadside
+  Ruins" when that is where the story is, without taking the temple ruins
+  they are heading for (aliases alone do not do it).
+- **Nice to have, can wait:** an image gallery per entry (goes with updated
+  descriptions: before and after pictures).
+- **Not wanted:** a status line in the chat - Pretty Panels shows the state
+  in full. Shift-drag for map routes is fine as it is.
+- **Cost:** every extra model call per reply must earn its place and be
+  switchable; the user streamlined State Engine for the same reason.
+
 ## Decisions that change the spec
 
 These came after spec v0.5 and should be folded into its next revision.
@@ -298,7 +323,9 @@ calls (one entry at a time, retry, and the entry text as a fallback).
   the Calendar.
 - [ ] GM planner, phase 5: tuning (custom shapes, per-pass budgets, how often
   planned moments land).
-- [ ] Director: a "think after each reply" mode (zero wait, written before
+- [x] Director: a "think after each reply" mode (settings.director.thinkAhead,
+  src/director/ahead.js) - done; still open: per-character perspective
+  briefings. Was: a "think after each reply" mode (zero wait, written before
   the player's next message), and per-character perspective briefings once
   State Engine offers perspectives.
 - [x] Director: people it says arrive (ENTERS) or adds as here join the

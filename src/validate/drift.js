@@ -373,3 +373,26 @@ export const OBJECT_ID = /\b[a-z]{3}_[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}
 export function scrubIds(text) {
     return String(text ?? '').replace(OBJECT_ID, (id) => (id.toLowerCase().startsWith('loc_') ? UNKNOWN_PLACE : UNKNOWN_ONE));
 }
+
+const PRESENT_PARTS = /^(?:voice|eyes?|gaze|face|expression|hands?|grip|touch|arms?|shoulders?|jaw|brow|lips|mouth|smile|grin|laugh|words|tone|breath|footsteps|presence|features|head|fingers|fist|back)$/i;
+
+// Whether the latest turn names someone only as someone's - "Graxx's two",
+// "Niamh's orders" - and never as themselves: a mention, not a presence.
+// names: their name (and first name, aliases); text: the turn's messages.
+// false when they are not named at all (that is no evidence either way).
+export function namedOnlyAsOwner(names, text) {
+    const t = String(text ?? '');
+    let any = false;
+    for (const raw of names ?? []) {
+        const n = String(raw ?? '').trim();
+        if (n.length < 3) continue;
+        const esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        for (const m of t.matchAll(new RegExp(`(^|[^\\p{L}])${esc}(?=$|[^\\p{L}])(['’]s\\b\\s*(\\p{L}+))?`, 'giu'))) {
+            any = true;
+            if (!m[2]) return false;
+            // "Graxx's voice boomed", "Graxx's eyes narrowed": he is there.
+            if (PRESENT_PARTS.test(m[3] ?? '')) return false;
+        }
+    }
+    return any;
+}

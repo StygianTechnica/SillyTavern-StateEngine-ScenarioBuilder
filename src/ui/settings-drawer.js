@@ -87,6 +87,7 @@ function renderSettings() {
     byId('sb_correction_turns').value = settings.correctionTurns;
     byId('sb_director').checked = settings.director.enabled === true;
     byId('sb_director_create').checked = settings.director.allowCreate === true;
+    byId('sb_director_ahead').checked = settings.director.thinkAhead === true;
     byId('sb_director_timeout').value = settings.director.timeout;
 
     byId('sb_sections').replaceChildren(...SECTIONS.map((s) => h('label', { class: 'checkbox_label' },
@@ -139,6 +140,7 @@ export async function addSettingsDrawer() {
     });
     byId('sb_director').addEventListener('change', (e) => { settings.director.enabled = e.target.checked; changed(); });
     byId('sb_director_create').addEventListener('change', (e) => { settings.director.allowCreate = e.target.checked; saveSettings(); });
+    byId('sb_director_ahead').addEventListener('change', (e) => { settings.director.thinkAhead = e.target.checked; saveSettings(); });
     byId('sb_director_timeout').addEventListener('change', (e) => {
         const value = Math.round(Number(e.target.value));
         settings.director.timeout = Number.isFinite(value) ? Math.min(300, Math.max(5, value)) : 45;

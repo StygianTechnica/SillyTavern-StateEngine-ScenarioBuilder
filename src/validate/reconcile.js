@@ -28,7 +28,7 @@ import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry, playerIdOf, listEntries } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
 import { catchUpWithStory, holdStoryWeather, travelAlong, followStoryTimeOfDay, followStoryElapsed } from '../calendar/clock.js';
-import { detectDrift, decide, DEFAULT_POLICIES, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
+import { detectDrift, decide, DEFAULT_POLICIES, namedOnlyAsOwner, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
 
 export const DRIFT_CHANGED_EVENT = 'scenario_builder_drift_changed';
 
@@ -56,6 +56,14 @@ function latestReplyText() {
         if (chat[i] && !chat[i].is_user && !chat[i].is_system) return String(chat[i].mes ?? '');
     }
     return '';
+}
+
+// The latest turn: the player's last message and the reply after it.
+function latestTurnText() {
+    const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system);
+    const replyAt = chat.map((m) => !m.is_user).lastIndexOf(true);
+    const userAt = chat.slice(0, replyAt < 0 ? chat.length : replyAt).map((m) => m.is_user).lastIndexOf(true);
+    return [chat[userAt]?.mes, chat[replyAt]?.mes].filter((t) => typeof t === 'string').join('\n');
 }
 
 // id -> { id, type, name, confirmed } for every id the comparison needs.
@@ -191,6 +199,18 @@ async function reconcileOnce() {
         policies: settings.policies,
         rejected: doc.rejected,
     }), doc.held.filter((h) => h.until > doc.turn));
+    // Someone the turn only names as someone's ("Graxx's two") is not here:
+    // the reading that brought them in is not taken.
+    const turnText = latestTurnText();
+    for (const item of items) {
+        if (item.field !== 'cast' || item.op !== 'add' || item.action !== 'accept') continue;
+        const name = objects.get(item.objectId)?.name ?? '';
+        if (name && namedOnlyAsOwner([name, name.split(/\s+/)[0]], turnText)) {
+            item.action = 'adjust';
+            item.classification = 'ambiguous';
+            item.reason = `${name} is only mentioned (as someone's), not here`;
+        }
+    }
 
     if (!items.length && !newReply && JSON.stringify(doc.lastObserved) === JSON.stringify(observed)) return;
 

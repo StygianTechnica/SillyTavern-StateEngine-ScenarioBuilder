@@ -321,7 +321,7 @@ function normalizeClock(value) {
 }
 
 export function emptyDirector() {
-    return { note: '', summary: '', direction: '', key: '', at: '', created: [], error: '', time: '', moves: { in: [], out: [] } };
+    return { note: '', summary: '', direction: '', key: '', at: '', created: [], error: '', time: '', moves: { in: [], out: [] }, ahead: null };
 }
 
 function normalizeDirector(value) {
@@ -336,6 +336,9 @@ function normalizeDirector(value) {
         error: str(value.error),
         time: str(value.time),
         moves: isObject(value.moves) ? { in: strList(value.moves.in), out: strList(value.moves.out) } : { in: [], out: [] },
+        // A briefing written ahead (src/director/ahead.js): the model's answer,
+        // and the AI reply it was written after.
+        ahead: isObject(value.ahead) && str(value.ahead.raw) && str(value.ahead.after) ? { after: str(value.ahead.after), raw: str(value.ahead.raw), at: str(value.ahead.at) } : null,
     };
 }
 

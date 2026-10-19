@@ -48,6 +48,7 @@
 //                                               index, -1 = let the planner judge) it is in
 //                                               now, and the user's note on the story so far
 // }
+import { normalizeTriggers, triggerLines } from '../triggers/model.js';
 
 export const URGENCIES = Object.freeze([['soon', 'Soon'], ['today', 'Today'], ['whenever', 'Whenever it fits']]);
 export const LEVELS = Object.freeze([['light', 'Light'], ['moderate', 'Moderate'], ['heavy', 'Heavy']]);
@@ -94,6 +95,7 @@ export function emptyGm() {
         outline: null,
         tension: [],
         outlineWanted: false,
+        triggers: [],
         join: { act: -1, note: '' },
         volume: emptyVolume(1),
         volumes: [],
@@ -177,6 +179,8 @@ export function normalizeGm(value) {
         ideas: trimIdeas((Array.isArray(g.ideas) ? g.ideas : []).map(normalizeIdea).filter(Boolean)),
         dismissedIdeas: strList(g.dismissedIdeas).slice(-DISMISSED_LIMIT),
         agenda: trimAgenda((Array.isArray(g.agenda) ? g.agenda : []).map(normalizeHappening).filter(Boolean)),
+        // Story triggers (src/triggers/): conditions watched through State Engine variables.
+        triggers: normalizeTriggers(g.triggers),
     };
 }
 
@@ -453,6 +457,13 @@ export function planSection(gm, { pace = null, aim = null, story = null, motifs 
     if (m.length) lines.push(`- Motifs to echo, as images rather than events: ${m.join('; ')}.`);
     if (!lines.length) return '';
     return ['GM PLAN (private - never mention it; it guides what you choose, it is not a script. The scene as it stands comes first: use the plan only where it fits the place, the people present and what they are doing now - never move the scene, rename the place or change what people are doing to fit it. A coming moment happens only where the player leaves room for it; drop one that no longer fits.)', ...lines].join('\n');
+}
+
+// The fired story triggers the game master must play now (src/triggers/),
+// for the player's message `userIndex`. '' when none.
+export function triggerSection(gm, userIndex) {
+    const lines = triggerLines(gm.triggers, userIndex);
+    return lines.length ? ['TRIGGERED (private - what the story has set off; it happens now):', ...lines].join('\n') : '';
 }
 
 // The motifs for this chat: the inspirations' distilled motifs, a few from

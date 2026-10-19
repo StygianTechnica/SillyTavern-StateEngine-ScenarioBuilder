@@ -267,3 +267,15 @@ export function normalizeQuestMeta(value) {
         endsTried: q.endsTried === true,
     };
 }
+
+// A thread the story has left behind: Archivist still has it open, but no
+// message in the last `after` has touched it ("negotiate passage with Niamh"
+// long after it was settled, a ceremony from the first chapter). It makes no
+// new quest, and a quest on it is not put before the narrator.
+// thread: Archivist's view of it (message_range.to: the last message that
+// touched it); newest: the chat's newest message Archivist has read.
+export const DORMANT_AFTER = 40;
+export function threadDormant(thread, newest, after = DORMANT_AFTER) {
+    const last = thread?.message_range?.to;
+    return Number.isInteger(last) && Number.isInteger(newest) && newest - last > after;
+}

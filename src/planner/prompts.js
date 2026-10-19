@@ -247,7 +247,9 @@ export function buildOutlinePrompt(input) {
         'Answer in this JSON shape:',
         '{"premise":"<what this story is about, two or three sentences>","themes":["<theme>"],',
         ' "acts":[{"title":"<act title>","beats":[{"id":"<the id of a beat kept from above, or empty for a new one>","text":"<the beat>","ties":["<names>"],"status":"pending|active|done|skipped"}]}],',
-        ' "seeds":[{"text":"<what to plant>","payoff":"<the beat it pays off>"}]}',
+        ' "seeds":[{"text":"<what to plant>","payoff":"<the beat it pays off>"}],',
+        ' "triggers":[{"when":"<a concrete thing the story will SHOW happening, for a beat of this act or the next>","then":"<what happens because of it>"}]}',
+        'Triggers are optional (at most three): only for a beat that must follow from something the characters do ("when Remus opens his predecessor\'s tomb" -> "the corrupted champion rises and attacks"). Each "when" is watched in the story and the "then" is set off the moment it happens.',
     );
     return { system, prompt: parts.join('\n') };
 }
@@ -417,6 +419,7 @@ export function readOutline(json) {
         themes: texts(json.themes, 6).map((t) => cut(t, 80)),
         acts: acts.slice(0, 8),
         seeds: list(json.seeds).filter((x) => isObject(x) && clean(x.text)).map((x) => ({ text: cut(x.text, 200), payoff: cut(x.payoff, 200) })).slice(0, 6),
+        triggers: list(json.triggers).filter((x) => isObject(x) && clean(x.when) && clean(x.then)).map((x) => ({ when: cut(x.when, 240), then: cut(x.then, 300) })).slice(0, 3),
     };
 }
 

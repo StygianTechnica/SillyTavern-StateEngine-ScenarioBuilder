@@ -91,6 +91,7 @@ export async function renderQuestTab(entry) {
             h('span', { class: `sb-badge sb-prio-${q.priority.level}`, title: q.priority.reasons.join(', ') }, `${q.priority.level} priority`),
             h('span', { class: 'sb-chip' }, icon(STATUS_ICON[q.status] ?? 'fa-scroll'), ` ${q.status}`),
             h('small', { class: 'sb-hint' }, FROM_TEXT[q.from]),
+            q.dormant ? h('span', { class: 'sb-chip', title: 'The story has not touched it in a long while: it is not put before the narrator. Set its status to Active to follow it again.' }, icon('fa-moon'), ' dormant') : null,
             q.priority.reasons.length ? h('small', { class: 'sb-hint' }, `(${q.priority.reasons.join(', ')})`) : null) : null,
         q?.conflict ? h('div', { class: 'sb-callout sb-warn' }, icon('fa-circle-exclamation'),
             h('span', {}, `Archivist thinks this quest is ${q.conflict.toLowerCase()}, but the story still has it active.`),

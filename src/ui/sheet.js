@@ -648,7 +648,12 @@ function routesCard(entry, names) {
                 updateRoute(settingId, route.id, { travel, ...(route.guessed ? { guessed: false, note: route.note === 'guessed - edit if wrong' ? '' : route.note } : {}) });
                 void syncNow().then(() => rerender());
             } }),
-            route.guessed ? h('span', { class: 'sb-badge', title: 'Guessed from the places\' size and the world\'s technology when the scene first moved along it. Change the time to make it yours.' }, 'guess') : null,
+            // A right guess is kept as it is: one click makes it yours.
+            route.guessed ? h('span', {
+                class: 'sb-badge sb-badge-click', role: 'button', tabindex: 0,
+                title: 'Guessed from the places\' size and the world\'s technology. Click to keep this time as yours - or change the time.',
+                onclick: () => { updateRoute(settingId, route.id, { guessed: false, note: route.note === 'guessed - edit if wrong' ? '' : route.note }); void syncNow().then(() => rerender()); },
+            }, icon('fa-check'), ' guess - keep it') : null,
             route.note && !route.guessed ? h('small', { class: 'sb-hint' }, ` - ${route.note}`) : null,
             h('span', { class: 'sb-iconbtn', title: 'Remove this route', onclick: () => { removeRoute(settingId, route.id); void syncNow().then(() => rerender()); } }, icon('fa-xmark'))))) : h('small', { class: 'sb-muted' }, 'No routes yet.'),
         h('div', { class: 'sb-row' },

@@ -42,7 +42,7 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 // 7: sb__scene_creatures (the creatures the story has in the scene).
 // 8: sb__canon_summary; scene summary and title instructions tightened.
 // 9: sb__scene_characters adds who the messages show here but the list lacks.
-export const PRESET_VERSION = 11;
+export const PRESET_VERSION = 12;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -65,7 +65,7 @@ export const OBSERVED_VARIABLES = Object.freeze([
     ['scene_characters', {
         label: 'Characters (story)', description: 'The characters the story says are present - checked against the canonical cast.',
         type: 'array', itemType: 'object', itemObjectType: 'character', unique: true, defaultValue: '[]', scope: 'chat', showInTracker: true,
-        ...prompted('Who is present in the scene now, from the latest messages. Start from the current value: keep characters who remain, remove those who have left, and ADD every character the messages show here who is missing from it - someone who came back, or who was there all along. A companion that talks and thinks like a person (a sentient familiar, a dragon, a bound spirit) is a character; an animal is not.'),
+        ...prompted('Who is present in the scene now, from the latest messages. Start from the current value: keep characters who remain, remove those who have left, and ADD every character the messages show here who is missing from it - someone who came back, or who was there all along. A companion that talks and thinks like a person (a sentient familiar, a dragon, a bound spirit) is a character; an animal is not. Someone only mentioned - talked about, remembered, or named as someone else\'s ("Graxx\'s two", "Niamh\'s orders") - is not present.'),
     }],
     ['scene_creatures', {
         label: 'Creatures (story)', description: 'The creatures the story says are in the scene - checked against the canonical ones.',

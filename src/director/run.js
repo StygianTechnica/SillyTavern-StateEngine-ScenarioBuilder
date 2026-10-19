@@ -24,6 +24,7 @@ import { baselineFields } from '../library/fields.js';
 import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import { callModelFirst } from '../generate/llm.js';
+import { replyKeyOf, canUseAhead, shouldThinkAhead } from './ahead.js';
 import { gatherInputs } from '../guidance/sync.js';
 import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
@@ -314,7 +315,10 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
     return { characters, castIds, nearby, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes };
 }
 
-async function run(chatId, chatKey, type, force) {
+// ahead: write ahead (after an AI reply) - only the model's answer is kept
+// (doc.director.ahead), nothing applied. preRaw: an answer written ahead,
+// taken in place of the model call - and applied now, as any new turn's.
+async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null } = {}) {
     const settings = getSettings();
     const settingId = await getBoundSettingId(chatId);
     const inputs = await gatherInputs(chatId, chatKey);
@@ -322,7 +326,7 @@ async function run(chatId, chatKey, type, force) {
     const messages = recentMessages(type);
     const key = hashOf(JSON.stringify(messages.map((m) => [m.name, m.text])));
     const doc = getChatDoc(chatKey);
-    if (!force && doc.director.key === key && doc.director.note) return doc.director;
+    if (!ahead && !force && doc.director.key === key && doc.director.note) return doc.director;
 
     const { characters, castIds, nearby, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes } = await sceneContext(chatId, chatKey, settingId, guidance);
     // Every entry of every type, for "also relevant" and for checking what
@@ -356,8 +360,20 @@ async function run(chatId, chatKey, type, force) {
         timeKeeping: settings.time.enabled && !!settingId,
         askNow: settings.time.enabled && !!settingId && doc.clock.needsNow,
         gmPlan: settingId ? directorPlan(chatKey, messages) : '',
+        ahead,
     });
-    const raw = await callModelFirst([{ role: 'system', content: system }, { role: 'user', content: prompt }], settings.director.maxTokens);
+    if (ahead) {
+        // Called at once, not queued: a queued call waits out any reply, and
+        // the next reply waits for this briefing.
+        const after = replyKeyOf(SillyTavern.getContext().chat);
+        const answer = await callModelFirst([{ role: 'system', content: system }, { role: 'user', content: prompt }], settings.director.maxTokens);
+        if (!String(answer ?? '').trim()) throw new Error('The model wrote no briefing.');
+        // The chat moved on meanwhile (an edit, a swipe, a new reply): no use.
+        if (replyKeyOf(SillyTavern.getContext().chat) !== after) return getChatDoc(chatKey).director;
+        updateChatDoc(chatKey, (d) => { d.director = { ...d.director, ahead: { after, raw: String(answer), at: new Date().toISOString() } }; });
+        return getChatDoc(chatKey).director;
+    }
+    const raw = preRaw ?? await callModelFirst([{ role: 'system', content: system }, { role: 'user', content: prompt }], settings.director.maxTokens);
     const parsed = parseDirectorNote(raw);
     // Whatever the director wrote of the player character's own actions,
     // thoughts or feelings goes - the narrator would copy it.
@@ -492,7 +508,8 @@ async function run(chatId, chatKey, type, force) {
         if (made.length || movedFrom || moves.in.length || moves.out.length) markActive(chatKey);
     }
 
-    const result = { note, summary: parsed.summary, direction: parsed.direction, key, at: new Date().toISOString(), created: [...doc.director.created, ...made].slice(-20), error: '', time: timeText, moves };
+    // A briefing written ahead is used once.
+    const result = { note, summary: parsed.summary, direction: parsed.direction, key, at: new Date().toISOString(), created: [...doc.director.created, ...made].slice(-20), error: '', time: timeText, moves, ahead: preRaw ? null : getChatDoc(chatKey).director.ahead };
     updateChatDoc(chatKey, (d) => { d.director = result; });
     return result;
 }
@@ -500,13 +517,13 @@ async function run(chatId, chatKey, type, force) {
 // Writes a fresh briefing for the open chat (unless the situation has not
 // changed since the last one, or `force`). Resolves to the chat's director
 // record; on failure the previous briefing stays and `error` says why.
-export async function runDirector(chatId, chatKey, { type = 'normal', force = false } = {}) {
+export async function runDirector(chatId, chatKey, { type = 'normal', force = false, preRaw = null } = {}) {
     if (!getSettings().director.enabled) return null;
     const id = `${chatKey}|${type}|${force}`;
     if (inFlight.has(id)) return inFlight.get(id);
     status = { running: true, chatKey, error: '' };
     announce();
-    const job = run(chatId, chatKey, type, force)
+    const job = run(chatId, chatKey, type, force, { preRaw })
         .catch((err) => {
             console.warn(LOG_PREFIX, 'the director could not write a briefing', err);
             const error = String(err?.message ?? err);
@@ -530,15 +547,44 @@ export async function runDirector(chatId, chatKey, { type = 'normal', force = fa
 // carries on and its briefing is kept for later). Resolves to true when a
 // briefing for this reply is ready.
 export async function directBeforeReply(chatId, chatKey, type) {
-    const { enabled, timeout } = getSettings().director;
+    const { enabled, timeout, thinkAhead } = getSettings().director;
     if (!enabled) return false;
     const ms = Math.max(5, Number(timeout) || 45) * 1000;
     let timer;
     const late = new Promise((resolve) => { timer = setTimeout(() => resolve('late'), ms); });
-    const outcome = await Promise.race([runDirector(chatId, chatKey, { type }), late]);
+    // Thinking ahead: the briefing written after the latest AI reply, once
+    // it is ready (a run still going is waited for, as an ordinary one is).
+    const newTurn = isNewTurn(type);
+    if (thinkAhead && newTurn && aheadJob?.chatKey === chatKey) await Promise.race([aheadJob.promise, late]);
+    const ahead = getChatDoc(chatKey).director.ahead;
+    const preRaw = canUseAhead(ahead, replyKeyOf(SillyTavern.getContext().chat), { enabled: thinkAhead, type }) ? ahead.raw : null;
+    if (preRaw) console.info(LOG_PREFIX, 'using the briefing written after the last reply');
+    const outcome = await Promise.race([runDirector(chatId, chatKey, { type, preRaw }), late]);
     clearTimeout(timer);
     if (outcome === 'late') console.info(LOG_PREFIX, `the director took longer than ${ms / 1000}s; the previous briefing is used for this reply`);
     return outcome !== 'late' && !!outcome?.note;
+}
+
+// Thinking ahead (settings.director.thinkAhead, src/director/ahead.js):
+// after an AI reply has settled, the briefing for the next turn is written
+// in the background - only kept, not applied, until the player's message is
+// sent. Never throws.
+let aheadJob = null;
+export function thinkAfterReply(chatId, chatKey) {
+    try {
+        const { enabled, thinkAhead } = getSettings().director;
+        if (!enabled || !thinkAhead) return;
+        const chat = SillyTavern.getContext().chat;
+        if (!shouldThinkAhead(getChatDoc(chatKey).director.ahead, chat, { enabled: true })) return;
+        const after = replyKeyOf(chat);
+        if (aheadJob?.after === after) return;
+        const promise = run(chatId, chatKey, 'ahead', true, { ahead: true })
+            .catch((err) => console.warn(LOG_PREFIX, 'the director could not think ahead', err))
+            .finally(() => { if (aheadJob?.promise === promise) aheadJob = null; });
+        aheadJob = { chatKey, after, promise };
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not start thinking ahead', err);
+    }
 }
 
 // After a reply: the people the last few messages name who are not in the

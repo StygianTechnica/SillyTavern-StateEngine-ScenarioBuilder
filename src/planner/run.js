@@ -27,9 +27,10 @@ import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { setQuestMeta, questMeta } from '../quests/sync.js';
 import { callModel } from '../generate/llm.js';
 import { readModelJson } from '../generate/prompt.js';
+import { plannerTriggers, retirePlannerTriggers, markTriggersShown } from '../triggers/run.js';
 import { gatherInputs } from '../guidance/sync.js';
 import { dossierText, knownAs, relevance } from '../director/prompt.js';
-import {
+import { triggerSection,
     duePasses, setDayPlan, applyCheck, applyBeats, trackPace, paceAim, planSection, motifsOf, addLog,
     addRequest, setRequestStatus, waitingRequests,
     setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, editBeat, lockBeat, removeBeat, addBeat,
@@ -237,6 +238,8 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
             newVolume,
         }), OUTLINE_TOKENS, { salvage: (raw) => readModelJson(closeCutJson(raw)) }));
         if (!parsed) throw new Error('The outline had no beats in it.');
+        // The conditions the outline wants watched: story triggers.
+        await plannerTriggers(chatId, chatKey, parsed.triggers ?? []);
         updateChatDoc(chatKey, (d) => {
             setOutline(d.gm, parsed, { turn: d.gm.counters.turn, keepLocked: !rewrite || keepLocked });
             // The user said where the story is: the outline starts there,
@@ -438,6 +441,22 @@ const TENSE = 4;
 // The GM PLAN section for the director's prompt ('' when off or empty).
 // messages: the director's recent messages.
 export function directorPlan(chatKey, messages) {
+    // Fired story triggers reach the game master, planner on or off; each
+    // once (a swipe of that reply sees it again).
+    let triggered = '';
+    try {
+        const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system);
+        const userIndex = chat.map((m) => !!m.is_user).lastIndexOf(true);
+        triggered = triggerSection(getChatDoc(chatKey).gm, userIndex);
+        markTriggersShown(chatKey, userIndex);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'no story triggers for the director', err);
+    }
+    const plan = plannedSection(chatKey, messages);
+    return [triggered, plan].filter(Boolean).join('\n\n');
+}
+
+function plannedSection(chatKey, messages) {
     try {
         const p = plannerSettings();
         if (p.enabled !== true) return '';
@@ -609,6 +628,8 @@ export async function finishVolume(chatId, chatKey, { shape = '', direction = ''
             words: recapWords(gm.counters.turn - gm.volume.startedTurn),
         }), RECAP_TOKENS, { salvage: (raw) => { const r = readRecapText(raw); return r ? { title: r.title, recap: r.recap, threads: r.threads } : null; } }));
         if (!recap) throw new Error('The recap came back empty.');
+        // The last volume's triggers end with it.
+        await retirePlannerTriggers(chatKey);
         const index = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).length;
         let record = null;
         updateChatDoc(chatKey, (d) => {

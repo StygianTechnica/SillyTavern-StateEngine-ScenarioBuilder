@@ -567,3 +567,6 @@
 .sb-map-bg { pointer-events: none; }
 .sb-map-image-panel { display: flex; flex-direction: column; gap: 6px; }
 .sb-map-image-panel input[type="range"] { width: 220px; }
+
+.sb-badge-click { cursor: pointer; }
+.sb-badge-click:hover { filter: brightness(1.25); }

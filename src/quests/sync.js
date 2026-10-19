@@ -31,7 +31,7 @@ import { listEntries, createEntry, updateEntry, setEntryMeta, mayAddGeneratedDet
 import { PRESET_NAME } from '../preset/blueprint.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import {
-    isQuestThread, statusFromThread, typeFromThread, objectivesFromThread, mergeObjectives, tidyObjectives, foreignStepTest,
+    isQuestThread, threadDormant, statusFromThread, typeFromThread, objectivesFromThread, mergeObjectives, tidyObjectives, foreignStepTest,
     effectiveStatus, questProgress, currentObjective, questPriority, sortQuests, normalizeQuestMeta,
 } from './model.js';
 
@@ -61,10 +61,13 @@ function foreignTest(thread, quest, threads, links) {
 }
 
 // Archivist's compiled story threads for the open chat, or [].
+// Archivist's threads, each with `dormant` set when the story has left it
+// behind (quests/model.js threadDormant).
 async function archivistThreads() {
     try {
         const view = await window.StateEngineArchivist?.getCompiledMemory?.();
-        return Array.isArray(view?.threads) ? view.threads : [];
+        const newest = view?.newest_message_index;
+        return Array.isArray(view?.threads) ? view.threads.map((t) => ({ ...t, dormant: threadDormant(t, newest) })) : [];
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not read Archivist\'s story threads', err);
         return [];
@@ -133,6 +136,8 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
                 continue;
             }
             if (!create || rejectedName(thread.title)) continue;
+            // Nothing new from a thread the story left behind long ago.
+            if (thread.dormant && !scan) continue;
             const finished = thread.status === 'resolved' || thread.status === 'abandoned';
             if (finished && !scan) continue;
 
@@ -244,6 +249,8 @@ export async function questBoard(chatId, chatKey, settingId) {
         out.push({
             id: q.id,
             name: q.name,
+            // Its thread left behind by the story: kept, but not followed.
+            dormant: thread?.dormant === true && !meta.status,
             description: q.description ?? '',
             type: meta.type || 'side',
             status: state.status,
@@ -271,7 +278,9 @@ export async function questBoard(chatId, chatKey, settingId) {
 // The active quests, most important first, at most `tracked`.
 export async function activeQuests(chatId, chatKey, settingId) {
     const limit = getSettings().quests.tracked ?? 5;
-    return (await questBoard(chatId, chatKey, settingId)).filter((q) => q.status === 'Active').slice(0, limit);
+    // A dormant one (the story left its thread behind) is not followed,
+    // unless the user has set it Active themself.
+    return (await questBoard(chatId, chatKey, settingId)).filter((q) => q.status === 'Active' && !q.dormant).slice(0, limit);
 }
 
 // Holds the active quests in sb__quests before a reply (SB-213, SB-432).

@@ -16,6 +16,8 @@ import {
     runIdeas, acceptIdea, dismissIdea, editProposal, addAgendaItem, removeAgendaItem, setCreationMode,
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
+import { armTrigger, retireTrigger, clearFinishedTriggers } from '../triggers/run.js';
+import { listEntries } from '../library/library.js';
 import { ws, rerender, markDirty } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
 
@@ -440,6 +442,65 @@ function paceCard(gm) {
 
 // ---- the queue
 
+// ---- story triggers (src/triggers/)
+
+const TRIGGER_KIND_TEXT = { story: 'Something happens', place: 'They reach a place', person: 'Someone is present', day: 'A day comes' };
+const TRIGGER_STATUS_TEXT = { armed: 'watching', fired: 'set off', done: 'played', retired: 'taken down' };
+
+// Conditions watched in the story, and what they set off: the user's own,
+// and the planner's (veiled like the rest of the plan).
+function triggersCard(gm, show, places, people) {
+    const { chatId, chatKey } = ws.ctx;
+    const draft = { kind: 'story', when: '', then: '', target: '', day: '' };
+    const name = (list, id) => list.find((e) => e.id === id)?.name ?? '(gone)';
+    const whenText = (t) => (t.kind === 'place' ? `the scene reaches ${name(places, t.target)}`
+        : t.kind === 'person' ? `${name(people, t.target)} is present`
+            : t.kind === 'day' ? `day ${t.day} comes` : t.when);
+    const arm = async () => {
+        const kind = draft.kind;
+        const target = kind === 'place' || kind === 'person' ? draft.target : '';
+        const day = kind === 'day' ? Number.parseInt(draft.day, 10) : null;
+        const when = kind === 'story' ? draft.when.trim() : whenText({ kind, target, day });
+        if (!draft.then.trim() || (kind === 'story' && !when) || ((kind === 'place' || kind === 'person') && !target) || (kind === 'day' && !(day > 0))) {
+            return toast('info', 'Say when, and what then happens.');
+        }
+        const made = await armTrigger(chatId, chatKey, { kind, when, then: draft.then.trim(), target, day });
+        if (made) toast('success', 'Watching for it.');
+        else toast('warning', 'Not armed: it is already watched, too many are, or State Engine refused (see the console).');
+        done();
+    };
+    const whenField = h('div', {});
+    const drawWhen = () => {
+        whenField.replaceChildren(draft.kind === 'story'
+            ? h('input', { class: 'text_pole', placeholder: 'When… (e.g. Remus opens his predecessor\'s tomb)', oninput: (e) => { draft.when = e.target.value; markDirty(); } })
+            : draft.kind === 'place' ? select([{ value: '', label: 'Which place?' }, ...places.map((p) => ({ value: p.id, label: p.name }))], '', { onchange: (e) => { draft.target = e.target.value; } })
+                : draft.kind === 'person' ? select([{ value: '', label: 'Who?' }, ...people.map((p) => ({ value: p.id, label: p.name }))], '', { onchange: (e) => { draft.target = e.target.value; } })
+                    : h('input', { class: 'text_pole', type: 'number', min: 1, placeholder: 'Day', oninput: (e) => { draft.day = e.target.value; } }));
+    };
+    drawWhen();
+    const list = gm.triggers.slice().reverse();
+    const finished = list.filter((t) => t.status === 'done' || t.status === 'retired').length;
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-bolt'), 'Story triggers'),
+        h('small', { class: 'sb-hint' }, 'When something happens, something follows. State Engine watches each condition in its usual update (no extra calls); when one is met, the game master sets off what follows in the next reply.'),
+        h('div', { class: 'sb-row' },
+            select(Object.entries(TRIGGER_KIND_TEXT).map(([value, label]) => ({ value, label })), draft.kind, { onchange: (e) => { draft.kind = e.target.value; draft.target = ''; drawWhen(); } }),
+            whenField),
+        h('textarea', { class: 'text_pole', rows: 2, placeholder: 'Then… (e.g. the corrupted champion rises and attacks)', oninput: (e) => { draft.then = e.target.value; markDirty(); } }),
+        h('div', { class: 'sb-actions' }, button('Watch for it', () => void arm(), { iconName: 'fa-bolt', cls: 'sb-primary' })),
+        ...list.map((t) => {
+            const veiled = t.source === 'planner' && t.status === 'armed' && !show;
+            return h('div', { class: `sb-gm-row${t.status === 'done' || t.status === 'retired' ? ' sb-gm-past' : ''}` },
+                h('div', { class: 'sb-gm-text' }, veiled ? h('i', {}, 'A turn the plan is waiting for (hidden - show spoilers to read it).') : [h('b', {}, 'When '), whenText(t), h('b', {}, ' then '), t.then]),
+                h('div', { class: 'sb-chips' },
+                    h('span', { class: 'sb-chip' }, t.source === 'planner' ? 'the plan\'s' : 'yours'),
+                    h('span', { class: `sb-chip sb-gm-${t.status}` }, TRIGGER_STATUS_TEXT[t.status]),
+                    t.status === 'armed' ? h('div', { class: 'sb-iconbtn', title: 'Stop watching for it', onclick: () => void retireTrigger(chatKey, t.id).then(done) }, icon('fa-xmark')) : null));
+        }),
+        !list.length ? h('p', { class: 'sb-muted' }, 'Nothing watched yet.') : null,
+        finished ? h('div', { class: 'sb-actions' }, button(`Clear ${finished} finished`, () => { clearFinishedTriggers(chatKey); done(); }, { iconName: 'fa-broom' })) : null);
+}
+
 function queueCard(gm) {
     const { chatKey } = ws.ctx;
     let text = '';
@@ -616,8 +677,10 @@ export async function renderGmPlan() {
     if (!settingId) return h('div', { class: 'sb-muted' }, 'This chat has no setting yet.');
     const gm = getChatDoc(chatKey).gm;
     const show = getSettings().planner.showSpoilers === true;
+    const places = await listEntries(ws.ctx.chatId, settingId, 'location').catch(() => []);
+    const people = await listEntries(ws.ctx.chatId, settingId, 'character').catch(() => []);
     return h('div', { class: 'sb-gm-plan' },
         h('div', { class: 'sb-scene-cols' },
-            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), volumesCard(gm), ideasCard(gm), todayCard(gm, show), agendaCard(gm, show), queueCard(gm), inspirationCard(gm)),
+            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), volumesCard(gm), ideasCard(gm), todayCard(gm, show), agendaCard(gm, show), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
             h('div', { class: 'sb-gm-col' }, paceCard(gm), settingsCard(gm))));
 }

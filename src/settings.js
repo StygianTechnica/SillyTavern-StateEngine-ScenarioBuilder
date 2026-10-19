@@ -68,7 +68,10 @@ const DEFAULTS = {
     // each reply. timeout: seconds the reply waits for it (the last note is
     // used when it is late); allowCreate: it may add the rooms, people and
     // items the scene needs to the library (never in a canon-only setting).
-    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700 },
+    // thinkAhead: the briefing is written right after each AI reply, in
+    // the background, so the player's next message goes out without a wait
+    // (src/director/ahead.js) - it cannot see that message.
+    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false },
     // The clock (src/calendar/clock.js): on = Scenario Builder keeps the
     // time and weather; perTurn = how much time a reply covers when the
     // director does not say.

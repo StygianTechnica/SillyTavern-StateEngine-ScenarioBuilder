@@ -28,9 +28,10 @@ import { runLoreSync } from '../library/lore-sync.js';
 import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { checkQuestEnds, fillMissingEnds } from '../quests/ends.js';
 import { ensureCharacterFields } from '../library/character-fields.js';
+import { checkTriggers } from '../triggers/run.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage, followContinuedReply } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
-import { directBeforeReply, addNamedPeople } from '../director/run.js';
+import { directBeforeReply, addNamedPeople, thinkAfterReply } from '../director/run.js';
 import { ensureClock, advanceBy, setTime, perTurnDefault, followStoryTimeOfDay } from '../calendar/clock.js';
 import { getChatDoc } from '../store/chat-store.js';
 import { healMissing } from './canonical.js';
@@ -70,6 +71,10 @@ function scheduleValidation(chatId) {
     clearTimeout(timer);
     timer = setTimeout(async () => {
         await reconcileOpenChat();
+        // Story triggers: State Engine's update has answered their flags.
+        await checkTriggers(ref.chatId, chatKeyFor(ref));
+        // Thinking ahead: the next briefing, written now in the background.
+        thinkAfterReply(ref.chatId, chatKeyFor(ref));
         // The scene never points at something deleted meanwhile.
         await healMissing(ref.chatId, chatKeyFor(ref));
         await intakeOpenChat();

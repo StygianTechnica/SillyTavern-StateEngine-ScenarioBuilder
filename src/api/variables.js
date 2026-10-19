@@ -25,6 +25,11 @@ export async function createVariable(presetName, variableName, def) {
     return stateEngine.createVariable(EXTENSION_ID, instanceId, { ...def, namespace: NAMESPACE, presetName, name: variableName });
 }
 
+export async function deleteVariable(presetName, variableName) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.deleteVariable(EXTENSION_ID, instanceId, ref(presetName, variableName));
+}
+
 export async function updateVariable(presetName, variableName, patch) {
     const { stateEngine, instanceId } = await getStateEngine();
     return stateEngine.updateVariable(EXTENSION_ID, instanceId, ref(presetName, variableName), patch);
