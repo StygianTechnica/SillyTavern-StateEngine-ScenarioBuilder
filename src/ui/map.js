@@ -11,13 +11,13 @@
 // places roughly is all it needs. Model: src/ui/map-model.js.
 
 import { listRoutes, updateRoute, addRoute, guessRoute } from '../library/routes.js';
-import { getParents, getMapPositions, setMapPosition, getPlaceOverview } from '../library/library.js';
+import { getParents, getMapPositions, setMapPosition, getPlaceOverview, getMapImages, setMapImage } from '../library/library.js';
 import { syncNow } from '../guidance/sync.js';
-import { levelPlaces, levelRoutes, insideCounts, mapScale, estimates, seedPositions, formatMinutes } from './map-model.js';
+import { levelPlaces, levelRoutes, insideCounts, mapScale, estimates, seedPositions, formatMinutes, fitView, levelImage, levelKey, placeNewImage, resizeImage, DEFAULT_MAP_ZOOM } from './map-model.js';
 import { labelPoint, boundsOf } from './graph-layout.js';
 import { ws, rerender, openSheet } from './ws.js';
 import { h, icon, button, toast } from './dom.js';
-import { safeImageSrc } from '../images/attach.js';
+import { safeImageSrc, importImage } from '../images/attach.js';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const TILE_W = 150;
@@ -47,6 +47,8 @@ export function locationMap(locations, doc) {
     const routes = levelRoutes(listRoutes(settingId), places.map((p) => p.id));
     const scale = mapScale(routes, pos);
     const guesses = estimates(routes, pos, scale);
+    const anchorOf = (id) => seedPositions(levelPlaces(locations, parents, parents[id] ?? null), saved)[id] ?? { x: 0, y: 0 };
+    const img = levelImage(parentId, { images: getMapImages(settingId), parents, anchorOf });
     const scenePath = new Set();
     for (let at = doc?.canonical?.locationId; at && !scenePath.has(at); at = parents[at]) scenePath.add(at);
 
@@ -66,16 +68,26 @@ export function locationMap(locations, doc) {
         scale ? h('small', { class: 'sb-hint', title: 'From the routes whose travel time you set, on this level' }, icon('fa-ruler'), ` scale: ${scaleText(scale)}`)
             : h('small', { class: 'sb-hint', title: 'Set the travel time of a route here (on a place\'s sheet) to give the map a scale' }, icon('fa-ruler'), ' no scale yet'),
         guesses.length ? button(`Apply map estimates (${guesses.length})`, apply, { iconName: 'fa-wand-magic', title: 'Write what the map says into the guessed routes on this level' }) : null,
+        button('Map image', () => { ws.mapImageOpen = !ws.mapImageOpen; rerender(); }, { iconName: 'fa-map', cls: ws.mapImageOpen ? 'sb-primary' : '', title: 'Put a map picture behind this level' }),
+        // Lost the places off screen: the view fitted to them again.
+        button('Fit', () => { ws.mapView = null; rerender(); }, { iconName: 'fa-expand', title: 'Show every place on this level' }),
         parentId ? button('Open sheet', () => openSheet(parentId, 'location'), { iconName: 'fa-book-open' }) : null);
 
+    const imagePanel = ws.mapImageOpen ? mapImagePanel({ settingId, parentId, img, byId }) : null;
     if (!places.length) {
-        return h('div', { class: 'sb-map' }, h('div', { class: 'sb-toolbar' }, crumb, tools),
+        return h('div', { class: 'sb-map' }, h('div', { class: 'sb-toolbar' }, crumb, tools), imagePanel,
             h('div', { class: 'sb-callout' }, icon('fa-map'), h('span', {}, parentId ? 'Nothing is inside this place yet.' : 'No places yet.')));
     }
 
     // ---- the canvas: routes, their labels, then the tiles
     const svg = s('svg', { class: 'sb-map-svg', role: 'img', 'aria-label': 'Location map' });
     const world = s('g', { class: 'sb-map-world' });
+    if (ws.mapView?.parent === parentId) world.setAttribute('transform', viewTransform(ws.mapView));
+    // The map picture, behind everything else.
+    const bg = img && safeImageSrc(img.src)
+        ? s('image', { class: 'sb-map-bg', href: safeImageSrc(img.src), x: img.x, y: img.y, width: img.w, height: img.h, opacity: img.opacity ?? 0.6, preserveAspectRatio: 'none' })
+        : null;
+    if (bg) world.append(bg);
     const routeEls = [];
     const estimateOf = new Map(guesses.map((g) => [g.route.id, g.travel]));
     for (const r of routes) {
@@ -117,14 +129,68 @@ export function locationMap(locations, doc) {
     const enter = (p, inside) => {
         if (inside) { ws.mapParent = p.id; ws.mapView = null; rerender(); } else openSheet(p.id, 'location');
     };
-    wireMap({ svg, world, pos, tiles, routeEls, places, settingId, enter, counts });
+    wireMap({ svg, world, pos, tiles, routeEls, places, settingId, enter, counts, parentId, bg: bg && !img.inherited && ws.mapMoveImage ? { el: bg, img } : null });
 
     const hint = h('small', { class: 'sb-hint sb-map-hint' }, icon('fa-hand'), ' Drag places to where they lie. Click one to go inside it (or open its sheet). Shift + drag from one place to another to add a route.');
-    requestAnimationFrame(() => {
-        if (ws.mapView?.parent === parentId) applyView(svg);
-        else fit(svg, pos, parentId);
-    });
-    return h('div', { class: 'sb-map' }, h('div', { class: 'sb-toolbar' }, crumb, tools), h('div', { class: 'sb-map-stage' }, svg), hint);
+    // A level seen for the first time is fitted to its places - once the map
+    // is on the page and has a size (it may not be, a frame after drawing).
+    if (ws.mapView?.parent !== parentId) whenSized(svg, () => { if (ws.mapView?.parent !== parentId) fit(svg, pos, parentId); });
+    return h('div', { class: 'sb-map' }, h('div', { class: 'sb-toolbar' }, crumb, tools), imagePanel, h('div', { class: 'sb-map-stage' }, svg), hint);
+}
+
+// The map picture of this level: its own (choose, replace, remove, fade,
+// size, move), or the one it inherits from a level above (zoom).
+function mapImagePanel({ settingId, parentId, img, byId }) {
+    const key = levelKey(parentId);
+    const here = parentId ? byId.get(parentId)?.name ?? 'this place' : 'the world';
+    const save = (patch) => { setMapImage(settingId, key, patch); rerender(); };
+    const file = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: (e) => void useImage(e.target.files?.[0]) });
+    const useImage = async (f) => {
+        if (!f) return;
+        try {
+            const path = await importImage(f);
+            const probe = new Image();
+            probe.src = safeImageSrc(path);
+            await probe.decode().catch(() => {});
+            save({ src: path, ...placeNewImage(probe.naturalWidth, probe.naturalHeight), opacity: img && !img.inherited ? img.opacity : 0.6 });
+            toast('success', `Map image set for ${here}. Use "Move the image" and the size buttons to line it up with your places.`);
+        } catch (err) {
+            toast('error', `Could not use that image: ${err?.message ?? err}`);
+        }
+    };
+    const choose = (label) => button(label, () => file.click(), { iconName: 'fa-upload' });
+    const range = (value, min, max, step, onchange) => h('input', { type: 'range', min, max, step, value, onchange: (e) => onchange(Number(e.target.value)) });
+    let body;
+    if (img && !img.inherited) {
+        body = [
+            h('div', { class: 'sb-row' },
+                choose('Replace…'),
+                button('Smaller', () => save(resizeImage(img, 0.9)), { iconName: 'fa-minus' }),
+                button('Larger', () => save(resizeImage(img, 1.1)), { iconName: 'fa-plus' }),
+                h('label', { class: 'checkbox_label', title: 'Drag the picture instead of the view' },
+                    h('input', { type: 'checkbox', checked: ws.mapMoveImage === true, onchange: (e) => { ws.mapMoveImage = e.target.checked; rerender(); } }), h('span', {}, 'Move the image')),
+                button('Remove', () => save(null), { iconName: 'fa-trash', cls: 'sb-danger' })),
+            field('Opacity', range(img.opacity ?? 0.6, 0.05, 1, 0.05, (v) => save({ opacity: v }))),
+            parentId ? h('small', { class: 'sb-hint' }, 'The places inside this level\'s places show this picture too, zoomed in, unless they have their own.') : h('small', { class: 'sb-hint' }, 'Every place inside shows this picture too, zoomed in around where it lies, unless it has its own.'),
+        ];
+    } else if (img) {
+        const from = img.from ? byId.get(img.from)?.name ?? 'a place above' : 'the world';
+        body = [
+            h('small', { class: 'sb-hint' }, `Showing the map of ${from}, zoomed in around where ${here} lies on it. Move ${here}'s tile on the level above to shift it.`),
+            field(`Zoom (×${img.zoom ?? DEFAULT_MAP_ZOOM})`, range(img.zoom ?? DEFAULT_MAP_ZOOM, 1, 20, 0.5, (v) => save({ zoom: v }))),
+            h('div', { class: 'sb-row' }, choose('Give it a map of its own…')),
+        ];
+    } else {
+        body = [
+            h('small', { class: 'sb-hint' }, `A picture of a map behind the places of ${here} - drawn or real. The levels inside it show it too, zoomed in, unless they have their own.`),
+            h('div', { class: 'sb-row' }, choose('Choose an image…')),
+        ];
+    }
+    return h('div', { class: 'sb-card sb-map-image-panel' }, h('div', { class: 'sb-card-title' }, icon('fa-map'), ` Map image - ${here}`), ...body, file);
+}
+
+function field(label, control) {
+    return h('label', { class: 'sb-field' }, h('span', { class: 'sb-field-label' }, label), control);
 }
 
 // A breadcrumb step: a button to that level (the current one is not).
@@ -145,22 +211,33 @@ function scaleText(minutesPerUnit) {
 
 // ---- view
 
+const viewTransform = (v) => `translate(${v.tx} ${v.ty}) scale(${v.k})`;
+
 function applyView(svg) {
     const v = ws.mapView ?? { tx: 0, ty: 0, k: 1 };
-    svg.querySelector('.sb-map-world')?.setAttribute('transform', `translate(${v.tx} ${v.ty}) scale(${v.k})`);
+    svg.querySelector('.sb-map-world')?.setAttribute('transform', viewTransform(v));
+}
+
+// Runs `fn` once the element has a size on the page (a few seconds at most).
+function whenSized(el, fn) {
+    let tries = 0;
+    const check = () => {
+        const r = el.getBoundingClientRect();
+        if (el.isConnected && r.width > 0 && r.height > 0) fn();
+        else if (++tries < 120) requestAnimationFrame(check);
+    };
+    requestAnimationFrame(check);
 }
 
 function fit(svg, pos, parent) {
     const rect = svg.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
-    const b = boundsOf(pos, 110);
-    const k = Math.min(1.6, Math.max(0.25, Math.min(rect.width / b.width, rect.height / b.height)));
-    ws.mapView = { parent, k, tx: (rect.width - b.width * k) / 2 - b.x * k, ty: (rect.height - b.height * k) / 2 - b.y * k };
+    ws.mapView = { parent, ...fitView(rect, boundsOf(pos, 110)) };
     applyView(svg);
 }
 
-function zoomAt(svg, factor, px, py) {
-    const v = ws.mapView ?? { tx: 0, ty: 0, k: 1 };
+function zoomAt(svg, factor, px, py, parent = ws.mapView?.parent ?? null) {
+    const v = ws.mapView ?? { parent, tx: 0, ty: 0, k: 1 };
     const k = Math.min(3, Math.max(0.2, v.k * factor));
     const f = k / v.k;
     ws.mapView = { ...v, k, tx: px - (px - v.tx) * f, ty: py - (py - v.ty) * f };
@@ -169,7 +246,9 @@ function zoomAt(svg, factor, px, py) {
 
 // ---- dragging tiles, drawing routes, panning, zooming
 
-function wireMap({ svg, pos, tiles, routeEls, places, settingId, enter, counts }) {
+function wireMap({ svg, pos, tiles, routeEls, places, settingId, enter, counts, parentId = null, bg = null }) {
+    // The view always says which level it is for, so a redraw keeps it.
+    const viewNow = () => (ws.mapView?.parent === parentId ? ws.mapView : { parent: parentId, tx: 0, ty: 0, k: 1 });
     const toWorld = (ev) => {
         const rect = svg.getBoundingClientRect();
         const v = ws.mapView ?? { tx: 0, ty: 0, k: 1 };
@@ -204,19 +283,23 @@ function wireMap({ svg, pos, tiles, routeEls, places, settingId, enter, counts }
             pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
             if (pointers.size === 2) { pinch = pinchStart(); drag = null; return; }
             drag = { kind: ev.shiftKey ? 'route' : 'tile', id: p.id, start: { x: ev.clientX, y: ev.clientY }, origin: { ...pos[p.id] }, grab: toWorld(ev), moved: false };
+            ws.mapDragging = true;
         });
     }
     const pinchStart = () => {
         const [a, b] = [...pointers.values()];
         const rect = svg.getBoundingClientRect();
-        return { d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), view: { ...(ws.mapView ?? { tx: 0, ty: 0, k: 1 }) }, mid: { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top } };
+        return { d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), view: { ...viewNow() }, mid: { x: (a.x + b.x) / 2 - rect.left, y: (a.y + b.y) / 2 - rect.top } };
     };
     svg.addEventListener('pointerdown', (ev) => {
         svg.setPointerCapture(ev.pointerId);
         pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
         if (pointers.size === 2) { pinch = pinchStart(); drag = null; return; }
-        const v = ws.mapView ?? { tx: 0, ty: 0, k: 1 };
-        drag = { kind: 'pan', start: { x: ev.clientX, y: ev.clientY }, origin: { x: v.tx, y: v.ty }, moved: false };
+        const v = viewNow();
+        drag = bg
+            ? { kind: 'image', start: { x: ev.clientX, y: ev.clientY }, origin: { x: bg.img.x, y: bg.img.y }, k: v.k, moved: false }
+            : { kind: 'pan', start: { x: ev.clientX, y: ev.clientY }, origin: { x: v.tx, y: v.ty }, moved: false };
+        ws.mapDragging = true;
     });
     svg.addEventListener('pointermove', (ev) => {
         if (pointers.has(ev.pointerId)) pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
@@ -232,8 +315,11 @@ function wireMap({ svg, pos, tiles, routeEls, places, settingId, enter, counts }
         const dy = ev.clientY - drag.start.y;
         if (!drag.moved && Math.hypot(dx, dy) < 4) return;
         drag.moved = true;
-        if (drag.kind === 'pan') {
-            ws.mapView = { ...(ws.mapView ?? { k: 1 }), tx: drag.origin.x + dx, ty: drag.origin.y + dy };
+        if (drag.kind === 'image') {
+            bg.el.setAttribute('x', drag.origin.x + dx / drag.k);
+            bg.el.setAttribute('y', drag.origin.y + dy / drag.k);
+        } else if (drag.kind === 'pan') {
+            ws.mapView = { ...viewNow(), tx: drag.origin.x + dx, ty: drag.origin.y + dy };
             applyView(svg);
         } else if (drag.kind === 'route') {
             const w = toWorld(ev);
@@ -246,12 +332,14 @@ function wireMap({ svg, pos, tiles, routeEls, places, settingId, enter, counts }
     });
     const end = (ev) => {
         pointers.delete(ev.pointerId);
+        if (!pointers.size) ws.mapDragging = false;
         if (pinch) { if (pointers.size < 2) pinch = null; return; }
         if (!drag) return;
         const d = drag;
         drag = null;
         rubber.setAttribute('visibility', 'hidden');
         const place = places.find((p) => p.id === d.id);
+        if (d.kind === 'image' && d.moved) setMapImage(settingId, levelKey(parentId), { x: Number(bg.el.getAttribute('x')), y: Number(bg.el.getAttribute('y')) });
         if (d.kind === 'tile') {
             if (d.moved) {
                 setMapPosition(settingId, d.id, pos[d.id]);
@@ -269,7 +357,8 @@ function wireMap({ svg, pos, tiles, routeEls, places, settingId, enter, counts }
     svg.addEventListener('wheel', (ev) => {
         ev.preventDefault();
         const rect = svg.getBoundingClientRect();
-        zoomAt(svg, ev.deltaY < 0 ? 1.12 : 0.9, ev.clientX - rect.left, ev.clientY - rect.top);
+        if (ws.mapView?.parent !== parentId) ws.mapView = viewNow();
+        zoomAt(svg, ev.deltaY < 0 ? 1.12 : 0.9, ev.clientX - rect.left, ev.clientY - rect.top, parentId);
     }, { passive: false });
 }
 

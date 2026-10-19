@@ -289,6 +289,20 @@ export function setMapPosition(settingId, id, position) {
     });
 }
 
+// The map's images per level (src/ui/map-model.js).
+export function getMapImages(settingId) {
+    return getSettingDoc(settingId).graph.images ?? {};
+}
+
+// Changes one level's image (patch merged in), or removes it (null).
+export function setMapImage(settingId, key, patch) {
+    updateSettingDoc(settingId, (doc) => {
+        doc.graph.images ??= {};
+        if (patch === null) delete doc.graph.images[key];
+        else doc.graph.images[key] = { ...(doc.graph.images[key] ?? {}), ...patch };
+    });
+}
+
 // Forgets every dragged position, so the layout starts fresh.
 export function clearGraphPositions(settingId) {
     updateSettingDoc(settingId, (doc) => { doc.graph.positions = {}; });

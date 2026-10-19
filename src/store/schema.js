@@ -234,7 +234,7 @@ export function normalizeSettingDoc(doc) {
         : [];
     return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, characterFieldsAdded: d.characterFieldsAdded === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true,
         imports: Array.isArray(d.imports) ? d.imports.filter(isObject).slice(-IMPORTS_KEPT) : [],
-        relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions), map: normalizePositions(d.graph?.map) }, calendar: normalizeCalendar(d.calendar), playerId: str(d.playerId),
+        relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions), map: normalizePositions(d.graph?.map), images: normalizeMapImages(d.graph?.images) }, calendar: normalizeCalendar(d.calendar), playerId: str(d.playerId),
         // Secrets and oaths the user wrote (src/library/knowledge.js).
         knowledge: Array.isArray(d.knowledge) ? d.knowledge.map(normalizeKnowledgeItem).filter((k) => k.id && k.text) : [],
         // The GM planner for this setting (src/planner/): where its ideas land -
@@ -242,6 +242,23 @@ export function normalizeSettingDoc(doc) {
         gm: { creation: d.gm?.creation === 'silent' ? 'silent' : 'proposals' },
         // Routes between places: { id, from, to, travel, note, guessed? } (src/library/routes.js).
         routes: Array.isArray(d.routes) ? d.routes.filter((r) => isObject(r) && str(r.id) && str(r.from) && str(r.to) && r.from !== r.to).map((r) => ({ id: r.id, from: r.from, to: r.to, travel: str(r.travel), note: str(r.note), ...(r.guessed === true ? { guessed: true } : {}) })) : [] };
+}
+
+// Map images per level (src/ui/map-model.js): { [levelKey]: { src, x, y,
+// w, h, opacity, zoom } }; a level with only a zoom inherits its parent's.
+function normalizeMapImages(value) {
+    const out = {};
+    if (!isObject(value)) return out;
+    const num = (v, d) => (Number.isFinite(Number(v)) ? Number(v) : d);
+    for (const [key, v] of Object.entries(value)) {
+        if (!isObject(v)) continue;
+        const img = {};
+        if (str(v.src)) Object.assign(img, { src: str(v.src), x: num(v.x, 0), y: num(v.y, 0), w: Math.max(10, num(v.w, 1400)), h: Math.max(10, num(v.h, 1050)) });
+        img.opacity = Math.min(1, Math.max(0.05, num(v.opacity, 0.6)));
+        if (Number.isFinite(Number(v.zoom))) img.zoom = Math.min(40, Math.max(0.25, Number(v.zoom)));
+        if (img.src || img.zoom) out[key] = img;
+    }
+    return out;
 }
 
 export function emptyCanonical() {

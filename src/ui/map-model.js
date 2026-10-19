@@ -123,3 +123,53 @@ export function seedPositions(places, saved = {}, radius = 220) {
     for (const p of places) if (saved[p.id]) out[p.id] = { ...saved[p.id] };
     return out;
 }
+
+// The view that shows every place: the bounds (x, y, width, height) scaled
+// into the stage (width, height) and centred in it, within sensible zoom.
+// -> { k, tx, ty }
+export function fitView(stage, b) {
+    const k = Math.min(1.6, Math.max(0.25, Math.min(stage.width / b.width, stage.height / b.height)));
+    return { k, tx: (stage.width - b.width * k) / 2 - b.x * k, ty: (stage.height - b.height * k) / 2 - b.y * k };
+}
+
+// ---- map images
+// A level of the map (the world, or a place) may have an image of its own,
+// drawn behind its places: { src, x, y, w, h, opacity } in that level's
+// coordinates. A level without one shows its nearest ancestor's, zoomed in
+// around where the place sits on its parent's map: the place's tile there
+// is this level's centre, scaled by its `zoom` (×4 by default) - and so on
+// down, so one world map serves every level, or any level has its own.
+
+export const DEFAULT_MAP_ZOOM = 4;
+export const levelKey = (levelId) => levelId || 'world';
+
+// images: { [levelKey]: { src?, x, y, w, h, opacity, zoom } }; parents: the
+// location tree; anchorOf(id): where place `id` sits on its parent's level.
+// -> { src, x, y, w, h, opacity, inherited, from (the level it is from), zoom } or null.
+export function levelImage(levelId, { images = {}, parents = {}, anchorOf = () => ({ x: 0, y: 0 }) } = {}, seen = new Set()) {
+    const own = images[levelKey(levelId)];
+    if (own?.src) return { ...own, inherited: false, from: levelId ?? null };
+    if (!levelId || seen.has(levelId)) return null;
+    seen.add(levelId);
+    const base = levelImage(parents[levelId] ?? null, { images, parents, anchorOf }, seen);
+    if (!base) return null;
+    const at = anchorOf(levelId) ?? { x: 0, y: 0 };
+    const z = Number.isFinite(own?.zoom) && own.zoom > 0 ? own.zoom : DEFAULT_MAP_ZOOM;
+    return { ...base, x: (base.x - at.x) * z, y: (base.y - at.y) * z, w: base.w * z, h: base.h * z, inherited: true, zoom: z };
+}
+
+// A new image's place on its level: about `span` units wide, keeping its
+// shape, centred on the level's origin (where places are first laid out).
+export function placeNewImage(naturalW, naturalH, span = 1400) {
+    const ratio = naturalW > 0 && naturalH > 0 ? naturalH / naturalW : 0.75;
+    const w = span;
+    const h = Math.round(span * ratio);
+    return { x: -w / 2, y: -h / 2, w, h };
+}
+
+// The image resized by `factor` about its centre.
+export function resizeImage(img, factor) {
+    const w = img.w * factor;
+    const h = img.h * factor;
+    return { ...img, x: img.x + (img.w - w) / 2, y: img.y + (img.h - h) / 2, w, h };
+}

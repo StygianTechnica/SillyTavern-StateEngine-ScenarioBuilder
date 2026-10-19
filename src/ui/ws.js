@@ -31,7 +31,9 @@ export function setRedraw(fn) {
 
 // Redraws the workspace (unless `force` is false and there is unsaved input).
 export function rerender({ force = true } = {}) {
-    if (!ws.open || (!force && ws.dirty)) return;
+    // A background update waits while the user is editing - or dragging on
+    // the map, which a redraw would cut short.
+    if (!ws.open || (!force && (ws.dirty || ws.mapDragging))) return;
     void redraw();
 }
 
