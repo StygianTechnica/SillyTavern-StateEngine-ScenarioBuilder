@@ -548,3 +548,8 @@
 .sb-merge-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 6px; cursor: pointer; }
 .sb-merge-row:hover { background: var(--sb-softer); }
 .sb-merge-row.active { background: var(--sb-softer); outline: 1px solid var(--sb-gold); }
+
+/* GM Plan tab: ideas. */
+.sb-gm-idea { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid var(--sb-line); }
+.sb-gm-idea-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sb-cal-agenda { color: var(--sb-gold); font-style: italic; }

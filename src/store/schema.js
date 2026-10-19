@@ -203,7 +203,7 @@ export function normalizeCalendar(value) {
 export function emptySettingDoc() {
     // playerId: the character the user plays ('' = the one named like the
     // SillyTavern persona, if any) - the guidance never writes for them.
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {}, map: {} }, calendar: emptyCalendar(), playerId: '', routes: [], knowledge: [] };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {}, map: {} }, calendar: emptyCalendar(), playerId: '', routes: [], knowledge: [], gm: { creation: 'proposals' } };
 }
 
 // Brings any stored setting document (or nothing) to the current shape.
@@ -233,6 +233,9 @@ export function normalizeSettingDoc(doc) {
         relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions), map: normalizePositions(d.graph?.map) }, calendar: normalizeCalendar(d.calendar), playerId: str(d.playerId),
         // Secrets and oaths the user wrote (src/library/knowledge.js).
         knowledge: Array.isArray(d.knowledge) ? d.knowledge.map(normalizeKnowledgeItem).filter((k) => k.id && k.text) : [],
+        // The GM planner for this setting (src/planner/): where its ideas land -
+        // 'proposals' (the user decides) or 'silent' (made at once, listed in Review).
+        gm: { creation: d.gm?.creation === 'silent' ? 'silent' : 'proposals' },
         // Routes between places: { id, from, to, travel, note, guessed? } (src/library/routes.js).
         routes: Array.isArray(d.routes) ? d.routes.filter((r) => isObject(r) && str(r.id) && str(r.from) && str(r.to) && r.from !== r.to).map((r) => ({ id: r.id, from: r.from, to: r.to, travel: str(r.travel), note: str(r.note), ...(r.guessed === true ? { guessed: true } : {}) })) : [] };
 }

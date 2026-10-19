@@ -36,6 +36,14 @@
 //               beats: [{ text, status }], startedTurn, endedTurn, startedDay, endedDay,
 //               startedIndex, endedIndex, endedAt, closedEarly, editedByUser }]
 //                                               finished volumes, oldest first
+//   ideas: [idea]                               the IDEAS pass's proposals (§3.4)
+//     idea = { id, kind: 'quest' | 'enrich' | 'happening' | 'seed', name, text, why,
+//              ties: [name], target (enrich: the quest's name), objectives: [text],
+//              inDays and when (happening), status: 'proposed' | 'accepted' | 'dismissed', at }
+//   dismissedIdeas: [key]                       ideas the user turned down: never proposed again
+//   agenda: [{ id, day, when, text, ties, source, status: 'coming' | 'planned' | 'done' | 'passed', at }]
+//                                               dated happenings (§3.3): `day` is the story's
+//                                               day count (canonical.day)
 //   join: { act, note }                         a story already under way: the chapter (act
 //                                               index, -1 = let the planner judge) it is in
 //                                               now, and the user's note on the story so far
@@ -50,9 +58,9 @@ export const PACINGS = Object.freeze([['off', 'Off'], ['gentle', 'Gentle'], ['br
 // of the day" after dayExpire replies; OUTLINE every n replies (0: on
 // demand), and after Archivist compiles (compile).
 export const LEVEL_CADENCE = Object.freeze({
-    light: { check: 0, dayExpire: 40, outline: 0, compile: false },
-    moderate: { check: 3, dayExpire: 25, outline: 15, compile: true },
-    heavy: { check: 1, dayExpire: 15, outline: 8, compile: true },
+    light: { check: 0, dayExpire: 40, outline: 0, compile: false, ideas: 0 },
+    moderate: { check: 3, dayExpire: 25, outline: 15, compile: true, ideas: 20 },
+    heavy: { check: 1, dayExpire: 15, outline: 8, compile: true, ideas: 10 },
 });
 // The first outline once the story has had this many replies to show what
 // it is about (or on demand).
@@ -76,7 +84,7 @@ const int = (v, fallback = 0) => (Number.isInteger(v) && v >= 0 ? v : fallback);
 export function emptyGm() {
     return {
         day: null, queue: [], inspirations: [], log: [],
-        counters: { sinceCheck: 0, turn: 0, lastCheck: '', sinceOutline: 0, lastCompiled: '' },
+        counters: { sinceCheck: 0, turn: 0, lastCheck: '', sinceOutline: 0, lastCompiled: '', sinceIdeas: 0 },
         pace: emptyPace(),
         checkWanted: false,
         peeked: [],
@@ -87,6 +95,9 @@ export function emptyGm() {
         join: { act: -1, note: '' },
         volume: emptyVolume(1),
         volumes: [],
+        ideas: [],
+        dismissedIdeas: [],
+        agenda: [],
     };
 }
 
@@ -150,7 +161,7 @@ export function normalizeGm(value) {
         queue: trimQueue(queue),
         inspirations: (Array.isArray(g.inspirations) ? g.inspirations : []).map(normalizeInspiration).filter(Boolean).slice(0, INSPIRATION_LIMIT),
         log: (Array.isArray(g.log) ? g.log : []).filter((l) => isObject(l) && clean(l.pass)).slice(-LOG_LIMIT),
-        counters: { sinceCheck: int(c.sinceCheck), turn: int(c.turn), lastCheck: str(c.lastCheck), sinceOutline: int(c.sinceOutline), lastCompiled: str(c.lastCompiled) },
+        counters: { sinceCheck: int(c.sinceCheck), turn: int(c.turn), lastCheck: str(c.lastCheck), sinceOutline: int(c.sinceOutline), lastCompiled: str(c.lastCompiled), sinceIdeas: int(c.sinceIdeas) },
         pace: { sceneKey: str(p.sceneKey), sceneReplies: int(p.sceneReplies), idleReplies: int(p.idleReplies), baselineWords: Number.isFinite(p.baselineWords) && p.baselineWords > 0 ? p.baselineWords : 0, hold: p.hold === true },
         checkWanted: g.checkWanted === true,
         peeked: strList(g.peeked).slice(-40),
@@ -161,6 +172,9 @@ export function normalizeGm(value) {
         join: { act: Number.isInteger(g.join?.act) && g.join.act >= 0 ? g.join.act : -1, note: str(g.join?.note).trim().slice(0, 4000) },
         volume: normalizeVolume(g.volume),
         volumes: (Array.isArray(g.volumes) ? g.volumes : []).map(normalizeVolumeRecord).filter(Boolean),
+        ideas: trimIdeas((Array.isArray(g.ideas) ? g.ideas : []).map(normalizeIdea).filter(Boolean)),
+        dismissedIdeas: strList(g.dismissedIdeas).slice(-DISMISSED_LIMIT),
+        agenda: trimAgenda((Array.isArray(g.agenda) ? g.agenda : []).map(normalizeHappening).filter(Boolean)),
     };
 }
 
@@ -253,7 +267,7 @@ export function settleRequests(gm) {
 // Takes a DAY pass's answer in as the day's plan. Requests it planned for
 // are marked; ids are the planner's own (m1, m2...).
 export function setDayPlan(gm, plan, { day, turn, at = new Date().toISOString() }) {
-    const moments = (plan.moments ?? []).map((m, i) => normalizeMoment({ ...m, id: `m${i + 1}`, status: 'pending' }, i)).filter(Boolean).slice(0, MOMENT_LIMIT);
+    const moments = (plan.moments ?? []).map((m, i) => normalizeMoment({ ...m, id: `m${i + 1}`, status: 'pending', source: m.happening && gm.agenda.some((x) => x.id === m.happening) ? `agenda:${m.happening}` : m.source }, i)).filter(Boolean).slice(0, MOMENT_LIMIT);
     gm.day = normalizeDay({ day, madeAt: at, madeTurn: turn, moments, agendas: plan.agendas, offscreen: plan.offscreen });
     // Requests planned for an earlier day that never happened wait again.
     for (const r of gm.queue) if (r.status === 'planned') { r.status = 'waiting'; r.plannedAs = []; }
@@ -289,6 +303,7 @@ export function applyCheck(gm, check) {
     gm.day.moments = [...gm.day.moments, ...added].slice(-MOMENT_LIMIT);
     planRequests(gm, check.requests, added);
     settleRequests(gm);
+    settleAgenda(gm);
 }
 
 // The director's BEAT lines: [{ id, status: 'done' | 'skipped', note }].
@@ -305,6 +320,7 @@ export function applyBeats(gm, beats) {
         else addChronicle(gm, m.note ? `${m.text} (${m.note})` : m.text);
     }
     settleRequests(gm);
+    settleAgenda(gm);
     if (skipped) gm.checkWanted = true;
     return skipped;
 }
@@ -382,7 +398,7 @@ export function paceAim(gm, { level = 'gentle', recentUser = [], tense = false, 
 // first (the day plan follows the story's direction), then DAY or CHECK
 // (DAY replaces CHECK: a new plan needs no check). OUTLINE only once a
 // story shape is chosen.
-export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null, dayExpire = null, outlineEvery = null } = {}) {
+export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null, dayExpire = null, outlineEvery = null, ideasEvery: ideasEveryOverride = null } = {}) {
     const cadence = LEVEL_CADENCE[level] ?? LEVEL_CADENCE.moderate;
     const out = [];
     if (gm.shape && !volumeComplete(gm.outline)) {
@@ -390,6 +406,8 @@ export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null
         if (!gm.outline ? turn >= FIRST_OUTLINE_AFTER
             : (often > 0 && gm.counters.sinceOutline >= often) || (cadence.compile && gm.outlineWanted)) out.push('outline');
     }
+    const ideasEvery = Number.isInteger(ideasEveryOverride) ? ideasEveryOverride : cadence.ideas;
+    if (ideasEvery > 0 && gm.counters.sinceIdeas >= ideasEvery) out.push('ideas');
     const every = Number.isInteger(checkEvery) ? checkEvery : cadence.check;
     const expire = Number.isInteger(dayExpire) ? dayExpire : cadence.dayExpire;
     if (!gm.day || gm.day.day !== day || (expire > 0 && turn - gm.day.madeTurn >= expire)) return [...out, 'day'];
@@ -771,4 +789,172 @@ export function storyMarkdown(gm, title = 'The story so far') {
         if (v.threads.length) out.push('**Threads carried forward:**', ...v.threads.map((t) => `- ${t}`), '');
     }
     return out.join('\n').trim() + '\n';
+}
+
+// ---------------------------------------------------------------- ideas (§3.4)
+
+export const IDEA_KINDS = Object.freeze(['quest', 'enrich', 'happening', 'seed']);
+const IDEA_LIMIT = 30;
+const DISMISSED_LIMIT = 120;
+const AGENDA_LIMIT = 40;
+
+function normalizeIdea(x) {
+    if (!isObject(x) || !clean(x.id) || !IDEA_KINDS.includes(x.kind) || !(clean(x.text) || clean(x.name))) return null;
+    return {
+        id: clean(x.id),
+        kind: x.kind,
+        name: clean(x.name).slice(0, 120),
+        text: clean(x.text).slice(0, 800),
+        why: clean(x.why).slice(0, 300),
+        ties: strList(x.ties).slice(0, 6),
+        target: clean(x.target).slice(0, 120),
+        objectives: strList(x.objectives).slice(0, 5),
+        inDays: Number.isInteger(x.inDays) && x.inDays >= 0 ? Math.min(x.inDays, 365) : null,
+        when: clean(x.when).slice(0, 40),
+        status: ['proposed', 'accepted', 'dismissed'].includes(x.status) ? x.status : 'proposed',
+        at: str(x.at),
+    };
+}
+
+// Every open proposal is kept; decided ones only for a while.
+function trimIdeas(list) {
+    const open = list.filter((i) => i.status === 'proposed');
+    const done = list.filter((i) => i.status !== 'proposed').slice(-Math.max(0, IDEA_LIMIT - open.length));
+    return list.filter((i) => open.includes(i) || done.includes(i));
+}
+
+const keyText = (v) => clean(v).toLowerCase().replace(/^(the|a|an)\s+/, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().slice(0, 80);
+
+// What makes two ideas the same: their kind and name (or, without one, the
+// start of the text; an enrichment also its quest).
+export function ideaKey(idea) {
+    return `${idea.kind}:${idea.kind === 'enrich' ? `${keyText(idea.target)}:` : ''}${keyText(idea.name) || keyText(idea.text)}`;
+}
+
+// Takes an IDEAS pass's ideas in as proposals, leaving out those the user
+// turned down and those already proposed. -> the ones added.
+export function addIdeas(gm, ideas, { at = new Date().toISOString(), newId = () => `idea_${Math.random().toString(36).slice(2, 10)}` } = {}) {
+    const known = new Set([...gm.dismissedIdeas, ...gm.ideas.filter((i) => i.status !== 'dismissed').map(ideaKey)]);
+    const added = [];
+    for (const raw of ideas ?? []) {
+        const idea = normalizeIdea({ ...raw, id: newId(), status: 'proposed', at });
+        if (!idea) continue;
+        const key = ideaKey(idea);
+        if (known.has(key)) continue;
+        known.add(key);
+        added.push(idea);
+    }
+    gm.ideas = trimIdeas([...gm.ideas, ...added]);
+    return added;
+}
+
+// The user's decision on a proposal. A dismissed idea is never proposed
+// again.
+export function resolveIdea(gm, id, status) {
+    const idea = gm.ideas.find((i) => i.id === id);
+    if (!idea || !['accepted', 'dismissed'].includes(status)) return null;
+    idea.status = status;
+    if (status === 'dismissed') gm.dismissedIdeas = [...new Set([...gm.dismissedIdeas, ideaKey(idea)])].slice(-DISMISSED_LIMIT);
+    gm.ideas = trimIdeas(gm.ideas);
+    return idea;
+}
+
+export function editIdea(gm, id, patch) {
+    const idea = gm.ideas.find((i) => i.id === id);
+    if (!idea) return;
+    if (typeof patch.name === 'string') idea.name = clean(patch.name).slice(0, 120);
+    if (typeof patch.text === 'string' && clean(patch.text)) idea.text = clean(patch.text).slice(0, 800);
+    if (Array.isArray(patch.objectives)) idea.objectives = strList(patch.objectives).slice(0, 5);
+}
+
+export const openIdeas = (gm) => gm.ideas.filter((i) => i.status === 'proposed');
+
+// ---------------------------------------------------------------- the agenda (§3.3)
+
+function normalizeHappening(x) {
+    if (!isObject(x) || !clean(x.id) || !clean(x.text) || !Number.isInteger(x.day)) return null;
+    return {
+        id: clean(x.id),
+        day: x.day,
+        when: clean(x.when).slice(0, 40),
+        text: clean(x.text).slice(0, 400),
+        ties: strList(x.ties).slice(0, 6),
+        source: clean(x.source),
+        status: ['coming', 'planned', 'done', 'passed'].includes(x.status) ? x.status : 'coming',
+        at: str(x.at),
+    };
+}
+
+function trimAgenda(list) {
+    const open = list.filter((x) => x.status === 'coming' || x.status === 'planned');
+    const done = list.filter((x) => x.status === 'done' || x.status === 'passed').slice(-Math.max(0, AGENDA_LIMIT - open.length));
+    return list.filter((x) => open.includes(x) || done.includes(x)).sort((a, b) => a.day - b.day);
+}
+
+// Puts a happening on the agenda: `day` is the story's day count.
+export function addHappening(gm, { id, text, day, when = '', ties = [], source = 'ideas', at = new Date().toISOString() }) {
+    const h = normalizeHappening({ id, text, day, when, ties, source, at, status: 'coming' });
+    if (h) gm.agenda = trimAgenda([...gm.agenda, h]);
+    return h;
+}
+
+export function removeHappening(gm, id) {
+    gm.agenda = gm.agenda.filter((x) => x.id !== id);
+}
+
+// The happenings to bring into the plan of `day`: due on it or within
+// `ahead` days, still to come.
+export function dueHappenings(gm, day, ahead = 1) {
+    return gm.agenda.filter((x) => (x.status === 'coming' || x.status === 'planned') && x.day >= day && x.day <= day + ahead);
+}
+
+// The agenda follows the day plan: a happening a moment is planned for is
+// planned, one played out is done; one whose day went by without it has
+// passed (`today`: the story's day count, when known).
+export function settleAgenda(gm, today = null) {
+    const moments = gm.day?.moments ?? [];
+    for (const x of gm.agenda) {
+        if (x.status === 'done' || x.status === 'passed') continue;
+        const mine = moments.filter((m) => m.source === `agenda:${x.id}`);
+        if (mine.some((m) => m.status === 'done')) x.status = 'done';
+        else if (mine.some((m) => m.status === 'pending')) x.status = 'planned';
+        else if (Number.isInteger(today) && x.day < today) x.status = 'passed';
+        else if (x.status === 'planned' && !mine.length) x.status = 'coming';
+    }
+    gm.agenda = trimAgenda(gm.agenda);
+}
+
+// A seed for the outline (an accepted seed idea, or a silent one).
+export function addSeed(gm, { text, payoff = '' }) {
+    if (!gm.outline || !clean(text)) return false;
+    const n = gm.outline.seeds.length + 1;
+    gm.outline.seeds = [...gm.outline.seeds, { id: `s${n}`, text: clean(text), payoff: clean(payoff) }].slice(-8);
+    return true;
+}
+
+// The world's frictions for the IDEAS pass: relationships gone sour or
+// volatile (Archivist's relationship map), the user's rivals and enemies,
+// secrets still kept, oaths pending or broken. cells: Archivist's
+// relationship_map cells; relations: the setting's; knowledge: allKnowledge()
+// items (people as { name }); nameOf(id) -> name. -> [text], at most 12.
+export function frictionLines({ cells = [], relations = [], knowledge = [], nameOf = () => '' } = {}) {
+    const out = [];
+    const sour = (Array.isArray(cells) ? cells : [])
+        .filter((c) => c && clean(c.from?.name) && clean(c.to?.name) && (Number(c.polarity) <= -1 || c.trend === 'volatile'))
+        .sort((a, b) => Number(a.polarity) - Number(b.polarity))
+        .slice(0, 6);
+    for (const c of sour) out.push(`${clean(c.from.name)} sees ${clean(c.to.name)} as ${clean(c.polarity_label) || 'a problem'}${clean(c.type) ? ` (${clean(c.type)})` : ''}${clean(c.trend) && c.trend !== 'stable' ? `, ${clean(c.trend)}` : ''}`);
+    for (const r of (Array.isArray(relations) ? relations : []).filter((x) => ['rival', 'enemy'].includes(x?.kind)).slice(0, 4)) {
+        const a = clean(nameOf(r.from));
+        const b = clean(nameOf(r.to));
+        if (a && b) out.push(`${a} and ${b}: ${r.kind === 'enemy' ? 'enemies' : 'rivals'}${clean(r.note) ? ` - ${clean(r.note)}` : ''}`);
+    }
+    const names = (list) => (Array.isArray(list) ? list : []).map((p) => clean(p?.name)).filter(Boolean).join(', ');
+    let told = 0;
+    for (const k of Array.isArray(knowledge) ? knowledge : []) {
+        if (told >= 4 || !clean(k?.text)) continue;
+        if (k.kind === 'secret' && k.status === 'kept') { out.push(`A secret${names(k.knownBy) ? ` known to ${names(k.knownBy)}` : ''}: ${clean(k.text)}`); told++; }
+        if (k.kind === 'oath' && (k.status === 'pending' || k.status === 'broken')) { out.push(`An oath ${k.status === 'broken' ? 'broken' : 'not yet kept'}${names(k.madeBy) ? ` by ${names(k.madeBy)}` : ''}: ${clean(k.text)}`); told++; }
+    }
+    return out.slice(0, 12);
 }

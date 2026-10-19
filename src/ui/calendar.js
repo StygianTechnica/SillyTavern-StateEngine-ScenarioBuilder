@@ -14,6 +14,7 @@ import { LATITUDES, moonPhase, holidaysAround } from '../calendar/sky.js';
 import { secondsPerDay, dayOfYear, yearLength } from '../calendar/moment.js';
 import { syncNow } from '../guidance/sync.js';
 import { pushCanonicalToObserved } from '../validate/reconcile.js';
+import { isVeiled } from '../planner/model.js';
 import { ws, rerender } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
 
@@ -103,6 +104,17 @@ async function monthGrid() {
     const days = forecast({ seed: `${settingId}|${place.regionId}`, climateId: place.climateId, fromDay: month.dayIndex, days: month.days, dayOfYear: firstDoy, yearLength: yearLength(def) });
     const week = month.weekdays?.length || def.daysPerWeek || 7;
     const lead = Number.isInteger(month.parts.weekdayIndex) ? month.parts.weekdayIndex : 0;
+    // The GM planner's agenda (src/planner/): happenings by calendar day -
+    // the story's day count lined up with today - veiled like the GM Plan
+    // tab unless spoilers are shown (the user's own always show).
+    const gm = getChatDoc(chatKey).gm;
+    const showSpoilers = getSettings().planner?.showSpoilers === true;
+    const agendaOn = new Map();
+    for (const x of gm.agenda.filter((a) => a.status === 'coming' || a.status === 'planned' || a.status === 'done')) {
+        const at = todayIndex + (x.day - c.day);
+        agendaOn.set(at, [...(agendaOn.get(at) ?? []), x]);
+    }
+    const agendaLabel = (x) => (x.source === 'user' || !isVeiled(gm, x.id, showSpoilers) ? x.text : 'Something is planned');
     const cells = [];
     for (let i = 0; i < lead; i++) cells.push(h('div', { class: 'sb-cal-cell sb-cal-blank' }));
     for (let d = 1; d <= month.days; d++) {
@@ -112,11 +124,13 @@ async function monthGrid() {
         // Marked on the day a moon turns full or new.
         const moons = (options.moons ?? []).map((mo) => ({ name: mo.name, phase: moonPhase(idx, mo).name, before: moonPhase(idx - 1, mo).name }))
             .filter((x) => (x.phase === 'full' || x.phase === 'new') && x.phase !== x.before);
-        const tip = [`${f.weather.join(', ')}; ${f.low} to ${f.high}`, ...today.map((t) => t.holiday.name), ...moons.map((x) => `${x.name}: ${x.phase}`)].join('\n');
+        const planned = agendaOn.get(idx) ?? [];
+        const tip = [`${f.weather.join(', ')}; ${f.low} to ${f.high}`, ...today.map((t) => t.holiday.name), ...moons.map((x) => `${x.name}: ${x.phase}`), ...planned.map(agendaLabel)].join('\n');
         cells.push(h('div', { class: `sb-cal-cell${idx === todayIndex ? ' sb-cal-today' : ''}${idx < todayIndex ? ' sb-cal-past' : ''}${today.length ? ' sb-cal-holiday' : ''}`, title: tip },
             h('div', { class: 'sb-cal-day' }, String(d), moons.map((x) => h('i', { class: `fa-solid ${x.phase === 'full' ? 'fa-circle' : 'fa-circle-notch'} sb-cal-moon`, title: `${x.name}: ${x.phase}` }))),
             h('div', { class: 'sb-cal-wx' }, icon(weatherIcon(f.weather)), h('small', {}, f.high)),
-            today.map((t) => h('div', { class: 'sb-cal-hol' }, t.holiday.name))));
+            today.map((t) => h('div', { class: 'sb-cal-hol' }, t.holiday.name)),
+            planned.map((x) => h('div', { class: `sb-cal-hol sb-cal-agenda${x.status === 'done' ? ' sb-cal-past' : ''}` }, icon(x.source === 'user' || !isVeiled(gm, x.id, showSpoilers) ? 'fa-calendar-day' : 'fa-mask'), ` ${agendaLabel(x)}`))));
     }
     const names = month.weekdays && month.weekdays.length === week ? month.weekdays : Array.from({ length: week }, (_, i) => String(i + 1));
     return h('div', { class: 'sb-card' },

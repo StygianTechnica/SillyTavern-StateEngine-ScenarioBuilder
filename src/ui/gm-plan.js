@@ -6,12 +6,14 @@
 
 import { getSettings, saveSettings } from '../settings.js';
 import { getChatDoc } from '../store/chat-store.js';
-import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeiled, openRequests, currentAct, volumeComplete, volumeReadings, storyMarkdown } from '../planner/model.js';
+import { getSettingDoc } from '../store/setting-store.js';
+import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeiled, openRequests, currentAct, volumeComplete, volumeReadings, storyMarkdown, openIdeas } from '../planner/model.js';
 import { SHAPES, shapeCurve, targetAt } from '../planner/shapes.js';
 import {
     getPlannerStatus, runDay, runCheck, runInspire, runOutline, runBeat, queueRequest, withdrawRequest, addInspiration, removeInspiration,
     setMotifs, peek, setHold, storyState, setShape, editOutlineBeat, lockOutlineBeat, removeOutlineBeat, addOutlineBeat,
     finishOutlineBeat, setOutlineText, setJoin, finishVolume, editFinishedVolume,
+    runIdeas, acceptIdea, dismissIdea, editProposal, addAgendaItem, removeAgendaItem, setCreationMode,
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
 import { ws, rerender, markDirty } from './ws.js';
@@ -470,6 +472,81 @@ function inspirationCard(gm) {
 
 // ---- settings and activity
 
+// ---- ideas (§3.4) and the agenda (§3.3)
+
+const IDEA_LABEL = { quest: ['Quest', 'fa-scroll'], enrich: ['Quest detail', 'fa-feather'], happening: ['Happening', 'fa-calendar-day'], seed: ['Seed', 'fa-seedling'] };
+
+function ideaRow(idea, chatId, chatKey) {
+    const [label, iconName] = IDEA_LABEL[idea.kind] ?? ['Idea', 'fa-lightbulb'];
+    const accept = async () => {
+        const result = await acceptIdea(chatId, chatKey, idea.id);
+        toast(result.ok ? 'success' : 'warning', result.message);
+        rerender();
+    };
+    const key = `idea:${idea.id}`;
+    const head = idea.kind === 'quest' ? idea.name : idea.kind === 'enrich' ? `For "${idea.target}"` : '';
+    return h('div', { class: 'sb-gm-idea' },
+        h('div', { class: 'sb-gm-idea-head' },
+            h('span', { class: 'sb-chip' }, icon(iconName), label),
+            head ? h('b', {}, head) : null,
+            idea.kind === 'happening' ? h('small', { class: 'sb-hint' }, `in ${idea.inDays ?? 3} day${idea.inDays === 1 ? '' : 's'}${idea.when ? `, ${idea.when}` : ''}`) : null,
+            h('span', { class: 'sb-gm-title-tools' },
+                h('div', { class: 'sb-iconbtn', title: 'Accept', onclick: () => void accept() }, icon('fa-check')),
+                h('div', { class: 'sb-iconbtn', title: 'Edit before accepting', onclick: () => startEdit(key, idea.text) }, icon('fa-pen')),
+                h('div', { class: 'sb-iconbtn', title: 'Dismiss - it won\'t be proposed again', onclick: () => dismissIdea(chatKey, idea.id) }, icon('fa-xmark')))),
+        isEditing(key)
+            ? inlineEditor(key, { onSave: (text) => editProposal(chatKey, idea.id, { text }), placeholder: 'The idea' })
+            : h('div', { class: 'sb-gm-text' }, idea.text),
+        idea.objectives.length ? h('ul', { class: 'sb-gm-threads' }, idea.objectives.map((o) => h('li', {}, o))) : null,
+        idea.why ? h('small', { class: 'sb-hint' }, idea.kind === 'seed' ? `Pays off: ${idea.why}` : `Grows out of: ${idea.why}`) : null,
+        idea.ties.length ? h('div', { class: 'sb-chips' }, idea.ties.slice(0, 4).map((t) => h('span', { class: 'sb-chip' }, t))) : null);
+}
+
+function ideasCard(gm) {
+    const { chatId, chatKey, settingId } = ws.ctx;
+    const ideas = openIdeas(gm);
+    const silent = getSettingDoc(settingId).gm?.creation === 'silent';
+    const st = getPlannerStatus();
+    const busy = !!st.running && st.chatKey === chatKey;
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-lightbulb'), 'GM ideas', ideas.length ? h('span', { class: 'sb-tab-badge' }, String(ideas.length)) : null,
+            h('span', { class: 'sb-gm-title-tools' }, button('Think up ideas', () => void running('Thinking up ideas', () => runIdeas(chatId, chatKey)), { iconName: 'fa-wand-magic-sparkles', disabled: busy, title: 'Look at the frictions, open quests and unused lore for things that could happen' }))),
+        h('small', { class: 'sb-hint' }, silent
+            ? 'This setting adds ideas at once: new quests appear in Review, happenings on the agenda.'
+            : 'New quests, more to open quests, happenings for the calendar and seeds for the outline - grown out of the world\'s frictions and lore. Accept, edit or dismiss each.'),
+        ...ideas.map((idea) => ideaRow(idea, chatId, chatKey)),
+        !ideas.length ? h('p', { class: 'sb-muted' }, 'No ideas waiting.') : null);
+}
+
+function agendaCard(gm, show) {
+    const { chatKey } = ws.ctx;
+    const today = getChatDoc(chatKey).canonical.day;
+    const items = gm.agenda.filter((x) => x.status === 'coming' || x.status === 'planned');
+    const past = gm.agenda.filter((x) => x.status === 'done' || x.status === 'passed').slice(-3).reverse();
+    const dueText = (x) => (x.day <= today ? 'today' : x.day === today + 1 ? 'tomorrow' : `in ${x.day - today} days`);
+    const addKey = 'agenda-add';
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-calendar-days'), 'Agenda',
+            h('span', { class: 'sb-gm-title-tools' }, !isEditing(addKey) ? button('Add', () => startEdit(addKey, '', 3), { iconName: 'fa-plus', title: 'Set something to happen on a later day' }) : null)),
+        h('small', { class: 'sb-hint' }, 'Happenings set for later days. The day plan brings each in when its day comes; they also show on the Calendar tab.'),
+        isEditing(addKey) ? inlineEditor(addKey, {
+            onSave: (text, inDays) => addAgendaItem(chatKey, text, Number(inDays) || 0),
+            placeholder: 'What should happen - e.g. "an envoy from the Pale Choir arrives at the gate"', saveLabel: 'Add', saveIcon: 'fa-plus',
+            extra: field('In how many days', h('input', { type: 'number', class: 'text_pole', min: 0, max: 365, value: editing?.flag ?? 3, onchange: (e) => { if (editing) editing.flag = Math.max(0, Math.round(Number(e.target.value) || 0)); } })),
+        }) : null,
+        ...items.map((x) => (isVeiled(gm, x.id, show) && x.source !== 'user'
+            ? h('div', { class: 'sb-gm-row sb-gm-veiled' }, icon('fa-mask'), h('span', { class: 'sb-muted' }, `Something is set for ${dueText(x)}`),
+                h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); peek(chatKey, x.id); } }, 'peek'))
+            : h('div', { class: 'sb-gm-row' },
+                h('span', { class: 'sb-chip' }, icon('fa-calendar-day'), dueText(x)),
+                h('div', { class: 'sb-gm-text' }, x.text, x.when ? h('small', { class: 'sb-hint' }, ` (${x.when})`) : null),
+                x.status === 'planned' ? h('span', { class: 'sb-chip sb-gm-planned' }, 'planned') : null,
+                h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: () => removeAgendaItem(chatKey, x.id) }, icon('fa-trash'))))),
+        !items.length ? h('p', { class: 'sb-muted' }, 'Nothing on the agenda.') : null,
+        past.length ? h('div', { class: 'sb-gm-sub' }, 'Recently') : null,
+        ...past.map((x) => h('div', { class: 'sb-gm-row sb-gm-past' }, h('span', { class: `sb-chip sb-gm-${x.status === 'done' ? 'done' : 'skipped'}` }, x.status === 'done' ? 'happened' : 'passed'), h('div', { class: 'sb-gm-text' }, x.text))));
+}
+
 function settingsCard(gm) {
     const s = getSettings();
     const p = s.planner;
@@ -497,7 +574,11 @@ function settingsCard(gm) {
         h('div', { class: 'sb-row' },
             num('checkEvery', cadence.check, 'Check every (replies)', '0: only when a planned moment falls through'),
             num('dayExpire', cadence.dayExpire, 'Re-plan after (replies)', 'when one day runs long'),
-            num('outlineEvery', cadence.outline, 'Review outline every (replies)', '0: only on demand')),
+            num('outlineEvery', cadence.outline, 'Review outline every (replies)', '0: only on demand'),
+            num('ideasEvery', cadence.ideas, 'New ideas every (replies)', '0: only on demand')),
+        field('New ideas in this setting', select([{ value: 'proposals', label: 'Wait for me to accept them' }, { value: 'silent', label: 'Add them at once (listed in Review)' }], getSettingDoc(ws.ctx.settingId).gm?.creation ?? 'proposals', {
+            onchange: (e) => { setCreationMode(ws.ctx.settingId, e.target.value); rerender(); },
+        }), 'Quests, quest detail, happenings and seeds the game master thinks up.'),
         log.length ? h('div', { class: 'sb-gm-sub' }, 'Recent passes') : null,
         ...log.map((l) => h('div', { class: 'sb-gm-row sb-gm-log' },
             h('span', { class: 'sb-chip' }, l.pass), h('span', {}, l.error ? `failed: ${l.error}` : l.outcome),
@@ -511,6 +592,6 @@ export async function renderGmPlan() {
     const show = getSettings().planner.showSpoilers === true;
     return h('div', { class: 'sb-gm-plan' },
         h('div', { class: 'sb-scene-cols' },
-            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), volumesCard(gm), todayCard(gm, show), queueCard(gm), inspirationCard(gm)),
+            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), volumesCard(gm), ideasCard(gm), todayCard(gm, show), agendaCard(gm, show), queueCard(gm), inspirationCard(gm)),
             h('div', { class: 'sb-gm-col' }, paceCard(gm), settingsCard(gm))));
 }

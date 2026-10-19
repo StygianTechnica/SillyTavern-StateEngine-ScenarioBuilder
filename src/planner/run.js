@@ -22,23 +22,26 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings, isActive } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { getBoundSettingId } from '../library/library.js';
+import { getBoundSettingId, listEntries, getObjectTypes, createEntry, updateEntry, isCanonOnly, mayAddGeneratedDetail, allKnowledge } from '../library/library.js';
+import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
+import { setQuestMeta, questMeta } from '../quests/sync.js';
 import { callModel } from '../generate/llm.js';
 import { readModelJson } from '../generate/prompt.js';
 import { gatherInputs } from '../guidance/sync.js';
-import { dossierText } from '../director/prompt.js';
+import { dossierText, knownAs, relevance } from '../director/prompt.js';
 import {
     duePasses, setDayPlan, applyCheck, applyBeats, trackPace, paceAim, planSection, motifsOf, addLog,
     addRequest, setRequestStatus, waitingRequests,
     setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, editBeat, lockBeat, removeBeat, addBeat,
     mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText,
+    addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
 import { questBoard } from '../quests/sync.js';
 import {
     buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline,
-    buildBeatPrompt, readBeat, buildRecapPrompt, readRecap,
+    buildBeatPrompt, readBeat, buildRecapPrompt, readRecap, buildIdeasPrompt, readIdeas,
 } from './prompts.js';
 
 export const PLANNER_EVENT = 'scenario_builder_planner';
@@ -290,6 +293,7 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             previous: sameDay ? doc.gm.day : null,
             rest: rest || sameDay,
             story: storyWords(doc.gm),
+            happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today' })),
         });
         const plan = readDayPlan(await ask({ system, prompt }));
         if (!plan) throw new Error('The plan had no moments in it.');
@@ -393,15 +397,18 @@ export async function afterReply(chatId, chatKey) {
             d.gm.counters.turn += 1;
             d.gm.counters.sinceCheck += 1;
             d.gm.counters.sinceOutline += 1;
+            d.gm.counters.sinceIdeas += 1;
+            settleAgenda(d.gm, d.canonical.day);
         });
         await refreshTension(chatKey);
         const doc = getChatDoc(chatKey);
         const p = plannerSettings();
-        const due = duePasses(doc.gm, { day: doc.canonical.day, turn: doc.gm.counters.turn, level: p.level, checkEvery: p.checkEvery, dayExpire: p.dayExpire, outlineEvery: p.outlineEvery });
+        const due = duePasses(doc.gm, { day: doc.canonical.day, turn: doc.gm.counters.turn, level: p.level, checkEvery: p.checkEvery, dayExpire: p.dayExpire, outlineEvery: p.outlineEvery, ideasEvery: p.ideasEvery });
         for (const x of doc.gm.inspirations.filter((i) => !i.motifs.length && !i.error)) void runInspire(chatKey, x.id);
         // The outline first: the day plan follows the story's direction.
         void (async () => {
             if (due.includes('outline')) await runOutline(chatId, chatKey);
+            if (due.includes('ideas')) await runIdeas(chatId, chatKey);
             if (due.includes('day')) await runDay(chatId, chatKey);
             else if (due.includes('check')) await runCheck(chatId, chatKey);
         })();
@@ -599,4 +606,168 @@ export async function finishVolume(chatId, chatKey, { shape = '', direction = ''
 
 export function editFinishedVolume(chatKey, number, patch) {
     updateChatDoc(chatKey, (d) => editVolume(d.gm, number, patch));
+}
+
+// ---------------------------------------------------------------- ideas (§3.4) and the agenda (§3.3)
+
+const creationMode = (settingId) => (settingId ? getSettingDoc(settingId).gm?.creation : 'proposals') ?? 'proposals';
+
+// The library as the guards need it: every entry, by name and aliases.
+async function knownEntries(chatId, settingId) {
+    const out = [];
+    for (const t of await getObjectTypes().catch(() => [])) {
+        for (const e of await listEntries(chatId, settingId, t.id).catch(() => [])) out.push({ id: e.id, type: t.id, name: e.name, aliases: e.aliases ?? e.base?.aliases ?? [], description: e.base?.description ?? e.description ?? '' });
+    }
+    return out;
+}
+
+// Proactive worldbuilding: looks at the frictions, the standing quests and
+// the lore not in play, and proposes (or, in a setting set to add silently,
+// makes) new quests, quest detail, happenings and seeds.
+export async function runIdeas(chatId, chatKey) {
+    return runPass('ideas', chatKey, async () => {
+        const settingId = await getBoundSettingId(chatId);
+        if (!settingId) return 'no setting';
+        const doc = getChatDoc(chatKey);
+        const canonOnly = isCanonOnly(settingId);
+        const inputs = await gatherInputs(chatId, chatKey);
+        const guidance = inputs.guidance;
+        const { sceneContext } = await import('../director/run.js');
+        const ctx = await sceneContext(chatId, chatKey, settingId, guidance);
+        const known = await knownEntries(chatId, settingId);
+        const nameOf = (id) => known.find((e) => e.id === id)?.name ?? '';
+        let cells = [];
+        try {
+            const compiled = typeof window.StateEngineArchivist?.getCompiledMemory === 'function' ? await window.StateEngineArchivist.getCompiledMemory() : null;
+            cells = compiled?.relationship_map?.cells ?? [];
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'no relationship map for the ideas pass', err);
+        }
+        const frictions = frictionLines({ cells, relations: getSettingDoc(settingId).relations, knowledge: await allKnowledge(settingId, nameOf).catch(() => []), nameOf });
+        let quests = [];
+        try {
+            quests = (await questBoard(chatId, chatKey, settingId)).filter((q) => q.status === 'Active' || q.status === 'Not started')
+                .map((q) => ({ name: q.name, status: q.status, type: q.type, objectives: q.objectives.length, description: q.description }));
+        } catch (err) {
+            console.warn(LOG_PREFIX, 'no quests for the ideas pass', err);
+        }
+        const inPlay = new Set([...doc.inPlay, ...(guidance.lore ?? []).map((l) => l.id)]);
+        const lore = known.filter((e) => e.type === 'lore' && !inPlay.has(e.id)).slice(0, 10);
+        const messages = chatMessages(6);
+        const ideas = readIdeas(await ask(buildIdeasPrompt({
+            dossier: dossierText({ ...guidance, ...ctx }),
+            userName: userName(),
+            messages,
+            story: storyWords(doc.gm),
+            frictions,
+            quests,
+            lore,
+            agenda: doc.gm.agenda.filter((x) => x.status === 'coming' || x.status === 'planned').map((x) => ({ text: x.text, inDays: Math.max(0, x.day - doc.canonical.day) })),
+            motifs: motifsOf(doc.gm),
+            dismissed: doc.gm.ideas.filter((i) => i.status === 'dismissed').map((i) => i.name || i.text).slice(-20),
+            canonOnly,
+            gmStyle: guidance.overview?.gmStyle ?? '',
+        })), { canonOnly });
+        // The same guards as the director: never a second thing of a known
+        // name, never at random (a quest grows out of something known or the
+        // chat), and an enrichment only for an open quest.
+        const recentText = messages.map((m) => m.text).join('\n');
+        const openQuests = quests.map((q) => ({ name: q.name, aliases: [] }));
+        const kept = ideas.filter((idea) => {
+            if (idea.kind === 'quest') return !knownAs(idea.name, known) && relevance({ kind: 'quest', name: idea.name, why: [idea.why, ...idea.ties].join('; ') }, { recentText, quests: guidance.quests ?? [], known }).ok;
+            if (idea.kind === 'enrich') return !!knownAs(idea.target, openQuests);
+            return true;
+        });
+        updateChatDoc(chatKey, (d) => { d.gm.counters.sinceIdeas = 0; });
+        if (!kept.length) return ideas.length ? 'nothing that fits' : 'no ideas this time';
+        if (creationMode(settingId) === 'silent') {
+            let made = 0;
+            for (const idea of kept) if ((await applyIdea(chatId, chatKey, settingId, idea, { silent: true })).ok) made++;
+            updateChatDoc(chatKey, (d) => { for (const idea of addIdeas(d.gm, kept)) resolveIdea(d.gm, idea.id, 'accepted'); });
+            return `${made} added`;
+        }
+        let added = [];
+        updateChatDoc(chatKey, (d) => { added = addIdeas(d.gm, kept); });
+        return `${added.length} idea${added.length === 1 ? '' : 's'} to look at`;
+    });
+}
+
+// Makes an idea real. -> { ok, message }.
+async function applyIdea(chatId, chatKey, settingId, idea, { silent = false } = {}) {
+    try {
+        if (idea.kind === 'quest') {
+            if (isCanonOnly(settingId)) return { ok: false, message: 'This setting is fixed canon: no new quests.' };
+            const known = await knownEntries(chatId, settingId);
+            if (knownAs(idea.name, known)) return { ok: false, message: `"${idea.name}" is already in the library.` };
+            const ties = [...new Set(idea.ties.map((t) => knownAs(t, known)?.id).filter(Boolean))];
+            const obj = await createEntry(chatId, settingId, 'quest', { name: idea.name, description: idea.text, ...(ties.length ? { related_entity_ids: ties } : {}) }, { origin: 'director' });
+            if (!obj) return { ok: false, message: 'State Engine refused the quest.' };
+            setQuestMeta(settingId, obj.id, { type: 'side' });
+            // Made without asking: listed in Review like the director's additions.
+            if (silent) {
+                updateChatDoc(chatKey, (d) => {
+                    d.adopted = [...d.adopted, { id: newLocalId('a'), objectId: obj.id, type: 'quest', name: obj.name, at: new Date().toISOString(), placedUnder: '', enrich: 'off', error: '' }];
+                });
+            }
+            return { ok: true, message: `Quest "${obj.name}" added.` };
+        }
+        if (idea.kind === 'enrich') {
+            const quest = knownAs(idea.target, (await listEntries(chatId, settingId, 'quest')).map((q) => ({ id: q.id, name: q.name, aliases: q.aliases ?? [], description: q.base?.description ?? q.description ?? '' })));
+            if (!quest) return { ok: false, message: `No quest called "${idea.target}".` };
+            if (!mayAddGeneratedDetail(settingId, quest.id)) return { ok: false, message: `"${quest.name}" takes no generated detail (canon).` };
+            if (idea.text) await updateEntry(chatId, settingId, quest.id, { description: [quest.description, idea.text].filter(Boolean).join(' ') });
+            if (idea.objectives.length) {
+                const meta = questMeta(settingId, quest.id);
+                const have = new Set(meta.objectives.map((o) => o.text.toLowerCase()));
+                setQuestMeta(settingId, quest.id, { objectives: [...meta.objectives, ...idea.objectives.filter((o) => !have.has(o.toLowerCase())).map((text) => ({ text, status: 'pending', from: 'planner' }))] });
+            }
+            return { ok: true, message: `"${quest.name}" has more to it now.` };
+        }
+        if (idea.kind === 'happening') {
+            let made = null;
+            updateChatDoc(chatKey, (d) => { made = addHappening(d.gm, { id: newLocalId('ag'), text: idea.text, day: d.canonical.day + (idea.inDays ?? 3), when: idea.when, ties: idea.ties, source: 'ideas' }); });
+            return made ? { ok: true, message: `On the calendar in ${idea.inDays ?? 3} days.` } : { ok: false, message: 'Could not put it on the calendar.' };
+        }
+        if (idea.kind === 'seed') {
+            let ok = false;
+            updateChatDoc(chatKey, (d) => { ok = addSeed(d.gm, { text: idea.text, payoff: idea.why }); });
+            return ok ? { ok: true, message: 'Planted in the outline.' } : { ok: false, message: 'There is no outline to plant it in yet.' };
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not apply an idea', err);
+        return { ok: false, message: String(err?.message ?? err) };
+    }
+    return { ok: false, message: 'Unknown idea.' };
+}
+
+// The user accepts a proposal (with any edits already made to it).
+export async function acceptIdea(chatId, chatKey, id) {
+    const idea = getChatDoc(chatKey).gm.ideas.find((i) => i.id === id);
+    if (!idea || idea.status !== 'proposed') return { ok: false, message: 'That idea is gone.' };
+    const settingId = await getBoundSettingId(chatId);
+    const result = await applyIdea(chatId, chatKey, settingId, idea);
+    if (result.ok) updateChatDoc(chatKey, (d) => resolveIdea(d.gm, id, 'accepted'));
+    return result;
+}
+
+export function dismissIdea(chatKey, id) {
+    updateChatDoc(chatKey, (d) => resolveIdea(d.gm, id, 'dismissed'));
+}
+
+export function editProposal(chatKey, id, patch) {
+    updateChatDoc(chatKey, (d) => editIdea(d.gm, id, patch));
+}
+
+// The user's own happening, `inDays` from today.
+export function addAgendaItem(chatKey, text, inDays, when = '') {
+    updateChatDoc(chatKey, (d) => addHappening(d.gm, { id: newLocalId('ag'), text, day: d.canonical.day + Math.max(0, Math.round(inDays)), when, source: 'user' }));
+}
+
+export function removeAgendaItem(chatKey, id) {
+    updateChatDoc(chatKey, (d) => removeHappening(d.gm, id));
+}
+
+// Where a setting's ideas land: 'proposals' or 'silent'.
+export function setCreationMode(settingId, mode) {
+    updateSettingDoc(settingId, (doc) => { doc.gm = { ...doc.gm, creation: mode === 'silent' ? 'silent' : 'proposals' }; });
 }

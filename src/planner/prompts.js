@@ -48,7 +48,8 @@ function requestsText(requests) {
 // input: { dossier (dossierText), dateText, dayPart, userName, messages,
 //   requests: [{ id, text, urgency }], motifs: [text], gmStyle,
 //   previous: { moments, offscreen } | null, rest: true when re-planning
-//   the rest of a day already under way }
+//   the rest of a day already under way, happenings: [{ id, text, when,
+//   due: 'today' | 'tomorrow' }] (the agenda's, src/planner/model.js) }
 export function buildDayPrompt(input) {
     const userName = clean(input.userName) || 'the player';
     const system = [
@@ -66,12 +67,18 @@ export function buildDayPrompt(input) {
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (echo them as images and turns of fate, never as literal events)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));
     const story = storyText(input.story);
     if (story) parts.push('', 'WHERE THE STORY IS GOING (let today serve this beat and this aim, without forcing it)', story);
+    const happenings = list(input.happenings).filter((x) => clean(x?.text));
+    if (happenings.length) {
+        parts.push('', 'ON THE CALENDAR (happenings set for these days: plan a moment for each one due today, and give that moment its id; one due tomorrow may be foreshadowed)');
+        for (const x of happenings) parts.push(`- [${x.id}] ${clean(x.text)} - ${x.due === 'tomorrow' ? 'tomorrow' : 'today'}${clean(x.when) ? `, ${clean(x.when)}` : ''}`);
+    }
+    const happeningField = happenings.length ? ',"happening":"<the calendar id it plays out, or empty>"' : '';
     parts.push(
         '',
         `PLAN ${input.rest ? 'THE REST OF THE DAY' : 'THE DAY'}${clean(input.dateText) ? ` - ${clean(input.dateText)}` : ''}${clean(input.dayPart) ? `, starting ${clean(input.dayPart)}` : ''}`,
         'Two to five moments, in the order they could happen: something someone does, an arrival, news, a discovery, a complication, a quiet beat. Each grows out of what is above, moves a thread, a person\'s agenda or a request along, and leaves the player free to respond. Vary them: not every moment is a crisis.',
         'Answer in this JSON shape:',
-        '{"moments":[{"text":"<what happens, one sentence>","when":"<morning|midday|afternoon|evening|night|any time>","trigger":"<the condition, e.g. \'if the scene is at the forge\'; empty if none>","ties":["<names of the people, places, factions or threads it involves>"],"droppable":true}],',
+        `{"moments":[{"text":"<what happens, one sentence>","when":"<morning|midday|afternoon|evening|night|any time>","trigger":"<the condition, e.g. 'if the scene is at the forge'; empty if none>","ties":["<names of the people, places, factions or threads it involves>"],"droppable":true${happeningField}}],`,
         ' "agendas":[{"who":"<a person who matters today, not the player>","wants":"<what they want>","will":"<what they will do about it>","hidden":"<what they hide, or empty>"}],',
         ' "offscreen":["<what a faction or absent person is doing meanwhile>"],',
         ' "requests":[{"request":"<request id>","moments":[<the number of each moment that answers it, from 1>]}]}',
@@ -81,7 +88,8 @@ export function buildDayPrompt(input) {
 
 function readMoment(m) {
     if (!isObject(m) || !clean(m.text)) return null;
-    return { text: cut(m.text, 300), when: cut(m.when, 40), trigger: cut(m.trigger, 160), ties: texts(m.ties, 6), droppable: m.droppable !== false };
+    const happening = clean(m.happening).replace(/^\[|\]$/g, '');
+    return { text: cut(m.text, 300), when: cut(m.when, 40), trigger: cut(m.trigger, 160), ties: texts(m.ties, 6), droppable: m.droppable !== false, ...(happening ? { happening } : {}) };
 }
 
 function readLinks(v) {
@@ -377,4 +385,73 @@ export function readInspiration(json, sourceText = '') {
         return false;
     };
     return texts(isObject(json) ? json.motifs : json, 8).map((m) => cut(m, 120)).filter((m) => !quotes(m));
+}
+
+// IDEAS: proactive worldbuilding (§3.4) - frictions, standing quests and
+// lore the scene isn't using, turned into proposals.
+// input: { dossier, userName, messages, story ({ shape, act, beat, next,
+//   aim }), frictions: [text], quests: [{ name, status, type, objectives
+//   (count), description }], lore: [{ name, description }] (not in play),
+//   agenda: [{ text, inDays }], motifs, dismissed: [text] (turned down
+//   before), canonOnly (no new quests and no added detail: happenings and
+//   seeds only), gmStyle }
+export function buildIdeasPrompt(input) {
+    const userName = clean(input.userName) || 'the player';
+    const system = [
+        'You are the game master of an ongoing roleplay, thinking ahead in private between scenes. Look past the current scene at the world: the frictions between people and factions, the quests standing open, the lore nobody has used yet.',
+        'Invent interesting things that could happen and grow out of what is there and what the story is doing now - never at random. Each idea names what it grows out of.',
+        rules(userName),
+        clean(input.gmStyle) ? `How the user wants this story run - follow it: ${cut(input.gmStyle, 600)}` : '',
+    ].filter(Boolean).join(' ');
+    const parts = [clean(input.dossier), '', 'THE LATEST CHAT', recentText(list(input.messages).slice(-6), userName)];
+    const story = storyText(input.story);
+    if (story) parts.push('', 'WHERE THE STORY IS GOING', story);
+    const frictions = texts(input.frictions, 12);
+    if (frictions.length) parts.push('', 'FRICTIONS (between people, factions; secrets kept; oaths pending or broken)', ...frictions.map((f) => `- ${f}`));
+    const quests = list(input.quests).filter((q) => clean(q?.name));
+    if (quests.length) {
+        parts.push('', 'QUESTS STANDING OPEN (thin ones could use detail)');
+        for (const q of quests.slice(0, 10)) parts.push(`- ${clean(q.name)} (${clean(q.status) || 'open'}${q.type ? `, ${clean(q.type)}` : ''}; ${q.objectives || 0} objectives)${clean(q.description) ? `: ${cut(q.description, 200)}` : ''}`);
+    }
+    const lore = list(input.lore).filter((l) => clean(l?.name));
+    if (lore.length) parts.push('', 'LORE NOT YET IN PLAY (bring some of it in, tied to the story)', ...lore.slice(0, 10).map((l) => `- ${clean(l.name)}${clean(l.description) ? `: ${cut(l.description, 180)}` : ''}`));
+    const agenda = list(input.agenda).filter((a) => clean(a?.text));
+    if (agenda.length) parts.push('', 'ALREADY ON THE CALENDAR', ...agenda.map((a) => `- ${clean(a.text)} (in ${a.inDays} day${a.inDays === 1 ? '' : 's'})`));
+    if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (echo them symbolically)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));
+    const dismissed = texts(input.dismissed, 20);
+    if (dismissed.length) parts.push('', 'TURNED DOWN BEFORE (do not propose these or anything like them)', ...dismissed.map((d) => `- ${d}`));
+    const canon = input.canonOnly === true;
+    parts.push(
+        '',
+        'YOUR IDEAS',
+        canon
+            ? 'This setting is fixed canon: invent no new quests and add no detail to existing ones. Give only happenings and seeds.'
+            : 'At most two of each kind; fewer is fine, and none of a kind is fine. A quest is a new potential quest tied to the current story (it starts not yet taken up). An enrichment adds lore, a complication or objectives to an open quest above. ',
+        'A happening is something set for a later in-game day (one to fourteen days on) that should come up then without disrupting the scene now. A seed is a small thing to plant now so a later beat pays off.',
+        'Answer in this JSON shape:',
+        `{${canon ? '' : '"quests":[{"name":"<quest name>","description":"<two sentences>","why":"<what it grows out of, by name>","ties":["<names>"]}],"enrich":[{"quest":"<an open quest\'s name>","text":"<the lore or complication>","objectives":["<a new objective>"]}],'}"happenings":[{"text":"<what happens>","in_days":3,"when":"<time of day, or empty>","why":"<what it grows out of>","ties":["<names>"]}],"seeds":[{"text":"<what to plant>","payoff":"<what it pays off later>"}]}`,
+    );
+    return { system, prompt: parts.join('\n') };
+}
+
+// -> [idea] (src/planner/model.js addIdeas shape), at most two per kind.
+export function readIdeas(json, { canonOnly = false } = {}) {
+    if (!isObject(json)) return [];
+    const out = [];
+    if (!canonOnly) {
+        for (const q of list(json.quests).filter((x) => isObject(x) && clean(x.name)).slice(0, 2)) {
+            out.push({ kind: 'quest', name: cut(q.name, 80), text: cut(q.description, 500), why: cut(q.why, 200), ties: texts(q.ties, 6) });
+        }
+        for (const e of list(json.enrich).filter((x) => isObject(x) && clean(x.quest) && clean(x.text)).slice(0, 2)) {
+            out.push({ kind: 'enrich', target: cut(e.quest, 80), text: cut(e.text, 500), objectives: texts(e.objectives, 3).map((o) => cut(o, 160)) });
+        }
+    }
+    for (const h of list(json.happenings).filter((x) => isObject(x) && clean(x.text)).slice(0, 2)) {
+        const n = Math.round(Number(h.in_days ?? h.inDays));
+        out.push({ kind: 'happening', text: cut(h.text, 300), why: cut(h.why, 200), ties: texts(h.ties, 6), inDays: Number.isFinite(n) ? Math.min(30, Math.max(1, n)) : 3, when: cut(h.when, 40) });
+    }
+    for (const s of list(json.seeds).filter((x) => isObject(x) && clean(x.text)).slice(0, 2)) {
+        out.push({ kind: 'seed', text: cut(s.text, 300), why: cut(s.payoff, 200) });
+    }
+    return out;
 }

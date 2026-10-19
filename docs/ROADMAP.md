@@ -293,7 +293,11 @@ calls (one entry at a time, retry, and the entry text as a fallback).
   it and a new volume of chapters that grows out of it.
 - [x] GM planner: /sb-request and /sb-requests - queue and list requests for
   the game master from the chat box.
-- [ ] GM planner, phases 4-5: proactive ideas and the agenda, tuning.
+- [x] GM planner, phase 4: proactive ideas (quest hooks, quest detail,
+  happenings, seeds) as proposals or silent per setting, and the agenda on
+  the Calendar.
+- [ ] GM planner, phase 5: tuning (custom shapes, per-pass budgets, how often
+  planned moments land).
 - [ ] Director: a "think after each reply" mode (zero wait, written before
   the player's next message), and per-character perspective briefings once
   State Engine offers perspectives.
