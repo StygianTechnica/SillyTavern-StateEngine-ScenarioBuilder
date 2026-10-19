@@ -7,7 +7,7 @@
 
 import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc } from '../store/chat-store.js';
-import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview, getPlaceOverview, playerIdOf, setPlayerId, listEntries, allKnowledge, listKnowledge, saveKnowledge, removeKnowledge } from '../library/library.js';
+import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview, getPlaceOverview, playerIdOf, setPlayerId, listEntries, allKnowledge, listKnowledge, saveKnowledge, removeKnowledge, mergeEntries } from '../library/library.js';
 import { knowledgeOf, OATH_STATUSES, SECRET_STATUSES } from '../library/knowledge.js';
 import { pathOf, descendantsOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
@@ -32,6 +32,7 @@ import { sparkButton, fieldWithTools } from './controls.js';
 import { generateEntry, canGenerateFor } from '../generate/run.js';
 import { splitAliases, mergeAliases } from '../generate/prompt.js';
 import { WORLD_TYPES, MAGIC_PRESENCE, TECH_LEVELS, inheritedRealm } from '../library/world-options.js';
+import { duplicateScore } from '../library/merge.js';
 import { confirmAction } from './confirm.js';
 import { ws, rerender, openSheet, closeSheet, markDirty, stopEditing } from './ws.js';
 import { h, icon, button, select, field, csv, fromCsv, toast } from './dom.js';
@@ -234,6 +235,7 @@ export async function renderSheet(type, all) {
             }, { iconName: 'fa-xmark' })]
             : [button('Enrich', () => { ws.editing = true; ws.pendingGen = 'enrich'; rerender(); }, { iconName: 'fa-wand-magic-sparkles', disabled: !gate.ok, title: gate.reason || 'Add detail to every field - fill the empty ones and deepen the rest. You review it before saving.' }),
                 button('Edit', () => { ws.editing = true; rerender(); }, { iconName: 'fa-pen', cls: 'sb-primary' }),
+                button('Merge…', () => { ws.mergeFor = ws.mergeFor === entry.id ? null : entry.id; ws.mergePick = null; ws.mergeQuery = ''; rerender(); }, { iconName: 'fa-code-merge', title: 'This is a duplicate of another entry - merge the two into one' }),
                 button('', () => void removeEntry(entry), { iconName: 'fa-trash', cls: 'sb-danger', title: 'Delete' })]);
 
     // ---- generation strip (edit mode)
@@ -307,7 +309,8 @@ export async function renderSheet(type, all) {
         console.warn(LOG_PREFIX, 'could not draw the sheet', err);
         body = h('div', { class: 'sb-error' }, `Something went wrong: ${err?.message ?? err}`);
     }
-    return h('div', { class: `sb-sheet${ws.editing ? ' sb-editing' : ''}` }, topbar, header, genStrip, tabs, h('div', { class: 'sb-sheet-body' }, body));
+    const merging = !isNew && !ws.editing && ws.mergeFor === entry.id ? mergePanel(entry, type, all) : null;
+    return h('div', { class: `sb-sheet${ws.editing ? ' sb-editing' : ''}` }, topbar, merging, header, genStrip, tabs, h('div', { class: 'sb-sheet-body' }, body));
 }
 
 // ---- generation on the sheet
@@ -892,6 +895,70 @@ async function saveSheet(type, entry, defs, isNew) {
         console.warn(LOG_PREFIX, 'save failed', err);
         toast('error', `Could not save: ${err?.message ?? err}`);
     }
+}
+
+// ---- merging duplicates (SB-113)
+
+// "This is a duplicate of…": likely duplicates first (any type), or a
+// search across the library; then merge either way round.
+function mergePanel(entry, type, all) {
+    const typeLabel = new Map(Object.values(all).flat().map((e) => [e.type, CHAPTER_LABELS[e.type] ?? e.type]));
+    const others = Object.values(all).flat().filter((e) => e.id !== entry.id);
+    const scored = others.map((e) => ({ e, score: duplicateScore(entry, e) + (e.type === entry.type ? 0.5 : 0) }))
+        .sort((a, b) => b.score - a.score || String(a.e.name).localeCompare(String(b.e.name)));
+    const pick = others.find((e) => e.id === ws.mergePick) ?? null;
+    const close = () => { ws.mergeFor = null; ws.mergePick = null; ws.mergeQuery = ''; rerender(); };
+    const row = ({ e }) => h('div', {
+        class: `sb-merge-row${pick?.id === e.id ? ' active' : ''}`,
+        dataset: { names: [e.name, ...(e.aliases ?? [])].map((n) => String(n ?? '').toLowerCase()).join('\n') },
+        onclick: () => { ws.mergePick = e.id; rerender(); },
+    },
+    h('b', {}, e.name),
+    e.type !== entry.type ? h('span', { class: 'sb-chip', title: 'A different type' }, typeLabel.get(e.type) ?? e.type) : null,
+    (e.aliases ?? []).length ? h('small', { class: 'sb-hint' }, ` also ${(e.aliases ?? []).slice(0, 3).join(', ')}`) : null);
+    // Shown: the likely duplicates, or with a search what matches it (the
+    // first 30), filtered in place so the search box keeps its focus.
+    const rows = scored.map((s) => ({ s, el: row(s) }));
+    const hint = h('small', { class: 'sb-hint' });
+    const filter = () => {
+        const q = String(ws.mergeQuery ?? '').trim().toLowerCase();
+        let shown = 0;
+        for (const { s, el } of rows) {
+            const match = q ? el.dataset.names.includes(q) : s.score >= 1 || s.e.id === pick?.id;
+            el.hidden = !match || shown >= 30;
+            if (!el.hidden) shown++;
+        }
+        hint.textContent = q ? (shown ? '' : 'Nothing matches.') : (shown ? 'Likely duplicates (by name):' : 'No likely duplicates by name - search for the entry it duplicates.');
+    };
+    filter();
+    const doMerge = async (dup, keep) => {
+        const crossType = dup.type !== keep.type;
+        const question = crossType
+            ? `"${dup.name}" (${typeLabel.get(dup.type) ?? dup.type}) and "${keep.name}" (${typeLabel.get(keep.type) ?? keep.type}) are different types, so they can't be fully merged.\n\n"${keep.name}" will gain "${dup.name}" and its aliases as aliases, and "${dup.name}" will be deleted - its own details are not carried over, and anything that pointed at it loses that link.`
+            : `Merge "${dup.name}" into "${keep.name}"?\n\n"${keep.name}" keeps its own details, gains "${dup.name}" and its aliases as aliases, and takes whatever it is missing from it. Everything that pointed at "${dup.name}" - the scene, relationships, routes, places inside - moves to "${keep.name}". "${dup.name}" is removed. This cannot be undone.`;
+        if (!await confirmAction(question)) return;
+        const { chatId, settingId } = ws.ctx;
+        const result = await mergeEntries(chatId, settingId, dup.id, keep.id);
+        if (!result.ok) return toast('error', `Could not merge: ${result.error}`);
+        toast('success', `"${dup.name}" is now part of "${keep.name}"${result.moved.length ? ` (${result.moved.join(', ')} moved over)` : ''}.`);
+        ws.mergeFor = null;
+        ws.mergePick = null;
+        await syncNow();
+        openSheet(keep.id, keep.type);
+    };
+    return h('div', { class: 'sb-merge' },
+        h('div', { class: 'sb-card-title' }, icon('fa-code-merge'), `Merge "${entry.name}" with another entry`,
+            h('span', { class: 'sb-spacer' }), h('span', { class: 'sb-iconbtn', title: 'Close', onclick: close }, icon('fa-xmark'))),
+        h('input', {
+            class: 'text_pole', placeholder: 'Search the library…', value: ws.mergeQuery ?? '',
+            oninput: (e) => { ws.mergeQuery = e.target.value; filter(); },
+        }),
+        hint,
+        h('div', { class: 'sb-merge-list' }, rows.map((r) => r.el)),
+        pick ? h('div', { class: 'sb-actions sb-wrap' },
+            button(`Merge "${entry.name}" into "${pick.name}"`, () => void doMerge(entry, pick), { iconName: 'fa-arrow-right', cls: 'sb-primary', title: `Keep "${pick.name}"; this one becomes its alias` }),
+            button(`Keep "${entry.name}", merge "${pick.name}" into it`, () => void doMerge(pick, entry), { iconName: 'fa-arrow-left', title: `Keep this one; "${pick.name}" becomes its alias` }),
+            pick.type !== entry.type ? h('small', { class: 'sb-hint' }, icon('fa-triangle-exclamation'), ' Different types: only the name carries over, as an alias.') : null) : null);
 }
 
 async function removeEntry(entry) {

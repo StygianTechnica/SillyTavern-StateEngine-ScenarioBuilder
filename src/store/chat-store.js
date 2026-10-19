@@ -21,6 +21,11 @@ export function getChatDoc(chatKey) {
     return structuredClone(normalizeChatDoc(getSettings().chats[chatKey]));
 }
 
+// The chat keys of every stored chat document.
+export function listChatKeys() {
+    return Object.keys(getSettings().chats ?? {});
+}
+
 export function hasChatDoc(chatKey) {
     return !!getSettings().chats[chatKey];
 }

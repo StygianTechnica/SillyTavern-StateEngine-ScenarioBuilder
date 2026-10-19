@@ -94,6 +94,19 @@ export async function resolveObject(chatId, sourceId, targetId) {
     return stateEngine.resolveObject(EXTENSION_ID, instanceId, chatId, sourceId, targetId) ?? null;
 }
 
+// `sourceId` merged into `targetId` (same type): the target gains its name
+// and aliases as aliases and fills its empty fields; variables and
+// references move over; the source is deleted. -> the target, or null.
+export async function mergeObjects(chatId, sourceId, targetId, options = {}) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.mergeObjects(EXTENSION_ID, instanceId, chatId, sourceId, targetId, options) ?? null;
+}
+
+export async function addObjectAlias(chatId, id, alias, options = {}) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.addObjectAlias(EXTENSION_ID, instanceId, chatId, id, alias, options) ?? null;
+}
+
 export async function markObjectPresent(chatId, id) {
     const { stateEngine, instanceId } = await getStateEngine();
     return stateEngine.markObjectPresent(EXTENSION_ID, instanceId, chatId, id) ?? null;

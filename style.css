@@ -540,3 +540,11 @@
 .sb-gm-volume-body > .sb-gm-title-tools { margin-left: 0; justify-content: flex-end; }
 .sb-gm-recap p { margin: 0 0 8px; line-height: 1.5; }
 .sb-gm-threads { margin: 2px 0 0; padding-left: 18px; }
+
+/* Merging duplicates (src/ui/sheet.js mergePanel). */
+.sb-merge { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; padding: 10px 12px; border: 1px dashed var(--sb-gold); border-radius: var(--sb-radius); background: var(--sb-soft); }
+.sb-merge .sb-card-title { display: flex; align-items: center; gap: 6px; }
+.sb-merge-list { display: flex; flex-direction: column; max-height: 260px; overflow-y: auto; }
+.sb-merge-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 6px; cursor: pointer; }
+.sb-merge-row:hover { background: var(--sb-softer); }
+.sb-merge-row.active { background: var(--sb-softer); outline: 1px solid var(--sb-gold); }

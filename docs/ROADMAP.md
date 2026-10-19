@@ -167,7 +167,11 @@ These came after spec v0.5 and should be folded into its next revision.
   form starts from a guess too.
 - [ ] Routes: locked or hidden ones, and travel time by means (on foot, by
   cart, by ship).
-- [ ] Merge two entries from the catalog (SB-113 merge path).
+- [x] Merge two entries from the catalog (SB-113 merge path): "Merge…" on a
+  sheet suggests likely duplicates by name (any type) or searches the library;
+  same type merges through State Engine (aliases, empty fields, references),
+  different types add the duplicate's names as aliases and remove it.
+  Scenario Builder's own data follows (src/library/merge.js).
 - [ ] Undo for deletes (SB-127; needs a tombstone, since State Engine ids
   cannot be recreated).
 - [ ] Keyboard navigation (arrows through cards, Enter to open, E to edit).

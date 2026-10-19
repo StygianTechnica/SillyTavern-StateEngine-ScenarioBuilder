@@ -14,6 +14,8 @@ import { getSettingDoc, updateSettingDoc, getEntryMeta } from '../store/setting-
 import { wouldCreateCycle, parentsAfterDelete, pathOf } from './hierarchy.js';
 import { placeOverview } from './world-options.js';
 import { normalizeKnowledgeItem, authoredKnowledge, storyKnowledge } from './knowledge.js';
+import { mergeSettingDoc, mergeChatDoc, aliasesToAdd } from './merge.js';
+import { listChatKeys, getChatDoc, updateChatDoc } from '../store/chat-store.js';
 
 // ---- types
 
@@ -218,6 +220,45 @@ export async function deleteEntry(chatId, settingId, id) {
         delete doc.graph.positions[id];
     });
     return true;
+}
+
+// Merges the duplicate `dupId` into `keepId` (SB-113): the kept entry stays
+// and gains the duplicate's name and aliases as aliases. Of the same type,
+// State Engine merges the objects (empty fields filled from the duplicate,
+// every variable and reference moved over); of different types the
+// duplicate's names are added as aliases and it is deleted (its fields and
+// the references to it are not carried over). Scenario Builder's own data
+// follows either way: metadata, places inside, groups, relations, routes,
+// secrets and oaths, positions, and every chat of the setting.
+// -> { ok, keep, moved: [what moved], sameType } or { ok: false, error }.
+export async function mergeEntries(chatId, settingId, dupId, keepId) {
+    if (!dupId || !keepId || dupId === keepId) return { ok: false, error: 'Choose a different entry to merge into.' };
+    const dup = await se.getObject(chatId, dupId);
+    const keep = await se.getObject(chatId, keepId);
+    if (!dup || !keep) return { ok: false, error: 'One of the two entries no longer exists.' };
+    const sameType = dup.type === keep.type;
+    try {
+        if (sameType) {
+            const options = keep.scope === 'setting' || dup.scope === 'setting' ? { settingId: keep.settingId ?? dup.settingId ?? settingId } : {};
+            if (!await se.mergeObjects(chatId, dupId, keepId, options)) return { ok: false, error: 'State Engine refused the merge.' };
+        } else {
+            const options = keep.scope === 'setting' ? { settingId: keep.settingId ?? settingId } : {};
+            for (const alias of aliasesToAdd(keep, dup)) await se.addObjectAlias(chatId, keepId, alias, options);
+            const dupOptions = dup.scope === 'setting' ? { settingId: dup.settingId ?? settingId } : {};
+            if (!await se.deleteObject(chatId, dupId, dupOptions)) return { ok: false, error: 'State Engine refused to remove the duplicate.' };
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'merge failed', err);
+        return { ok: false, error: String(err?.message ?? err) };
+    }
+    let moved = [];
+    if (settingId) updateSettingDoc(settingId, (doc) => { moved = mergeSettingDoc(doc, dupId, keepId); });
+    for (const chatKey of listChatKeys()) {
+        const doc = getChatDoc(chatKey);
+        if (doc.settingId && settingId && doc.settingId !== settingId) continue;
+        updateChatDoc(chatKey, (d) => mergeChatDoc(d, dupId, keepId));
+    }
+    return { ok: true, keep: await se.getObject(chatId, keepId), moved, sameType };
 }
 
 // ---- the graph view
