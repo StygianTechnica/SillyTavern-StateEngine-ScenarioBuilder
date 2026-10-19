@@ -304,6 +304,31 @@ export function readRecap(json) {
     return { title: cut(json.title, 80), recap: recap.slice(0, 8000), threads: texts(json.threads, 10).map((t) => cut(t, 200)) };
 }
 
+// A recap answer that is not clean JSON - long prose with an unescaped
+// quote, a reply cut short, or plain prose with no JSON at all: what can be
+// read of it. -> { title, recap, threads } or null (nothing usable).
+export function readRecapText(raw) {
+    const text = String(raw ?? '').replace(/\r/g, '').replace(/^\s*```(?:json)?\s*|\s*```\s*$/g, '').trim();
+    if (!text) return null;
+    const unescape = (s) => s.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    const title = /"title"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(text)?.[1] ?? '';
+    let recap = '';
+    const at = /"recap"\s*:\s*"/.exec(text);
+    if (at) {
+        // Up to where the threads begin, the object closes, or the text ends.
+        const rest = text.slice(at.index + at[0].length);
+        const end = rest.search(/"\s*,\s*"threads"\s*:|"\s*}\s*$/);
+        recap = unescape(end >= 0 ? rest.slice(0, end) : rest.replace(/"?\s*}?\s*$/, ''));
+    } else if (!/^[{[]/.test(text)) {
+        // Plain prose: the recap itself (a "Title:" line taken as the title).
+        const m = /^(?:#+\s*|title\s*:\s*)([^\n]{2,80})\n+/i.exec(text);
+        recap = m ? text.slice(m[0].length) : text;
+        return readRecap({ title: m ? m[1] : '', recap, threads: [] });
+    }
+    const threads = [...(/"threads"\s*:\s*\[([\s\S]*?)(?:\]|$)/.exec(text)?.[1] ?? '').matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => unescape(m[1]));
+    return readRecap({ title: unescape(title), recap, threads });
+}
+
 // BEAT: one beat of the outline written afresh. input: { dossier,
 //   userName, messages, shape, outline, beatId, wish (the user's steer, or
 //   ''), storySoFar }

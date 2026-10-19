@@ -498,6 +498,20 @@ function settleActive(outline) {
 
 const past = (b) => b.status === 'done' || b.status === 'skipped';
 
+// Whether two beats are the same beat in other words ("Graxx proposes a
+// deal: ... with him" and "... with him, sparking tension among allies"):
+// most of the shorter one's distinctive words are in the longer one.
+const BEAT_STOP = new Set('the and for with from into onto that this their them they his her its him she are was were has have had will would can could must about over under after before while then than when where which who whom what how also just only very more most some any all each other another again'.split(' '));
+const beatWords = (text) => new Set((clean(text).toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).map((w) => w.replace(/(?:'s|s)$/, '')).filter((w) => w.length >= 3 && !BEAT_STOP.has(w)));
+export function sameBeat(a, b) {
+    const wa = beatWords(a);
+    const wb = beatWords(b);
+    if (!wa.size || !wb.size) return false;
+    const shared = [...wa].filter((w) => wb.has(w)).length;
+    const small = Math.min(wa.size, wb.size);
+    return shared / small >= 0.7 && (2 * shared) / (wa.size + wb.size) >= 0.5;
+}
+
 // Takes an OUTLINE pass's answer in. parsed: { premise, themes, acts:
 // [{ title, beats: [{ id?, text, ties, status }] }], seeds }. What the
 // story has done stays done; locked beats (the user's) keep their words;
@@ -510,18 +524,34 @@ export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString()
     const old = new Map(beatsOf(gm.outline).filter((b) => keepLocked || past(b)).map((b) => [b.id, b]));
     const used = new Set();
     let next = Math.max(0, ...[...old.keys()].map(beatNumber)) + 1;
+    const everyOld = beatsOf(gm.outline);
+    // The chapters the story has finished (every beat played out or
+    // skipped, and a later one under way): nothing new goes into them.
+    const nowAt = currentAct(gm.outline)?.index ?? 0;
+    const finished = (i) => i < nowAt && (gm.outline?.acts?.[i]?.beats ?? []).every(past);
+    const taken = [];
     const acts = (parsed.acts ?? []).map((a, i) => {
         const beats = [];
         for (const raw of a.beats ?? []) {
-            const prev = raw.id ? old.get(clean(raw.id)) : null;
+            let prev = raw.id ? old.get(clean(raw.id)) : null;
+            // An answer that lost a beat's id: the same beat in other words
+            // is that beat - never a new copy of one already played out
+            // (which would come back as a fresh, active beat).
+            if (!prev || used.has(prev.id)) {
+                const like = everyOld.find((b) => !used.has(b.id) && sameBeat(b.text, raw.text));
+                if (like) prev = old.get(like.id) ?? null;
+                else if (everyOld.some((b) => past(b) && sameBeat(b.text, raw.text))) continue;
+            }
+            if (!prev && finished(i)) continue;
             if (prev && !used.has(prev.id)) {
                 used.add(prev.id);
                 const status = past(prev) ? prev.status : (BEAT_STATUSES.includes(raw.status) ? raw.status : prev.status);
                 const keepWords = prev.locked || past(prev);
                 beats.push({ ...prev, text: keepWords ? prev.text : clean(raw.text) || prev.text, ties: keepWords ? prev.ties : strList(raw.ties).slice(0, 6), status });
-            } else {
+            } else if (!taken.some((t) => sameBeat(t, raw.text))) {
+                // Never the same new beat twice in one answer.
                 const b = normalizeBeat({ ...raw, id: `b${next++}`, locked: false, by: 'planner' }, 0);
-                if (b) beats.push(b);
+                if (b) { beats.push(b); taken.push(b.text); }
             }
         }
         // History and the user's beats are never lost: back in their act,

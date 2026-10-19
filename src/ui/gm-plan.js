@@ -30,6 +30,7 @@ async function running(label, fn) {
     if (out) toast('success', `${label}: ${out}`);
     else if (getPlannerStatus().error) toast('warning', `${label} failed: ${getPlannerStatus().error}`);
     rerender();
+    return out;
 }
 
 // ---- inline editing
@@ -296,7 +297,11 @@ function nextVolumePanel(gm, chatId, chatKey, complete) {
         h('div', { class: 'sb-card-title' }, icon('fa-book'), complete ? `Volume ${next}` : `Close volume ${gm.volume.number} and begin volume ${next}`),
         !complete ? h('small', { class: 'sb-hint' }, 'The beats this volume has not reached are kept in its record as not reached.') : null,
         inlineEditor('next-volume', {
-            onSave: (direction, shape) => void running(`Writing the recap of volume ${gm.volume.number}`, () => finishVolume(chatId, chatKey, { shape, direction })),
+            onSave: (direction, shape) => void (async () => {
+                const out = await running(`Writing the recap of volume ${gm.volume.number}`, () => finishVolume(chatId, chatKey, { shape, direction }));
+                // Failed: nothing changed - the panel again, as it was, to try once more.
+                if (!out) startEdit('next-volume', direction, shape);
+            })(),
             placeholder: 'Where should the next volume go? (optional - e.g. "the war comes to Redhaven", "something quieter")',
             saveLabel: `Write the recap and begin volume ${next}`, saveIcon: 'fa-feather', allowEmpty: true,
             hint: 'The recap is written in the background; the new outline follows on the next pass.',

@@ -41,7 +41,7 @@ import { shapeOf, tensionAim } from './shapes.js';
 import { questBoard } from '../quests/sync.js';
 import {
     buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline,
-    buildBeatPrompt, readBeat, buildRecapPrompt, readRecap, buildIdeasPrompt, readIdeas,
+    buildBeatPrompt, readBeat, buildRecapPrompt, readRecap, readRecapText, buildIdeasPrompt, readIdeas,
 } from './prompts.js';
 
 export const PLANNER_EVENT = 'scenario_builder_planner';
@@ -102,11 +102,21 @@ async function runPass(kind, chatKey, fn) {
     }
 }
 
-async function ask({ system, prompt }, maxTokens = 0) {
-    const raw = await callModel([{ role: 'system', content: system }, { role: 'user', content: prompt }], Math.max(plannerSettings().maxTokens || 1200, maxTokens));
+// One planner question. An answer that is not JSON is asked for once more;
+// `salvage(raw)` (when given) then reads what it can of a second bad answer.
+async function ask({ system, prompt }, maxTokens = 0, { salvage = null } = {}) {
+    const tokens = Math.max(plannerSettings().maxTokens || 1200, maxTokens);
+    const messages = [{ role: 'system', content: system }, { role: 'user', content: prompt }];
+    const raw = await callModel(messages, tokens);
     const json = readModelJson(raw);
-    if (!json) throw new Error('The model\'s answer was not JSON.');
-    return json;
+    if (json) return json;
+    console.info(LOG_PREFIX, 'the planner\'s answer was not JSON - asking again');
+    const again = await callModel([...messages, { role: 'assistant', content: String(raw ?? '').slice(0, 4000) }, { role: 'user', content: 'That answer could not be read. Reply again with ONLY the JSON object asked for - start with { and end with }, with every quote inside a text escaped as \\" and paragraphs as \\n.' }], tokens);
+    const second = readModelJson(again);
+    if (second) return second;
+    const saved = salvage?.(again) ?? salvage?.(raw);
+    if (saved) return saved;
+    throw new Error('The model\'s answer was not JSON.');
 }
 
 // ---------------------------------------------------------------- the story (§5)
@@ -594,7 +604,7 @@ export async function finishVolume(chatId, chatKey, { shape = '', direction = ''
             previous: previousVolumesText(gm, { full: false }),
             closedEarly: !complete,
             words: recapWords(gm.counters.turn - gm.volume.startedTurn),
-        }), RECAP_TOKENS));
+        }), RECAP_TOKENS, { salvage: (raw) => { const r = readRecapText(raw); return r ? { title: r.title, recap: r.recap, threads: r.threads } : null; } }));
         if (!recap) throw new Error('The recap came back empty.');
         const index = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).length;
         let record = null;
