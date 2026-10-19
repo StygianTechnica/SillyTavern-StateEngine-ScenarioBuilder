@@ -13,20 +13,22 @@
 // extraction into acting twice, and Scenario Builder's own writes settle
 // at once (SB-502).
 
+import { revertPatch } from '../state/revert.js';
 import { LOG_PREFIX } from '../constants.js';
 import { getSettings, isActive } from '../settings.js';
 import { getCurrentChatRef, chatKeyFor, sourceMessageId, sourceIndex } from '../store/chat-ref.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId, DRIFT_LIMIT } from '../store/schema.js';
 import { getVariableValues, setVariableValue, getRawValues } from '../api/variables.js';
-import { getObject, confirmObject, resolveObject } from '../api/objects.js';
+import { getObject, confirmObject, resolveObject, updateObject } from '../api/objects.js';
+import { placeNameFrom, samePlaceName } from '../director/prompt.js';
 import { PRESET_NAME, OBSERVED_NAMES } from '../preset/blueprint.js';
 import { withStateEngineCast, SE_CAST } from './drift.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry, playerIdOf, listEntries } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
 import { catchUpWithStory, holdStoryWeather, travelAlong, followStoryTimeOfDay } from '../calendar/clock.js';
-import { detectDrift, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
+import { detectDrift, decide, DEFAULT_POLICIES, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
 
 export const DRIFT_CHANGED_EVENT = 'scenario_builder_drift_changed';
 
@@ -192,6 +194,33 @@ async function reconcileOnce() {
 
     if (!items.length && !newReply && JSON.stringify(doc.lastObserved) === JSON.stringify(observed)) return;
 
+    // A new place read as a whole sentence ("Remus is in the infirmary now,
+    // resting from his injuries") is renamed to the place itself before it
+    // is offered, so a merge does not make the sentence an alias either.
+    let places = null;
+    for (const item of items) {
+        const obj = item.action === 'candidate' && item.field === 'location' ? objects.get(item.observed) : null;
+        if (!obj?.name) continue;
+        const short = placeNameFrom(obj.name, [SillyTavern.getContext().name1].filter(Boolean)) || obj.name;
+        try {
+            if (short !== obj.name && await updateObject(chatId, obj.id ?? item.observed, { name: short })) obj.name = short;
+            // A name the library already has for a place ("the wall" when
+            // the walls are known) is that place, not a new one: the story's
+            // changing words for one place no longer pile up as candidates.
+            places ??= settingId ? await listEntries(chatId, settingId, 'location') : [];
+            const known = places.find((p) => p.id !== item.observed && samePlaceName(short, p));
+            if (known && await resolveObject(chatId, item.observed, known.id)) {
+                objects.set(known.id, known);
+                item.observed = known.id;
+                item.classification = 'library_match';
+                item.reason = `"${short}" is ${known.name}`;
+                item.action = decide('library_match', settings.policies?.location ?? DEFAULT_POLICIES.location);
+                if (item.observed === doc.canonical.locationId) item.action = 'skip';
+            }
+        } catch (err) {
+            console.warn(LOG_PREFIX, `could not tidy the new place "${obj.name}"`, err);
+        }
+    }
     const { nameOf, placeOf } = await namers(chatId, settingId, objects);
     let canonical = doc.canonical;
     const accepted = [];
@@ -459,10 +488,8 @@ export async function revertFromMessage(fromIndex) {
     const touched = toUndo.length || doc.drift.some((d) => affected(d.source)) || doc.corrections.some((c) => affected(c.source)) || doc.candidates.some((c) => affected(c.source)) || affected(doc.lastReply);
     if (!touched) return;
 
-    let restored = { ...doc.canonical };
-    for (const h of toUndo) restored = { ...restored, ...h.before };
-    const patch = {};
-    for (const key of Object.keys(restored)) if (JSON.stringify(restored[key]) !== JSON.stringify(doc.canonical[key])) patch[key] = restored[key];
+    // A later change by the user (the date set by hand) is not taken back.
+    const patch = revertPatch(doc.history, toUndo.map((h) => h.id), doc.canonical);
     setCanonical(chatKey, patch, {
         source: 'revert',
         note: 'A message changed or was removed - its changes were reverted',

@@ -426,6 +426,7 @@ export function buildDirectorPrompt(input) {
             'NEW character | <name> | <one-sentence description> | <here or nearby> | <tied to>',
             'Someone who takes part in the scene - speaks, acts, is spoken to, or is singled out by a description - but has no name yet is a character too: give them a short descriptive name from how the story describes them ("The Eyepatched Man", "The Heavyset Man") and add the word unnamed as the last part. Background crowds ("several others", "the guards") are not.',
             'NEW character | <descriptive name, e.g. The Eyepatched Man> | <one-sentence description> | here | unnamed',
+            'Someone the latest chat gives a name to - introduced, described, sent for or picked for a task ("Kael and Arin will go with you") - and who is not listed above is a character too, here or not: add them with what the chat says of them, "nearby" when they are not in the scene. This is not inventing; they already exist in the story.',
             'NEW creature | <name> | <one-sentence description> | <tied to>',
             'NEW faction | <name> | <one-sentence description> | <tied to>',
             'NEW lore | <name> | <one-sentence description> | <tied to>',
@@ -713,4 +714,34 @@ export function placeNamedIn(item, places = []) {
         }
     }
     return best?.id ?? null;
+}
+
+// The place a sentence names, as a short name: "Remus is in the infirmary
+// now, resting from his injuries" -> "Infirmary". A name that is already
+// short is only cleaned. -> the name, or '' when no place can be read.
+const AFTER_PLACE = /\s+(?:now|again|still|once more|for now|for the night|for a while|tonight|today|where|while|who|which|with|as|after|before|until|since|because|and|but|to|resting|sleeping|waiting|recovering)\b.*$/i;
+export function placeNameFrom(text, playerNames = []) {
+    const whole = clean(text).replace(/^["'*]+|["'*.!]+$/g, '');
+    if (!whole) return '';
+    if (looksLikePlaceName(whole, playerNames)) return cleanPlaceName(whole);
+    // The first clause, the phrase after its first "in/at/on..." there.
+    const clause = whole.split(/\s*[,;:()]\s*|\s+[-–—]\s+/)[0];
+    const at = clause.match(/\b(?:in|inside|within|into|at|on|onto|to|toward|towards|near|outside|beneath|under)\s+/i);
+    if (!at) return '';
+    let name = clause.slice(at.index + at[0].length).replace(AFTER_PLACE, '').trim();
+    // "the infirmary" -> "Infirmary", "the Great Hall" -> "Great Hall".
+    name = name.replace(/^(?:the|a|an)\s+/i, '');
+    name = name.replace(/^(?:his|her|their|its|our|my|your)\s+/i, '');
+    if (!name) return '';
+    name = name[0].toUpperCase() + name.slice(1);
+    return looksLikePlaceName(name, playerNames) ? name : '';
+}
+
+// Whether `name` is one of a place's names, give or take "the", a plural
+// and a possessive ("the walls" is "Wall"; "Niamh's fortress" is
+// "Niamh's Fortress"). Never a part of a longer name.
+export function samePlaceName(name, place) {
+    const key = (n) => String(n ?? '').toLowerCase().replace(/[’']s\b/g, '').replace(/^(?:the|a|an)\s+/, '').replace(/[^a-z0-9]+/g, ' ').trim().replace(/s\b/g, '');
+    const k = key(name);
+    return !!k && [place?.name, ...(place?.aliases ?? place?.base?.aliases ?? [])].some((n) => key(n) === k);
 }

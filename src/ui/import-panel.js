@@ -88,7 +88,7 @@ function progressStep(job, title) {
         h('div', { class: 'sb-actions' }, button('Stop', () => cancelImport(), { iconName: 'fa-stop' })));
 }
 
-const ACTION_TEXT = { fill: 'Fill blanks of', create: 'New', skip: 'Skip' };
+const ACTION_TEXT = { fill: 'Fill blanks of', replace: 'Update', create: 'New', skip: 'Skip' };
 
 async function reviewStep(job) {
     const types = new Map((await getObjectTypes()).map((t) => [t.id, t]));
@@ -98,18 +98,27 @@ async function reviewStep(job) {
     const row = (p) => {
         const t = types.get(p.type);
         const fields = Object.keys(p.values).filter((k) => k !== 'name');
+        // Fields its own entry replaces: what they held, and what they get.
+        const replaced = Object.keys(p.replaces ?? {});
+        const shown = (v) => String(Array.isArray(v) ? v.join(', ') : v ?? '');
         return h('div', { class: `sb-proposal${p.include ? '' : ' sb-off-row'}`, style: `--sb-accent: ${t?.color ?? '#888'}` },
             h('input', { type: 'checkbox', checked: p.include, onchange: (e) => { p.include = e.target.checked; rerender(); } }),
             h('div', { class: 'sb-proposal-main' },
                 h('div', { class: 'sb-row' },
-                    h('span', { class: `sb-badge sb-act-${p.action}` }, ACTION_TEXT[p.action]),
+                    h('span', { class: `sb-badge sb-act-${replaced.length ? 'replace' : p.action}` }, ACTION_TEXT[replaced.length ? 'replace' : p.action]),
                     t ? h('i', { class: `fa-solid ${t.icon}`, title: t.label }) : null,
                     h('b', {}, p.name),
                     p.action === 'create' ? h('small', { class: 'sb-hint' }, t?.noun ?? p.type) : null,
                     p.matchId ? h('span', { class: 'sb-iconbtn', title: 'Open its sheet', onclick: () => openSheet(p.matchId, p.type) }, icon('fa-arrow-up-right-from-square')) : null),
                 h('small', { class: 'sb-hint' }, `From "${p.entry.title || p.entry.keys[0] || p.entry.uid}" (${p.entry.book})`
                     + `${fields.length ? ` · ${fields.join(', ')}` : ''}${p.locatedIn ? ` · inside ${p.locatedIn}` : ''}${p.relations?.length ? ` · ${p.relations.map((r) => `${r.kind} ${r.name}`).join(', ')}` : ''}${p.note ? ` · ${p.note}` : ''}`),
-                p.values.description && p.action === 'create' ? h('div', { class: 'sb-proposal-desc' }, String(p.values.description).slice(0, 220)) : null));
+                p.values.description && p.action === 'create' ? h('div', { class: 'sb-proposal-desc' }, String(p.values.description).slice(0, 220)) : null,
+                replaced.length ? h('div', { class: 'sb-proposal-replaces' },
+                    replaced.map((k) => h('div', {},
+                        h('b', {}, `${k}: `),
+                        h('s', {}, shown(p.replaces[k]).slice(0, 160)),
+                        ' → ',
+                        h('span', {}, shown(p.values[k]).slice(0, 260))))) : null));
     };
     return h('div', { class: 'sb-import' },
         h('h3', {}, icon('fa-list-check'), ' The plan'),

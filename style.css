@@ -301,6 +301,9 @@
 .sb-off-row { opacity: 0.5; }
 .sb-act-create { background: rgba(76, 175, 80, 0.35); }
 .sb-act-fill { background: rgba(74, 144, 217, 0.35); }
+.sb-act-replace { background: rgba(230, 160, 40, 0.4); }
+.sb-proposal-replaces { font-size: 0.86em; display: flex; flex-direction: column; gap: 2px; margin-top: 2px; }
+.sb-proposal-replaces s { opacity: 0.6; }
 .sb-skipped summary { cursor: pointer; opacity: 0.75; }
 /* quests */
 .sb-questboard { display: flex; flex-direction: column; gap: 10px; }

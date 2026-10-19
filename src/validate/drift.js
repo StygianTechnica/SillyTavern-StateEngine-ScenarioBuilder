@@ -138,7 +138,7 @@ function isBlank(field, value) {
 const isRejected = (rejected, obj) => !!obj && (rejected ?? []).some((r) => r.type === obj.type && String(r.name).toLowerCase() === String(obj.name).toLowerCase());
 const isCandidateObject = (obj) => !!obj && obj.confirmed === false;
 
-function decide(classification, policy) {
+export function decide(classification, policy) {
     switch (classification) {
         case 'consistent': return 'none';
         case 'candidate': return policy === 'canonical' ? 'adjust' : (policy === 'ask' ? 'ask' : 'accept');

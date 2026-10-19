@@ -10,7 +10,8 @@
 //            becomes the description and its keywords the aliases, so no
 //            entry is lost.
 //   apply    the plan the user kept: matched objects get their BLANK fields
-//            filled (never overwritten), new objects are created (marked as
+//            filled (never overwritten - but an object's own entry replaces
+//            what a mention in another entry gave it), new objects are created (marked as
 //            imported, with their source entry; canon-locked if chosen),
 //            places put inside the place the entry names.
 //
@@ -38,7 +39,7 @@ function extractAny(text) {
     if (start === -1 || end <= start) return null;
     try { return { items: JSON.parse(t.slice(start, end + 1)) }; } catch { return null; }
 }
-import { readEntries, matchEntry, buildClassifyPrompt, parseClassify, buildExtractPrompt, fallbackValues, blanksOnly, keepMentionedLinks, buildManyPrompt, readManyItems, readRelations } from './lorebook.js';
+import { readEntries, matchEntry, buildClassifyPrompt, parseClassify, buildExtractPrompt, fallbackValues, blanksOnly, keepMentionedLinks, buildManyPrompt, readManyItems, readRelations, isOwnEntry, heldFromMention, ownOver, keepDetail } from './lorebook.js';
 
 export const IMPORT_EVENT = 'scenario_builder_import';
 
@@ -125,6 +126,7 @@ export async function startAnalysis({ chatId, chatKey, settingId, books, options
         const entries = [];
         for (const name of books) entries.push(...readEntries(name, await loadBook(name)));
         job.total = entries.length;
+        job.titles = Object.fromEntries(entries.map((e) => [e.source, e.title || e.keys[0] || e.uid]));
         announce();
 
         const types = await getObjectTypes();
@@ -145,6 +147,7 @@ export async function startAnalysis({ chatId, chatKey, settingId, books, options
             job.done += 1;
             announce();
         }
+        markOwnOverMentions(job.proposals);
         job.state = 'review';
         job.current = '';
     } catch (err) {
@@ -169,7 +172,7 @@ async function analyseEntry(entry, { objects, types, typeLabels, fieldsFor, maxT
     let name;
     if (match) {
         if (!opts.fill) return [{ ...proposal, type: match.type, name: match.name, matchId: match.id, matchName: match.name, note: 'already in the library (filling is off)' }];
-        return [await analyseMatched(entry, match, proposal, { types, fieldsFor, maxTokens, objects })];
+        return [await analyseMatched(entry, match, proposal, { types, fieldsFor, maxTokens, objects, own: isOwnEntry(entry, match) })];
     }
     if (!opts.create) return [{ ...proposal, note: 'not in the library (creating is off)' }];
     const kind = await classify(entry, typeLabels, maxTokens);
@@ -180,13 +183,14 @@ async function analyseEntry(entry, { objects, types, typeLabels, fieldsFor, maxT
     if (kind.guessed) proposal.note = 'kind guessed - check it';
     // The model's name may match an object the title did not.
     const byName = objects.find((o) => o.type === type && [o.name, ...(o.aliases ?? [])].some((n) => lower(n) === lower(name)));
-    if (byName) return [await analyseMatched(entry, byName, proposal, { types, fieldsFor, maxTokens, objects })];
+    // An entry about one thing is that thing's own entry.
+    if (byName) return [await analyseMatched(entry, byName, proposal, { types, fieldsFor, maxTokens, objects, own: true })];
 
     const typeDef = types.find((t) => t.id === type);
-    const { values, relations, note } = await extract(entry, { type: typeDef, name, existing: {}, fieldsFor, maxTokens, objects });
+    const { values, relations, note } = await extract(entry, { type: typeDef, name, existing: {}, fieldsFor, maxTokens, objects, own: true });
     const locatedIn = typeof values.located_in === 'string' ? values.located_in : '';
     delete values.located_in;
-    return [{ ...proposal, action: 'create', type, name, values, locatedIn, relations, include: true, note: [proposal.note, note].filter(Boolean).join('; ') }];
+    return [{ ...proposal, action: 'create', type, name, values, locatedIn, relations, include: true, own: true, note: [proposal.note, note].filter(Boolean).join('; ') }];
 }
 
 // An entry listing several things (a pantheon, a roster): each named thing
@@ -210,7 +214,7 @@ async function analyseMany(entry, { objects, typeLabels, maxTokens }) {
     }
     return items.map((item) => {
         const existing = objects.find((o) => [o.name, ...(o.aliases ?? [])].some((n) => lower(n) === lower(item.name)));
-        const base = { id: `p${++nextId}`, entry, locatedIn: '', relations: [], note: `one of several in "${entry.title || 'this entry'}"` };
+        const base = { id: `p${++nextId}`, entry, locatedIn: '', relations: [], mention: true, note: `one of several in "${entry.title || 'this entry'}"` };
         if (existing) {
             const b = existing.base ?? existing;
             const patch = blanksOnly({ name: existing.name, aliases: b.aliases ?? [], description: b.description ?? '' }, { description: item.description });
@@ -221,23 +225,42 @@ async function analyseMany(entry, { objects, typeLabels, maxTokens }) {
     });
 }
 
-async function analyseMatched(entry, match, proposal, { types, fieldsFor, maxTokens, objects }) {
+async function analyseMatched(entry, match, proposal, { types, fieldsFor, maxTokens, objects, own = false }) {
     const base = match.base ?? match;
     const typeDef = types.find((t) => t.id === match.type);
     const fields = await fieldsFor(match.type);
     const existing = { name: match.name, aliases: base.aliases ?? match.aliases ?? [], description: base.description ?? '', ...Object.fromEntries(fields.map((f) => [f.name, base[f.name]])) };
-    const { values, relations, note } = await extract(entry, { type: typeDef, name: match.name, existing, fieldsFor, maxTokens, objects });
+    // Its own entry, over what a mention in another entry gave it: every
+    // field is asked for again, and what differs replaces the old.
+    const replacing = own && heldFromMention(match.meta, entry);
+    const asked = replacing ? { name: existing.name, aliases: existing.aliases } : existing;
+    const { values, relations, note } = await extract(entry, { type: typeDef, name: match.name, existing: asked, fieldsFor, maxTokens, objects, own });
     const locatedIn = typeof values.located_in === 'string' ? values.located_in : '';
     delete values.located_in;
-    const patch = blanksOnly(existing, values);
+    const { patch, replaced } = replacing ? ownOver(existing, values) : { patch: blanksOnly(existing, values), replaced: {} };
     const any = Object.keys(patch).length > 0 || relations.length > 0 || (match.type === 'location' && locatedIn && !match.meta?.parentId);
+    const from = job?.titles?.[match.meta?.source] ?? 'another entry';
+    const why = Object.keys(replaced).length ? `its own entry - replaces what "${from}" gave it` : '';
     return {
         ...proposal, action: any ? 'fill' : 'skip', type: match.type, name: match.name, matchId: match.id, matchName: match.name,
-        values: patch, locatedIn, relations, include: any, note: any ? note : 'nothing new for it',
+        values: patch, replaces: replaced, own, locatedIn, relations, include: any, note: any ? [why, note].filter(Boolean).join('; ') : 'nothing new for it',
     };
 }
 
-async function extract(entry, { type, name, existing, fieldsFor, maxTokens, objects }) {
+// Within one import: a thing a list entry mentions and its own entry also
+// describes is made once, from its own entry (applyImport puts the own
+// entry's values over the mention's, whichever comes first). The plan says so.
+function markOwnOverMentions(proposals) {
+    const key = (p) => `${p.type}|${lower(p.name)}`;
+    for (const own of proposals.filter((p) => p.own && p.action === 'create')) {
+        const mentions = proposals.filter((p) => p.mention && p.action === 'create' && key(p) === key(own));
+        if (!mentions.length) continue;
+        own.note = [`its own entry - replaces what "${mentions[0].entry.title}" says of it`, own.note].filter(Boolean).join('; ');
+        for (const m of mentions) m.note = `its own entry "${own.entry.title}" replaces this`;
+    }
+}
+
+async function extract(entry, { type, name, existing, fieldsFor, maxTokens, objects, own = false }) {
     const fields = await fieldsFor(type.id);
     const refTypes = [...new Set(fields.filter((f) => f.kind === 'ref' || f.kind === 'refs').map((f) => f.refType))];
     const refNames = Object.fromEntries(refTypes.map((t) => [t, objects.filter((o) => o.type === t).map((o) => o.name)]));
@@ -254,7 +277,13 @@ async function extract(entry, { type, name, existing, fieldsFor, maxTokens, obje
             // Links survive only if the entry itself names the object.
             const { values, removed } = keepMentionedLinks(entry, result.values, fields, objects);
             if (!values.description && !existing.description) values.description = entry.content;
-            return { values, relations, note: removed.length ? `left out links the entry does not name: ${removed.slice(0, 6).join(', ')}${removed.length > 6 ? '…' : ''}` : '' };
+            // Its own entry keeps its detail: a summary of it is not enough.
+            let kept = '';
+            if (own && values.description) {
+                const full = keepDetail(values.description, entry);
+                if (full !== values.description) { values.description = full; kept = 'kept the entry\'s own text as the description'; }
+            }
+            return { values, relations, note: [kept, removed.length ? `left out links the entry does not name: ${removed.slice(0, 6).join(', ')}${removed.length > 6 ? '…' : ''}` : ''].filter(Boolean).join('; ') };
         }
     } catch (err) {
         console.warn(LOG_PREFIX, 'extraction failed', err);
@@ -329,14 +358,17 @@ export async function applyImport() {
                 if (targetId) {
                     const fresh = await getObject(chatId, targetId);
                     const base = fresh?.base ?? fresh ?? {};
-                    const patch = blanksOnly({ name: fresh?.name, aliases: base.aliases ?? [], ...base }, p.values);
+                    const have = { name: fresh?.name, aliases: base.aliases ?? [], ...base };
+                    // Its own entry replaces what a mention elsewhere gave it.
+                    const ownOverMention = p.own && heldFromMention(getEntryMeta(settingId, targetId), p.entry);
+                    const patch = ownOverMention ? ownOver(have, p.values).patch : blanksOnly(have, p.values);
                     if (Object.keys(patch).length && !await updateEntry(chatId, settingId, targetId, patch)) throw new Error('State Engine refused the change');
                     if (!created.has(key) || p.matchId) {
                         const before = Object.fromEntries(Object.keys(patch).map((k) => [k, structuredClone(base[k] ?? (Array.isArray(patch[k]) ? [] : ''))]));
                         record.filled.push({ id: targetId, name: fresh?.name ?? p.name, before, parentBefore: parentsBefore[targetId] ?? null });
                     }
                     const meta = { ...(job.options.canonLock ? { canonLocked: true } : {}) };
-                    if (!getEntryMeta(settingId, targetId).source) meta.source = p.entry.source;
+                    if (!getEntryMeta(settingId, targetId).source || ownOverMention) meta.source = p.entry.source;
                     setEntryMeta(settingId, targetId, meta);
                     summary.filled += 1;
                     if (p.locatedIn && p.type === 'location') places.push([targetId, p.locatedIn]);

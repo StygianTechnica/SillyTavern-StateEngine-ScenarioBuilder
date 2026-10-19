@@ -7,7 +7,9 @@
 //   - an entry that names an existing object (its title or a key matches
 //     the object's name or an alias - or it was imported from this entry
 //     before, SB-155) FILLS THAT OBJECT'S BLANK FIELDS - nothing it already
-//     has is overwritten;
+//     has is overwritten - except that an object's OWN entry (titled with
+//     its name) replaces what a mention in another entry gave it (a roster
+//     line "Niamh, one of their scouts" is no match for Niamh's own entry);
 //   - an entry with no match becomes a NEW object of the kind it describes;
 //   - extraction uses ONLY what the entry says: nothing is invented - a
 //     lorebook is canon (and can be canon-locked on import);
@@ -123,7 +125,7 @@ export function buildExtractPrompt(entry, { typeNoun, name, fields, refNames = {
     needs.push('- "relations": the people, groups or places the entry says it is connected to, and how - "kind" in a few words (ally, rival, serves, sibling, worships, leads, member of, owes...). Only names written in the entry; [] if none.');
     const user = [
         entryBlock(entry),
-        `# Your task\nThis entry is about the ${typeNoun} "${name}". Copy its facts into the fields below.\n- Use ONLY what the entry says. Do not invent anything.\n- Where the entry says nothing for a field, use "" (or [] for a list).\n- "description": what it is and what it is like, in a few sentences drawn from the entry.\n- "aliases": other names the entry gives it (its keywords may help).`,
+        `# Your task\nThis entry is about the ${typeNoun} "${name}". Copy its facts into the fields below.\n- Use ONLY what the entry says. Do not invent anything.\n- Where the entry says nothing for a field, use "" (or [] for a list).\n- "description": everything the entry says about what it is and what it is like - looks, manner, history, background, ties and what it wants - keeping every detail and the entry's own wording. Do not shorten it to a summary.\n- "aliases": other names the entry gives it (its keywords may help).`,
         `# Reply\nReply with ONLY this JSON object, filled in. Keep exactly these keys:\n{\n${template.map(([k, v]) => `  "${k}": ${v}`).join(',\n')}\n}\nWhat each key needs:\n${needs.join('\n')}`,
     ].join('\n\n');
     return { system: SYSTEM, user, keys: template.map(([k]) => k) };
@@ -256,3 +258,40 @@ export function blanksOnly(existing, values) {
     return patch;
 }
 
+// Whether an entry is the object's own - its title (or first keyword) is
+// the object's name or an alias - rather than one that only mentions it.
+export function isOwnEntry(entry, obj) {
+    const title = nameKey(entry?.title || entry?.keys?.[0]);
+    return !!title && [obj?.name, ...(obj?.aliases ?? [])].some((n) => nameKey(n) === title);
+}
+
+// Whether what an object holds came from ANOTHER lorebook entry (a mention
+// of it there), so its own entry may replace it. meta: its entry meta.
+export function heldFromMention(meta, entry) {
+    const source = String(meta?.source ?? '');
+    return source.startsWith('lorebook:') && source !== entry?.source;
+}
+
+// An object's own entry over what a mention gave it: its values replace the
+// object's, blanks are filled, aliases are added to. -> { patch, replaced }
+// (replaced: the old value of each field it replaces, for the plan).
+export function ownOver(existing, values) {
+    const patch = blanksOnly(existing, values);
+    const replaced = {};
+    const empty = (v) => v === undefined || v === null || (typeof v === 'string' && !v.trim()) || (Array.isArray(v) && !v.length);
+    for (const [key, value] of Object.entries(values)) {
+        if (key === 'aliases' || key === 'name' || empty(value) || empty(existing[key])) continue;
+        if (JSON.stringify(existing[key]) === JSON.stringify(value)) continue;
+        patch[key] = value;
+        replaced[key] = existing[key];
+    }
+    return { patch, replaced };
+}
+
+// A description the model cut down to a summary of a long entry: the
+// entry's own text instead (its lines trimmed), so no detail is lost.
+export function keepDetail(description, entry) {
+    const text = String(entry?.content ?? '').split('\n').map((l) => l.trim()).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (text.length >= 400 && clean(description).length < text.length / 3) return text;
+    return description;
+}
