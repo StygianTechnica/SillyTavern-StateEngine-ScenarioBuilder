@@ -42,7 +42,7 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 // 7: sb__scene_creatures (the creatures the story has in the scene).
 // 8: sb__canon_summary; scene summary and title instructions tightened.
 // 9: sb__scene_characters adds who the messages show here but the list lacks.
-export const PRESET_VERSION = 10;
+export const PRESET_VERSION = 11;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -65,12 +65,12 @@ export const OBSERVED_VARIABLES = Object.freeze([
     ['scene_characters', {
         label: 'Characters (story)', description: 'The characters the story says are present - checked against the canonical cast.',
         type: 'array', itemType: 'object', itemObjectType: 'character', unique: true, defaultValue: '[]', scope: 'chat', showInTracker: true,
-        ...prompted('Who is present in the scene now, from the latest messages. Start from the current value: keep characters who remain, remove those who have left, and ADD every character the messages show here who is missing from it - someone who came back, or who was there all along.'),
+        ...prompted('Who is present in the scene now, from the latest messages. Start from the current value: keep characters who remain, remove those who have left, and ADD every character the messages show here who is missing from it - someone who came back, or who was there all along. A companion that talks and thinks like a person (a sentient familiar, a dragon, a bound spirit) is a character; an animal is not.'),
     }],
     ['scene_creatures', {
         label: 'Creatures (story)', description: 'The creatures the story says are in the scene - checked against the canonical ones.',
         type: 'array', itemType: 'object', itemObjectType: 'creature', unique: true, defaultValue: '[]', scope: 'chat', showInTracker: true,
-        ...prompted('The creatures in the scene now - monsters, beasts and animals that matter to it. A group counts as one entry, by what the story calls it ("the zombies", "a pack of wolves"). Start from the current value: keep those still here, add any that arrive, remove those that leave or are killed.'),
+        ...prompted('The creatures in the scene now - monsters, beasts and animals that matter to it, named ones too (a pet, a mount, a hound, a beast companion); not one that talks and thinks like a person (a sentient familiar, a dragon) - that is a character. A group counts as one entry, by what the story calls it ("the zombies", "a pack of wolves"). Start from the current value: keep those still here, add any that arrive, remove those that leave or are killed.'),
     }],
     ['scene_weather', {
         label: 'Weather (story)', description: 'The weather the story describes.',

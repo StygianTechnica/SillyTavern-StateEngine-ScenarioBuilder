@@ -98,7 +98,9 @@ async function enrichOne(job) {
         const obj = await getObject(chatId, job.objectId);
         if (!obj) return setItem(job, 'failed', 'it no longer exists');
         const type = await getObjectType(obj.type);
-        const fields = await baselineFields(settingId, type);
+        // A quest's objectives are the story's, Archivist's plan or the user's:
+        // never invented in the background (Enrich all on its sheet still can).
+        const fields = (await baselineFields(settingId, type)).filter((f) => !(type.id === 'quest' && f.name === 'objectives'));
         const all = {};
         for (const t of await getObjectTypes()) all[t.id] = await listEntries(chatId, settingId, t.id);
         const base = obj.base ?? obj;

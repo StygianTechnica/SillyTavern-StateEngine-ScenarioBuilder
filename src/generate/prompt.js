@@ -148,6 +148,11 @@ export function buildGenerationPrompt(input) {
     if (input.neighbours?.length) {
         parts.push(`# Related entries already in the setting\n${input.neighbours.slice(0, 16).map((n) => `- ${n.relation ? `${n.relation}: ` : ''}${n.name} (${n.type})${n.description ? ` - ${cut(n.description, 160)}` : ''}`).join('\n')}`);
     }
+    if (type?.id === 'quest' && input.questSide) {
+        const { player, with: allies = [] } = input.questSide;
+        const who = player ? `${player} (the player character)${allies.length ? `, with ${allies.join(', ')}` : ''}` : (allies.length ? allies.join(', ') : 'the player character and their allies');
+        parts.push(`# Whose quest it is\nIt is pursued by ${who}. Its objectives are the concrete steps THEY take toward its goal, in order. Write them from their side: never the aims of the enemies, monsters or powers they oppose, and never steps that would serve those enemies.`);
+    }
     if (input.memories?.length) parts.push(`# What the story so far says about it\n${input.memories.slice(0, 12).map((m) => `- ${cut(m, 220)}`).join('\n')}`);
     if (input.gmNotes) parts.push(`# Secret GM notes (let them shape what you write, but never reveal them outright)\n${cut(input.gmNotes, 500)}`);
 

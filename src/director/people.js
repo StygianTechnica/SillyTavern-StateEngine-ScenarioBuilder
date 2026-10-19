@@ -30,7 +30,7 @@ export function buildPeoplePrompt({ text, known = [], playerNames = [] }) {
     const user = [
         `# Recent messages\n${cut(text, 6000)}`,
         `# Already known (never list these)\n${[...new Set([...playerNames, ...known].map(clean).filter(Boolean))].join(', ') || '(none)'}`,
-        '# Your task\nList every PERSON the messages give a personal name to who is not already known - someone introduced, described, sent for, picked for a task or talked about. Not gods, places, groups, creatures, ships or things; not nicknames for someone already known; not anyone left unnamed ("two of his men").',
+        '# Your task\nList every PERSON the messages give a personal name to who is not already known - someone introduced, described, sent for, picked for a task or talked about. A companion that talks and thinks like a person (a sentient familiar, a dragon, a bound spirit) counts as a person. Not gods, places, groups, ships or things; not animals, even named ones (a pet, a mount, a hound - those are creatures); not nicknames for someone already known; not anyone left unnamed ("two of his men").',
         '# Reply\nOne line per person, exactly:\nName | what the messages say about them, in one sentence\nOr the single word NONE if there is no one.',
     ].join('\n\n');
     return { system: 'You read a roleplay and list the people it names. You answer with exactly the lines asked for - no preamble, no commentary.', user, plain: true };

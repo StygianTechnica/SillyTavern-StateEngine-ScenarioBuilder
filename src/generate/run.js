@@ -11,7 +11,7 @@
 
 import { getSettings } from '../settings.js';
 import { getChatDoc } from '../store/chat-store.js';
-import { getObjectTypes, getParents, getOverview, getPlaceOverview, isCanonOnly, mayAddGeneratedDetail } from '../library/library.js';
+import { getObjectTypes, getParents, getOverview, getPlaceOverview, isCanonOnly, mayAddGeneratedDetail, playerIdOf } from '../library/library.js';
 import { getEntryMeta } from '../store/setting-store.js';
 import { pathOf, childrenOf } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
@@ -179,6 +179,9 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         creating: task === 'create',
         relationNames: allEntries.filter((e) => e.id !== entry?.id).map((e) => e.name).slice(0, 25),
         place: placeContext(parentForPrompt, all, parents, getSettingDoc(ctx.settingId).relations),
+        // A quest is the heroes' own: who pursues it, so its objectives are
+        // written from their side - never the side they fight.
+        questSide: type.id === 'quest' ? questSide(entry, all, ctx.settingId, nameOfId) : null,
     };
     const narrative = entry?.id ? getChatDoc(ctx.chatKey).narrative[entry.id]?.text ?? '' : '';
     const promptWith = (t, field, name, vals) => buildGenerationPrompt({ ...base, task: t, targetField: field, entry: { name, values: vals, narrative } });
@@ -240,6 +243,18 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
 
 // One prompt, read; if unreadable, asked once more with the reason. ->
 // the parse result (error set when both answers failed).
+// Who pursues a quest: the player character, and the people the quest is
+// tied to. -> { player, with: [name] }
+function questSide(entry, all, settingId, nameOfId) {
+    const characters = all.character ?? [];
+    const playerId = playerIdOf(settingId, characters);
+    const player = characters.find((c) => c.id === playerId)?.name ?? '';
+    const tied = (entry?.related_entity_ids ?? entry?.base?.related_entity_ids ?? [])
+        .filter((id) => id !== playerId && characters.some((c) => c.id === id))
+        .map((id) => nameOfId.get(id)).filter(Boolean);
+    return { player, with: tied.slice(0, 6) };
+}
+
 export async function askReliably(prompt, read, maxTokens) {
     const messages = [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }];
     const first = await callModel(messages, maxTokens);

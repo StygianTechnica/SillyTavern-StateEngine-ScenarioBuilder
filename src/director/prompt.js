@@ -429,6 +429,7 @@ export function buildDirectorPrompt(input) {
             'NEW character | <descriptive name, e.g. The Eyepatched Man> | <one-sentence description> | here | unnamed',
             'Someone the latest chat gives a name to - introduced, described, sent for or picked for a task ("Kael and Arin will go with you") - and who is not listed above is a character too, here or not: add them with what the chat says of them, "nearby" when they are not in the scene. This is not inventing; they already exist in the story.',
             'NEW creature | <name> | <one-sentence description> | <tied to>',
+            'A named animal - a pet, a mount, a hound, a beast companion - is a creature, however dear to someone. Only one that talks and thinks like a person (a sentient familiar, a dragon, a bound spirit) is a character.',
             'NEW faction | <name> | <one-sentence description> | <tied to>',
             'NEW lore | <name> | <one-sentence description> | <tied to>',
             'NEW event | <name> | <one-sentence description> | <tied to>',
