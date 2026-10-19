@@ -38,4 +38,10 @@ describe('a played-out day plan', () => {
         startVolume(gm, { direction: steer });
         expect(gm.volume.direction).toBe(steer);
     });
+
+    it('keeps its paragraphs apart', () => {
+        const gm = emptyGm();
+        startVolume(gm, { direction: 'First part,\n  spread over lines.\n\n\nBut that is not the last trap.' });
+        expect(gm.volume.direction).toBe('First part, spread over lines.\n\nBut that is not the last trap.');
+    });
 });
