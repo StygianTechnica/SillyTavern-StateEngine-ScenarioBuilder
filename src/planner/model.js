@@ -539,7 +539,10 @@ export function sameBeat(a, b) {
 // to come are dropped too - only what the story has done is kept.
 export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString(), keepLocked = true } = {}) {
     const wasDone = new Set(beatsOf(gm.outline).filter((b) => b.status === 'done').map((b) => b.id));
-    const kept = (b) => (keepLocked && b.locked) || past(b);
+    // A skipped beat never happened: it is not history, and a rewrite that
+    // leaves it out drops it (an old outline's "Maziel attacks" would sit
+    // at the top of the new chapter, read as something already played).
+    const kept = (b) => (keepLocked && b.locked) || b.status === 'done';
     const old = new Map(beatsOf(gm.outline).filter((b) => keepLocked || past(b)).map((b) => [b.id, b]));
     const used = new Set();
     let next = Math.max(0, ...[...old.keys()].map(beatNumber)) + 1;
@@ -557,9 +560,10 @@ export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString()
             // is that beat - never a new copy of one already played out
             // (which would come back as a fresh, active beat).
             if (!prev || used.has(prev.id)) {
-                const like = everyOld.find((b) => !used.has(b.id) && sameBeat(b.text, raw.text));
+                // (A skipped beat planned again is a new beat, not still skipped.)
+                const like = everyOld.find((b) => !used.has(b.id) && b.status !== 'skipped' && sameBeat(b.text, raw.text));
                 if (like) prev = old.get(like.id) ?? null;
-                else if (everyOld.some((b) => past(b) && sameBeat(b.text, raw.text))) continue;
+                else if (everyOld.some((b) => b.status === 'done' && sameBeat(b.text, raw.text))) continue;
             }
             if (!prev && finished(i)) continue;
             if (prev && !used.has(prev.id)) {
