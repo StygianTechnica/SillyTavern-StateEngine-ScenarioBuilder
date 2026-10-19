@@ -22,6 +22,8 @@ import { safeImageSrc } from '../images/attach.js';
 import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
 import { renderQuestTab } from './quest-board.js';
+import { suggestQuestEnds } from '../quests/ends.js';
+import { questMeta, setQuestMeta } from '../quests/sync.js';
 import { baselineFields } from '../library/fields.js';
 import { CLIMATES } from '../calendar/weather.js';
 import { listRoutes, routesFrom, addRoute, removeRoute, updateRoute, guessRoute } from '../library/routes.js';
@@ -333,12 +335,29 @@ async function runGen(task, field = null) {
         applyGenerated(values, effective === 'create' ? 'fill' : effective);
         ws.dirty = true;
         if (dropped.length) toast('info', `Left out what did not fit: ${dropped.slice(0, 4).join('; ')}`);
+        // A quest's Fill empty / Enrich all also writes how it ends (its
+        // Quest tab), when that is still empty - so it can finish.
+        if (type.id === 'quest' && !isNew && (effective === 'fill' || effective === 'enrich')) await fillQuestEnds(entry);
     } catch (err) {
         toast('error', `Could not generate: ${err?.message ?? err}`);
     } finally {
         ws.generating = null;
         rerender({ force: true });
     }
+}
+
+// Writes a quest's "completes when" / "fails when" from its objectives,
+// where they are empty. Saved at once, as the Quest tab saves.
+async function fillQuestEnds(entry) {
+    const { settingId } = ws.ctx;
+    const meta = questMeta(settingId, entry.id);
+    if (meta.completion.trim() && meta.abandon.trim()) return;
+    const objectives = ws.draft?.fields?.objectives ?? entry.base?.objectives ?? entry.objectives ?? meta.objectives.map((o) => o.text);
+    const ends = await suggestQuestEnds({ name: ws.draft?.name || entry.name, description: ws.draft?.description ?? entry.description, objectives: [...(Array.isArray(objectives) ? objectives : []), ...meta.objectives.map((o) => o.text)].filter((v, i, a) => a.indexOf(v) === i) });
+    if (!ends) return toast('warning', 'Could not write how the quest ends - try again, or write it on the Quest tab.');
+    const now = questMeta(settingId, entry.id);
+    setQuestMeta(settingId, entry.id, { completion: now.completion.trim() ? now.completion : ends.completion, abandon: now.abandon.trim() ? now.abandon : ends.abandon });
+    toast('info', 'Wrote how the quest completes and fails - see its Quest tab.');
 }
 
 // The sparkle for one field: write it if empty, enrich it otherwise.

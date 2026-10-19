@@ -122,7 +122,7 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
             if (qid) {
                 const meta = questMeta(settingId, qid);
                 const foreign = foreignTest(thread, quests.find((q) => q.id === qid), threads, links);
-                const objectives = tidyObjectives(mergeObjectives(meta.objectives, objectivesFromThread(thread), { foreign }), { foreign });
+                const objectives = tidyObjectives(mergeObjectives(meta.objectives, objectivesFromThread(thread), { foreign, removed: meta.removed }), { foreign });
                 const changed = JSON.stringify(objectives) !== JSON.stringify(meta.objectives) || meta.threadId !== thread.id;
                 if (changed) {
                     setEntryMeta(settingId, qid, { quest: { ...meta, threadId: thread.id, type: meta.type || typeFromThread(thread), objectives } });
@@ -236,7 +236,7 @@ export async function questBoard(chatId, chatKey, settingId) {
         const meta = questMeta(settingId, q.id);
         const thread = meta.threadId ? byThread.get(meta.threadId) ?? null : null;
         const runtime = (await readField(chatId, q.id, 'se__quest.status', 'status')) || q.runtime?.values?.status || '';
-        const state = effectiveStatus({ override: meta.status, runtime, thread });
+        const state = effectiveStatus({ override: meta.status, runtime, thread, ended: meta.ended });
         const stored = meta.objectives.length ? meta.objectives : (q.base?.objectives ?? q.objectives ?? []).map((t) => ({ text: String(t), status: 'pending' }));
         // Shown tidied; the next sync stores the tidy.
         const objectives = tidyObjectives(stored, { foreign: foreignTest(thread, q, threads, doc.questLinks ?? {}) });

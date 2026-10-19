@@ -6,14 +6,14 @@
 // and what Archivist's story thread says.
 
 import { getSettings } from '../settings.js';
-import { runQuestSync, questBoard, setQuestMeta, questMeta, hasQuestTracking, setupQuestTracking, hasArchivistThreads } from '../quests/sync.js';
+import { runQuestSync, questBoard, setQuestMeta, questMeta, hasQuestTracking, setupQuestTracking, hasArchivistThreads, writeActiveQuests } from '../quests/sync.js';
 import { QUEST_TYPES, QUEST_PRIORITIES, QUEST_STATUSES, OBJECTIVE_STATUSES } from '../quests/model.js';
 import { syncNow } from '../guidance/sync.js';
 import { ws, rerender, openSheet } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
 
 const STATUS_ICON = { Active: 'fa-person-running', 'Not started': 'fa-hourglass-start', Completed: 'fa-circle-check', Failed: 'fa-circle-xmark', Abandoned: 'fa-ban' };
-const FROM_TEXT = { user: 'set by you', story: 'from the story', archivist: 'from Archivist', none: '' };
+const FROM_TEXT = { user: 'set by you', story: 'from the story', archivist: 'from Archivist', ends: 'its end condition was met', none: '' };
 
 async function scan() {
     const { chatId, chatKey, settingId } = ws.ctx;
@@ -79,7 +79,9 @@ export async function renderQuestTab(entry) {
     const { chatId, chatKey, settingId } = ws.ctx;
     const q = (await questBoard(chatId, chatKey, settingId)).find((x) => x.id === entry.id);
     const meta = questMeta(settingId, entry.id);
-    const save = (patch) => { setQuestMeta(settingId, entry.id, patch); void syncNow(); rerender(); };
+    // The active quests variable (sb__quests) follows at once, not only
+    // before the next reply.
+    const save = (patch) => { setQuestMeta(settingId, entry.id, patch); void syncNow(); void writeActiveQuests(chatId, chatKey, settingId); rerender(); };
     // The board's list is tidied (near-duplicates collapsed); an edit saves it so.
     const objectives = q ? q.objectives : meta.objectives;
     const setObjectives = (list) => save({ objectives: list });
@@ -94,7 +96,7 @@ export async function renderQuestTab(entry) {
             h('span', {}, `Archivist thinks this quest is ${q.conflict.toLowerCase()}, but the story still has it active.`),
             button(`Mark ${q.conflict.toLowerCase()}`, () => save({ status: q.conflict }), { iconName: 'fa-check' })) : null,
         h('div', { class: 'sb-fieldgrid' },
-            field('Status', select([{ value: '', label: 'Automatic (story, then Archivist)' }, ...QUEST_STATUSES.map((s) => ({ value: s, label: s }))], meta.status, { onchange: (e) => save({ status: e.target.value }) }), 'Your choice always wins.'),
+            field('Status', select([{ value: '', label: 'Automatic (story, then Archivist)' }, ...QUEST_STATUSES.map((s) => ({ value: s, label: s }))], meta.status, { onchange: (e) => save({ status: e.target.value, ended: '' }) }), 'Your choice always wins.'),
             field('Type', select(QUEST_TYPES.map((t) => ({ value: t, label: t })), meta.type || q?.type || 'side', { onchange: (e) => save({ type: e.target.value }) })),
             field('Base priority', select(QUEST_PRIORITIES.map((p) => ({ value: p, label: p })), meta.priority, { onchange: (e) => save({ priority: e.target.value }) }), 'Raised automatically when it is active or its people are in the scene.')),
         h('div', { class: 'sb-section-title' }, icon('fa-list-check'), ` Objectives${q?.progress.total ? ` - ${q.progress.done} of ${q.progress.total} done` : ''}`),
@@ -102,7 +104,8 @@ export async function renderQuestTab(entry) {
             select(OBJECTIVE_STATUSES.map((s) => ({ value: s, label: s })), o.status, { onchange: (e) => setObjectives(objectives.map((x, j) => (j === i ? { ...x, status: e.target.value, byUser: true } : x))) }),
             h('span', { class: 'sb-objective-text' }, o.text),
             o.from === 'archivist' ? h('small', { class: 'sb-hint', title: 'Kept in step with Archivist\'s plan steps' }, icon('fa-brain')) : null,
-            h('span', { class: 'sb-iconbtn sb-danger', title: 'Remove', onclick: () => setObjectives(objectives.filter((_, j) => j !== i)) }, icon('fa-xmark')))),
+            // Removed stays removed: Archivist's rewordings of it are not added back.
+            h('span', { class: 'sb-iconbtn sb-danger', title: 'Remove', onclick: () => save({ objectives: objectives.filter((_, j) => j !== i), removed: [...(meta.removed ?? []), o.text] }) }, icon('fa-xmark')))),
         newObjective),
         h('div', { class: 'sb-fieldgrid' },
             field('Completes when', h('textarea', { class: 'text_pole', rows: 2, placeholder: 'e.g. the ledger is in Tobin\'s hands', onchange: (e) => save({ completion: e.target.value }) }, meta.completion)),

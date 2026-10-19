@@ -305,6 +305,7 @@ function questsSection(quests) {
         if (compact) return text;
         if (q.progress) text += ` ${sentence(firstUpper(q.progress))}`;
         if (q.description) text += ` ${sentence(truncate(q.description, 180))}`;
+        if (clean(q.completion)) text += ` It is done when ${unstop(firstLower(truncate(q.completion, 160)))}.`;
         return text;
     };
     const lead = 'The story is following these threads; let them shape what the characters care about, without forcing them:';

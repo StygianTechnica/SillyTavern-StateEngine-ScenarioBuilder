@@ -235,6 +235,8 @@ export async function gatherInputs(chatId, chatKey) {
                 current: q.runtime.current || q.current?.text || '',
                 progress: q.runtime.progress || (q.progress.total ? `${q.progress.done} of ${q.progress.total} objectives done` : ''),
                 description: q.description,
+                // Where it is heading: the story can work toward its end.
+                completion: q.completion ?? '',
                 why: [q.priority.level, ...q.priority.reasons].join(', '),
             }));
         } catch (err) {

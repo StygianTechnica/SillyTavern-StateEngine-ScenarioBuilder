@@ -26,6 +26,7 @@ import { ensureBoundSetting, getBoundSettingId } from '../library/library.js';
 import { runIntake } from '../library/intake.js';
 import { runLoreSync } from '../library/lore-sync.js';
 import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
+import { checkQuestEnds, fillMissingEnds } from '../quests/ends.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
 import { directBeforeReply } from '../director/run.js';
@@ -176,6 +177,31 @@ async function onChatChanged() {
     if (active) await syncFactions(ref.chatId, chatKeyFor(ref), await getBoundSettingId(ref.chatId));
 }
 
+// Quests after a reply: one the reply ended (its own end condition met) is
+// marked so, and one made without a way to end gets one - in the
+// background, through the generation queue (src/quests/ends.js).
+let lastQuestCheck = '';
+async function followQuestEnds(chatId, chatKey) {
+    try {
+        const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system);
+        const last = chat[chat.length - 1];
+        if (!last || last.is_user || typeof last.mes !== 'string') return;
+        const stamp = `${chatKey}|${chat.length}|${last.mes.length}`;
+        if (stamp === lastQuestCheck) return;
+        lastQuestCheck = stamp;
+        const settingId = await getBoundSettingId(chatId);
+        if (!settingId) return;
+        const userText = [...chat].reverse().find((m) => m.is_user)?.mes ?? '';
+        if ((await checkQuestEnds(chatId, chatKey, settingId, { reply: last.mes, userText })).length) {
+            await writeActiveQuests(chatId, chatKey, settingId);
+            await syncNow();
+        }
+        await fillMissingEnds(chatId, chatKey, settingId);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not follow the quest endings', err);
+    }
+}
+
 const safely = (fn) => (...args) => void Promise.resolve(fn(...args)).catch((err) => console.warn(LOG_PREFIX, err));
 
 export function startLifecycle() {
@@ -201,6 +227,7 @@ export function startLifecycle() {
         eventSource.on(eventTypes.GENERATION_ENDED, () => {
             const ref = getCurrentChatRef();
             if (ref && isActive()) void afterReply(ref.chatId, chatKeyFor(ref));
+            if (ref && isActive()) void followQuestEnds(ref.chatId, chatKeyFor(ref));
         });
     }
     if (eventTypes.MESSAGE_SWIPED) eventSource.on(eventTypes.MESSAGE_SWIPED, safely((index) => revertFromMessage(Number(index))));

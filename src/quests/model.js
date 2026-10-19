@@ -115,10 +115,13 @@ function bestMatch(list, text) {
 // of rewording, see objectiveLikeness), a step's newer status updates its
 // objective (unless the user set that objective by hand; a reworded step
 // never reopens a done one), new steps are added, the user's own
-// objectives kept. Steps `foreign` says belong to another quest are left out.
-export function mergeObjectives(current, fromThread, { foreign = null } = {}) {
+// objectives kept. Steps `foreign` says belong to another quest are left out,
+// and so are steps like one the user removed (`removed`: their texts) - a
+// removed objective stays removed however Archivist rewords it.
+export function mergeObjectives(current, fromThread, { foreign = null, removed = [] } = {}) {
     const out = (current ?? []).map((o) => ({ ...o }));
     for (const t of fromThread ?? []) {
+        if ((removed ?? []).some((r) => key(r) === key(t.text) || sameObjective(r, t.text))) continue;
         const match = bestMatch(out, t.text);
         if (!match) {
             if (!foreign?.(t.text)) out.push({ ...t, from: 'archivist' });
@@ -192,9 +195,12 @@ export function foreignStepTest(own, others) {
 
 // -> { status, from: 'user' | 'story' | 'archivist' | 'none', conflict }
 // conflict: what Archivist suggests when it disagrees with the runtime.
-export function effectiveStatus({ override = '', runtime = '', thread = null } = {}) {
+// `ended`: Completed or Failed when the story met the quest's own end
+// condition (src/quests/ends.js) - over the story's reading, under the user.
+export function effectiveStatus({ override = '', runtime = '', thread = null, ended = '' } = {}) {
     const fromThread = thread ? statusFromThread(thread.status) : '';
     if (QUEST_STATUSES.includes(override)) return { status: override, from: 'user', conflict: '' };
+    if (ended === 'Completed' || ended === 'Failed') return { status: ended, from: 'ends', conflict: '' };
     if (QUEST_STATUSES.includes(runtime) && runtime !== 'Not started') {
         const finished = fromThread === 'Completed' || fromThread === 'Abandoned';
         return { status: runtime, from: 'story', conflict: runtime === 'Active' && finished ? fromThread : '' };
@@ -239,7 +245,7 @@ export function sortQuests(quests) {
 }
 
 export function emptyQuestMeta() {
-    return { type: '', priority: 'medium', status: '', objectives: [], completion: '', abandon: '', threadId: '' };
+    return { type: '', priority: 'medium', status: '', objectives: [], removed: [], completion: '', abandon: '', threadId: '', ended: '', endsTried: false };
 }
 
 export function normalizeQuestMeta(value) {
@@ -251,8 +257,13 @@ export function normalizeQuestMeta(value) {
         objectives: (Array.isArray(q.objectives) ? q.objectives : [])
             .filter((o) => o && clean(o.text))
             .map((o) => ({ text: clean(o.text), status: OBJECTIVE_STATUSES.includes(o.status) ? o.status : 'pending', ...(o.byUser ? { byUser: true } : {}), ...(o.from ? { from: String(o.from) } : {}) })),
+        // Objectives the user removed: never added back from Archivist.
+        removed: (Array.isArray(q.removed) ? q.removed : []).map((t) => clean(t)).filter(Boolean).slice(-50),
         completion: typeof q.completion === 'string' ? q.completion : '',
         abandon: typeof q.abandon === 'string' ? q.abandon : '',
         threadId: typeof q.threadId === 'string' ? q.threadId : '',
+        // Ended by its own condition; whether its ends were written for it.
+        ended: q.ended === 'Completed' || q.ended === 'Failed' ? q.ended : '',
+        endsTried: q.endsTried === true,
     };
 }

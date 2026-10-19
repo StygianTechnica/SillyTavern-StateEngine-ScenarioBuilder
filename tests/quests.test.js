@@ -67,6 +67,6 @@ describe('status, progress and priority', () => {
 
     it('normalizes stored quest metadata', () => {
         expect(normalizeQuestMeta({ type: 'epic', priority: 'urgent', objectives: [{ text: ' Go ', status: 'weird' }, {}] }))
-            .toEqual({ type: '', priority: 'medium', status: '', objectives: [{ text: 'Go', status: 'pending' }], completion: '', abandon: '', threadId: '' });
+            .toEqual({ type: '', priority: 'medium', status: '', objectives: [{ text: 'Go', status: 'pending' }], removed: [], completion: '', abandon: '', threadId: '', ended: '', endsTried: false });
     });
 });
