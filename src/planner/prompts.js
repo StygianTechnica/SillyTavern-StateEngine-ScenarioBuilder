@@ -239,7 +239,8 @@ export function buildOutlinePrompt(input) {
             'The beats still to come grow out of where the story is now - its open threads and the people\'s agendas - not out of how the setting or the first messages introduced it.',
         );
     }
-    if (clean(input.wish)) parts.push('', 'WHAT THE USER WANTS FROM THIS OUTLINE (follow it)', `- ${cut(input.wish, 4000)}`);
+    parts.push(...steerLines(input.steer));
+    if (clean(input.wish) && clean(input.wish) !== clean(input.steer)) parts.push('', 'WHAT THE USER WANTS FROM THIS OUTLINE (follow it)', `- ${cut(input.wish, 4000)}`);
     parts.push(
         '',
         outline && !input.rewrite ? 'REVIEW THE OUTLINE' : 'WRITE THE OUTLINE',
@@ -366,6 +367,13 @@ export function readRecapText(raw) {
 // BEAT: one beat of the outline written afresh. input: { dossier,
 //   userName, messages, shape, outline, beatId, wish (the user's steer, or
 //   ''), storySoFar }
+// The user's steer for the volume under way (gm.volume.direction): where
+// it should go. Every outline and beat pass is given it, not only the first.
+export function steerLines(steer) {
+    if (!clean(steer)) return [];
+    return ['', 'WHERE THE USER WANTS THIS VOLUME TO GO (follow it: it outranks older threads, quests and places the story has moved past - those come back only if this steer brings them back)', cut(steer, 4000)];
+}
+
 export function buildBeatPrompt(input) {
     const userName = clean(input.userName) || 'the player';
     const outline = input.outline;
@@ -389,6 +397,7 @@ export function buildBeatPrompt(input) {
         '',
         'WRITE IT AGAIN',
         `A different turn in the story for the same place in the outline: it follows from the beats before it and leads toward the ones after. Not a rewording of "${clean(old?.text)}" - a different idea.`,
+        ...steerLines(input.steer),
         ...(clean(input.wish) ? [`The user wants: ${clean(input.wish)}`] : []),
         'Answer in this JSON shape: {"text":"<the beat, one sentence>","ties":["<names of the people, places, factions or threads it involves>"]}',
     );

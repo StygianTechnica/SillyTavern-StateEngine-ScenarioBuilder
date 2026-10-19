@@ -232,6 +232,8 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
             rewrite,
             keepLocked,
             wish,
+            // The volume's steer, on every pass - not only its first outline.
+            steer: doc.gm.volume.direction,
             storySoFar: await storySoFar(doc.gm, guidance),
             underWay: chatLength > UNDER_WAY_AFTER,
             startAct: startIndex >= 0 ? { index: startIndex, title: shape.acts[startIndex].title } : null,
@@ -273,6 +275,8 @@ export async function runBeat(chatId, chatKey, beatId, wish = '') {
             outline: doc.gm.outline,
             beatId,
             wish,
+            // The volume's steer, on every pass - not only its first outline.
+            steer: doc.gm.volume.direction,
             storySoFar: await storySoFar(doc.gm, guidance),
         })));
         if (!beat) throw new Error('No beat came back.');
