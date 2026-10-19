@@ -160,6 +160,12 @@ export async function addSettingsDrawer() {
     connection.addEventListener('change', (e) => { settings.connectionProfileId = e.target.value; saveSettings(); });
     byId('sb_auto_enrich').checked = settings.generation.autoEnrich === true;
     byId('sb_auto_enrich').addEventListener('change', (e) => { settings.generation.autoEnrich = e.target.checked; saveSettings(); });
+    // Generating the note is only offered while the notes are shown.
+    const nsfwEnrich = byId('sb_nsfw_enrich');
+    const syncNsfw = () => { nsfwEnrich.disabled = settings.generation.showNsfw !== true; nsfwEnrich.closest('label').classList.toggle('sb-off-row', nsfwEnrich.disabled); };
+    byId('sb_nsfw_show').checked = settings.generation.showNsfw === true;
+    byId('sb_nsfw_show').addEventListener('change', (e) => { settings.generation.showNsfw = e.target.checked; saveSettings(); syncNsfw(); });
+    syncNsfw();
     byId('sb_nsfw_enrich').checked = settings.generation.nsfwInEnrich === true;
     byId('sb_nsfw_enrich').addEventListener('change', (e) => { settings.generation.nsfwInEnrich = e.target.checked; saveSettings(); });
     byId('sb_gen_detail').value = settings.generation.detail;

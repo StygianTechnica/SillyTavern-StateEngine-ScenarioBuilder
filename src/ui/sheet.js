@@ -48,6 +48,7 @@ const SHEET_TABS = Object.freeze([
     ['story', 'Story', 'fa-book-open-reader'],
     ['image', 'Image', 'fa-image'],
     ['gm', 'GM notes', 'fa-user-secret'],
+    ['intimacy', 'Intimate scenes', 'fa-fire'],
     ['quest', 'Quest', 'fa-scroll'],
 ]);
 
@@ -301,7 +302,7 @@ export async function renderSheet(type, all) {
         (ws.questTabSeen ??= new Set()).add(entry.id);
         ws.sheetTab = 'quest';
     }
-    const tabs = h('div', { class: 'sb-sheet-tabs' }, SHEET_TABS.filter(([key]) => key !== 'quest' || (type.id === 'quest' && !isNew)).map(([key, label, i]) => h('div', {
+    const tabs = h('div', { class: 'sb-sheet-tabs' }, SHEET_TABS.filter(([key]) => (key !== 'quest' || (type.id === 'quest' && !isNew)) && (key !== 'intimacy' || (type.id === 'character' && getSettings().generation.showNsfw === true))).map(([key, label, i]) => h('div', {
         class: `sb-sheet-tab${ws.sheetTab === key ? ' active' : ''}`,
         onclick: () => { ws.sheetTab = key; rerender(); },
     }, icon(i), h('span', {}, label))));
@@ -341,7 +342,7 @@ async function runGen(task, field = null) {
         // Quest tab), when that is still empty - so it can finish.
         if (type.id === 'quest' && !isNew && (effective === 'fill' || effective === 'enrich')) await fillQuestEnds(entry);
         // A character's intimate-scene note too, when the setting says so.
-        if (type.id === 'character' && (effective === 'fill' || effective === 'enrich') && getSettings().generation.nsfwInEnrich && !(ws.draft.meta.nsfw ?? '').trim()) await writeNsfw();
+        if (type.id === 'character' && (effective === 'fill' || effective === 'enrich') && getSettings().generation.showNsfw && getSettings().generation.nsfwInEnrich && !(ws.draft.meta.nsfw ?? '').trim()) await writeNsfw();
     } catch (err) {
         toast('error', `Could not generate: ${err?.message ?? err}`);
     } finally {
@@ -437,6 +438,7 @@ async function sheetBody(tab, c) {
         case 'story': return storyTab(c);
         case 'image': return imageTab(c);
         case 'gm': return gmTab(c);
+        case 'intimacy': return intimacyTab(c);
         case 'quest': return c.isNew ? overviewTab(c) : renderQuestTab(c.entry);
         default: return overviewTab(c);
     }
@@ -889,11 +891,27 @@ async function imageTab({ type, entry, isNew, doc, parents }) {
     });
 }
 
+// A character's intimate-scene (NSFW) note: its own tab, apart from the
+// description and the GM's secrets. Read by the narrator only while a
+// scene is flagged intimate (Scene tab, src/guidance/intimacy.js).
+function intimacyTab({ entry, isNew }) {
+    const hint = h('small', { class: 'sb-hint' }, 'Optional. How they are in an intimate scene - pace, wants, limits, manner. Given to the narrator only while a scene is flagged intimate (Scene tab), never mixed into their description.');
+    if (ws.editing) {
+        return h('div', { class: 'sb-tabpane' },
+            fieldWithTools('Intimate scenes (NSFW)', textArea('meta.nsfw', ws.draft.meta.nsfw ?? '', 8), [nsfwSpark()], 'The sparkle writes it from their personality, background and voice - or adds to what is there.'),
+            hint);
+    }
+    const note = entry.meta?.nsfw ?? '';
+    return h('div', { class: 'sb-tabpane' },
+        note ? h('div', { class: 'sb-prose' }, note) : h('div', { class: 'sb-muted' }, 'No intimate-scene note yet.'),
+        hint,
+        isNew ? null : h('div', { class: 'sb-actions' }, button(note ? 'Edit' : 'Write one', () => { ws.editing = true; rerender(); }, { iconName: 'fa-pen' })));
+}
+
 function gmTab({ entry }) {
     if (ws.editing) {
         return h('div', { class: 'sb-tabpane' },
             field('Secrets and GM notes', textArea('meta.gmNotes', ws.draft.meta.gmNotes, 6), 'Never put into the guidance.'),
-            entry.type === 'character' ? fieldWithTools('Intimate scenes (NSFW, optional)', textArea('meta.nsfw', ws.draft.meta.nsfw ?? '', 4), [nsfwSpark()], 'How they are in an intimate scene - pace, wants, limits, manner. Given to the narrator only while a scene is flagged intimate (Scene tab).') : null,
             field('Tags', h('input', { class: 'text_pole', value: csv(ws.draft.meta.tags), placeholder: 'comma-separated', oninput: (e) => set('meta.tags', fromCsv(e.target.value)) })),
             h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: ws.draft.meta.pinned, onchange: (e) => set('meta.pinned', e.target.checked) }), h('span', {}, 'Pin to the top of the chapter')),
             h('label', { class: 'checkbox_label', title: 'For canon you do not want embellished: generated detail is never added to this entry.' },
@@ -907,9 +925,7 @@ function gmTab({ entry }) {
             entry.meta?.canonLocked ? h('span', { class: 'sb-chip' }, icon('fa-lock'), ' Canon - no generated detail') : null,
             origin ? h('span', { class: 'sb-chip' }, origin) : null,
             entry.meta?.generated?.length ? h('span', { class: 'sb-chip', title: 'Fields written by generation' }, icon('fa-wand-magic-sparkles'), ` ${entry.meta.generated.join(', ')}`) : null),
-        entry.meta?.gmNotes ? h('div', { class: 'sb-prose' }, entry.meta.gmNotes) : h('div', { class: 'sb-muted' }, 'No secrets yet.'),
-        // Folded away: shown only when opened.
-        entry.type === 'character' && entry.meta?.nsfw ? h('details', { class: 'sb-nsfw' }, h('summary', {}, icon('fa-fire'), ' Intimate scenes (NSFW)'), h('div', { class: 'sb-prose' }, entry.meta.nsfw), h('small', { class: 'sb-hint' }, 'Given to the narrator only while a scene is flagged intimate.')) : null);
+        entry.meta?.gmNotes ? h('div', { class: 'sb-prose' }, entry.meta.gmNotes) : h('div', { class: 'sb-muted' }, 'No secrets yet.'));
 }
 
 // ---- actions
