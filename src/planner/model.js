@@ -78,6 +78,8 @@ const BEAT_STATUSES = ['pending', 'active', 'done', 'skipped'];
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' ? v : '');
 const clean = (v) => str(v).replace(/\s+/g, ' ').trim();
+// Text with its paragraphs kept (a blank line between them): a volume's steer.
+const paragraphs = (v) => str(v).replace(/\r/g, '').split(/\n\s*\n/).map(clean).filter(Boolean).join('\n\n');
 const strList = (v) => (Array.isArray(v) ? v.map(clean).filter(Boolean) : []);
 const int = (v, fallback = 0) => (Number.isInteger(v) && v >= 0 ? v : fallback);
 
@@ -699,7 +701,7 @@ function normalizeVolume(v) {
         startedTurn: int(v.startedTurn),
         startedDay: Number.isInteger(v.startedDay) && v.startedDay > 0 ? v.startedDay : 1,
         startedIndex: int(v.startedIndex),
-        direction: clean(v.direction).slice(0, 4000),
+        direction: paragraphs(v.direction).slice(0, 4000),
         chronicle: (Array.isArray(v.chronicle) ? v.chronicle : []).filter((c) => isObject(c) && clean(c.text))
             .map((c) => ({ at: str(c.at), day: Number.isInteger(c.day) ? c.day : null, text: clean(c.text).slice(0, 300) })).slice(-CHRONICLE_LIMIT),
     };
@@ -778,7 +780,7 @@ export function closeVolume(gm, recap, end = {}) {
 // inspirations and pacing carry on.
 export function startVolume(gm, { shape = gm.shape, direction = '', turn = gm.counters.turn, day = 1, index = 0 } = {}) {
     const number = Math.max(gm.volume.number, ...gm.volumes.map((x) => x.number)) + 1;
-    gm.volume = { ...emptyVolume(number, { turn, day, index }), direction: clean(direction).slice(0, 4000) };
+    gm.volume = { ...emptyVolume(number, { turn, day, index }), direction: paragraphs(direction).slice(0, 4000) };
     gm.shape = clean(shape);
     gm.outline = null;
     // The day goes on, but what the last volume's plan played out does not

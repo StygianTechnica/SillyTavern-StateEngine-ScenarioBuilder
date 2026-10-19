@@ -305,7 +305,7 @@ function volumeSteer(gm, chatKey) {
     }
     if (!text) return null;
     return h('div', { class: 'sb-gm-premise' },
-        h('span', {}, h('b', {}, 'Your steer: '), text),
+        h('div', {}, h('b', {}, 'Your steer'), ...text.split(/\n\s*\n/).map((para) => h('p', {}, para))),
         h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: () => startEdit('vsteer', text) }, icon('fa-pen')));
 }
 
