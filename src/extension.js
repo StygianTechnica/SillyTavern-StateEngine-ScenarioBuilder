@@ -7,6 +7,7 @@
 // State Engine is not installed, not enabled, or its API cannot be
 // reached, this shows one popup and returns.
 
+import { startTabGuard } from './ui/tab-guard.js';
 import { GUIDANCE_PARTS } from './guidance/build.js';
 import { installOverflowTooltips } from './ui/overflow-tooltips.js';
 import { EXTENSION_ID, NAMESPACE, LOG_PREFIX } from './constants.js';
@@ -41,6 +42,8 @@ const CAPABILITIES = [
 ];
 
 export async function initExtension() {
+    // An older SillyTavern tab must not save over this one (src/ui/tab-guard.js).
+    startTabGuard();
     // Cut-off text shows in full on hover (src/ui/overflow-tooltips.js).
     installOverflowTooltips();
     const available = await ensureStateEngineAvailable();

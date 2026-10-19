@@ -6,6 +6,7 @@
 
 import { getSettings, saveSettings } from '../settings.js';
 import { normalizeChatDoc } from './schema.js';
+import { isStaleTab } from '../ui/tab-guard.js';
 
 export const SCENARIO_CHANGED_EVENT = 'scenario_builder_scenario_changed';
 
@@ -35,6 +36,9 @@ export function hasChatDoc(chatKey) {
 export function updateChatDoc(chatKey, mutate) {
     if (!chatKey) throw new Error('no chat');
     const settings = getSettings();
+    // A newer tab has taken over: this one's copy is out of date, and a save
+    // here would set the newer tab's work back.
+    if (isStaleTab()) return structuredClone(normalizeChatDoc(settings.chats[chatKey]));
     const doc = normalizeChatDoc(settings.chats[chatKey]);
     mutate(doc);
     settings.chats[chatKey] = normalizeChatDoc(doc);
