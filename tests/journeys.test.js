@@ -68,6 +68,13 @@ describe('God War: "continued on to the Blackened Bridge"', () => {
         expect(looksLikePlaceName('The Ruined Temple')).toBe(true);
         expect(looksLikePlaceName('the old landing')).toBe(true);
         expect(looksLikePlaceName('The Wilderness')).toBe(true);
+        // Then it wrote this one.
+        expect(looksLikePlaceName('Riding towards the Blackened Bridge')).toBe(false);
+        expect(routeName('Riding towards the Blackened Bridge')).toEqual({ to: 'the Blackened Bridge' });
+        expect(looksLikePlaceName('On the way to Liston')).toBe(false);
+        expect(looksLikePlaceName('Crossing into the wastes')).toBe(false);
+        expect(looksLikePlaceName('Sterling Keep')).toBe(true);
+        expect(looksLikePlaceName("King's Landing")).toBe(true);
     });
 });
 

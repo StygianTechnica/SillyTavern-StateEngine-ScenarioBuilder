@@ -734,7 +734,7 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // goes to where it is going (an in-between place with its own name, "the
 // Ashen Ford", is still a place). -> { to } (the place it leads to, or ''
 // when it runs between two), or null.
-const WAY_WORDS = 'road|path|trail|track|way|route|highway|pass|passage|journey|ride|march|trek|crossing';
+const WAY_WORDS = 'road|path|trail|track|way|route|highway|pass|passage|journey|journeying|ride|riding|march|marching|trek|trekking|crossing|walk|walking|travel|travelling|traveling|heading|headed|bound|en route|on the way|on our way|on their way';
 export function routeName(name) {
     const n = clean(name).replace(/^["'*]+|["'*.]+$/g, '');
     if (new RegExp(`\\b(?:${WAY_WORDS})s?\\s+between\\s+.+\\s+and\\s+.+$`, 'iu').test(n)) return { to: '' };
@@ -750,6 +750,10 @@ export function looksLikePlaceName(name, playerNames = []) {
     // The scenery, not a place: "Barren plains stretching into the distance",
     // "rocky terrain rising ahead".
     if (SCENERY.test(n) || n.split(/\s+/).slice(1).some((w) => /^[a-z][a-z'’-]*ing$/.test(w) && !NOT_PARTICIPLE.has(w))) return false;
+    // Something being done on the way: "Riding towards the Blackened Bridge",
+    // "Crossing into the wastes" ("Sterling Keep" is still a name).
+    if (/^\p{L}+ing\s+(?:to|toward|towards|into|through|across|along|past|over|up|down|from|near|beside|around|out|for|back)\b/iu.test(n) && !NOT_PARTICIPLE.has(n.split(/\s+/)[0].toLowerCase())) return false;
+    if (routeName(n)) return false;
     return !(playerNames ?? []).some((p) => clean(p).length >= 3 && new RegExp(`(^|[^\\p{L}])${escapeRe(clean(p))}(?=$|[^\\p{L}])`, 'iu').test(n));
 }
 

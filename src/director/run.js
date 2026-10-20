@@ -492,7 +492,9 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     if (isNewTurn(type) && settingId) {
         const from = getChatDoc(chatKey).canonical.locationId || guidance.location?.id || '';
         const routes = listRoutes(settingId);
-        const reach = from ? [...routesFrom(from, routes).map((r) => r.otherId), ...placesFurtherOn(from, routes).map((p) => p.id)] : [];
+        // With no place for the scene yet (or after one was deleted), any
+        // place the library has.
+        const reach = from ? [...routesFrom(from, routes).map((r) => r.otherId), ...placesFurtherOn(from, routes).map((p) => p.id)] : known.filter((e) => e.type === 'location').map((e) => e.id);
         const ways = reach.map((id) => known.find((e) => e.id === id)).filter(Boolean).map((e) => ({ id: e.id, names: [e.name, ...e.aliases] }));
         const heading = headingAlong(latestUserText, ways);
         const invented = move && (routeName(move.place) || !knownAs(move.place, known.filter((e) => e.type === 'location')));
