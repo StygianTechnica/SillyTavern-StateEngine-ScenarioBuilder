@@ -718,6 +718,11 @@ export function cleanPlaceName(text) {
     return t;
 }
 
+// Words that describe the land rather than name a place (lower case only:
+// "The Wilderness" may be a name), and -ing words that are nouns, not a
+// description ("the old landing", "the crossing").
+const SCENERY = /\b(?:(?:into|in|to|toward|towards) the distance|as far as|the horizon|landscape|terrain|expanse|surroundings|scenery|wilderness)\b/;
+const NOT_PARTICIPLE = new Set(['landing', 'crossing', 'building', 'clearing', 'dwelling', 'mooring', 'lodging', 'king', 'spring', 'ring', 'wing', 'string', 'evening', 'morning', 'ceiling', 'awning', 'opening', 'offering', 'gathering', 'meeting', 'thing', 'nothing', 'something', 'everything']);
 const SENTENCE_WORDS = /\b(?:is|are|was|were|be|leans?|leaning|stands?|standing|sits?|sitting|waits?|waiting|walks?|walking|remains?|stays?|still|while|where|who|with)\b/i;
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -742,6 +747,9 @@ export function looksLikePlaceName(name, playerNames = []) {
     if (!n || n.length > 60 || /[,;:!?]/.test(n)) return false;
     if (n.split(/\s+/).length > 6) return false;
     if (SENTENCE_WORDS.test(n)) return false;
+    // The scenery, not a place: "Barren plains stretching into the distance",
+    // "rocky terrain rising ahead".
+    if (SCENERY.test(n) || n.split(/\s+/).slice(1).some((w) => /^[a-z][a-z'’-]*ing$/.test(w) && !NOT_PARTICIPLE.has(w))) return false;
     return !(playerNames ?? []).some((p) => clean(p).length >= 3 && new RegExp(`(^|[^\\p{L}])${escapeRe(clean(p))}(?=$|[^\\p{L}])`, 'iu').test(n));
 }
 

@@ -1,5 +1,5 @@
 import { pathBetween, placesFurtherOn, headingAlong } from '../src/library/routes.js';
-import { buildDirectorPrompt, dossierText, routeName } from '../src/director/prompt.js';
+import { buildDirectorPrompt, dossierText, routeName, looksLikePlaceName } from '../src/director/prompt.js';
 import { shapeOf } from '../src/planner/shapes.js';
 import { emptyGm, setOutline, beatsOf } from '../src/planner/model.js';
 import { buildOutlinePrompt, beatsPerAct } from '../src/planner/prompts.js';
@@ -48,6 +48,26 @@ describe('journeys go straight to where the party is heading', () => {
         const night = buildDirectorPrompt({ ...input, travelAtNight: true }).prompt;
         expect(night).toContain('travels on through the night');
         expect(night).not.toContain('makes camp for the night');
+    });
+});
+
+describe('God War: "continued on to the Blackened Bridge"', () => {
+    const ways = [{ id: 'bridge', names: ['The Blackened Bridge'] }, { id: 'road', names: ['Eastern Road to the Broken Bridge'] }];
+
+    it('reads the player setting out for the bridge', () => {
+        expect(headingAlong('At long last, now rested, the party continued on to the Blackened Bridge hoping to get there by nightfall to make camp.', ways)).toEqual({ id: 'bridge', name: 'The Blackened Bridge', together: true });
+        expect(headingAlong('The party goes to the Blackened Bridge.', ways)?.id).toBe('bridge');
+        expect(headingAlong('We pressed on toward the Blackened Bridge.', ways)?.id).toBe('bridge');
+        // Still only a plan.
+        expect(headingAlong("Tomorrow we'll continue on to the Blackened Bridge.", ways)).toBeNull();
+    });
+
+    it('never makes the scenery a place', () => {
+        expect(looksLikePlaceName('Barren plains stretching into the distance')).toBe(false);
+        expect(looksLikePlaceName('rocky terrain rising ahead')).toBe(false);
+        expect(looksLikePlaceName('The Ruined Temple')).toBe(true);
+        expect(looksLikePlaceName('the old landing')).toBe(true);
+        expect(looksLikePlaceName('The Wilderness')).toBe(true);
     });
 });
 

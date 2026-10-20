@@ -97,7 +97,7 @@ export function placesFurtherOn(fromId, routes, maxLegs = 3) {
 // the bridge tomorrow", or in speech). `ways`: [{ id, names }] of the
 // places the routes from here lead to.
 // -> { id, name, together } (together: the party goes as one) or null.
-const SETTING_OUT = /\b(?:set(?:s|ting)? out|set off|mount(?:s|ed|ing)? up|rode|ride(?:s)? (?:out|off|on)|head(?:s|ed|ing)? (?:out|off|for|to|toward|towards)|(?:made|make|makes|making) (?:their|our|his|her|my|the) way|journey(?:s|ed)?|travel(?:s|led|ed|ling|ing)?|depart(?:s|ed|ing)?|(?:left|leave|leaves|leaving) for|on the road|hit the road|march(?:es|ed|ing)? (?:out|off|on|for|to)|next leg)\b/i;
+const SETTING_OUT = /\b(?:set(?:s|ting)? out|set off|mount(?:s|ed|ing)? up|rode|ride(?:s)? (?:out|off|on)|head(?:s|ed|ing)? (?:out|off|for|to|toward|towards)|(?:made|make|makes|making) (?:their|our|his|her|my|the) way|journey(?:s|ed)?|travel(?:s|led|ed|ling|ing)?|depart(?:s|ed|ing)?|(?:left|leave|leaves|leaving) for|on the road|hit the road|march(?:es|ed|ing)? (?:out|off|on|for|to)|next leg|continu(?:e|es|ed|ing) (?:on|onward|onwards|to|toward|towards|for)|(?:press|push)(?:es|ed|ing)? on|(?:go|goes|went) (?:on )?(?:to|toward|towards|for)|rode (?:on|out|off)|(?:carried|carry|carries) on)\b/i;
 const NOT_YET = /\b(?:will|would|shall|should|tomorrow|tonight|later|soon|plan(?:s|ned)?|going to|could|might|if)\b|'ll\b/i;
 const TOGETHER = /\b(?:they|we|the group|the party|everyone|together|all of (?:us|them)|companions)\b/i;
 export function headingAlong(text, ways) {

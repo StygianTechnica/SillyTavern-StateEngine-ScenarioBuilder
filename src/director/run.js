@@ -481,33 +481,33 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // people going along; everyone else stays behind.
     let movedFrom = null;
     let baseCast = castIds;
-    if (isNewTurn(type) && settingId && parsed.move) {
-        const moved = await moveScene(chatId, chatKey, settingId, parsed.move, { guidance, characters, castIds, recentText, known, playerNames, canCreate: settings.director.allowCreate && !canonOnly });
-        if (moved) {
-            movedFrom = moved.from;
-            baseCast = moved.castIds;
-        }
-    }
-    // No format lines at all: the player's message setting out for a place
-    // the routes from here reach still moves the scene there (and the clock by
-    // its travel time, below). No extra call.
-    if (isNewTurn(type) && settingId && !wroteLines) {
+    // Where the player's message sets out for - a known place the routes
+    // from here reach, further on too (setting out for the bridge goes to
+    // the bridge, not to the first stop on the way). It wins over a MOVE to
+    // a place the library does not have (a small model names the scenery on
+    // the way: "Barren plains stretching into the distance"), and stands in
+    // when there is no MOVE line. No extra call.
+    let move = parsed.move;
+    let headed = false;
+    if (isNewTurn(type) && settingId) {
         const from = getChatDoc(chatKey).canonical.locationId || guidance.location?.id || '';
-        // Further on too: setting out for the bridge goes to the bridge, not
-        // to the first stop on the way.
         const routes = listRoutes(settingId);
         const reach = from ? [...routesFrom(from, routes).map((r) => r.otherId), ...placesFurtherOn(from, routes).map((p) => p.id)] : [];
         const ways = reach.map((id) => known.find((e) => e.id === id)).filter(Boolean).map((e) => ({ id: e.id, names: [e.name, ...e.aliases] }));
         const heading = headingAlong(latestUserText, ways);
-        if (heading) {
-            console.info(LOG_PREFIX, `the director wrote no format lines; the player's message sets out for ${heading.name}`);
-            const along = heading.together ? (guidance.cast ?? []).filter((c) => !c.player).map((c) => c.name) : [];
-            const place = known.find((e) => e.id === heading.id)?.name ?? heading.name;
-            const moved = await moveScene(chatId, chatKey, settingId, { place, along, indoor: null }, { guidance, characters, castIds, recentText, known, playerNames, canCreate: false });
-            if (moved) {
-                movedFrom = moved.from;
-                baseCast = moved.castIds;
-            }
+        const invented = move && (routeName(move.place) || !knownAs(move.place, known.filter((e) => e.type === 'location')));
+        if (heading && (!move || invented)) {
+            console.info(LOG_PREFIX, move ? `the director moved the scene to "${move.place}", which the library does not have; the player's message sets out for ${heading.name}, so the scene goes there` : `no MOVE line; the player's message sets out for ${heading.name}`);
+            const along = move?.along?.length ? move.along : heading.together ? (guidance.cast ?? []).filter((c) => !c.player).map((c) => c.name) : [];
+            move = { place: known.find((e) => e.id === heading.id)?.name ?? heading.name, along, indoor: move?.indoor ?? null };
+            headed = true;
+        }
+    }
+    if (isNewTurn(type) && settingId && move) {
+        const moved = await moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, known, playerNames, canCreate: !headed && settings.director.allowCreate && !canonOnly });
+        if (moved) {
+            movedFrom = moved.from;
+            baseCast = moved.castIds;
         }
     }
 
