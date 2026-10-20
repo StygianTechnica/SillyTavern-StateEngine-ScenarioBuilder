@@ -351,8 +351,11 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     const inputs = await gatherInputs(chatId, chatKey);
     const guidance = inputs.guidance;
     const messages = recentMessages(type);
-    const key = hashOf(JSON.stringify(messages.map((m) => [m.name, m.text])));
     const doc = getChatDoc(chatKey);
+    // The same messages in the same place: the briefing already written.
+    // A place changed by hand since (the user deleted a wrong one and sent
+    // the message again) is a new situation - the scene must move again.
+    const key = hashOf(JSON.stringify([messages.map((m) => [m.name, m.text]), doc.canonical.locationId || '']));
     if (!ahead && !force && doc.director.key === key && doc.director.note) return doc.director;
 
     const { characters, castIds, nearby, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes } = await sceneContext(chatId, chatKey, settingId, guidance);
@@ -571,8 +574,10 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         if (made.length || movedFrom || moves.in.length || moves.out.length) markActive(chatKey);
     }
 
-    // A briefing written ahead is used once.
-    const result = { note, summary: parsed.summary, direction: parsed.direction, key, at: new Date().toISOString(), created: [...doc.director.created, ...made].slice(-20), error: '', time: timeText, moves, ahead: preRaw ? null : getChatDoc(chatKey).director.ahead };
+    // A briefing written ahead is used once. Its key holds the place the
+    // scene ended up in, so a swipe after a move is not a new situation.
+    const settledKey = hashOf(JSON.stringify([messages.map((m) => [m.name, m.text]), getChatDoc(chatKey).canonical.locationId || '']));
+    const result = { note, summary: parsed.summary, direction: parsed.direction, key: settledKey, at: new Date().toISOString(), created: [...doc.director.created, ...made].slice(-20), error: '', time: timeText, moves, ahead: preRaw ? null : getChatDoc(chatKey).director.ahead };
     updateChatDoc(chatKey, (d) => { d.director = result; });
     return result;
 }
