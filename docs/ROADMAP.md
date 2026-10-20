@@ -24,6 +24,11 @@ From a review of what is left, in the user's words where it matters:
   to"); a contextual place lookup - "the ruins" should find "Roadside
   Ruins" when that is where the story is, without taking the temple ruins
   they are heading for (aliases alone do not do it).
+- **Wanted (2026-10-20) - the reason these extensions exist:** guardrails
+  for the model to run a sequenced event or process in a roleplay. The GM
+  planner approaches it but lacks the structure for: a tournament with
+  rounds and a grand final; a dungeon crawl; an arena where different
+  opponents come out to fight. See Structured events below.
 - **Nice to have, can wait:** an image gallery per entry (goes with updated
   descriptions: before and after pictures).
 - **Not wanted:** a status line in the chat - Pretty Panels shows the state
@@ -417,3 +422,56 @@ calls (one entry at a time, retry, and the entry text as a fallback).
 - [ ] Public API: `getPerspective` (SB-641).
 - [ ] Ask State Engine for a `location.parent` field (SB-145, C1), then move
   the tree out of Scenario Builder's metadata.
+
+## Structured events (added 2026-10-20)
+
+The user's original motivation for these extensions: guardrails so the model
+can run a sequenced event or process inside a roleplay chat. The GM planner
+(outline, beats, coming moments) and story triggers come close, but they are
+loose guidance - nothing holds the story to an order of steps, keeps count,
+or knows when a step is over. Three examples it must be able to carry:
+
+1. **A tournament** - rounds, a bracket of entrants, winners going on, a
+   grand final.
+2. **A dungeon crawl** - rooms or levels in order (or a map), each with what
+   waits there, cleared as the party goes through.
+3. **An arena** - opponents sent out one after another for combat, each
+   fought until beaten (or the player is), then the next.
+
+- [ ] Design first: what an event is (stages in order, or a graph of
+  stages), what each stage holds (who or what is faced, its place, what
+  ends it - a win, a loss, leaving, a day), the state it keeps (round,
+  bracket, opponents left, rooms cleared) and what follows a win or a loss.
+- [ ] Planned-out parts: an event runs like a programme - an introduction
+  (the herald, the crowd, the entrants presented), its stages with their
+  timing on the clock and calendar (round one at noon, the final the next
+  day, rests between bouts), the moments between them, and a close (the
+  victor crowned, the prize, the aftermath). A tournament or arena is
+  mostly a timeline of these.
+- [ ] Dungeon crawls need more thought: not a timeline but a series of
+  events in an environment the party moves through - places linked to one
+  another (the location tree and routes may carry it), each with what waits
+  there, entered in any order the routes allow, with state kept per place
+  (cleared, looted, a door opened, something still lurking).
+- [ ] Guardrails: the director and narrator see the current stage only and
+  are told what it is and what ends it; the story cannot skip ahead,
+  repeat a stage or invent the next opponent; the stage moves on only when
+  its end condition is met. Likely built from what exists: story triggers
+  (State Engine flags answering "has this stage ended?") and the director's
+  briefing, with the event's state in Scenario Builder's chat document.
+- [ ] Templates for the three examples, so an event can be set up in a few
+  steps and reused across chats.
+- [ ] Generated events: the user gives loose guidance ("a tournament in
+  the capital, five rounds") and the GM planner fills in the detailed event
+  (entrants, bracket, rooms, opponents, prizes) from the setting - or the
+  planner proposes one on its own when the story seems to call for it.
+- [ ] The planner reads the story for events: when the player character
+  mentions one ("the tournament at midsummer"), it is put on the calendar
+  (a calendar event with its date) and becomes a structured event when the
+  day comes. It may also insert random events - an ambush on the road, a
+  festival, a challenge - where they fit the setting and the story, within
+  the director's restraint (they arise from the world, never for the
+  player character).
+- [ ] Shown in Pretty Panels (current round, bracket, opponents left).
+- [ ] Mind the call budget: no extra model call per reply unless it earns
+  its place and can be switched off.

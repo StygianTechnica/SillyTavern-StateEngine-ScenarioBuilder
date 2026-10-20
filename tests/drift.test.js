@@ -1,4 +1,4 @@
-import { followPlayer, applyHolds, detectDrift, readObserved, applyAccepted, correctionText, describeItem, DEFAULT_POLICIES, withStateEngineCast } from '../src/validate/drift.js';
+import { followPlayer, applyHolds, detectDrift, readObserved, applyAccepted, correctionText, describeItem, DEFAULT_POLICIES, withStateEngineCast, withStateEngineCreatures } from '../src/validate/drift.js';
 import { emptyCanonical } from '../src/store/schema.js';
 
 const parents = { market: 'city', docks: 'city', stall: 'market' };
@@ -154,5 +154,14 @@ describe("State Engine's own scene tracker", () => {
     });
     it('changes nothing without the tracker', () => {
         expect(withStateEngineCast(observed, null)).toBe(observed);
+    });
+});
+
+describe("State Engine's creature tracker", () => {
+    it('has a creature here while either list has it', () => {
+        const observed = readObserved({ scene_creatures: [] });
+        expect(withStateEngineCreatures(observed, ['crt_zombies']).creatures).toEqual(['crt_zombies']);
+        expect(withStateEngineCreatures({ ...observed, creatures: ['crt_wolf'] }, ['crt_zombies']).creatures).toEqual(['crt_wolf', 'crt_zombies']);
+        expect(withStateEngineCreatures(observed, null)).toBe(observed);
     });
 });

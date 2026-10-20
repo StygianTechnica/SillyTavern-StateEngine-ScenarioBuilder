@@ -23,7 +23,7 @@ import { getVariableValues, setVariableValue, getRawValues } from '../api/variab
 import { getObject, confirmObject, resolveObject, updateObject } from '../api/objects.js';
 import { placeNameFrom, samePlaceName } from '../director/prompt.js';
 import { PRESET_NAME, OBSERVED_NAMES } from '../preset/blueprint.js';
-import { withStateEngineCast, SE_CAST } from './drift.js';
+import { withStateEngineCast, SE_CAST, withStateEngineCreatures, SE_CREATURES } from './drift.js';
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry, playerIdOf, listEntries } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
@@ -172,6 +172,21 @@ async function stateEngineCast(chatId) {
     }
 }
 
+// State Engine's creature tracker (se__scene_creatures): only creatures
+// the library has and that are confirmed - one still waiting for review
+// comes in when it is confirmed (src/library/intake.js). Or null.
+async function stateEngineCreatures(chatId, settingId) {
+    if (!settingId) return null;
+    try {
+        const value = (await getRawValues(chatId, [SE_CREATURES]))?.[SE_CREATURES];
+        if (!Array.isArray(value)) return null;
+        const known = new Set((await listEntries(chatId, settingId, 'creature')).filter((o) => o.confirmed !== false).map((o) => o.id));
+        return value.filter((x) => typeof x === 'string' && known.has(x));
+    } catch {
+        return null;
+    }
+}
+
 async function reconcileOnce() {
     const ref = getCurrentChatRef();
     if (!ref || !isActive()) return;
@@ -185,7 +200,7 @@ async function reconcileOnce() {
     const doc = getChatDoc(chatKey);
     // The player character never leaves the scene: the scene goes with them.
     const playerId = settingId ? playerIdOf(settingId, await listEntries(chatId, settingId, 'character')) : '';
-    const observed = followPlayer(withStateEngineCast(readObserved(raw), await stateEngineCast(chatId)), doc.canonical, playerId);
+    const observed = followPlayer(withStateEngineCreatures(withStateEngineCast(readObserved(raw), await stateEngineCast(chatId)), await stateEngineCreatures(chatId, settingId)), doc.canonical, playerId);
     const replySource = latestReplySource(chatId);
     const newReply = !!replySource && replySource !== doc.lastReply;
 

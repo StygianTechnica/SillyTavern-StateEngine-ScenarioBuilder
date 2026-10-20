@@ -108,6 +108,18 @@ export function withStateEngineCast(observed, seCast) {
     return { ...observed, cast: [...new Set([...observed.cast, ...seCast])] };
 }
 
+// State Engine's scene tracker for creatures (se__scene_creatures).
+export const SE_CREATURES = 'se__scene_creatures';
+
+// The same for creatures: one is here while either list has it (the story's
+// reading often comes back empty while State Engine's tracker has the dead
+// that just rushed in). `seCreatures`: the tracker's ids of confirmed
+// library creatures (not those still waiting for review), or null.
+export function withStateEngineCreatures(observed, seCreatures) {
+    if (!Array.isArray(seCreatures)) return observed;
+    return { ...observed, creatures: [...new Set([...observed.creatures, ...seCreatures])] };
+}
+
 // Scene titles are kept short: at most this many words.
 export const TITLE_MAX_WORDS = 6;
 const wordCount = (text) => String(text ?? '').trim().split(/\s+/).filter(Boolean).length;
