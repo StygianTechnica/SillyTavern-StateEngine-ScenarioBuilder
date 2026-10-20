@@ -171,7 +171,9 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
             if (!obj) continue;
             const parent = item.kind === 'location' ? parentForNewPlace(item, chain) : null;
             if (parent) setParent(settingId, obj.id, parent);
-            made.push({ id: obj.id, kind: item.kind, name: obj.name, parent });
+            // `here` travels with it: State Engine may store the name a little
+            // differently, so matching back by name loses it.
+            made.push({ id: obj.id, kind: item.kind, name: obj.name, parent, here: item.here === true });
         } catch (err) {
             console.warn(LOG_PREFIX, `the director could not add ${item.name}`, err);
         }
@@ -534,7 +536,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         const left = new Set(parsed.leaves.map((n) => String(n).toLowerCase()));
         const seen = peopleNamedIn(parsed.situation, characters).filter((c) => !baseCast.includes(c.id) && !heldOut.has(c.id) && !callNames(c).some((n) => left.has(n.toLowerCase())));
         if (seen.length) parsed.enters = [...new Set([...parsed.enters, ...seen.map((c) => c.name)])];
-        const after = castAfter(characters, baseCast, parsed, made.map((m) => ({ ...m, here: created.find((c) => c.name === m.name)?.here })), playerIdOf(settingId, characters));
+        const after = castAfter(characters, baseCast, parsed, made, playerIdOf(settingId, characters));
         // ENTERS and LEAVES that name creatures (the zombies) change the
         // creatures in the scene.
         const creatures = await listEntries(chatId, settingId, 'creature');

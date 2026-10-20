@@ -1,4 +1,4 @@
-import { buildGuidance, buildStateBlock, buildCast, guidanceParts, truncate, aloneText } from '../src/guidance/build.js';
+import { buildGuidance, buildStateBlock, buildCast, guidanceParts, truncate, aloneText, OUTCOMES } from '../src/guidance/build.js';
 import { fitToBudget, estimateTokens } from '../src/guidance/budget.js';
 import { REFERENCE_HEADER } from '../src/constants.js';
 
@@ -104,7 +104,7 @@ describe('director note in the guidance', () => {
     it('comes last - summary, then direction - and is never dropped', () => {
         const director = { summary: 'Mira stalls for time while the collector looms.', direction: 'Tobin loses patience.' };
         const { text, sections } = buildGuidance({ ...input, director, budget: 60 });
-        expect(text.endsWith(`${director.summary}\n\n${director.direction}`)).toBe(true);
+        expect(text.endsWith(`${director.summary}\n\n${director.direction}\n\n${OUTCOMES}`)).toBe(true);
         expect(sections.find((s) => s.key === 'summary').mode).toBe('full');
         expect(sections.find((s) => s.key === 'direction').mode).toBe('full');
     });
@@ -149,7 +149,7 @@ describe('guidance in parts', () => {
         expect(parts.guidance_scene).toContain('The scene is set in Brass Market');
         expect(parts.guidance_scene).toContain('Hold to these');
         expect(parts.guidance_summary).toBe('WHERE THINGS STAND (reference only - do not continue)\nSUMMARY.');
-        expect(parts.guidance_direction).toBe('WHERE THIS REPLY SHOULD GO (reference only - do not continue)\nDIRECTION.');
+        expect(parts.guidance_direction).toBe(`WHERE THIS REPLY SHOULD GO (reference only - do not continue)\nDIRECTION.\n\n${OUTCOMES}`);
     });
 
     it('leaves an empty part empty', () => {
@@ -165,7 +165,7 @@ describe('people taken out of the scene by hand', () => {
     it('close the guidance, in the direction part', () => {
         const built = buildGuidance({ ...input, director: { summary: 'S.', direction: 'D.' }, absent: ['Varyn', 'Niamh'], budget: 100 });
         expect(built.text.endsWith('Varyn and Niamh are not in this scene: leave them out of this reply entirely - no lines, no actions, no presence.')).toBe(true);
-        expect(guidanceParts(built).guidance_direction).toContain('D.\n\nVaryn and Niamh are not in this scene');
+        expect(guidanceParts(built).guidance_direction).toContain(`D.\n\n${OUTCOMES}\n\nVaryn and Niamh are not in this scene`);
     });
 });
 

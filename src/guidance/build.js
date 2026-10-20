@@ -336,6 +336,15 @@ function correctionsSection(corrections) {
     return { full: `Recent replies got some facts wrong. Hold to these: ${list.map(sentence).join(' ')}`, compact: '' };
 }
 
+// The narrator's standing rule for clashes: an attack between the others is
+// carried through to its result in the reply, never left hanging ("Varyn
+// aims for its joints" and then nothing) - the director's briefing can be
+// vague, and the narrator settles it. Only with a direction to follow.
+export const OUTCOMES = 'Carry every action of the other characters and creatures through to its result in this reply: a blow lands or misses, and what it does; an opponent hits back, presses or gives ground. Never leave an attack between them hanging. Only what the player character does is left to the player.';
+const withOutcomes = (part) => (part ? { ...part, full: `${part.full}
+
+${OUTCOMES}` } : part);
+
 // Perspective (the narrator's standing rule, at no cost).
 export const PERSPECTIVE = 'People know only what they saw, heard or were told in the story. What happens inside someone - their thoughts, dreams, visions, memories and unspoken feelings - is theirs alone: others see only outward signs (a restless sleep, a far-off look) and learn the rest only if told, in the scene.';
 
@@ -345,7 +354,7 @@ const BUILDERS = {
     triggered: (input) => triggeredSection(input.triggered),
     intimacy: (input) => intimacySection(input),
     alone: (input) => aloneSection(input),
-    direction: (input) => directorPart(input.director, 'direction'),
+    direction: (input) => withOutcomes(directorPart(input.director, 'direction')),
     // The user's own standing instructions (the front page).
     style: (input) => (clean(input.overview?.gmStyle) ? { full: `How this story is run: ${sentence(truncate(input.overview.gmStyle, 800))}`, compact: '' } : null),
     limits: (input) => limitsSection(input.overview),
