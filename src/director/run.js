@@ -26,7 +26,7 @@ import { enqueueEnrichment } from '../generate/enrich.js';
 import { callModelFirst } from '../generate/llm.js';
 import { replyKeyOf, canUseAhead, shouldThinkAhead } from './ahead.js';
 import { gatherInputs } from '../guidance/sync.js';
-import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
+import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { buildPeoplePrompt, readPeople } from './people.js';
 import { unknownsFor, PERSPECTIVE_TOKENS } from './perspective.js';
@@ -277,6 +277,14 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
     if (place?.id === from) return null;
     // Only a real place name - never a sentence the model wrote as one
     // ("Remus leans against a pole inside the gate").
+    // "The road to the bridge" is not a place: on to the bridge when the
+    // library has it, else the scene stays where it is.
+    const way = place ? null : routeName(move.place);
+    if (way) {
+        place = way.to ? matchPlace(way.to, places, nearIds) : null;
+        console.info(LOG_PREFIX, `the director moved the scene to "${move.place}", a way rather than a place: ${place ? `on to ${place.name}` : 'not made'}`);
+        if (!place || place.id === from) return null;
+    }
     if (!place && canCreate && looksLikePlaceName(move.place, playerNames) && mentionedIn(move.place, recentText) && !knownAs(move.place, known)) {
         // A place the chat named that the library lacks (under any type):
         // beside this one.
@@ -425,6 +433,10 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         const existing = knownAs(c.name, known);
         if (existing) {
             console.info(LOG_PREFIX, `the director did not add ${c.kind} "${c.name}": the library already has "${existing.name}"${existing.type ? ` (${existing.type})` : ''}`);
+            continue;
+        }
+        if (c.kind === 'location' && routeName(c.name)) {
+            console.info(LOG_PREFIX, `the director did not add location "${c.name}": a way to somewhere, not a place`);
             continue;
         }
         const r = relevance(c, { recentText, latestUserText, quests: guidance.quests, known });

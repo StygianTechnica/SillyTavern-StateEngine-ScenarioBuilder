@@ -723,6 +723,20 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Whether a MOVE place could name a new location: a short name, not a
 // sentence about someone ("Remus leans against a pole inside the gate").
+// A name that is a way to somewhere rather than a place: "Eastern Road to
+// the Broken Bridge", "the trail toward Liston", "the path between the
+// ruin and the bridge". Such a stop on the way is never made - a journey
+// goes to where it is going (an in-between place with its own name, "the
+// Ashen Ford", is still a place). -> { to } (the place it leads to, or ''
+// when it runs between two), or null.
+const WAY_WORDS = 'road|path|trail|track|way|route|highway|pass|passage|journey|ride|march|trek|crossing';
+export function routeName(name) {
+    const n = clean(name).replace(/^["'*]+|["'*.]+$/g, '');
+    if (new RegExp(`\\b(?:${WAY_WORDS})s?\\s+between\\s+.+\\s+and\\s+.+$`, 'iu').test(n)) return { to: '' };
+    const m = n.match(new RegExp(`^(?:(?:the|a|an|on|along)\\s+)*(?:[\\p{L}'’-]+\\s+){0,2}(?:${WAY_WORDS})s?\\s+(?:to|toward|towards|for|into)\\s+(.+)$`, 'iu'));
+    return m ? { to: clean(m[1]) } : null;
+}
+
 export function looksLikePlaceName(name, playerNames = []) {
     const n = clean(name);
     if (!n || n.length > 60 || /[,;:!?]/.test(n)) return false;
