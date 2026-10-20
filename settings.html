@@ -64,6 +64,10 @@
                     <span>Wait at most (seconds)</span>
                     <input id="sb_director_timeout" class="text_pole" type="number" min="5" max="300" step="5" />
                 </label>
+                <label class="sb-field" title="The context window of the model the game master runs on (as loaded in your backend). Its prompt is trimmed to fit, least important parts first - older scenes, the last briefing, memories, lore, then fewer recent messages - so a busy scene never fails with Bad Request.">
+                    <span>Model context (tokens)</span>
+                    <input id="sb_director_context" class="text_pole" type="number" min="2048" max="200000" step="512" />
+                </label>
                 <label class="sb-field" title="The guidance is cut to fit this many tokens (estimated). Low-priority sections are shortened, then dropped; the briefing, location, time and corrections are kept. It is meant to replace world-info entries, so it can be generous.">
                     <span>Token budget</span>
                     <input id="sb_token_budget" class="text_pole" type="number" min="50" max="8000" step="50" />

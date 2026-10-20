@@ -26,7 +26,8 @@ import { enqueueEnrichment } from '../generate/enrich.js';
 import { callModelFirst } from '../generate/llm.js';
 import { replyKeyOf, canUseAhead, shouldThinkAhead } from './ahead.js';
 import { gatherInputs } from '../guidance/sync.js';
-import { buildDirectorPrompt, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
+import { fitDirectorPrompt, promptBudget } from './fit.js';
+import { parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { buildPeoplePrompt, readPeople } from './people.js';
 import { unknownsFor, PERSPECTIVE_TOKENS } from './perspective.js';
@@ -383,7 +384,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         ...[...(guidance.location?.places ?? []), ...factions, ...eventObjects, ...scenes, ...(guidance.quests ?? [])].map((x) => String(x.name ?? '').trim().toLowerCase()),
     ].filter(Boolean));
     const relevant = alsoRelevant(everything, { recentText: messages.slice(-6).map((m) => m.text).join('\n'), sceneIds: [...placeIds, ...castIds], covered, typeLabel: (t) => labelOf.get(t) ?? t, placeName: (id) => everything.find((e) => e.id === id)?.name ?? '' });
-    const { system, prompt } = buildDirectorPrompt({
+    // Trimmed to fit the director model's context (src/director/fit.js).
+    const fitted = fitDirectorPrompt({
         ...guidance,
         messages,
         userName: SillyTavern.getContext().name1,
@@ -404,7 +406,10 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         unknowns: await unknownsHere(guidance.cast ?? [], messages.slice(-6).map((m) => m.text).join('\n'), characters),
         ahead,
         travelAtNight: settings.director.travelAtNight === true,
-    });
+    }, promptBudget(settings.director.contextTokens, settings.director.maxTokens));
+    if (fitted.trimmed.length) console.info(LOG_PREFIX, `the director's prompt was trimmed to fit (~${fitted.tokens} of ${fitted.budget} tokens): ${fitted.trimmed.join(', ')}`);
+    if (!fitted.fits) console.warn(LOG_PREFIX, `the director's prompt is still ~${fitted.tokens} tokens, over the ${fitted.budget} its model's context leaves - raise "Model context" if the model allows, or expect it to fail`);
+    const { system, prompt } = fitted;
     if (ahead) {
         // Called at once, not queued: a queued call waits out any reply, and
         // the next reply waits for this briefing.

@@ -91,6 +91,7 @@ function renderSettings() {
     byId('sb_director_perspective').checked = settings.director.perspective !== false;
     byId('sb_director_night').checked = settings.director.travelAtNight === true;
     byId('sb_director_timeout').value = settings.director.timeout;
+    byId('sb_director_context').value = settings.director.contextTokens;
 
     byId('sb_sections').replaceChildren(...SECTIONS.map((s) => h('label', { class: 'checkbox_label' },
         h('input', {
@@ -149,6 +150,12 @@ export async function addSettingsDrawer() {
         const value = Math.round(Number(e.target.value));
         settings.director.timeout = Number.isFinite(value) ? Math.min(300, Math.max(5, value)) : 45;
         e.target.value = settings.director.timeout;
+        saveSettings();
+    });
+    byId('sb_director_context').addEventListener('change', (e) => {
+        const value = Math.round(Number(e.target.value));
+        settings.director.contextTokens = Number.isFinite(value) ? Math.min(200000, Math.max(2048, value)) : 8192;
+        e.target.value = settings.director.contextTokens;
         saveSettings();
     });
     byId('sb_open_workspace').addEventListener('click', () => void openWorkspace());

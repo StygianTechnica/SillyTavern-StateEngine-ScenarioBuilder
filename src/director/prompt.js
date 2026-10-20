@@ -372,7 +372,7 @@ export function buildDirectorPrompt(input) {
 
     // General to immediate: the world, the scene, then the latest chat and
     // the last briefing, then what to write.
-    const recent = (input.messages ?? []).slice(-8).map((m) => `${clean(m.name) || (m.isUser ? userName : 'Narrator')}: ${cut(m.text, 900)}`).join('\n\n');
+    const recent = (input.messages ?? []).slice(-8).map((m) => `${clean(m.name) || (m.isUser ? userName : 'Narrator')}: ${cut(m.text, input.messageChars ?? 900)}`).join('\n\n');
     // The planner's private plan (src/planner/): after the world, before the chat.
     const plan = String(input.gmPlan ?? '').trim();
     const parts = [dossierText(input), ...(plan ? ['', plan] : []), '', 'THE LATEST CHAT', recent || '(the story has not started yet)'];
