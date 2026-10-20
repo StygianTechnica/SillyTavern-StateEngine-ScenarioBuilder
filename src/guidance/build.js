@@ -36,6 +36,7 @@ export const SECTIONS = Object.freeze([
     { key: 'summary', title: 'Where things stand', priority: 7, keep: true },
     { key: 'style', title: 'How the story is run', priority: 8, keep: true },
     { key: 'direction', title: 'Where it should go', priority: 8, keep: true },
+    { key: 'triggered', title: 'Set off by the story', priority: 9, keep: true },
     { key: 'intimacy', title: 'Intimate scene', priority: 8, keep: true },
     { key: 'absent', title: 'Not in this scene', priority: 9, keep: true },
     { key: 'alone', title: 'No one else here', priority: 9, keep: true },
@@ -81,6 +82,15 @@ function directorPart(director, part) {
     const d = typeof director === 'string' ? { summary: director, direction: '' } : (director ?? {});
     const text = String(d[part] ?? '').trim();
     return text ? { full: text, compact: '' } : null;
+}
+
+// Story triggers the story has set off (src/triggers/): an order for this
+// reply, given to the narrator directly so it holds even when the
+// director's briefing failed or left it out.
+function triggeredSection(lines) {
+    const list = (lines ?? []).map((l) => clean(String(l).replace(/^-\s*/, ''))).filter(Boolean);
+    if (!list.length) return null;
+    return { full: `The story has set this off - it happens in this reply: ${list.join(' ')}`, compact: '' };
 }
 
 // People the user took out of the scene by hand (while that holds): an
@@ -332,6 +342,7 @@ export const PERSPECTIVE = 'People know only what they saw, heard or were told i
 const BUILDERS = {
     summary: (input) => directorPart(input.director, 'summary'),
     absent: (input) => absentSection(input.absent),
+    triggered: (input) => triggeredSection(input.triggered),
     intimacy: (input) => intimacySection(input),
     alone: (input) => aloneSection(input),
     direction: (input) => directorPart(input.director, 'direction'),
@@ -384,6 +395,7 @@ export function buildGuidance(input) {
         direction: "The game master's direction: what should probably happen in this reply.",
         style: 'Your own instructions for running the story (the front page: How the game master runs this story).',
         absent: 'People you took out of the scene by hand, for the next few replies.',
+        triggered: 'Story triggers the story has just set off (Story triggers in the GM Plan): played in this reply, and on a swipe of it.',
         alone: 'Shown when the player character is the only one present: the world, its creatures and the consequences carry the reply.',
         location: input.location?.path?.length ? `Canonical location, its path and inherited environment; canonical time and weather.` : 'Canonical time and weather.',
         scene: 'The canonical scene title and premise.',
@@ -413,7 +425,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
     ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'secrets', 'corrections']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
-    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'intimacy', 'absent', 'alone']],
+    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'triggered', 'intimacy', 'absent', 'alone']],
 ]);
 
 // buildGuidance()'s result -> { [variable]: text } ('' for an empty part).

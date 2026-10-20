@@ -28,7 +28,7 @@ import { runLoreSync } from '../library/lore-sync.js';
 import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { checkQuestEnds, fillMissingEnds } from '../quests/ends.js';
 import { ensureCharacterFields } from '../library/character-fields.js';
-import { checkTriggers } from '../triggers/run.js';
+import { checkTriggers, markTriggersShown, latestUserIndex } from '../triggers/run.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage, followContinuedReply } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
 import { directBeforeReply, addNamedPeople, thinkAfterReply } from '../director/run.js';
@@ -148,6 +148,11 @@ async function prepareReply(ref, type) {
                 await followStoryElapsed(ref.chatId, chatKey, settingId, userText, turnFrom);
             }
         }
+        // Fired story triggers go into this reply (the director's prompt and
+        // the narrator's guidance); marked here, where the reply is surely
+        // written, so a failed briefing never uses one up. Not for an
+        // impersonation: that is the player's own line.
+        if (type !== 'impersonate') markTriggersShown(chatKey, latestUserIndex());
         // The game master thinks before the reply (src/director/): the one
         // step here that waits on a model, bounded by its timeout. It also
         // moves the clock on by what the reply will cover.

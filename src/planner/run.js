@@ -27,7 +27,7 @@ import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { setQuestMeta, questMeta } from '../quests/sync.js';
 import { callModel } from '../generate/llm.js';
 import { readModelJson } from '../generate/prompt.js';
-import { plannerTriggers, retirePlannerTriggers, markTriggersShown } from '../triggers/run.js';
+import { plannerTriggers, retirePlannerTriggers, latestUserIndex } from '../triggers/run.js';
 import { gatherInputs } from '../guidance/sync.js';
 import { dossierText, knownAs, relevance } from '../director/prompt.js';
 import { triggerSection,
@@ -447,13 +447,12 @@ const TENSE = 4;
 // messages: the director's recent messages.
 export function directorPlan(chatKey, messages) {
     // Fired story triggers reach the game master, planner on or off; each
-    // once (a swipe of that reply sees it again).
+    // once (a swipe of that reply sees it again). They are marked shown
+    // when the reply is prepared (src/state/lifecycle.js), and reach the
+    // narrator's guidance too, so a failed briefing never loses one.
     let triggered = '';
     try {
-        const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system);
-        const userIndex = chat.map((m) => !!m.is_user).lastIndexOf(true);
-        triggered = triggerSection(getChatDoc(chatKey).gm, userIndex);
-        markTriggersShown(chatKey, userIndex);
+        triggered = triggerSection(getChatDoc(chatKey).gm, latestUserIndex());
     } catch (err) {
         console.warn(LOG_PREFIX, 'no story triggers for the director', err);
     }

@@ -285,11 +285,13 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
         console.info(LOG_PREFIX, `the director moved the scene to "${move.place}", a way rather than a place: ${place ? `on to ${place.name}` : 'not made'}`);
         if (!place || place.id === from) return null;
     }
+    let made = false;
     if (!place && canCreate && looksLikePlaceName(move.place, playerNames) && mentionedIn(move.place, recentText) && !knownAs(move.place, known)) {
         // A place the chat named that the library lacks (under any type):
         // beside this one.
         place = await createEntry(chatId, settingId, 'location', { name: move.place, description: '' }, { origin: 'director' });
         if (place && parentId) setParent(settingId, place.id, parentId);
+        made = !!place;
         // Listed in Review like anything else the director adds, so a wrong
         // one is seen - and Reject takes the scene back where it was.
         if (place) {
@@ -304,11 +306,18 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
     const playerId = playerIdOf(settingId, characters);
     const byName = (name) => characters.find((c) => [c.name, ...(c.aliases ?? c.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === String(name).toLowerCase()))?.id
         ?? characters.find((c) => c.name.toLowerCase().includes(String(name).toLowerCase()))?.id ?? null;
+    // A short hop - into a place inside this one, out to the place it is
+    // part of, next door, or a place just made beside this one (a crypt
+    // under the graveyard, the next room) - is not a journey: those here
+    // whom the recent chat names come along, and the scene's creatures with
+    // them (the dead that rushed the party down the stairs). On a real
+    // journey creatures stay where they were.
+    const near = made || parents[place.id] === from || parents[from] === place.id || (!!parentId && parents[place.id] === parentId);
     const along = move.along.map(byName).filter(Boolean);
-    const next = [...new Set([...(playerId && castIds.includes(playerId) ? [playerId] : playerId ? [playerId] : []), ...along])];
+    const named = near ? peopleNamedIn(recentText, characters.filter((c) => castIds.includes(c.id))).map((c) => c.id) : [];
+    const next = [...new Set([...(playerId && castIds.includes(playerId) ? [playerId] : playerId ? [playerId] : []), ...along, ...named])];
     const left = castIds.filter((id) => !next.includes(id)).map((id) => characters.find((c) => c.id === id)?.name).filter(Boolean);
-    // Creatures stay where they were.
-    const patch = { locationId: place.id, castIds: next, creatureIds: [] };
+    const patch = { locationId: place.id, castIds: next, creatureIds: near ? [...doc.canonical.creatureIds] : [] };
     if (move.indoor !== null) patch.indoor = move.indoor;
     setCanonical(chatKey, patch, { chatId, source: 'director', note: `The scene moves to ${place.name}${left.length ? `; ${left.join(', ')} stay${left.length === 1 ? 's' : ''} behind` : ''}` });
     return { from, castIds: next };

@@ -248,7 +248,6 @@ export function dossierText(input) {
         if (env.length) lines.push(`${env.join('. ')}.`);
         const list = (label, xs) => { if (xs?.length) lines.push(`${label}: ${xs.slice(0, 10).map((x) => `${clean(x.name)}${clean(x.description) ? ` (${cut(x.description, 90)})` : ''}`).join('; ')}.`); };
         list('Here', loc.items);
-        list('Creatures here', loc.creatures);
         list('Ways on', [...(loc.places ?? []), ...(loc.routes ?? []).map((r) => ({ name: r.name, description: [r.travel && `${r.travel} away`, r.note].filter(Boolean).join(', ') })), ...(loc.partOf ? [{ name: `back out to ${clean(loc.partOf.name)}` }] : [])]);
         list('Further on', (loc.further ?? []).map((f) => ({ name: f.name, description: `by way of ${clean(f.via)}` })));
     } else {
@@ -310,6 +309,22 @@ export function dossierText(input) {
         lines.push(`- ${clean(c.name)}${c.provisional ? ' (no name yet - known by this description)' : ''}${bits.length ? `: ${bits.join('; ')}` : ''}`);
     }
     if (cast.length && cast.every((c) => c.player)) lines.push('- No one else is here.');
+    // The creatures: those in the scene act; those that only live here are
+    // not seen until the story brings them in (an ENTERS line).
+    const creatures = (loc?.creatures ?? []).filter((x) => clean(x?.name));
+    if (creatures.length) {
+        section('CREATURES HERE (they act by instinct and nature, not by plans or speeches)');
+        for (const x of creatures.slice(0, 10)) {
+            const bits = [
+                cut(x.description, 300),
+                clean(x.traits) && `traits: ${cut(x.traits, 160)}`,
+                clean(x.danger) && `danger: ${clean(x.danger)}`,
+                clean(x.state) && `now: ${cut(x.state, 160)}`,
+            ].filter(Boolean).map(bare);
+            const where = x.active === false ? ' [lives here - lurking, unseen; not in the scene unless the story brings it in]' : ' [in the scene]';
+            lines.push(`- ${clean(x.name)}${where}${bits.length ? `: ${bits.join('; ')}` : ''}`);
+        }
+    }
     if (input.secrets?.length) {
         section('SECRETS AND OATHS (people act only on what they know)');
         for (const r of input.secrets.slice(0, 8)) lines.push(`- ${r}`);
@@ -369,6 +384,11 @@ export function buildDirectorPrompt(input) {
     const people = alone
         ? 'No NPCs are present, so the reply is not empty: the world itself reacts. Brief the narrator ONLY on the environment, the weather, sounds, smells, distant movement, creatures acting independently (the ones here, or ones the latest chat shows coming) and divine or supernatural forces - including what they do in answer to the latest message. Do not describe or suggest anything the player character does, thinks or feels. If the chat shows creatures or people arriving that are not listed as here, name them with an ENTERS line below. Someone may turn up only if the story calls for it - do not invent a companion just to have someone to talk to.'
         : `what the people around ${userName} want, feel toward one another and are likely to do about it - woven together, not person by person. Give each of them an agenda of their own and show it moving: in this reply at least one of them takes the initiative - starts something, presses their own plan, pursues what they want, or acts on someone else - without waiting to be asked. They answer ${userName} only as far as it serves their own aims.`;
+    // Creatures in the scene act too, NPCs or not - by their nature, unasked.
+    const activeCreatures = (input.location?.creatures ?? []).filter((x) => clean(x?.name) && x.active !== false).map((x) => clean(x.name));
+    const creatureTask = activeCreatures.length
+        ? `The creatures in the scene (${activeCreatures.join(', ')}) act on their own in this reply, by their nature and without waiting to be provoked: a predator stalks, tests and strikes; a scavenger circles; the undead press in; a frightened animal bolts or turns at bay; a mount shies. Say what each does now and how it changes the scene - a dangerous one that is active is never just background; it closes in, attacks, blocks the way or forces a choice. They act on instinct and hunger, not on plans, speeches or schemes the story has not set up, and act on ${userName} only from the outside.`
+        : '';
     parts.push(
         '',
         'START WITH THE FORMAT LINES: write them first, at the very top of your reply, each on its own line, before the briefing. They are filled in only when they apply. Replace each <...> with the real value; never copy a <...> or an example, and never write "none" for a line that does not apply - leave the line out entirely.',
@@ -445,10 +465,10 @@ export function buildDirectorPrompt(input) {
     parts.push(
         '',
         'THEN WRITE THE BRIEFING',
-        `After the format lines, in a few paragraphs of natural prose (no headings, lists or tables), tell the narrator where things stand ${input.ahead ? `as ${userName}'s turn comes` : `now that ${userName} has spoken`}${alone ? `. ${people}` : `, and ${people}`} Let the place come through in a few concrete details of what can be seen, heard or smelled, and anything here that matters now. Draw on everything above that bears on this moment - factions, lore, events, threads and the other entries - but fold each into the narrative in a few words where it matters; never list them, and leave out what does not touch this moment. Vary how you open; do not start with a stock phrase.`,
+        `After the format lines, in a few paragraphs of natural prose (no headings, lists or tables), tell the narrator where things stand ${input.ahead ? `as ${userName}'s turn comes` : `now that ${userName} has spoken`}${alone ? `. ${people}` : `, and ${people}`}${creatureTask ? ` ${creatureTask}` : ''} Let the place come through in a few concrete details of what can be seen, heard or smelled, and anything here that matters now. Draw on everything above that bears on this moment - factions, lore, events, threads and the other entries - but fold each into the narrative in a few words where it matters; never list them, and leave out what does not touch this moment. Vary how you open; do not start with a stock phrase.`,
         'If someone not here (OTHERS WHO COULD TURN UP) has a plan that will matter soon, say in a sentence what they are doing about it off-screen.',
         ...(unknownsLines(input.unknowns).length ? ['Where someone here does not know something that bears on this moment (WHAT EACH PERSON DOES NOT KNOW), say so plainly in the briefing, with what they did see instead (e.g. "Varyn did not see the vision - he only saw Remus sleep restlessly"), so the narrator never has them speak of it.'] : []),
-        'End with a paragraph that begins "Next:" saying where this reply should probably go - one or two natural developments driven by what the other characters want, as direction rather than a script, leaning toward an open thread when it fits.',
+        `End with a paragraph that begins "Next:" saying where this reply should probably go - one or two natural developments driven by what the other characters want${activeCreatures.length ? ' and what the creatures here do' : ''}, as direction rather than a script, leaning toward an open thread when it fits.`,
         'This is a briefing, not the story: never write the reply itself - no lines of dialogue in quotes, no narrating it as it happens. Say what people want and are likely to do, and let the narrator write it.',
         'Keep it under 400 words in all.',
     );
@@ -578,7 +598,7 @@ export function isPlaceholder(value) {
 }
 
 // A format line, whether or not it could be read - never left in the prose.
-const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|LEAVES|NEW|RENAME|BEAT)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|NEW|RENAME|BEAT)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
@@ -649,10 +669,11 @@ export function parseDirectorNote(raw) {
             if (from && to && !isPlaceholder(from) && !isPlaceholder(to) && from.toLowerCase() !== to.toLowerCase()) renames.push({ from, to });
             continue;
         }
-        const step = line.match(/^\s*(?:[-*]\s*)?\**(ENTERS|LEAVES)\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|.*)?$/i);
+        // A small model bends the word ("ENTERED | ...", "LEFT | ...").
+        const step = line.match(/^\s*(?:[-*]\s*)?\**(ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED)\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|.*)?$/i);
         if (step) {
             const name = clean(step[2]).replace(/^["'*]+|["'*]+$/g, '');
-            if (name && !isPlaceholder(name)) (step[1].toUpperCase() === 'ENTERS' ? enters : leaves).push(name);
+            if (name && !isPlaceholder(name) && !/^(none|no one|nobody|-)$/i.test(name)) (/^(ENTER|ARRIV)/i.test(step[1]) ? enters : leaves).push(name);
             continue;
         }
         const m = line.match(/^\s*(?:[-*]\s*)?\**NEW\**\s*:?\s*([a-z]+)\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?$/i);

@@ -24,7 +24,7 @@ describe('guidance', () => {
         expect(text).toContain('The climate is humid.');
         expect(text).not.toContain('Mira, the innkeeper');
         expect(text).toContain('Hold to these: The scene is still at Brass Market, not the docks.');
-        expect(sections.filter((s) => !['quests', 'summary', 'direction', 'lore', 'limits', 'absent', 'alone', 'style', 'secrets', 'intimacy'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
+        expect(sections.filter((s) => !['quests', 'summary', 'direction', 'lore', 'limits', 'absent', 'alone', 'style', 'secrets', 'intimacy', 'triggered'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
         expect(text).not.toMatch(/^\[/m);
     });
 
@@ -218,5 +218,16 @@ describe('people with agendas of their own', () => {
     it('follow the user\'s own instructions for running the story', () => {
         const built = buildGuidance({ overview: { gmStyle: 'NPCs act without waiting for Remus' }, director: { summary: 'S.', direction: 'D.' }, budget: 600 });
         expect(guidanceParts(built).guidance_direction).toContain('How this story is run: NPCs act without waiting for Remus.\n\nD.');
+    });
+});
+
+describe('story triggers in the guidance', () => {
+    it('tells the narrator what the story set off, even without the director', () => {
+        const built = buildGuidance({ ...input, triggered: ['- Now, because they breach the concrete structure: two corrupted paladins ambush them - make it happen in this reply, from the world\'s side (never for the player character).'] });
+        const section = built.sections.find((s) => s.key === 'triggered');
+        expect(section.mode).toBe('full');
+        expect(section.text).toMatch(/^The story has set this off - it happens in this reply: Now, because they breach the concrete structure: two corrupted paladins ambush them/);
+        expect(guidanceParts(built).guidance_direction).toContain('two corrupted paladins ambush them');
+        expect(buildGuidance(input).sections.find((s) => s.key === 'triggered').mode).toBe('empty');
     });
 });

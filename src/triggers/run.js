@@ -106,8 +106,18 @@ export async function retirePlannerTriggers(chatKey) {
     for (const t of getChatDoc(chatKey).gm.triggers.filter((x) => x.source === 'planner' && x.status === 'armed')) await retireTrigger(chatKey, t.id);
 }
 
-// The game master has seen the fired triggers for the player's message
-// `userIndex`: a swipe of that reply sees them again, the next turn not.
+// The index of the player's latest message among the chat's non-system
+// messages (what a trigger's shownFor counts in); -1 when there is none.
+export function latestUserIndex() {
+    const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system);
+    return chat.map((m) => !!m.is_user).lastIndexOf(true);
+}
+
+// A reply to the player's message `userIndex` is being written, with the
+// fired triggers in its prompt (the narrator's guidance, and the director's
+// when it runs): a swipe of that reply sees them again, the next turn not.
+// Called when the reply is prepared - not when the director's prompt is
+// built - so a director that fails or times out never uses one up.
 export function markTriggersShown(chatKey, userIndex) {
     updateChatDoc(chatKey, (d) => {
         d.gm.triggers = d.gm.triggers.map((t) => {

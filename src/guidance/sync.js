@@ -22,6 +22,8 @@ import { getVariableValues, getRawValues, setVariableValue, VARIABLES_CHANGED_EV
 import { getObject, listObjects } from '../api/objects.js';
 import { PRESET_NAME } from '../preset/blueprint.js';
 import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.js';
+import { triggerLines } from '../triggers/model.js';
+import { latestUserIndex } from '../triggers/run.js';
 import { getBoundSettingId, readField, listEntries, playerIdOf, allKnowledge } from '../library/library.js';
 import { sceneKnowledge } from '../library/knowledge.js';
 import { pathOf, inheritedEnvironment } from '../library/hierarchy.js';
@@ -133,8 +135,23 @@ export async function gatherInputs(chatId, chatKey) {
                     .filter((o) => (o.base?.location ?? o.location) === obj.id || castIds.includes(o.base?.owner ?? o.owner))
                     .map((o) => ({ ...short(o), id: o.id, carriedBy: (o.base?.location ?? o.location) === obj.id ? '' : (o.base?.owner ?? o.owner) })),
                 // Creatures the library places here, and those the story or
-                // the director has in the scene.
-                creatures: (await listEntries(chatId, settingId, 'creature')).filter((o) => (o.base?.location ?? o.location) === obj.id || c.creatureIds.includes(o.id)).map((o) => ({ ...short(o), id: o.id })),
+                // the director has in the scene. `active`: in the scene now;
+                // otherwise it only lives here, unseen until the story brings
+                // it in. What the director acts on: its traits, danger and
+                // State Engine's live state for it.
+                creatures: await Promise.all((await listEntries(chatId, settingId, 'creature'))
+                    .filter((o) => (o.base?.location ?? o.location) === obj.id || c.creatureIds.includes(o.id))
+                    .map(async (o) => {
+                        const base = o.base ?? o;
+                        return {
+                            ...short(o),
+                            id: o.id,
+                            active: c.creatureIds.includes(o.id),
+                            traits: Array.isArray(base.traits) ? base.traits.join(', ') : (typeof base.traits === 'string' ? base.traits : ''),
+                            danger: typeof base.danger_level === 'string' ? base.danger_level : '',
+                            state: await readField(chatId, o.id, '', 'state'),
+                        };
+                    })),
                 source: sceneSource,
                 id: obj.id,
             };
@@ -329,6 +346,9 @@ export async function gatherInputs(chatId, chatKey) {
             intimate: isIntimate(doc.nsfwMode, (await getVariableValues(chatId, ['scene_nsfw']).catch(() => ({}))).scene_nsfw),
             // Taken out of the scene by hand, while that holds.
             absent,
+            // Story triggers set off for this reply (src/triggers/): the
+            // narrator gets them even when the director fails.
+            triggered: triggerLines(doc.gm.triggers, latestUserIndex()),
             othersTracked,
             // Secrets kept from those present; oaths binding them.
             secrets: secretRules,

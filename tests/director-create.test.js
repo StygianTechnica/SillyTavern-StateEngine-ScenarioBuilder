@@ -227,3 +227,42 @@ describe('never a second thing of a name the library has', () => {
         expect(knownAs('Ash Ghouls', [])).toBeNull();
     });
 });
+
+describe('the director and creatures', () => {
+    const zombies = { name: 'Graveyard Zombies', description: 'Rotting dead risen from the old graves.', traits: 'slow, relentless, hungry', danger: 'High', state: 'shambling out of the crypt', active: true };
+    const wolf = { name: 'Grey Wolf', description: 'A lean wolf that hunts these ruins.', active: false };
+    const cast = [{ name: 'Remus', player: true }, { name: 'Varyn' }];
+
+    it('lists creatures with their traits, danger and state - in the scene, or only living here', () => {
+        const text = dossierText({ location: { path: ['Belatorre', 'Graveyard'], creatures: [zombies, wolf] }, cast });
+        expect(text).toContain('CREATURES HERE');
+        expect(text).toContain('- Graveyard Zombies [in the scene]: Rotting dead risen from the old graves; traits: slow, relentless, hungry; danger: High; now: shambling out of the crypt');
+        expect(text).toContain('- Grey Wolf [lives here - lurking, unseen');
+        expect(text).not.toContain('Creatures here:');
+    });
+
+    it('has the creatures in the scene act on their own, with people present or not', () => {
+        const withPeople = buildDirectorPrompt({ location: { path: ['Graveyard'], creatures: [zombies, wolf] }, cast }).prompt;
+        expect(withPeople).toContain('at least one of them takes the initiative');
+        expect(withPeople).toContain('The creatures in the scene (Graveyard Zombies) act on their own in this reply');
+        expect(withPeople).toContain('and what the creatures here do');
+        const alone = buildDirectorPrompt({ location: { path: ['Graveyard'], creatures: [zombies] }, cast: [cast[0]] }).prompt;
+        expect(alone).toContain('The creatures in the scene (Graveyard Zombies) act on their own');
+    });
+
+    it('asks nothing of creatures that only live here', () => {
+        const { prompt } = buildDirectorPrompt({ location: { path: ['Graveyard'], creatures: [wolf] }, cast });
+        expect(prompt).not.toContain('act on their own in this reply');
+        expect(prompt).not.toContain('and what the creatures here do');
+    });
+});
+
+describe('arrivals in the words a small model bends', () => {
+    it('reads ENTERED, ARRIVES and LEFT as ENTERS and LEAVES, and keeps them out of the prose', () => {
+        const parsed = parseDirectorNote('ENTERED | Two zombies in tattered, rusty armor | dressed in the remnants of a long-forgotten era\nARRIVES | Maziel\nLEFT | Arin\nENTERED | none\n\nThe dead lurch out of the dark.');
+        expect(parsed.enters).toEqual(['Two zombies in tattered, rusty armor', 'Maziel']);
+        expect(parsed.leaves).toEqual(['Arin']);
+        expect(parsed.note).not.toMatch(/ENTERED|ARRIVES|LEFT \|/);
+        expect(parsed.note).toContain('The dead lurch out of the dark.');
+    });
+});
