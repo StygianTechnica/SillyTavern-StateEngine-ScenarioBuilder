@@ -20,7 +20,7 @@ import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbac
 import { getRawValues } from '../api/variables.js';
 import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.js';
 import { weatherAt } from './weather.js';
-import { routeForMove, guessRoute, addRoute } from '../library/routes.js';
+import { routeForMove, pathBetween, guessRoute, addRoute } from '../library/routes.js';
 import { listEntries } from '../library/library.js';
 import { placeOverview } from '../library/world-options.js';
 import { pathOf } from '../library/hierarchy.js';
@@ -371,6 +371,18 @@ export async function travelAlong(chatId, chatKey, settingId, fromId, toId, sour
     const parents = Object.fromEntries(Object.entries(settingDoc.entries).filter(([, m]) => m.parentId).map(([id, m]) => [id, m.parentId]));
     const up = (id) => [...pathOf(parents, id)].reverse();
     let route = routeForMove(fromId, toId, settingDoc.routes, up);
+    // Somewhere further on: every route on the way, one after another -
+    // never a guessed shortcut past them.
+    const legs = route ? null : pathBetween(fromId, toId, settingDoc.routes);
+    if (legs?.length > 1 && legs.every((r) => r.travel)) {
+        let target = doc.clock.planned?.from ?? now;
+        for (const leg of legs) {
+            target = await advanceFrom(settingId, target, leg.travel);
+            if (target === null) return null;
+        }
+        if (target <= now) return null;
+        return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The journey took ${legs.map((r) => r.travel).join(' + ')}${legs.some((r) => r.guessed) ? ' (partly on guessed routes - edit them on the places\' sheets)' : ''}`, sourceMessage });
+    }
     if (!route) {
         try {
             const places = new Map((await listEntries(chatId, settingId, 'location')).map((p) => [p.id, { name: p.name, description: p.base?.description ?? p.description ?? '' }]));

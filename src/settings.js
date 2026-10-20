@@ -74,7 +74,9 @@ const DEFAULTS = {
     // perspective: each person here is listed with the recent memories they
     // did not witness (src/director/perspective.js), at most
     // perspectiveTokens of the director's prompt - no extra call.
-    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600 },
+    // travelAtNight: a journey goes on through the night; off, the party
+    // makes camp at dusk and goes on in the morning.
+    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600, travelAtNight: false },
     // The clock (src/calendar/clock.js): on = Scenario Builder keeps the
     // time and weather; perTurn = how much time a reply covers when the
     // director does not say.

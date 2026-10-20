@@ -250,6 +250,7 @@ export function dossierText(input) {
         list('Here', loc.items);
         list('Creatures here', loc.creatures);
         list('Ways on', [...(loc.places ?? []), ...(loc.routes ?? []).map((r) => ({ name: r.name, description: [r.travel && `${r.travel} away`, r.note].filter(Boolean).join(', ') })), ...(loc.partOf ? [{ name: `back out to ${clean(loc.partOf.name)}` }] : [])]);
+        list('Further on', (loc.further ?? []).map((f) => ({ name: f.name, description: `by way of ${clean(f.via)}` })));
     } else {
         lines.push('Where: not known yet.');
     }
@@ -384,7 +385,7 @@ export function buildDirectorPrompt(input) {
             '',
             'On its own line, how much in-story time this reply will cover from the latest message on:',
             'TIME | <how long, e.g. 5 minutes> | <why>',
-            'A few minutes for talk; longer when people travel, wait, work or sleep, or when the scene moves on (a duration like "2 hours" or "3 days", or a time of day like "the next morning"). A journey along one of the ways on takes its travel time. Follow any time skip the latest message asks for - waking someone for the next watch, or sleeping, means hours have passed (to dawn, or "the next morning", when the night is late).',
+            'A few minutes for talk; longer when people travel, wait, work or sleep, or when the scene moves on (a duration like "2 hours" or "3 days", or a time of day like "the next morning"). A journey takes its travel time - to somewhere further on, the time of every way on it passes along. Follow any time skip the latest message asks for - waking someone for the next watch, or sleeping, means hours have passed (to dawn, or "the next morning", when the night is late).',
             '',
             `Only if the story needs the weather to change now (a storm rolling in that the plot calls for), a line naming the new weather from these: ${WEATHER_VALUES.join(', ')}.`,
             'WEATHER | <values from the list> | <why>',
@@ -397,7 +398,8 @@ export function buildDirectorPrompt(input) {
         `And one sentence on what is going on in the scene as this reply begins - what the others are doing, and where (never what ${userName} does):`,
         'SITUATION | <one sentence: who of the others is doing what, and where>',
         '',
-        `The scene always follows ${userName}. Only if the latest message takes ${userName} somewhere else - leaving the room, walking out, going to another place - never write LEAVES for ${userName}; write a line naming where the scene is now (one of the ways on when it fits), who goes along with ${userName} (or "none"), and whether it is indoors or outdoors. Everyone else stays behind.`,
+        `The scene always follows ${userName}. Only if the latest message takes ${userName} somewhere else - leaving the room, walking out, going to another place - never write LEAVES for ${userName}; write a line naming where the scene is now, who goes along with ${userName} (or "none"), and whether it is indoors or outdoors. Everyone else stays behind.`,
+        `A journey goes straight to where ${userName} is heading, even when it is further on: the MOVE line names that place, not a road or a stop on the way, and the TIME line covers the whole journey. A journey where nothing happens passes in a few sentences that sum up the road. ${input.travelAtNight ? 'The party travels on through the night when the journey runs past dusk: the TIME line covers the whole of it.' : 'If it runs on past dusk, the party makes camp for the night and goes on in the morning: the TIME line covers the night as well (to "the next morning", or later).'} Stop somewhere on the way only when the latest message stops there, or for a real turn in the story (an ambush, a discovery, someone met) - never to drag the trip out with talk.`,
         'MOVE | <the place the scene is in now> | <who goes along, comma-separated, or none> | <indoors or outdoors>',
         '',
         'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along):',

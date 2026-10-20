@@ -33,7 +33,7 @@ import { placeOverview } from '../library/world-options.js';
 import { relationsFor, pairCovered } from '../library/relations-edit.js';
 import { activeQuests } from '../quests/sync.js';
 import { momentAt } from '../calendar/clock.js';
-import { routesFrom } from '../library/routes.js';
+import { routesFrom, placesFurtherOn } from '../library/routes.js';
 import { splitNote } from '../director/prompt.js';
 import { weatherText } from '../calendar/weather.js';
 
@@ -126,6 +126,9 @@ export async function gatherInputs(chatId, chatKey) {
                 partOf: partOf ? short(partOf) : null,
                 // Routes to other places, with their travel time.
                 routes: routesFrom(obj.id, library.routes).map(({ route, otherId }) => ({ name: allLocations.find((l) => l.id === otherId)?.name ?? '', travel: route.travel, note: route.note })).filter((r) => r.name),
+                // Places a few routes further on, with the way on they are
+                // reached through - a journey there goes straight there.
+                further: placesFurtherOn(obj.id, library.routes).map(({ id, via }) => ({ name: allLocations.find((l) => l.id === id)?.name ?? '', via: allLocations.find((l) => l.id === via)?.name ?? '' })).filter((r) => r.name && r.via).slice(0, 8),
                 items: (await listEntries(chatId, settingId, 'item'))
                     .filter((o) => (o.base?.location ?? o.location) === obj.id || castIds.includes(o.base?.owner ?? o.owner))
                     .map((o) => ({ ...short(o), id: o.id, carriedBy: (o.base?.location ?? o.location) === obj.id ? '' : (o.base?.owner ?? o.owner) })),

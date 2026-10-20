@@ -8,12 +8,10 @@ Newest decisions first in each section.
 
 From a review of what is left, in the user's words where it matters:
 
-- **Under way:** people mentioned are not people present ("Graxx's men"
-  brought Graxx back); events that fire on conditions, built on State
-  Engine's prompted and calculated variables (Scenario Builder makes them on
-  the fly, checks now and then whether any has borne fruit, and retires
-  them - flags especially); a toggleable "think after each reply" mode for
-  the game master.
+- **Done (2026-10-19):** people mentioned are not people present ("Graxx's
+  men" brought Graxx back); events that fire on conditions, built on State
+  Engine's prompted and calculated variables (story triggers, SB-435 below);
+  a toggleable "think after each reply" mode for the game master.
 - **Under way (2026-10-19):** perspective - people know only what they
   witnessed or were told ("Graxx keeps talking about Remus's divine power
   before he ever saw it"); "an impressive feat" if done well. A standing
@@ -213,6 +211,33 @@ These came after spec v0.5 and should be folded into its next revision.
   takes - "Apply map estimates" writes those in. Shift + drag between two
   places adds a route.
 
+## Pretty Panels integration (added 2026-10-19)
+
+Easier access to Scenario Builder from Pretty Panels' panels. Only when
+Scenario Builder is installed: Pretty Panels looks for
+`window.StateEngineScenarioBuilder` (src/public-api.js, the way it already
+finds Archivist in its src/chat/archivist-link.js) and shows none of this
+without it. Scenario Builder offers the actions as callbacks on its public
+API (docs/api.md, SB-640..642); Pretty Panels owns where they appear.
+
+- [ ] **Object clicks open Scenario Builder.** With Scenario Builder
+  installed, clicking an object card opens its Scenario Builder page (the
+  catalog sheet, `openSheet(entryId)` in src/ui/ws.js), not the State Engine
+  / Pretty Panels object modal. Pretty Panels needs a replaceable "open
+  object" callback that Scenario Builder registers; without it, the old
+  modal. Perhaps a setting to keep the old modal.
+- [ ] **Buttons on character cards.** Actions to put on a character's card:
+  remove them from the scene (as a LEAVES would - out of the canonical
+  cast) and go to their page. Positioned by the user like any other field:
+  a "Scenario Builder" tab in Pretty Panels' drag-on palette lists what
+  Scenario Builder makes available, but the buttons belong to the object
+  (each one acts on that card's entry).
+- [ ] **Map in one click.** A button that opens the Locations map
+  (`openLocationMap()` in src/ui/catalog.js).
+- [ ] Nice to have: a **mini map** panel element - a small version of the
+  map view with a pip per location, hover for details (name, what is
+  there, who is there, travel time from here), click to open its page.
+
 ## World definition
 
 - [x] Per-place world (for science fiction and multiverse settings, or a
@@ -374,7 +399,11 @@ calls (one entry at a time, retry, and the entry text as a fallback).
 - [ ] Quests: a separate optional quest-only preset (SB-207) instead of
   sb__quests in Scenario State; completion/abandon conditions checked
   automatically (today they are shown to the user and the model only).
-- [ ] Events firing on deterministic conditions (SB-435).
+- [x] Events firing on conditions (SB-435) - done as story triggers
+  (src/triggers/, the GM plan's "Story triggers" card): a story flag State
+  Engine answers, a place reached, someone present, or a day coming; each
+  chat has its own small preset, fired ones go to the game master once and
+  their variables are deleted, and the planner arms and retires its own.
 - [x] Time advancing by rules; generated weather (SB-211); a calendar model
   (OPEN-10): the clock, weather simulation, sky (suns, moons), holidays and
   the Calendar tab.

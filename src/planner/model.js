@@ -537,7 +537,8 @@ export function sameBeat(a, b) {
 // beats the answer leaves out are dropped unless done, skipped or locked.
 // keepLocked false (a regenerate that starts afresh): locked beats still
 // to come are dropped too - only what the story has done is kept.
-export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString(), keepLocked = true } = {}) {
+// review: the pass brought an outline up to date (not written afresh).
+export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString(), keepLocked = true, review = false } = {}) {
     const wasDone = new Set(beatsOf(gm.outline).filter((b) => b.status === 'done').map((b) => b.id));
     // A skipped beat never happened: it is not history, and a rewrite that
     // leaves it out drops it (an old outline's "Maziel attacks" would sit
@@ -574,6 +575,11 @@ export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString()
                 const status = past(prev) ? prev.status : (BEAT_STATUSES.includes(raw.status) ? raw.status : prev.status);
                 const keepWords = prev.locked || past(prev);
                 beats.push({ ...prev, text: keepWords ? prev.text : clean(raw.text) || prev.text, ties: keepWords ? prev.ties : strList(raw.ties).slice(0, 6), status });
+            } else if (review && raw.status === 'done') {
+                // A review marks beats done; it never makes history up -
+                // a new "done" beat is an everyday moment written down
+                // ("Arin takes first watch"), and it eats the chapter.
+                continue;
             } else if (!taken.some((t) => sameBeat(t, raw.text))) {
                 // Never the same new beat twice in one answer.
                 const b = normalizeBeat({ ...raw, id: `b${next++}`, locked: false, by: 'planner' }, 0);

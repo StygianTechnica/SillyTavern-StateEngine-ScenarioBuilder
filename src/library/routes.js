@@ -40,6 +40,56 @@ export function routeForMove(fromId, toId, routes, pathOf) {
     return null;
 }
 
+// The routes, leg by leg, from one place to another a few routes away -
+// the fewest legs, and of those the first found. A journey to somewhere
+// further on passes through the places between; it does not stop at each.
+// -> [route] (empty when `fromId` is `toId`), or null when no chain of at
+// most `maxLegs` routes joins them.
+export function pathBetween(fromId, toId, routes, maxLegs = 4) {
+    if (!fromId || !toId) return null;
+    if (fromId === toId) return [];
+    const seen = new Set([fromId]);
+    let frontier = [{ id: fromId, legs: [] }];
+    for (let depth = 0; depth < maxLegs && frontier.length; depth++) {
+        const next = [];
+        for (const { id, legs } of frontier) {
+            for (const { route, otherId } of routesFrom(id, routes)) {
+                if (seen.has(otherId)) continue;
+                const path = [...legs, route];
+                if (otherId === toId) return path;
+                seen.add(otherId);
+                next.push({ id: otherId, legs: path });
+            }
+        }
+        frontier = next;
+    }
+    return null;
+}
+
+// The places two to `maxLegs` routes away from `fromId` (the ways on are one
+// away), nearest first, each with the place it is reached through:
+// [{ id, via: <id of the first place on the way> }].
+export function placesFurtherOn(fromId, routes, maxLegs = 3) {
+    if (!fromId) return [];
+    const seen = new Set([fromId]);
+    const out = [];
+    let frontier = routesFrom(fromId, routes).map(({ otherId }) => ({ id: otherId, via: otherId }));
+    for (const f of frontier) seen.add(f.id);
+    for (let depth = 1; depth < maxLegs && frontier.length; depth++) {
+        const next = [];
+        for (const { id, via } of frontier) {
+            for (const { otherId } of routesFrom(id, routes)) {
+                if (seen.has(otherId)) continue;
+                seen.add(otherId);
+                next.push({ id: otherId, via });
+            }
+        }
+        out.push(...next);
+        frontier = next;
+    }
+    return out;
+}
+
 // The way on the player's message sets out along, when the game master
 // left no MOVE line: the message names a place one route away ("mounted up
 // for the next leg of their journey... The blackened bridge") and tells of

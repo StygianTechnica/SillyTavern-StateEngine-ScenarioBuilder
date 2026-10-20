@@ -238,12 +238,13 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
             underWay: chatLength > UNDER_WAY_AFTER,
             startAct: startIndex >= 0 ? { index: startIndex, title: shape.acts[startIndex].title } : null,
             newVolume,
+            pacing: plannerSettings().pacing,
         }), OUTLINE_TOKENS, { salvage: (raw) => readModelJson(closeCutJson(raw)) }));
         if (!parsed) throw new Error('The outline had no beats in it.');
         // The conditions the outline wants watched: story triggers.
         await plannerTriggers(chatId, chatKey, parsed.triggers ?? []);
         updateChatDoc(chatKey, (d) => {
-            setOutline(d.gm, parsed, { turn: d.gm.counters.turn, keepLocked: !rewrite || keepLocked });
+            setOutline(d.gm, parsed, { turn: d.gm.counters.turn, keepLocked: !rewrite || keepLocked, review: !writing });
             // The user said where the story is: the outline starts there,
             // whatever the model made of it.
             if (startIndex >= 0) startAt(d.gm, startIndex);

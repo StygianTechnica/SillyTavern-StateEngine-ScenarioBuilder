@@ -184,6 +184,12 @@ export function readCheck(json) {
 //   wish (the user's steer for a rewrite, or ''), newVolume: { number }
 //   (the first outline of a new volume: it starts at its first act, growing
 //   out of the volumes before) }
+// How many beats an act gets at the user's pace (settings.planner.pacing):
+// a gentle story gives each chapter room to breathe, a fast one gets on.
+export function beatsPerAct(pacing) {
+    return { gentle: 'four to six', brisk: 'three to four', fast: 'two to three' }[pacing] ?? 'two to four';
+}
+
 export function buildOutlinePrompt(input) {
     const userName = clean(input.userName) || 'the player';
     const shape = input.shape;
@@ -244,7 +250,7 @@ export function buildOutlinePrompt(input) {
     parts.push(
         '',
         outline && !input.rewrite ? 'REVIEW THE OUTLINE' : 'WRITE THE OUTLINE',
-        `${outline && !input.rewrite ? 'Bring it up to date with the story: mark the beats the story has played out "done", the one under way "active", and any the story has made impossible "skipped". Rewrite or replace beats still to come if the story has moved somewhere better - keep each kept beat\'s id. ' : ''}One act per act of the shape, in its order, two to four beats each. A beat is a turn in the story, loose enough to happen many ways ("the alliance is tested by a betrayal from within"), growing out of the threads, factions, frictions and people above. Let each act's beats reach that act's target tension. Add a few seeds: small things to plant early so a later beat pays off.`,
+        `${outline && !input.rewrite ? 'Bring it up to date with the story: mark the beats the story has played out "done", the one under way "active", and any the story has made impossible "skipped". Rewrite or replace beats still to come if the story has moved somewhere better - keep each kept beat\'s id. Never add a new beat for something that has already happened. ' : ''}One act per act of the shape, in its order, ${beatsPerAct(input.pacing)} beats each. A beat is a turn in the story, loose enough to happen many ways ("the alliance is tested by a betrayal from within"), growing out of the threads, factions, frictions and people above. Everyday moments - a watch, a meal, waking, making camp, a stretch of road where nothing happens - are never beats, and nor is the journey itself: a beat is what happens where they arrive. Each beat happens in one place; two places are two beats, in the order the story will reach them (somewhere beyond the bridge comes after the bridge). Let each act's beats reach that act's target tension. Add a few seeds: small things to plant early so a later beat pays off.`,
         'Answer in this JSON shape:',
         '{"premise":"<what this story is about, two or three sentences>","themes":["<theme>"],',
         ' "acts":[{"title":"<act title>","beats":[{"id":"<the id of a beat kept from above, or empty for a new one>","text":"<the beat>","ties":["<names>"],"status":"pending|active|done|skipped"}]}],',

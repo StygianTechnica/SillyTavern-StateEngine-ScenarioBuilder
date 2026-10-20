@@ -15,7 +15,7 @@ import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
 import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf } from '../library/library.js';
-import { routesFrom, listRoutes, headingAlong } from '../library/routes.js';
+import { routesFrom, listRoutes, headingAlong, placesFurtherOn } from '../library/routes.js';
 import { pathOf } from '../library/hierarchy.js';
 import { listRelations, relationsFor } from '../library/relations-edit.js';
 import { setCanonical } from '../state/canonical.js';
@@ -381,6 +381,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         gmPlan: settingId ? directorPlan(chatKey, messages) : '',
         unknowns: await unknownsHere(guidance.cast ?? [], messages.slice(-6).map((m) => m.text).join('\n'), characters),
         ahead,
+        travelAtNight: settings.director.travelAtNight === true,
     });
     if (ahead) {
         // Called at once, not queued: a queued call waits out any reply, and
@@ -475,12 +476,16 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             baseCast = moved.castIds;
         }
     }
-    // No format lines at all: the player's message setting out along one of
-    // the ways on from here still moves the scene there (and the clock by
+    // No format lines at all: the player's message setting out for a place
+    // the routes from here reach still moves the scene there (and the clock by
     // its travel time, below). No extra call.
     if (isNewTurn(type) && settingId && !wroteLines) {
         const from = getChatDoc(chatKey).canonical.locationId || guidance.location?.id || '';
-        const ways = from ? routesFrom(from, listRoutes(settingId)).map((r) => known.find((e) => e.id === r.otherId)).filter(Boolean).map((e) => ({ id: e.id, names: [e.name, ...e.aliases] })) : [];
+        // Further on too: setting out for the bridge goes to the bridge, not
+        // to the first stop on the way.
+        const routes = listRoutes(settingId);
+        const reach = from ? [...routesFrom(from, routes).map((r) => r.otherId), ...placesFurtherOn(from, routes).map((p) => p.id)] : [];
+        const ways = reach.map((id) => known.find((e) => e.id === id)).filter(Boolean).map((e) => ({ id: e.id, names: [e.name, ...e.aliases] }));
         const heading = headingAlong(latestUserText, ways);
         if (heading) {
             console.info(LOG_PREFIX, `the director wrote no format lines; the player's message sets out for ${heading.name}`);
