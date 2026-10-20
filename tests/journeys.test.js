@@ -1,5 +1,5 @@
 import { pathBetween, placesFurtherOn, headingAlong } from '../src/library/routes.js';
-import { buildDirectorPrompt, dossierText } from '../src/director/prompt.js';
+import { buildDirectorPrompt, dossierText, routeName } from '../src/director/prompt.js';
 import { shapeOf } from '../src/planner/shapes.js';
 import { emptyGm, setOutline, beatsOf } from '../src/planner/model.js';
 import { buildOutlinePrompt, beatsPerAct } from '../src/planner/prompts.js';
@@ -48,6 +48,19 @@ describe('journeys go straight to where the party is heading', () => {
         const night = buildDirectorPrompt({ ...input, travelAtNight: true }).prompt;
         expect(night).toContain('travels on through the night');
         expect(night).not.toContain('makes camp for the night');
+    });
+});
+
+describe('a way to somewhere is not a place', () => {
+    it('reads road, path and trail names as ways, with where they lead', () => {
+        expect(routeName('Eastern Road to the Broken Bridge')).toEqual({ to: 'the Broken Bridge' });
+        expect(routeName('The trail toward Liston')).toEqual({ to: 'Liston' });
+        expect(routeName('On the road to the Blackened Bridge')).toEqual({ to: 'the Blackened Bridge' });
+        expect(routeName('The path between the ruin and the bridge')).toEqual({ to: '' });
+    });
+
+    it('leaves real places alone, even ones on the way', () => {
+        for (const name of ['The Ashen Ford', "King's Road", 'The Blackened Bridge', 'Old Interstate', 'Roadside Ruin', 'Eastern Road', 'The Crossroads Inn']) expect(routeName(name)).toBeNull();
     });
 });
 
