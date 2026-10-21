@@ -552,9 +552,22 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         for (const name of parsed.enters) { const c = !characters.some((x) => x.name.toLowerCase() === name.toLowerCase()) && findCreature(name); if (c && !creatureIds.has(c.id)) { creatureIds.add(c.id); creatureNames.in.push(c.name); } }
         for (const name of parsed.leaves) { const c = findCreature(name); if (c && creatureIds.has(c.id)) { creatureIds.delete(c.id); creatureNames.out.push(c.name); } }
         // Creatures the SITUATION line has in the scene ("skeletal warriors
-        // surge at the breach") are here, as the people it names are.
+        // surge at the breach") are here, as the people it names are - when
+        // the story itself names them too: the director's own wording is not
+        // enough ("the skeletal warrior's grip" was the Eternal Champion, not
+        // the Skeleton Warriors).
         const gone = new Set(creatureNames.out);
-        for (const c of creatures) if (!creatureIds.has(c.id) && !gone.has(c.name) && creatureNamedIn(parsed.situation, c)) { creatureIds.add(c.id); creatureNames.in.push(c.name); }
+        for (const c of creatures) if (!creatureIds.has(c.id) && !gone.has(c.name) && creatureNamedIn(parsed.situation, c) && creatureNamedIn(recentText, c)) { creatureIds.add(c.id); creatureNames.in.push(c.name); }
+        // A creature the story has stopped speaking of has gone (fled, fallen,
+        // left behind): out of the scene once the last few messages no longer
+        // name it - unless the user put it in by hand, or this briefing just
+        // brought it in. Otherwise it would linger, and be made to act.
+        const storyText = messages.slice(-6).map((m) => m.text).join('\n');
+        const heldIn = new Set(getChatDoc(chatKey).held.filter((h) => h.field === 'creatures' && h.op === 'add' && h.until > getChatDoc(chatKey).turn).map((h) => h.objectId));
+        const justIn = new Set(creatureNames.in);
+        for (const c of creatures) {
+            if (creatureIds.has(c.id) && !heldIn.has(c.id) && !justIn.has(c.name) && !creatureNamedIn(storyText, c)) { creatureIds.delete(c.id); creatureNames.out.push(c.name); }
+        }
         if (creatureNames.in.length || creatureNames.out.length) {
             setCanonical(chatKey, { creatureIds: [...creatureIds] }, { chatId, source: 'director', note: [creatureNames.in.length ? `${creatureNames.in.join(', ')} appear` : '', creatureNames.out.length ? `${creatureNames.out.join(', ')} gone` : ''].filter(Boolean).join('; ') });
         }

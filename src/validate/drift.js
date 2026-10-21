@@ -303,7 +303,8 @@ export function applyHolds(items, held) {
             else if (item.op === 'remove') turnBack = heldAs('cast', 'add', item.objectId);
             else if (item.op === 'clear') turnBack = held.some((h) => h.field === 'cast' && h.op === 'add');
         } else if (item.field === 'creatures') {
-            turnBack = list(item.observed).some((id) => heldAs('creatures', 'remove', id));
+            turnBack = list(item.observed).some((id) => heldAs('creatures', 'remove', id))
+                || list(item.canonical).some((id) => heldAs('creatures', 'add', id) && !list(item.observed).includes(id));
         }
         return turnBack ? { ...item, action: 'adjust', reason: `${item.reason ? `${item.reason}; ` : ''}you changed this by hand` } : item;
     });

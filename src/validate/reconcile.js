@@ -618,6 +618,9 @@ export async function holdUserScene(chatId, chatKey, before) {
         if (name) lines.push(`${name} is in this scene.`);
     }
     for (const id of (before.creatureIds ?? []).filter((x) => !(after.creatureIds ?? []).includes(x))) holds.push({ field: 'creatures', op: 'remove', objectId: id, until });
+    // Put in by hand: kept for a few replies even while the story is quiet
+    // about it (the director lets unmentioned creatures go).
+    for (const id of (after.creatureIds ?? []).filter((x) => !(before.creatureIds ?? []).includes(x))) holds.push({ field: 'creatures', op: 'add', objectId: id, until });
     if (!holds.length) return;
     const settings = getSettings();
     const fields = new Set(holds.map((h) => h.field));
