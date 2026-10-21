@@ -28,12 +28,14 @@ import { replyKeyOf, canUseAhead, shouldThinkAhead } from './ahead.js';
 import { gatherInputs } from '../guidance/sync.js';
 import { fitDirectorPrompt, promptBudget } from './fit.js';
 import { nextFight, fightFacts, woundsOf } from './fight.js';
+import { eventFacts } from '../events/model.js';
+import { eventForBriefing, eventAfterFight } from '../events/run.js';
 import { whoCouldTurnUp } from './whereabouts.js';
 import { isPower, powersAtWork, powersText } from '../library/powers.js';
 
 // How many replies a broken-off fight's wounds are remembered.
 const WOUNDS_KEPT = 30;
-import { markDead, deadText } from '../state/death.js';
+import { markDead, deadText, deadByName, bringBack } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
 import { creatureFormOf, readCount, addCount, takeCount, creatureLabel } from '../library/creature-form.js';
 import { parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
@@ -410,6 +412,9 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         lastActed: doc.powersActed,
         every: Number.isInteger(settings.director.powersEvery) ? settings.director.powersEvery : 8,
     }) : [];
+    // A structured event (src/events/): moved on when its stage ended in an
+    // earlier reply; the director sees the stage under way only.
+    const event = eventForBriefing(chatKey);
     // Trimmed to fit the director model's context (src/director/fit.js).
     const fitted = fitDirectorPrompt({
         ...guidance,
@@ -434,6 +439,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         ahead,
         travelAtNight: settings.director.travelAtNight === true,
         fightFacts: fightFacts(doc.fight, settings.director.fightReplies),
+        eventFacts: eventFacts(event, { placeName: event?.placeId ? everything.find((e) => e.id === event.placeId)?.name ?? '' : '', turn: getChatDoc(chatKey).turn }),
         deadText: deadText(doc),
         powersText: powersText(atWork),
     }, promptBudget(settings.director.contextTokens, settings.director.maxTokens));
@@ -453,6 +459,11 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     }
     const raw = preRaw ?? await callModelFirst([{ role: 'system', content: system }, { role: 'user', content: prompt }], settings.director.maxTokens);
     const parsed = parseDirectorNote(raw);
+    // The chat message this briefing's reply will be (SillyTavern's index): a
+    // swipe, a regeneration or a continue rewrites the last one. A death in
+    // it goes if that message is taken back (src/state/death.js).
+    const chatNow = SillyTavern.getContext().chat ?? [];
+    const replyIndex = ['swipe', 'regenerate', 'continue'].includes(type) ? Math.max(0, chatNow.length - 1) : chatNow.length;
     // A small model now and then tells the story instead of briefing it and
     // runs out of room before any format line (SCENE, TIME, MOVE...).
     const wroteLines = !!(parsed.scene || parsed.situation || parsed.time || parsed.move || parsed.enters.length || parsed.leaves.length);
@@ -656,7 +667,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             setCanonical(chatKey, { creatureIds: [...creatureIds], creatureCounts: counts }, { chatId, source: 'director', note: [creatureNames.in.length ? `${creatureNames.in.join(', ')} appear` : '', creatureNames.out.length ? `${creatureNames.out.join(', ')} gone` : ''].filter(Boolean).join('; ') || 'Creature numbers change' });
         }
         for (const { c, how } of creatureDeaths) {
-            if (await markDead(chatKey, { id: c.id, name: c.name, how, source: 'director', chatId })) console.info(LOG_PREFIX, `${c.name} died: ${how || 'in the story'}`);
+            if (await markDead(chatKey, { id: c.id, name: c.name, how, source: 'director', chatId, reply: replyIndex })) console.info(LOG_PREFIX, `${c.name} died: ${how || 'in the story'}`);
         }
         moves = after.names;
         if (moves.in.length || moves.out.length) {
@@ -669,8 +680,18 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             const key = d.name.toLowerCase();
             const who = characters.find((c) => [c.name, ...(c.aliases ?? c.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === key))
                 ?? characters.find((c) => getChatDoc(chatKey).canonical.castIds.includes(c.id) && c.name.toLowerCase().includes(key));
-            if (who && !playerNames.some((p) => p.toLowerCase() === who.name.toLowerCase()) && await markDead(chatKey, { id: who.id, name: who.name, how: d.how, source: 'director', chatId })) {
+            if (who && !playerNames.some((p) => p.toLowerCase() === who.name.toLowerCase()) && await markDead(chatKey, { id: who.id, name: who.name, how: d.how, source: 'director', chatId, reply: replyIndex })) {
                 console.info(LOG_PREFIX, `${who.name} died: ${d.how || 'in the story'}`);
+            }
+        }
+        // Back from the dead, when the story itself brings them back (RISES):
+        // only someone on the dead list whom the recent chat names.
+        for (const r of parsed.risings ?? []) {
+            const dead = deadByName(getChatDoc(chatKey).dead, r.name);
+            if (!dead || !mentionedIn(dead.name, storyText)) continue;
+            const intoScene = dead.wasHere || (dead.id.startsWith('crt_') ? 'creatureIds' : 'castIds');
+            if (await bringBack(chatKey, dead.id, { intoScene, chatId, note: `${dead.name} is back from the dead${r.how ? ` - ${r.how}` : ''}` })) {
+                console.info(LOG_PREFIX, `${dead.name} rose: ${r.how || 'back from the dead'}`);
             }
         }
         // The fight (src/director/fight.js): each fighter's condition kept
@@ -696,6 +717,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             for (const f of fight?.fighters ?? []) delete kept[f.name.toLowerCase()];
             d.wounds = kept;
         });
+        // A bout of a structured event is decided by the fight (src/events/).
+        eventAfterFight(chatKey, fight);
         // A kind of creature beaten or driven off in the fight is gone from
         // the scene (one being that goes down is only down, not dead).
         const beaten = (fight?.fighters ?? []).filter((f) => f.side === 'foe' && (f.condition === 'down' || f.condition === 'fled'))

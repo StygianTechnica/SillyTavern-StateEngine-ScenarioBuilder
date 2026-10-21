@@ -19,6 +19,7 @@ import { confirmAction } from './confirm.js';
 import { armTrigger, retireTrigger, clearFinishedTriggers } from '../triggers/run.js';
 import { listEntries, getSettingSummary } from '../library/library.js';
 import { downloadText, safeFileName } from '../store/files.js';
+import { eventCard } from './event-card.js';
 import { ws, rerender, markDirty } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
 
@@ -683,8 +684,9 @@ export async function renderGmPlan() {
     const show = getSettings().planner.showSpoilers === true;
     const places = await listEntries(ws.ctx.chatId, settingId, 'location').catch(() => []);
     const people = await listEntries(ws.ctx.chatId, settingId, 'character').catch(() => []);
+    const creatures = await listEntries(ws.ctx.chatId, settingId, 'creature').catch(() => []);
     return h('div', { class: 'sb-gm-plan' },
         h('div', { class: 'sb-scene-cols' },
-            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), volumesCard(gm), ideasCard(gm), todayCard(gm, show), agendaCard(gm, show), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
+            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), volumesCard(gm), ideasCard(gm), todayCard(gm, show), agendaCard(gm, show), eventCard(places, [...people, ...creatures]), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
             h('div', { class: 'sb-gm-col' }, paceCard(gm), settingsCard(gm))));
 }

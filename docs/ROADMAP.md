@@ -228,24 +228,34 @@ finds Archivist in its src/chat/archivist-link.js) and shows none of this
 without it. Scenario Builder offers the actions as callbacks on its public
 API (docs/api.md, SB-640..642); Pretty Panels owns where they appear.
 
-- [ ] **Object clicks open Scenario Builder.** With Scenario Builder
+- [x] **Object clicks open Scenario Builder.** Done 2026-10-21: Pretty
+  Panels opens the object through its provider's openEntry (Scenario
+  Builder's public API), setting "Open objects in Scenario Builder" (on).
+  Was: With Scenario Builder
   installed, clicking an object card opens its Scenario Builder page (the
   catalog sheet, `openSheet(entryId)` in src/ui/ws.js), not the State Engine
   / Pretty Panels object modal. Pretty Panels needs a replaceable "open
   object" callback that Scenario Builder registers; without it, the old
   modal. Perhaps a setting to keep the old modal.
-- [ ] **Buttons on character cards.** Actions to put on a character's card:
+- [x] **Buttons on character cards.** Done 2026-10-21: Pretty Panels'
+  Action Button element (palette: "Action", and a "Scenario Builder" row
+  with each action ready to drop); on a card template it acts on the card's
+  object. Scenario Builder offers open, leave (the scene), map, workspace
+  (getActions / runAction). Was: Actions to put on a character's card:
   remove them from the scene (as a LEAVES would - out of the canonical
   cast) and go to their page. Positioned by the user like any other field:
   a "Scenario Builder" tab in Pretty Panels' drag-on palette lists what
   Scenario Builder makes available, but the buttons belong to the object
   (each one acts on that card's entry).
-- [ ] **Map in one click.** A button that opens the Locations map
+- [x] **Map in one click.** (the "Open the map" action) A button that opens the Locations map
   (`openLocationMap()` in src/ui/catalog.js).
 - [ ] Nice to have: a **mini map** panel element - a small version of the
   map view with a pip per location, hover for details (name, what is
   there, who is there, travel time from here), click to open its page.
-- [ ] **Fight status in a panel (added 2026-10-20).** Expose the fight
+- [x] **Fight status in a panel (added 2026-10-20).** Done 2026-10-21:
+  sb__fight_active, _round, _summary, _fighters ("Graxx (foe) - wounded"),
+  _allies and _foes (character objects, for cards); preset version 13. Not
+  yet: a condition per card (needs a runtime field on the object). Was: Expose the fight
   tracker (src/director/fight.js, the chat document's `fight`) to State
   Engine as Scenario Builder variables, written like the other canonical
   values (src/guidance/sync.js): e.g. `sb__fight_active` (a flag, for
@@ -491,8 +501,13 @@ in their games, but wants combat resolution more configurable:
   out of the scene, listed to the director and narrator as never to be
   shown alive, and setCanonical keeps anyone but the user from putting
   them back. The user's "Bring back" (or adding them by hand) raises them.
-  Not yet: creatures (a creature entry is a kind, not one being), and
-  the planner's own prompts.
+  Added 2026-10-21: a story death remembers the reply it happened in, and
+  deleting, swiping or editing that reply undoes it (back in the scene if
+  they were there; deaths the user marked stay); the director's RISES line
+  brings someone back when the latest chat itself does (resurrected, raised
+  as undead) - only for someone on the dead list the recent chat names.
+  Not yet: swiping BACK to the reply with the death does not mark it
+  again; the planner's own prompts.
 - [x] **Creatures: one being or a kind** (src/library/creature-form.js). One
   being (a pet, a mount, a familiar, a unique monster) behaves like a person
   in the scene and can die; a kind (zombies, wolves) has a count in the scene
@@ -548,7 +563,17 @@ or knows when a step is over. Four kinds it must be able to carry:
   trigger). Difficulty grows, is fixed, random, or follows the story's
   tension. Not yet: "after a while" on the calendar, a board of
   several at once to choose from.
-- [ ] Design first: what an event is (stages in order, or a graph of
+- [x] **Design written (2026-10-21):** docs/DESIGN - STRUCTURED EVENTS.md.
+  **Phase 1, the arena, built:** set up in the GM Plan (Event card) -
+  opponents in order, an opening and a close, a prize; the director sees
+  the stage under way only (THE EVENT) and the narrator the same, shorter;
+  a bout ends with the fight tracker (foes down or fled: won; a foe won:
+  lost - which ends the arena); moments last one reply; the user can mark
+  won / lost / skip or end it; stages keyed to the reply count, so swipes
+  never move it on twice; sb__event_* for panels. No extra model calls.
+  Next: tournament (bracket, off-screen matches, waits on the calendar),
+  dungeon crawl (rooms on the routes), templates, generated events.
+- [x] Design first (was): what an event is (stages in order, or a graph of
   stages), what each stage holds (who or what is faced, its place, what
   ends it - a win, a loss, leaving, a day), the state it keeps (round,
   bracket, opponents left, rooms cleared) and what follows a win or a loss.

@@ -93,6 +93,7 @@ import { normalizeEnrichments } from '../generate/revert.js';
 import { normalizeCounts } from '../library/creature-form.js';
 import { normalizePowerMeta } from '../library/powers.js';
 import { normalizeFight } from '../director/fight.js';
+import { normalizeEvent, normalizeEventsDone } from '../events/model.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
 export const CHAT_SCHEMA_VERSION = 1;
@@ -396,6 +397,10 @@ export function emptyChatDoc() {
         nsfwMode: 'auto',
         // The fight in the scene (src/director/fight.js), or null.
         fight: null,
+        // The structured event (an arena...) planned or under way, or null;
+        // finished ones (src/events/model.js).
+        event: null,
+        eventsDone: [],
         // Who has died in this story (src/state/death.js).
         dead: [],
         // Wounds from fights broken off: { [lower-case name]: { condition,
@@ -439,6 +444,8 @@ export function normalizeChatDoc(doc) {
         // Whether the scene is intimate: the story's reading (auto) or the user's.
         nsfwMode: ['auto', 'on', 'off'].includes(d.nsfwMode) ? d.nsfwMode : 'auto',
         fight: normalizeFight(d.fight),
+        event: normalizeEvent(d.event),
+        eventsDone: normalizeEventsDone(d.eventsDone),
         dead: normalizeDead(d.dead),
         powersActed: isObject(d.powersActed) ? Object.fromEntries(Object.entries(d.powersActed).filter(([k, v]) => k && Number.isInteger(v))) : {},
         wounds: isObject(d.wounds) ? Object.fromEntries(Object.entries(d.wounds).filter(([k, w]) => k && isObject(w) && typeof w.condition === 'string' && Number.isInteger(w.turn))) : {},

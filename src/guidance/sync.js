@@ -41,6 +41,8 @@ import { momentAt } from '../calendar/clock.js';
 import { routesFrom, placesFurtherOn } from '../library/routes.js';
 import { splitNote } from '../director/prompt.js';
 import { weatherText } from '../calendar/weather.js';
+import { fightValues } from '../director/fight.js';
+import { eventValues } from '../events/model.js';
 
 export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
 
@@ -338,6 +340,17 @@ export async function gatherInputs(chatId, chatKey) {
         }
     }
 
+    // The fight, for a panel (sb__fight_*): fighters who are characters
+    // are found by name or alias - only while a fight runs.
+    const fight = settings.director.enabled ? doc.fight : null;
+    let characterId = () => '';
+    if (fight && !fight.ended) {
+        const byName = new Map();
+        for (const o of await listObjects(chatId, 'character')) for (const n of [o.name, ...(o.aliases ?? [])]) byName.set(String(n).toLowerCase(), o.id);
+        characterId = (name) => byName.get(String(name).toLowerCase()) ?? '';
+    }
+    const fightVars = fightValues(fight, settings.director.fightReplies, characterId);
+
     return {
         guidance: {
             // The game master's briefing (src/director/), written before
@@ -368,6 +381,7 @@ export async function gatherInputs(chatId, chatKey) {
             dead: deadText(doc),
             // The fight the director keeps (src/director/fight.js).
             fight: settings.director.enabled ? doc.fight : null,
+            event: settings.director.enabled ? doc.event : null,
             othersTracked,
             // Secrets kept from those present; oaths binding them.
             secrets: secretRules,
@@ -407,6 +421,8 @@ export async function gatherInputs(chatId, chatKey) {
             canon_quests: questIds,
             canon_lore: lore.map((x) => x.id),
             canon_events: events,
+            ...fightVars,
+            ...eventValues(settings.director.enabled ? doc.event : null),
         },
         settingId,
         calendarId: moment?.calendarId ?? '',

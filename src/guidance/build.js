@@ -15,6 +15,7 @@ import { WORLD_TYPES, describeMagic, describeTech, lookLines } from '../library/
 import { isPlaceholder } from '../director/prompt.js';
 import { creatureLabel } from '../library/creature-form.js';
 import { fightGuidance } from '../director/fight.js';
+import { eventGuidance } from '../events/model.js';
 import { intimacySection } from './intimacy.js';
 
 const labelOf = (list, id) => list.find(([key]) => key === id)?.[1] ?? id;
@@ -41,6 +42,7 @@ export const SECTIONS = Object.freeze([
     { key: 'direction', title: 'Where it should go', priority: 8, keep: true },
     { key: 'triggered', title: 'Set off by the story', priority: 9, keep: true },
     { key: 'fight', title: 'The fight', priority: 9, keep: true },
+    { key: 'event', title: 'The event', priority: 9, keep: true },
     { key: 'intimacy', title: 'Intimate scene', priority: 8, keep: true },
     { key: 'absent', title: 'Not in this scene', priority: 9, keep: true },
     { key: 'alone', title: 'No one else here', priority: 9, keep: true },
@@ -369,6 +371,8 @@ const BUILDERS = {
     dead: (input) => (clean(input.dead) ? { full: `Dead and gone in this story - they can be mourned, remembered or spoken of, but never written alive, speaking or acting: ${clean(input.dead)}`, compact: '' } : null),
     // Each fighter's condition, kept from reply to reply (src/director/fight.js).
     fight: (input) => (fightGuidance(input.fight) ? { full: fightGuidance(input.fight), compact: '' } : null),
+    // A structured event's stage under way, never what comes next (src/events/).
+    event: (input) => (eventGuidance(input.event) ? { full: eventGuidance(input.event), compact: '' } : null),
     intimacy: (input) => intimacySection(input),
     alone: (input) => aloneSection(input),
     direction: (input) => withOutcomes(directorPart(input.director, 'direction')),
@@ -423,6 +427,7 @@ export function buildGuidance(input) {
         absent: 'People you took out of the scene by hand, for the next few replies.',
         dead: 'Who has died in this story (marked by the director or by you on their sheet); they never come back.',
         fight: 'The fight the director keeps: each fighter but the player character, their condition from reply to reply, and when it ends.',
+        event: 'A structured event under way (an arena, set up in the GM Plan): the stage now, and never who comes next.',
         triggered: 'Story triggers the story has just set off (Story triggers in the GM Plan): played in this reply, and on a swipe of it.',
         alone: 'Shown when the player character is the only one present: the world, its creatures and the consequences carry the reply.',
         location: input.location?.path?.length ? `Canonical location, its path and inherited environment; canonical time and weather.` : 'Canonical time and weather.',
@@ -453,7 +458,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
     ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'secrets', 'corrections', 'dead']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
-    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'triggered', 'fight', 'intimacy', 'absent', 'alone']],
+    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'triggered', 'fight', 'event', 'intimacy', 'absent', 'alone']],
 ]);
 
 // buildGuidance()'s result -> { [variable]: text } ('' for an empty part).

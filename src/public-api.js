@@ -1,5 +1,7 @@
-// Scenario Builder's public, read-only API for other extensions (spec
-// 11.5). Reach it either way:
+// Scenario Builder's public API for other extensions (spec 11.5) - read-
+// only, except for the ACTIONS: things the user can do from another
+// extension's panel (Pretty Panels' Action Buttons), each the same as doing
+// it in Scenario Builder. Reach it either way:
 //   - window.StateEngineScenarioBuilder, set once Scenario Builder has
 //     initialized (also the signal that it is installed and ready);
 //   - an ES module import of this file.
@@ -13,11 +15,17 @@
 //   getGuidance()           -> { text, tokens, stateBlock, inert, reason }
 //   getRelationships(id)    -> Promise<[{ otherId, otherName, kind, note, direction }]>
 //                              the relationships the user wrote for an entry (both ways)
+//   getActions()            -> [{ id, label, icon, scope, description }] what a
+//                              button can do: scope 'object' acts on one object
+//                              (a card's), 'panel' needs none
+//   runAction(id, objectId?) -> Promise<{ ok, message }>
+//   openEntry(id)           -> Promise<boolean> the entry's page in Scenario Builder
 //   SCENARIO_CHANGED_EVENT  SillyTavern event, payload chatKey
 //   DRIFT_CHANGED_EVENT     SillyTavern event, payload chatKey
 //
 // Every returned object is a copy. See docs/api.md.
 
+import { LOG_PREFIX } from './constants.js';
 import { getCurrentChatRef, chatKeyFor } from './store/chat-ref.js';
 import { getChatDoc, SCENARIO_CHANGED_EVENT } from './store/chat-store.js';
 import { getObjectTypes, getBoundSettingId, listEntries, getEntry as libraryEntry, getLocationPathNames } from './library/library.js';
@@ -95,10 +103,59 @@ export async function getRelationships(id) {
     return out;
 }
 
+// ---- actions
+
+const ACTIONS = Object.freeze([
+    { id: 'open', label: 'Open in Scenario Builder', icon: 'book-atlas', scope: 'object', description: 'Opens its page in Scenario Builder' },
+    { id: 'leave', label: 'Leave the scene', icon: 'person-walking-arrow-right', scope: 'object', description: 'Takes them out of the scene, as if they walked off' },
+    { id: 'map', label: 'Open the map', icon: 'map', scope: 'panel', description: 'Opens the map of the world\'s places' },
+    { id: 'workspace', label: 'Open Scenario Builder', icon: 'book-atlas', scope: 'panel', description: 'Opens Scenario Builder where it was left' },
+]);
+
+export function getActions() {
+    return structuredClone(ACTIONS);
+}
+
+// The UI loads on demand: the read-only calls never pull it in.
+const ui = () => Promise.all([import('./ui/workspace.js'), import('./ui/ws.js'), import('./ui/catalog.js')]);
+
+export async function openEntry(id) {
+    const chat = open();
+    if (!chat || !id) return false;
+    const entry = await getEntry(id);
+    if (!entry) return false;
+    const [{ openWorkspace }, { openSheet }] = await ui();
+    await openWorkspace({ tab: 'catalog' });
+    openSheet(id, entry.type);
+    return true;
+}
+
+export async function runAction(id, objectId = null) {
+    try {
+        if (id === 'open') return (await openEntry(objectId)) ? { ok: true, message: '' } : { ok: false, message: 'That is not in this chat\'s world.' };
+        if (id === 'leave') {
+            const { leaveScene } = await import('./state/scene-actions.js');
+            return leaveScene(objectId, (await getEntry(objectId))?.name ?? '');
+        }
+        if (id === 'map' || id === 'workspace') {
+            if (!open()) return { ok: false, message: 'Open a chat first.' };
+            const [{ openWorkspace }, , { openLocationMap }] = await ui();
+            await openWorkspace();
+            if (id === 'map') openLocationMap();
+            return { ok: true, message: '' };
+        }
+        return { ok: false, message: `Scenario Builder has no action "${id}".` };
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'action failed', id, err);
+        return { ok: false, message: err?.message ?? String(err) };
+    }
+}
+
 export { SCENARIO_CHANGED_EVENT, DRIFT_CHANGED_EVENT };
 
 export const scenarioBuilderApi = Object.freeze({
     getLibrary, getEntry, getCurrentScene, getLocationPath, getPerspective, getDrift, getGuidance, getRelationships,
+    getActions, runAction, openEntry,
     SCENARIO_CHANGED_EVENT, DRIFT_CHANGED_EVENT,
 });
 

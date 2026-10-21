@@ -27,7 +27,7 @@ import { withStateEngineCast, SE_CAST, withStateEngineCreatures, SE_CREATURES } 
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry, playerIdOf, listEntries } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
-import { deadIds, withoutDead } from '../state/death.js';
+import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
 import { catchUpWithStory, holdStoryWeather, travelAlong, followStoryTimeOfDay, followStoryElapsed } from '../calendar/clock.js';
 import { detectDrift, decide, DEFAULT_POLICIES, namedOnlyAsOwner, namedAtAll, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
@@ -598,7 +598,16 @@ export async function revertFromMessage(fromIndex) {
     const affected = (source) => sourceIndex(source) >= fromIndex;
     const toUndo = doc.history.filter((h) => !h.undone && (h.source === 'validation' || h.source === 'story') && affected(h.sourceMessage)).reverse();
     const touched = toUndo.length || doc.drift.some((d) => affected(d.source)) || doc.corrections.some((c) => affected(c.source)) || doc.candidates.some((c) => affected(c.source)) || affected(doc.lastReply);
-    if (!touched) return;
+    // Deaths those replies brought about go with them (src/state/death.js) -
+    // after the scene is put back, so whoever died is in it again.
+    const deaths = deathsFrom(doc.dead, fromIndex);
+    if (!touched && !deaths.length) return;
+    if (!touched) {
+        await undoDeathsFrom(chatKey, fromIndex, ref.chatId);
+        await pushCanonicalToObserved(ref.chatId, chatKey);
+        announce(chatKey);
+        return;
+    }
 
     // A later change by the user (the date set by hand) is not taken back.
     const patch = revertPatch(doc.history, toUndo.map((h) => h.id), doc.canonical);
@@ -615,6 +624,7 @@ export async function revertFromMessage(fromIndex) {
             if (affected(d.lastReply)) d.lastReply = '';
         },
     });
+    if (deaths.length) await undoDeathsFrom(chatKey, fromIndex, ref.chatId);
     await pushCanonicalToObserved(ref.chatId, chatKey);
     announce(chatKey);
 }

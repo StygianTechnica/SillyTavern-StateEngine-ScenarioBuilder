@@ -336,9 +336,11 @@ export function dossierText(input) {
         lines.push(String(input.powersText).trim());
     }
     // Who has died in this story (src/state/death.js).
-    if (clean(input.deadText)) { section('THE DEAD (gone for good - they can be mourned, remembered or spoken of, never shown alive, speaking or acting)'); lines.push(clean(input.deadText)); }
+    if (clean(input.deadText)) { section('THE DEAD (gone for good - they can be mourned, remembered or spoken of, never shown alive, speaking or acting - unless the latest chat itself brings one back: RISES)'); lines.push(clean(input.deadText)); }
     // The fight as Scenario Builder keeps it (src/director/fight.js).
     if (clean(input.fightFacts)) { section('THE FIGHT SO FAR'); lines.push(clean(input.fightFacts)); }
+    // A structured event under way - its current stage only (src/events/).
+    if (clean(input.eventFacts)) { section('THE EVENT (a fixed programme - this stage only)'); lines.push(clean(input.eventFacts)); }
     if (input.secrets?.length) {
         section('SECRETS AND OATHS (people act only on what they know)');
         for (const r of input.secrets.slice(0, 8)) lines.push(`- ${r}`);
@@ -452,6 +454,11 @@ export function buildDirectorPrompt(input) {
         '',
         `If someone other than ${userName} dies in this reply - killed, not just beaten, wounded or knocked out - a line for each, with how in a few words; for creatures of a kind, how many fell (DIES | 2 zombies | cut down by Varyn). The dead stay dead:`,
         'DIES | <name> | <how>',
+        ...(clean(input.deadText) ? [
+            '',
+            'Only if the latest chat itself brings back someone under THE DEAD - resurrected, raised as undead, revived, or shown never to have died - a line for each. Never on your own, and never because it would suit the story:',
+            'RISES | <name> | <how, a few words>',
+        ] : []),
         ...(clean(input.powersText) ? [
             '',
             `A power under POWERS AT WORK may act in this reply - only if it fits, and never in person: a sign, a voice, a vision or dream to someone tied to it, or a blessing on its champion (a surge of strength, a ward, a miracle that turns a fight). Anyone may call on a power; it answers only as its nature and the story warrant, or stays silent. A power answering a call - above all from someone not its own - may demand a price or a favour in return, sometimes a dire one; the one who called decides whether to pay. It never acts for ${userName} or decides what ${userName} does. If one acts, a line (the price only when it demands one, naming who owes it):`,
@@ -630,7 +637,7 @@ export function isPlaceholder(value) {
 }
 
 // A format line, whether or not it could be read - never left in the prose.
-const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|POWER|NEW|RENAME|BEAT)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|NEW|RENAME|BEAT)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
@@ -653,6 +660,7 @@ export function parseDirectorNote(raw) {
     const beats = [];
     const fights = [];
     const deaths = [];
+    const risings = [];
     const powers = [];
     for (const line of text.split('\n')) {
         // POWER | <name> | <what it did> | <its price, if any> (src/library/powers.js)
@@ -661,6 +669,13 @@ export function parseDirectorNote(raw) {
             const name = clean(pw[1]).replace(/^["'*]+|["'*.]+$/g, '');
             const price = isPlaceholder(pw[3]) ? '' : clean(pw[3]).replace(/^(?:price|cost|demands?)\s*[:\-–]\s*/i, '');
             if (name && !isPlaceholder(name) && !/^(none|-)$/i.test(name) && powers.length < 3) powers.push({ name, what: isPlaceholder(pw[2]) ? '' : clean(pw[2]), price: /^(none|nothing|-)$/i.test(price) ? '' : price });
+            continue;
+        }
+        // RISES | <name> | <how> - back from the dead (src/state/death.js)
+        const rs = line.match(/^\s*(?:[-*]\s*)?\**(?:RISES|ROSE|REVIVED|REVIVES)\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?$/i);
+        if (rs) {
+            const name = clean(rs[1]).replace(/^["'*]+|["'*.]+$/g, '');
+            if (name && !isPlaceholder(name) && !/^(none|no one|nobody|-)$/i.test(name) && risings.length < 4) risings.push({ name, how: isPlaceholder(rs[2]) ? '' : clean(rs[2]) });
             continue;
         }
         // DIES | <name> | <how> (src/state/death.js)
@@ -765,7 +780,7 @@ export function parseDirectorNote(raw) {
     // A briefing cut off or told as story lost its "Next:" end; any other
     // paragraph is not direction.
     const parts = tidy.flaws.length && !MARKER.test(text) ? { summary: text, direction: '' } : splitNote(text);
-    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, fights, deaths, powers };
+    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, fights, deaths, risings, powers };
 }
 
 // The first library entry `text` names that nothing the scene stands on

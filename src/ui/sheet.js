@@ -14,10 +14,9 @@ import { relationsOf } from '../library/relations.js';
 import { getSettingDoc } from '../store/setting-store.js';
 import { setCanonical } from '../state/canonical.js';
 import { setNarrative, revertNarrative } from '../state/narrative.js';
-import { pushCanonicalToObserved, holdUserScene } from '../validate/reconcile.js';
+import { changeScene } from '../state/scene-actions.js';
 import { syncNow } from '../guidance/sync.js';
 import { getSettings } from '../settings.js';
-import { runDirector } from '../director/run.js';
 import { safeImageSrc } from '../images/attach.js';
 import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
@@ -1186,20 +1185,8 @@ async function removeEntry(entry) {
 }
 
 // A user change to the canonical scene; the story variables and the
-// guidance follow at once.
+// guidance follow at once (src/state/scene-actions.js).
 export async function setScene(patch, note) {
     const { chatId, chatKey } = ws.ctx;
-    const before = structuredClone(getChatDoc(chatKey).canonical);
-    setCanonical(chatKey, patch, { source: 'user', note, chatId });
-    // A move or a change of who is here, made by hand: it holds over the
-    // story's reading for a few replies, the model is told, and the game
-    // master's briefing is written again for the new scene.
-    const after = getChatDoc(chatKey).canonical;
-    const sceneChanged = before.locationId !== after.locationId || JSON.stringify(before.castIds) !== JSON.stringify(after.castIds) || JSON.stringify(before.creatureIds) !== JSON.stringify(after.creatureIds);
-    if (sceneChanged) await holdUserScene(chatId, chatKey, before);
-    await pushCanonicalToObserved(chatId, chatKey);
-    await syncNow();
-    if (sceneChanged && getSettings().director.enabled) {
-        void runDirector(chatId, chatKey, { type: 'continue', force: true }).then(() => syncNow());
-    }
+    await changeScene(chatId, chatKey, patch, note);
 }

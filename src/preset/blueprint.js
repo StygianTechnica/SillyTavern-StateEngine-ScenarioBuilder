@@ -42,7 +42,9 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 // 7: sb__scene_creatures (the creatures the story has in the scene).
 // 8: sb__canon_summary; scene summary and title instructions tightened.
 // 9: sb__scene_characters adds who the messages show here but the list lacks.
-export const PRESET_VERSION = 12;
+// 13: the fight (sb__fight_*) and the structured event (sb__event_*), for
+//     panels that show them while they run.
+export const PRESET_VERSION = 13;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -203,7 +205,38 @@ export const OUTPUT_VARIABLES = Object.freeze([
 ]);
 
 // Calculated variables last: their dependencies must exist first.
-export const ALL_VARIABLES = Object.freeze([...OBSERVED_VARIABLES, ...QUEST_VARIABLES, ...CANONICAL_VARIABLES, ...OUTPUT_VARIABLES, ...CALCULATED_VARIABLES]);
+// The fight tracker (src/director/fight.js fightValues), for panels: all
+// empty while no fight runs, so a panel can show itself on fight_active.
+export const FIGHT_VARIABLES = Object.freeze([
+    ['fight_active', {
+        label: 'Fight under way', description: 'On while a fight runs - for a panel that shows only then.',
+        type: 'boolean', defaultValue: 'false', scope: 'chat', showInTracker: false, behaviors: { prompted: false, increment: false },
+    }],
+    ['fight_round', {
+        label: 'Fight round', description: 'Which reply of the fight this is (0: no fight).',
+        type: 'number', defaultValue: 0, scope: 'chat', showInTracker: false, behaviors: { prompted: false, increment: false },
+    }],
+    ['fight_summary', text('Fight', 'The fight in a line: the round and how each fighter stands.', { showInTracker: false })],
+    ['fight_fighters', {
+        label: 'Fighters', description: 'Each fighter, their side and condition: "Graxx (foe) - wounded".',
+        type: 'array', itemType: 'string', defaultValue: '[]', scope: 'chat', showInTracker: false, behaviors: { prompted: false, increment: false },
+    }],
+    ['fight_allies', { ...objects('Allies fighting', 'The characters fighting on the player\'s side.', 'character'), showInTracker: false }],
+    ['fight_foes', { ...objects('Foes fighting', 'The characters fighting against the player\'s side.', 'character'), showInTracker: false }],
+]);
+
+// A structured event under way (src/events/model.js eventValues), for panels.
+export const EVENT_VARIABLES = Object.freeze([
+    ['event_active', {
+        label: 'Event under way', description: 'On while a structured event (an arena) runs.',
+        type: 'boolean', defaultValue: 'false', scope: 'chat', showInTracker: false, behaviors: { prompted: false, increment: false },
+    }],
+    ['event_name', text('Event', 'The structured event under way.', { showInTracker: false })],
+    ['event_stage', text('Event stage', 'The stage now: "Bout 2 of 4: Graxx", "The opening".', { showInTracker: false })],
+    ['event_progress', text('Event progress', 'How far it has come: "2 / 4".', { showInTracker: false })],
+]);
+
+export const ALL_VARIABLES = Object.freeze([...OBSERVED_VARIABLES, ...QUEST_VARIABLES, ...CANONICAL_VARIABLES, ...FIGHT_VARIABLES, ...EVENT_VARIABLES, ...OUTPUT_VARIABLES, ...CALCULATED_VARIABLES]);
 
 export const OBSERVED_NAMES = Object.freeze(OBSERVED_VARIABLES.map(([name]) => name));
 export const CANONICAL_NAMES = Object.freeze(CANONICAL_VARIABLES.map(([name]) => name));

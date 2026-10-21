@@ -166,6 +166,25 @@ export function fightFacts(fight, limit = FIGHT_REPLIES) {
     return `After ${f.round} ${f.round === 1 ? 'reply' : 'replies'}: ${who}. A fight ends within ${limit} replies - ${left === 1 ? 'this is its last: it ends in this reply' : `at most ${left} more`}. A condition only gets worse unless the story heals it.`;
 }
 
+// The fight as Scenario Builder's variables, for a panel that shows it while
+// it runs (Pretty Panels: a flag to show the panel, the round, a line per
+// fighter, and the fighters who are characters, by side, for cards).
+// `characterId(name)`: the character a fighter is, or '' (a creature, an
+// unnamed guard). With no fight running, everything is empty.
+export function fightValues(fight, limit = FIGHT_REPLIES, characterId = () => '') {
+    const f = normalizeFight(fight);
+    if (!f || f.ended) return { fight_active: false, fight_round: 0, fight_summary: '', fight_fighters: [], fight_allies: [], fight_foes: [] };
+    const ids = (side) => [...new Set(f.fighters.filter((x) => x.side === side).map((x) => characterId(x.name)).filter(Boolean))];
+    return {
+        fight_active: true,
+        fight_round: f.round,
+        fight_summary: `Round ${f.round} of at most ${limit}: ${f.fighters.map((x) => `${x.name} ${x.condition}`).join(', ')}`,
+        fight_fighters: f.fighters.map((x) => `${x.name} (${x.side}) - ${x.condition}`),
+        fight_allies: ids('ally'),
+        fight_foes: ids('foe'),
+    };
+}
+
 // The narrator's lines for the fight this reply - '' when there is none.
 export function fightGuidance(fight) {
     const f = normalizeFight(fight);

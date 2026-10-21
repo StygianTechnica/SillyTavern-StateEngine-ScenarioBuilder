@@ -1,8 +1,10 @@
 // Death is remembered (docs/ROADMAP.md, Combat). Someone who dies in a story
 // is marked dead in that chat, taken out of the scene, and never brought
 // back by the director, the story's reading, State Engine's tracker or the
-// review - unless the user brings them back by hand (raised as undead,
-// resurrected). They can still be mourned, remembered and spoken of.
+// review - unless the story itself brings them back (the director's RISES
+// line: resurrected, raised as undead), the user does (Bring back), or the
+// reply they died in is taken back (deleted, swiped or edited - their death
+// goes with it). They can still be mourned, remembered and spoken of.
 //
 // The record is the chat document's `dead` list. The guard is in
 // setCanonical (src/state/canonical.js): a cast change from anyone but the
@@ -13,6 +15,7 @@ const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 export const DEAD_LIMIT = 200;
+const SCENE_KEYS = Object.freeze(['castIds', 'creatureIds']);
 
 export function normalizeDead(list) {
     const seen = new Set();
@@ -24,6 +27,12 @@ export function normalizeDead(list) {
         at: clean(d.at),
         // Who said so: the director (from the story) or the user.
         source: d.source === 'user' ? 'user' : 'director',
+        // The chat message (SillyTavern's index) of the reply they died in -
+        // a story death only; taking that reply back undoes it.
+        reply: Number.isInteger(d.reply) && d.reply >= 0 ? d.reply : null,
+        // Where in the scene they were when they died ('castIds' or
+        // 'creatureIds'), so an undone death puts them back.
+        wasHere: SCENE_KEYS.includes(d.wasHere) ? d.wasHere : '',
     })).filter((d) => d.id && !seen.has(d.id) && seen.add(d.id)).slice(-DEAD_LIMIT);
 }
 
@@ -32,6 +41,16 @@ export const isDead = (doc, id) => (doc?.dead ?? []).some((d) => d.id === id);
 
 // The cast with the dead taken out. -> ids
 export const withoutDead = (ids, dead) => (ids ?? []).filter((id) => !dead.has(id));
+
+// The story deaths a reply from message `fromIndex` on brought about - those
+// that go when the chat is taken back to before it. The user's own stay.
+export const deathsFrom = (dead, fromIndex) => (dead ?? []).filter((d) => d.source === 'director' && d.reply !== null && d.reply >= fromIndex);
+
+// The dead person a RISES line names. -> their record or null.
+export function deadByName(dead, name) {
+    const key = clean(name).toLowerCase();
+    return (dead ?? []).find((d) => d.name.toLowerCase() === key) ?? null;
+}
 
 // What the director and the narrator are told: the most recent deaths.
 // -> text, or '' when no one has died.
@@ -43,18 +62,20 @@ export function deadText(doc, { max = 8 } = {}) {
 
 // ---- runners (the chat document; never throw)
 
-// Marks someone dead in this chat and takes them out of the scene.
+// Marks someone dead in this chat and takes them out of the scene. `reply`:
+// the message index of the reply they die in (a story death).
 // -> true when they were marked now.
-export async function markDead(chatKey, { id, name = '', how = '', source = 'director', chatId = null } = {}) {
+export async function markDead(chatKey, { id, name = '', how = '', source = 'director', chatId = null, reply = null } = {}) {
     try {
         if (!clean(id)) return false;
         const { getChatDoc, updateChatDoc } = await import('../store/chat-store.js');
         const { setCanonical } = await import('./canonical.js');
         if (isDead(getChatDoc(chatKey), id)) return false;
-        updateChatDoc(chatKey, (d) => { d.dead = normalizeDead([...d.dead, { id, name, how, at: new Date().toISOString(), source }]); });
+        const wasHere = SCENE_KEYS.find((key) => getChatDoc(chatKey).canonical[key].includes(id)) ?? '';
+        updateChatDoc(chatKey, (d) => { d.dead = normalizeDead([...d.dead, { id, name, how, at: new Date().toISOString(), source, reply, wasHere }]); });
         const doc = getChatDoc(chatKey);
         // A person, or a creature that is one being (a pet, a mount).
-        for (const key of ['castIds', 'creatureIds']) {
+        for (const key of SCENE_KEYS) {
             if (doc.canonical[key].includes(id)) {
                 setCanonical(chatKey, { [key]: doc.canonical[key].filter((x) => x !== id) }, { chatId, source: source === 'user' ? 'user' : 'director', note: `${name || 'Someone'} died${how ? ` - ${how}` : ''}` });
             }
@@ -67,13 +88,36 @@ export async function markDead(chatKey, { id, name = '', how = '', source = 'dir
 }
 
 // Brings someone back (the user's choice): no longer dead in this chat.
-export async function bringBack(chatKey, id) {
+// With `intoScene` ('castIds' | 'creatureIds') they are in the scene again.
+export async function bringBack(chatKey, id, { intoScene = '', chatId = null, note = '' } = {}) {
     try {
-        const { updateChatDoc } = await import('../store/chat-store.js');
+        const { getChatDoc, updateChatDoc } = await import('../store/chat-store.js');
         updateChatDoc(chatKey, (d) => { d.dead = d.dead.filter((x) => x.id !== id); });
+        if (SCENE_KEYS.includes(intoScene)) {
+            const { setCanonical } = await import('./canonical.js');
+            const list = getChatDoc(chatKey).canonical[intoScene];
+            if (!list.includes(id)) setCanonical(chatKey, { [intoScene]: [...list, id] }, { chatId, source: 'revert', note: note || 'Back from the dead' });
+        }
         return true;
     } catch (err) {
         console.warn('[ScenarioBuilder] could not bring someone back', err);
         return false;
+    }
+}
+
+// The chat was taken back to before message `fromIndex` (a reply deleted,
+// swiped or edited): the deaths those replies brought about are undone, and
+// whoever was in the scene when they died is back in it. -> names brought back
+export async function undoDeathsFrom(chatKey, fromIndex, chatId = null) {
+    try {
+        const { getChatDoc } = await import('../store/chat-store.js');
+        const back = [];
+        for (const d of deathsFrom(getChatDoc(chatKey).dead, fromIndex)) {
+            if (await bringBack(chatKey, d.id, { intoScene: d.wasHere, chatId, note: `${d.name}'s death was taken back with the reply` })) back.push(d.name);
+        }
+        return back;
+    } catch (err) {
+        console.warn('[ScenarioBuilder] could not undo the deaths', err);
+        return [];
     }
 }

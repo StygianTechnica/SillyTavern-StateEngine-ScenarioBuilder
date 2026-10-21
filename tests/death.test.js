@@ -1,5 +1,5 @@
-import { normalizeDead, deadIds, withoutDead, deadText, isDead } from '../src/state/death.js';
-import { parseDirectorNote, dossierText } from '../src/director/prompt.js';
+import { normalizeDead, deadIds, withoutDead, deadText, isDead, deathsFrom, deadByName } from '../src/state/death.js';
+import { parseDirectorNote, dossierText, buildDirectorPrompt } from '../src/director/prompt.js';
 import { normalizeChatDoc } from '../src/store/schema.js';
 import { buildGuidance, guidanceParts } from '../src/guidance/build.js';
 
@@ -11,7 +11,7 @@ const doc = { dead: normalizeDead([
 
 describe('the dead of a story', () => {
     it('are kept once each, with how they died', () => {
-        expect(doc.dead).toEqual([{ id: 'chr_aldric', name: 'Lord Aldric', how: 'run through by Varyn', at: '2026-10-20', source: 'director' }]);
+        expect(doc.dead).toEqual([{ id: 'chr_aldric', name: 'Lord Aldric', how: 'run through by Varyn', at: '2026-10-20', source: 'director', reply: null, wasHere: '' }]);
         expect(isDead(doc, 'chr_aldric')).toBe(true);
         expect(normalizeChatDoc({}).dead).toEqual([]);
     });
@@ -32,5 +32,33 @@ describe('the dead of a story', () => {
         const parts = guidanceParts(buildGuidance({ location: { path: ['Hall'] }, dead: deadText(doc), budget: 2000 }));
         expect(parts.guidance_scene).toContain('never written alive, speaking or acting: Lord Aldric (run through by Varyn).');
         expect(deadText({ dead: [] })).toBe('');
+    });
+
+    it('remember the reply they died in, and go when it is taken back - those the user marked stay', () => {
+        const dead = normalizeDead([
+            { id: 'chr_a', name: 'Aldric', source: 'director', reply: 12, wasHere: 'castIds' },
+            { id: 'chr_b', name: 'Bren', source: 'director', reply: 8 },
+            { id: 'chr_c', name: 'Cass', source: 'user' },
+            { id: 'crt_d', name: 'Old Dog', source: 'director', reply: 14, wasHere: 'creatureIds' },
+        ]);
+        expect(deathsFrom(dead, 12).map((d) => d.id)).toEqual(['chr_a', 'crt_d']);
+        expect(deathsFrom(dead, 9).map((d) => d.id)).toEqual(['chr_a', 'crt_d']);
+        expect(deathsFrom(dead, 0).map((d) => d.id)).toEqual(['chr_a', 'chr_b', 'crt_d']);
+        expect(deathsFrom(dead, 15)).toEqual([]);
+        expect(dead[0].wasHere).toBe('castIds');
+    });
+
+    it('can rise when the story brings them back (RISES), kept out of the prose', () => {
+        const parsed = parseDirectorNote('RISES | Lord Aldric | raised by the necromancer\nREVIVED | none\n\nHis eyes open.');
+        expect(parsed.risings).toEqual([{ name: 'Lord Aldric', how: 'raised by the necromancer' }]);
+        expect(parsed.note).toBe('His eyes open.');
+        expect(deadByName(doc.dead, 'lord aldric')?.id).toBe('chr_aldric');
+        expect(deadByName(doc.dead, 'Someone else')).toBeNull();
+    });
+
+    it('the director is told it may report a rising only while someone is dead', () => {
+        const base = { cast: [{ name: 'Remus', player: true }], userName: 'Remus', messages: [] };
+        expect(buildDirectorPrompt({ ...base, deadText: deadText(doc) }).prompt).toContain('RISES | <name>');
+        expect(buildDirectorPrompt(base).prompt).not.toContain('RISES | <name>');
     });
 });

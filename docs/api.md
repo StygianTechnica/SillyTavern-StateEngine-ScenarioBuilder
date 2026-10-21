@@ -1,6 +1,6 @@
 # Public API
 
-Read-only, for other extensions (spec 11.5). Every result is a copy.
+Read-only, for other extensions (spec 11.5), except the actions below. Every result is a copy.
 
 ```js
 const sb = window.StateEngineScenarioBuilder; // set once Scenario Builder is ready
@@ -18,6 +18,24 @@ or `import { scenarioBuilderApi } from '.../SillyTavern-StateEngine-ScenarioBuil
 | `getDrift()` | `{ pending, candidates, recent }` for the open chat, or `null`. |
 | `getGuidance()` | `{ text, tokens, stateBlock, inert, reason }` - the latest outputs. |
 | `getRelationships(id)` | `Promise<[{ otherId, otherName, kind, note, direction }]>` - the relationships the user wrote for an entry, seen from it; they take precedence over the story's for the pair. |
+
+## Actions
+
+What a button on another extension's panel can do (Pretty Panels' Action
+Buttons) - each the same as doing it in Scenario Builder.
+
+| Call | Returns |
+|------|---------|
+| `getActions()` | `[{ id, label, icon, scope, description }]` - `scope: 'object'` acts on one object (a card's), `'panel'` needs none. `icon` is a Font Awesome name without `fa-`. |
+| `runAction(id, objectId?)` | `Promise<{ ok, message }>` - `message` says why when it did nothing. |
+| `openEntry(id)` | `Promise<boolean>` - opens the entry's page in Scenario Builder. |
+
+| Action | Scope | Does |
+|--------|-------|------|
+| `open` | object | Opens its page in Scenario Builder. |
+| `leave` | object | Takes them out of the scene (cast, or a creature kind), as a LEAVES from the game master would. |
+| `map` | panel | Opens the map of the world's places. |
+| `workspace` | panel | Opens Scenario Builder. |
 
 ## Events
 
