@@ -30,7 +30,7 @@ import { setCanonical } from '../state/canonical.js';
 import { deadIds, withoutDead } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
 import { catchUpWithStory, holdStoryWeather, travelAlong, followStoryTimeOfDay, followStoryElapsed } from '../calendar/clock.js';
-import { detectDrift, decide, DEFAULT_POLICIES, namedOnlyAsOwner, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
+import { detectDrift, decide, DEFAULT_POLICIES, namedOnlyAsOwner, namedAtAll, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
 
 export const DRIFT_CHANGED_EVENT = 'scenario_builder_drift_changed';
 
@@ -201,10 +201,14 @@ async function reconcileOnce() {
     const raw = await getVariableValues(chatId, OBSERVED_NAMES);
     const doc = getChatDoc(chatKey);
     // The player character never leaves the scene: the scene goes with them.
-    const playerId = settingId ? playerIdOf(settingId, await listEntries(chatId, settingId, 'character')) : '';
+    const characterEntries = settingId ? await listEntries(chatId, settingId, 'character') : [];
+    const playerId = settingId ? playerIdOf(settingId, characterEntries) : '';
+    // A power (a god, a spirit) is never one of those present, whatever the
+    // reading says (src/library/powers.js).
+    const powerIds = new Set(characterEntries.filter((c) => c.meta?.power?.on === true).map((c) => c.id));
     const read = followPlayer(withStateEngineCreatures(withStateEngineCast(readObserved(raw), await stateEngineCast(chatId)), await stateEngineCreatures(chatId, settingId)), doc.canonical, playerId);
     // The dead never come back by the story's reading (src/state/death.js).
-    const observed = { ...read, cast: withoutDead(read.cast, deadIds(doc)) };
+    const observed = { ...read, cast: withoutDead(read.cast, deadIds(doc)).filter((id) => !powerIds.has(id)) };
     // "The ruins" is the ruins the story is at, not the ones it is heading
     // for (src/library/place-context.js).
     if (settingId && observed.location && doc.canonical.locationId && observed.location !== doc.canonical.locationId) {
@@ -230,6 +234,20 @@ async function reconcileOnce() {
     // Someone the turn only names as someone's ("Graxx's two") is not here:
     // the reading that brought them in is not taken.
     const turnText = latestTurnText();
+    // Someone the turn never names has not left: a reply about two people
+    // says nothing of the others in the room. Only a turn that speaks of
+    // them can take them out (the director's LEAVES, a death or a move
+    // still do).
+    const namesOf = (id) => { const n = objects.get(id)?.name ?? ''; return n ? [n, n.split(/\s+/)[0]] : []; };
+    for (const item of items) {
+        if (item.field !== 'cast' || item.action !== 'accept') continue;
+        const gone = item.op === 'remove' ? [item.objectId] : item.op === 'clear' ? (Array.isArray(item.canonical) ? item.canonical : []) : [];
+        const unspoken = gone.filter((id) => id && id !== playerId && !namedAtAll(namesOf(id), turnText));
+        if (!unspoken.length || unspoken.length < gone.length) continue;
+        item.action = 'adjust';
+        item.classification = 'ambiguous';
+        item.reason = `${unspoken.map((id) => objects.get(id)?.name ?? 'someone').join(', ')} not mentioned in the latest turn - still here`;
+    }
     for (const item of items) {
         if (item.field !== 'cast' || item.op !== 'add' || item.action !== 'accept') continue;
         const name = objects.get(item.objectId)?.name ?? '';

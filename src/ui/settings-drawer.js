@@ -94,6 +94,7 @@ function renderSettings() {
     byId('sb_director_timeout').value = settings.director.timeout;
     byId('sb_director_context').value = settings.director.contextTokens;
     byId('sb_director_fight').value = settings.director.fightReplies;
+    byId('sb_director_powers').value = settings.director.powersEvery;
 
     byId('sb_sections').replaceChildren(...SECTIONS.map((s) => h('label', { class: 'checkbox_label' },
         h('input', {
@@ -159,6 +160,12 @@ export async function addSettingsDrawer() {
         const value = Math.round(Number(e.target.value));
         settings.director.contextTokens = Number.isFinite(value) ? Math.min(200000, Math.max(2048, value)) : 8192;
         e.target.value = settings.director.contextTokens;
+        saveSettings();
+    });
+    byId('sb_director_powers').addEventListener('change', (e) => {
+        const value = Math.round(Number(e.target.value));
+        settings.director.powersEvery = Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 8;
+        e.target.value = settings.director.powersEvery;
         saveSettings();
     });
     byId('sb_director_fight').addEventListener('change', (e) => {

@@ -14,7 +14,7 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf } from '../library/library.js';
+import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf, saveKnowledge } from '../library/library.js';
 import { routesFrom, listRoutes, headingAlong, placesFurtherOn } from '../library/routes.js';
 import { pathOf } from '../library/hierarchy.js';
 import { listRelations, relationsFor } from '../library/relations-edit.js';
@@ -28,6 +28,8 @@ import { replyKeyOf, canUseAhead, shouldThinkAhead } from './ahead.js';
 import { gatherInputs } from '../guidance/sync.js';
 import { fitDirectorPrompt, promptBudget } from './fit.js';
 import { nextFight, fightFacts, woundsOf } from './fight.js';
+import { whoCouldTurnUp } from './whereabouts.js';
+import { isPower, powersAtWork, powersText } from '../library/powers.js';
 
 // How many replies a broken-off fight's wounds are remembered.
 const WOUNDS_KEPT = 30;
@@ -244,18 +246,6 @@ function enrichThin(chatId, chatKey, settingId, guidance) {
 
 const isNewTurn = (type) => !type || type === 'normal';
 
-// People who are not here but could turn up: those seen earlier in this
-// chat, and those the people present have ties to.
-function nearbyPeople(characters, castIds, inPlay, relations) {
-    const present = new Set(castIds);
-    const why = new Map();
-    for (const id of inPlay) if (!present.has(id)) why.set(id, 'seen earlier in this story');
-    for (const id of castIds) {
-        for (const r of relationsFor(id, relations)) if (!present.has(r.otherId) && !why.has(r.otherId)) why.set(r.otherId, `tied to someone here (${r.kind})`);
-    }
-    return characters.filter((c) => why.has(c.id)).map((c) => ({ id: c.id, name: c.name, role: c.base?.role ?? c.role ?? '', why: why.get(c.id) }));
-}
-
 // Who arrives and leaves, by name (and the new people who are here).
 function castAfter(characters, castIds, { enters, leaves }, made, playerId = '') {
     const byName = new Map();
@@ -347,7 +337,17 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
     const doc = getChatDoc(chatKey);
     const characters = settingId ? await listEntries(chatId, settingId, 'character') : [];
     const castIds = (guidance.cast ?? []).map((c) => c.id).filter(Boolean);
-    const nearby = nearbyPeople(characters, castIds, doc.inPlay, settingId ? listRelations(settingId) : []);
+    // Who could turn up - those seen near here not long ago - and who is
+    // elsewhere: left far behind, or not seen in a long while (src/director/
+    // whereabouts.js). Graxx in Redhaven does not walk into a crypt in Belatorre.
+    const relations = settingId ? listRelations(settingId) : [];
+    const parents = settingId ? getParents(settingId) : {};
+    const { near: nearby, elsewhere } = whoCouldTurnUp({
+        characters: characters.filter((c) => !isPower(c)), castIds, locationId: doc.canonical.locationId || guidance.location?.id || '', parents,
+        history: doc.history, current: doc.canonical, inPlay: doc.inPlay, tiesOf: (id) => relationsFor(id, relations),
+    });
+    const placeName = new Map((settingId ? await listEntries(chatId, settingId, 'location').catch(() => []) : []).map((p) => [p.id, p.name]));
+    for (const e of elsewhere) e.lastAt = placeName.get(e.lastAt) ?? '';
     // The world's rules as they hold where the scene is.
     const overview = settingId ? getPlaceOverview(settingId, guidance.location?.id) : {};
     const limits = [...describeMagic(overview.magic).limits, ...describeTech(overview.tech).limits];
@@ -365,7 +365,7 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
     const factions = settingId ? factionsAtPlay(factionList, { cast: (guidance.cast ?? []).filter((c) => c.id), placeIds, relations: getSettingDoc(settingId).relations, runtimeOf: (id) => runtimeFactions.get(id) ?? [] }) : [];
     const eventObjects = settingId ? (await listEntries(chatId, settingId, 'event').catch(() => [])).slice(-8).map((e) => ({ name: e.name, description: e.base?.description ?? e.description ?? '', when: e.base?.when ?? e.when ?? e.base?.date ?? '' })) : [];
     const scenes = settingId ? (await listEntries(chatId, settingId, 'scene').catch(() => [])).map((x) => ({ name: x.name, description: x.base?.description ?? x.description ?? '' })) : [];
-    return { characters, castIds, nearby, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes };
+    return { characters, castIds, nearby, elsewhere, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes };
 }
 
 // ahead: write ahead (after an AI reply) - only the model's answer is kept
@@ -384,7 +384,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     const key = hashOf(JSON.stringify([messages.map((m) => [m.name, m.text]), doc.canonical.locationId || '']));
     if (!ahead && !force && doc.director.key === key && doc.director.note) return doc.director;
 
-    const { characters, castIds, nearby, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes } = await sceneContext(chatId, chatKey, settingId, guidance);
+    const { characters, castIds, nearby, elsewhere, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes } = await sceneContext(chatId, chatKey, settingId, guidance);
     // Every entry of every type, for "also relevant" and for checking what
     // the director adds.
     const types = await getObjectTypes().catch(() => []);
@@ -392,12 +392,24 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     if (settingId) for (const t of types) everything.push(...await listEntries(chatId, settingId, t.id).catch(() => []));
     const labelOf = new Map(types.map((t) => [t.id, t.label]));
     const covered = new Set([
-        ...castIds, ...placeIds, ...nearby.map((c) => c.id),
+        ...castIds, ...placeIds, ...nearby.map((c) => c.id), ...elsewhere.map((c) => c.id),
         ...(guidance.location?.items ?? []).map((x) => x.id), ...(guidance.location?.creatures ?? []).map((x) => x.id),
         ...(guidance.lore ?? []).map((x) => x.id),
         ...[...(guidance.location?.places ?? []), ...factions, ...eventObjects, ...scenes, ...(guidance.quests ?? [])].map((x) => String(x.name ?? '').trim().toLowerCase()),
     ].filter(Boolean));
     const relevant = alsoRelevant(everything, { recentText: messages.slice(-6).map((m) => m.text).join('\n'), sceneIds: [...placeIds, ...castIds], covered, typeLabel: (t) => labelOf.get(t) ?? t, placeName: (id) => everything.find((e) => e.id === id)?.name ?? '' });
+    // Gods and forces that bear on this reply - invoked, a champion failing,
+    // or their occasional turn (src/library/powers.js). Most replies: none.
+    const powerEntries = characters.filter(isPower);
+    const atWork = powerEntries.length ? powersAtWork({
+        powers: powerEntries,
+        cast: characters.filter((c) => castIds.includes(c.id)),
+        recentText: messages.slice(-2).map((m) => m.text).join('\n'),
+        fight: doc.fight,
+        turn: doc.turn,
+        lastActed: doc.powersActed,
+        every: Number.isInteger(settings.director.powersEvery) ? settings.director.powersEvery : 8,
+    }) : [];
     // Trimmed to fit the director model's context (src/director/fit.js).
     const fitted = fitDirectorPrompt({
         ...guidance,
@@ -409,6 +421,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         allowCreate: settings.director.allowCreate && !!settingId,
         canonOnly,
         nearby,
+        elsewhere,
         factions,
         eventObjects,
         events: inputs.canonicalValues?.canon_events ?? [],
@@ -422,6 +435,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         travelAtNight: settings.director.travelAtNight === true,
         fightFacts: fightFacts(doc.fight, settings.director.fightReplies),
         deadText: deadText(doc),
+        powersText: powersText(atWork),
     }, promptBudget(settings.director.contextTokens, settings.director.maxTokens));
     if (fitted.trimmed.length) console.info(LOG_PREFIX, `the director's prompt was trimmed to fit (~${fitted.tokens} of ${fitted.budget} tokens): ${fitted.trimmed.join(', ')}`);
     if (!fitted.fits) console.warn(LOG_PREFIX, `the director's prompt is still ~${fitted.tokens} tokens, over the ${fitted.budget} its model's context leaves - raise "Model context" if the model allows, or expect it to fail`);
@@ -557,7 +571,25 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         const left = new Set(parsed.leaves.map((n) => String(n).toLowerCase()));
         const seen = peopleNamedIn(parsed.situation, characters).filter((c) => !baseCast.includes(c.id) && !heldOut.has(c.id) && !callNames(c).some((n) => left.has(n.toLowerCase())));
         if (seen.length) parsed.enters = [...new Set([...parsed.enters, ...seen.map((c) => c.name)])];
-        const after = castAfter(characters, baseCast, parsed, made, playerIdOf(settingId, characters));
+        const after = castAfter(characters.filter((c) => !isPower(c)), baseCast, parsed, made, playerIdOf(settingId, characters));
+        // A power that acted: quiet again for a while.
+        const acted = (parsed.powers ?? []).map((p) => powerEntries.find((e) => [e.name, ...(e.aliases ?? [])].some((n) => String(n).toLowerCase() === p.name.toLowerCase()) || mentionedIn(p.name, e.name))).filter(Boolean);
+        if (acted.length) {
+            updateChatDoc(chatKey, (d) => { for (const e of acted) d.powersActed = { ...d.powersActed, [e.id]: d.turn }; });
+            // A price demanded is a debt owed to the power (an oath, pending -
+            // the director hears of it wherever its debtor is): by whoever the
+            // price names among those here, else the player character.
+            for (const p of parsed.powers ?? []) {
+                const power = powerEntries.find((e) => [e.name, ...(e.aliases ?? [])].some((n) => String(n).toLowerCase() === p.name.toLowerCase()) || mentionedIn(p.name, e.name));
+                if (!power || !p.price) continue;
+                const here = characters.filter((c) => castIds.includes(c.id) && !isPower(c));
+                const debtors = peopleNamedIn(p.price, here).map((c) => c.id);
+                const playerId = playerIdOf(settingId, characters);
+                saveKnowledge(settingId, { kind: 'oath', text: `${power.name}'s price${p.what ? ` for ${p.what}` : ''}: ${p.price}`, madeBy: debtors.length ? debtors : [playerId].filter(Boolean), madeTo: [power.id], status: 'pending' });
+                console.info(LOG_PREFIX, `${power.name} demands a price: ${p.price}`);
+            }
+            console.info(LOG_PREFIX, `a power acted: ${(parsed.powers ?? []).map((p) => `${p.name}${p.what ? ` - ${p.what}` : ''}`).join('; ')}`);
+        }
         // ENTERS and LEAVES that name creatures (the zombies) change the
         // creatures in the scene.
         const creatures = await listEntries(chatId, settingId, 'creature');

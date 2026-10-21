@@ -77,6 +77,9 @@ const DEFAULTS = {
     // travelAtNight: a journey goes on through the night; off, the party
     // makes camp at dusk and goes on in the morning.
     // fightReplies: the most replies a fight lasts (src/director/fight.js).
+    // powersEvery: a power whose champion is here may act unasked at most
+    // once in this many replies (0: only when invoked or a champion is
+    // failing) - src/library/powers.js.
     // contextTokens: the context window of the model the director runs on;
     // its prompt is trimmed to fit (src/director/fit.js).
     // Story triggers (src/triggers/): onMessage - their flags are also
@@ -84,7 +87,7 @@ const DEFAULTS = {
     // State Engine call, only while some are armed), waiting at most
     // waitSeconds; off, only after AI replies.
     triggers: { onMessage: true, waitSeconds: 20 },
-    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600, travelAtNight: false, contextTokens: 8192, fightReplies: 5 },
+    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600, travelAtNight: false, contextTokens: 8192, fightReplies: 5, powersEvery: 8 },
     // The clock (src/calendar/clock.js): on = Scenario Builder keeps the
     // time and weather; perTurn = how much time a reply covers when the
     // director does not say.

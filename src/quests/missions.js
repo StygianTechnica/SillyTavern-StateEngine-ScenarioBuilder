@@ -185,8 +185,15 @@ export function readMission(text) {
 
 // What the director is asked to work in: the giver offering the job - at
 // their next meeting, or `now` (a trigger has fired: the moment is here).
-export function offerText(mission, { giverName = '', takerName = '', now = false } = {}) {
+// A power (a god, a spirit - src/library/powers.js) gives its tasks in a
+// dream or a vision instead (`vision`).
+export function offerText(mission, { giverName = '', takerName = '', now = false, vision = false } = {}) {
     const who = clean(giverName) || 'The giver';
+    const taker = clean(takerName) || 'its champion';
+    const job = `"${clean(mission.name)}" - ${unstop(clean(mission.task))}${clean(mission.reward) ? `, promising ${unstop(clean(mission.reward))}` : ''}`;
+    if (vision) return now
+        ? `${who} comes to ${taker} in a vision or a dream with a task: ${job}. It can be refused, at a cost the power may remember.`
+        : `${who} sends ${taker} a task in a dream or vision, the next time ${taker} sleeps, prays or is alone: ${job}. It can be refused.`;
     if (now) return `${who} offers${clean(takerName) ? ` ${clean(takerName)}` : ''} a job: "${clean(mission.name)}" - ${unstop(clean(mission.task))}${clean(mission.reward) ? `, paying ${unstop(clean(mission.reward))}` : ''}. It can be turned down.`;
     return `${who} has a job to offer${clean(takerName) ? ` ${clean(takerName)}` : ''}: "${clean(mission.name)}" - ${unstop(clean(mission.task))}${clean(mission.reward) ? `, paying ${unstop(clean(mission.reward))}` : ''}. ${who} offers it the next time they meet (or at once, if they are together now); it can be turned down.`;
 }
@@ -320,16 +327,18 @@ export async function offerMission(chatId, chatKey, settingId, giverId, { diffic
         // The giver offers it in the story: on a condition (a story trigger
         // watches for it), or when they next meet (the GM plan's queue).
         const takerName = player?.name ?? '';
+        // A power gives its tasks in dreams and visions.
+        const vision = giverEntry.meta?.power?.on === true;
         const condition = offerCondition(giver, { giverName: giverEntry.name, takerName });
         let watched = null;
         if (condition) {
             const { armTrigger } = await import('../triggers/run.js');
-            watched = await armTrigger(chatId, chatKey, { kind: 'story', when: condition, then: offerText(m, { giverName: giverEntry.name, takerName, now: true }), source: 'giver' });
+            watched = await armTrigger(chatId, chatKey, { kind: 'story', when: condition, then: offerText(m, { giverName: giverEntry.name, takerName, now: true, vision }), source: 'giver' });
             if (!watched) console.info(LOG_PREFIX, `could not watch for "${condition}" (too many triggers armed?) - ${giverEntry.name} offers the job when they next meet instead`);
         }
         if (!watched) {
-            const together = doc.canonical.castIds.includes(giverId) || doc.canonical.locationId === giverId;
-            updateChatDoc(chatKey, (d) => { addRequest(d.gm, { id: newLocalId('r'), text: offerText(m, { giverName: giverEntry.name, takerName }), urgency: together ? 'soon' : 'whenever', at: new Date().toISOString() }); });
+            const together = vision || doc.canonical.castIds.includes(giverId) || doc.canonical.locationId === giverId;
+            updateChatDoc(chatKey, (d) => { addRequest(d.gm, { id: newLocalId('r'), text: offerText(m, { giverName: giverEntry.name, takerName, vision }), urgency: together ? 'soon' : 'whenever', at: new Date().toISOString() }); });
         }
         console.info(LOG_PREFIX, `${giverEntry.name} has a new ${level} mission: ${m.name}`);
         return quest;

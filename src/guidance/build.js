@@ -262,6 +262,7 @@ function castLine(c) {
     if (clean(c.personality)) bits.push(unstop(truncate(c.personality, 90)));
     if (clean(c.voice)) bits.push(`Voice: ${unstop(firstLower(truncate(c.voice, 120)))}`);
     if (clean(c.goals)) bits.push(`Wants: ${unstop(firstLower(truncate(c.goals, 110)))}`);
+    if (clean(c.gifts)) bits.push(firstUpper(unstop(truncate(c.gifts, 200))));
     const now = [clean(c.mood) ? lower(unstop(c.mood)) : '', clean(c.intent) ? `means to ${unstop(firstLower(truncate(c.intent, 100))).replace(/^to /i, '')}` : ''].filter(Boolean);
     if (now.length) bits.push(`Now: ${now.join(', ')}`);
     if (clean(c.condition)) bits.push(unstop(truncate(c.condition, 80)));
@@ -295,6 +296,7 @@ function castParagraph(c) {
     if (clean(c.personality)) bits.push(`By temperament: ${sentence(firstLower(truncate(c.personality, 200)))}`);
     if (clean(c.voice)) bits.push(`How ${name} talks and moves: ${sentence(firstLower(truncate(c.voice, 240)))}`);
     if (clean(c.goals)) bits.push(`What ${name} wants: ${sentence(firstLower(truncate(c.goals, 200)))}`);
+    if (clean(c.gifts)) bits.push(`What ${name} can do: ${sentence(firstLower(truncate(c.gifts, 220)))}`);
     const now = [
         clean(c.mood) ? `feels ${unstop(lower(c.mood))}` : '',
         clean(c.intent) ? `means to ${unstop(firstLower(truncate(c.intent, 160))).replace(/^to /i, '')}` : '',

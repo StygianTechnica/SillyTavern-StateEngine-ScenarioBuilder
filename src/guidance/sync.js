@@ -25,6 +25,7 @@ import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.
 import { triggerLines } from '../triggers/model.js';
 import { deadText } from '../state/death.js';
 import { creatureFormOf } from '../library/creature-form.js';
+import { giftsText } from '../library/powers.js';
 import { latestUserIndex } from '../triggers/run.js';
 import { getBoundSettingId, readField, listEntries, playerIdOf, allKnowledge } from '../library/library.js';
 import { sceneKnowledge } from '../library/knowledge.js';
@@ -168,7 +169,11 @@ export async function gatherInputs(chatId, chatKey) {
     const allCharacters = settingId ? await listEntries(chatId, settingId, 'character') : [];
     const playerId = settingId ? playerIdOf(settingId, allCharacters) : '';
     const cast = [];
+    // A power (a god, a spirit) is never one of those present.
+    const powerIds = new Set(Object.entries(library.entries ?? {}).filter(([, m]) => m?.power?.on === true).map(([id]) => id));
+    const nameById0 = new Map(allCharacters.map((ch) => [ch.id, ch.name]));
     for (const id of castIds) {
+        if (powerIds.has(id)) continue;
         const obj = await getObject(chatId, id);
         if (!obj) continue;
         names.set(id, obj.name);
@@ -183,6 +188,8 @@ export async function gatherInputs(chatId, chatKey) {
             personality: text(base.personality),
             voice: text(base.voice),
             goals: text(base.goals),
+            // Gifts and patron (src/library/powers.js).
+            gifts: settingId ? giftsText({ meta: library.entries?.[id] ?? {} }, (pid) => nameById0.get(pid) ?? '') : '',
             mood: await readField(chatId, id, 'se__character.mood', 'mood'),
             intent: await readField(chatId, id, 'se__character.intent', 'intent'),
             thought: await readField(chatId, id, 'se__character.thought', 'thought'),

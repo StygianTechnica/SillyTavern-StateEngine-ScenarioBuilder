@@ -26,6 +26,7 @@ import { renderMissionsTab, GIVER_TYPES } from './missions-tab.js';
 import { isDead, markDead, bringBack } from '../state/death.js';
 import { suggestParents } from '../library/place-context.js';
 import { creatureFormOf } from '../library/creature-form.js';
+import { isPower, patronsOf } from '../library/powers.js';
 import { recordEnrichment, enrichmentRecord, normalizeEnrichments, revertPlan, revertEnrichment } from '../generate/revert.js';
 import { newLocalId } from '../store/schema.js';
 import { suggestQuestEnds } from '../quests/ends.js';
@@ -274,6 +275,14 @@ export async function renderSheet(type, all) {
         if (type.id === 'location' && doc.canonical.locationId !== entry.id) quick.push(button('Set the scene here', () => void setScene({ locationId: entry.id }, `Moved the scene to ${entry.name}`), { iconName: 'fa-location-dot' }));
         if (type.id === 'character') {
             const isPlayer = playerIdOf(ws.ctx.settingId, [entry]) === entry.id;
+            // A god, a spirit, a force with no body (src/library/powers.js).
+            if (!isPlayer) {
+                quick.push(button(isPower(entry) ? 'A power (no body)' : 'Mark as a power', () => {
+                    setEntryMeta(ws.ctx.settingId, entry.id, { power: { on: !isPower(entry), acts: entry.meta?.power?.acts ?? '' } });
+                    if (!isPower(entry) && doc.canonical.castIds.includes(entry.id)) void setScene({ castIds: doc.canonical.castIds.filter((id) => id !== entry.id) }, `${entry.name} is a power - not in the scene in person`);
+                    rerender({ force: true });
+                }, { iconName: 'fa-sun', cls: isPower(entry) ? 'sb-primary' : '', title: isPower(entry) ? 'A god, spirit or force with no body: never in a scene in person, acts through omens, visions and blessings. Click to make it an ordinary character.' : 'A god, spirit or force with no body: never placed in a scene; it acts through omens, visions and blessings on those tied to it.' }));
+            }
             quick.push(button(isPlayer ? 'Player character' : 'Mark as player character', () => {
                 setPlayerId(ws.ctx.settingId, isPlayer ? '' : entry.id);
                 rerender();
@@ -493,7 +502,7 @@ async function sheetBody(tab, c) {
     }
 }
 
-function overviewTab({ type, entry, isNew, defs, doc }) {
+function overviewTab({ type, entry, isNew, defs, doc, all }) {
     const narrative = isNew ? '' : doc.narrative[entry.id]?.text ?? '';
     if (ws.editing) {
         return h('div', { class: 'sb-tabpane' },
@@ -514,7 +523,35 @@ function overviewTab({ type, entry, isNew, defs, doc }) {
             h('div', { class: 'sb-prose' }, narrative)) : null,
         narrative ? h('details', { class: 'sb-base-desc' }, h('summary', {}, 'Original description'), base) : base,
         glance.length ? h('dl', { class: 'sb-glance' }, glance.flatMap((d) => [h('dt', {}, d.label), h('dd', {}, String(entry.base?.[d.name] ?? entry[d.name]))])) : null,
+        isNew ? null : giftsCard(type, entry, all),
         isNew ? null : enrichmentCard(entry, defs));
+}
+
+// Gifts and patron (characters, creatures), or - for a power - how it makes
+// itself known (src/library/powers.js). Saves at once.
+function giftsCard(type, entry, all) {
+    if (!['character', 'creature'].includes(type.id)) return null;
+    const { settingId } = ws.ctx;
+    const save = (patch) => { setEntryMeta(settingId, entry.id, patch); void syncNow(); rerender({ force: true }); };
+    if (isPower(entry)) {
+        return h('div', { class: 'sb-card' },
+            h('div', { class: 'sb-card-title' }, icon('fa-sun'), ' A power - no body'),
+            h('small', { class: 'sb-hint' }, 'Never in a scene in person. It acts through omens, a voice, visions and dreams, and blessings on those tied to it - when called on, when a champion is failing, or now and then. It may answer a call with a price. It can also give missions (its Missions tab), sent in dreams.'),
+            field('How it makes itself known', h('input', { class: 'text_pole', placeholder: 'e.g. a voice in the storm; dreams of falling stars; a cold wind and whispers', value: entry.meta?.power?.acts ?? '', onchange: (e) => save({ power: { on: true, acts: e.target.value } }) })));
+    }
+    const powers = (all.character ?? []).filter((c) => isPower(c) && c.id !== entry.id);
+    const patrons = patronsOf(entry);
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-hand-sparkles'), ' Gifts and powers'),
+        field('What they can do beyond their weapons', h('textarea', { class: 'text_pole', rows: 2, placeholder: 'e.g. a chaos-touched blade that warps whatever it strikes; can tear open small rifts', value: entry.meta?.gifts ?? '', onchange: (e) => save({ gifts: e.target.value }) }),
+            'The game master and the narrator use these - in a fight above all.'),
+        type.id === 'character' ? field('Champion of', powers.length
+            ? h('div', { class: 'sb-chips' },
+                powers.map((p) => h('label', { class: 'checkbox_label' },
+                    h('input', { type: 'checkbox', checked: patrons.includes(p.id), onchange: (e) => save({ patrons: e.target.checked ? [...patrons, p.id] : patrons.filter((x) => x !== p.id) }) }),
+                    h('span', {}, p.name))))
+            : h('small', { class: 'sb-hint' }, 'No powers yet - mark a god or spirit as "A power" on its own sheet.'),
+        'A power may speak to its champions, send them visions, or bless them in a fight.') : null);
 }
 
 // What generation wrote on this entry, and what was there before: a field,

@@ -393,6 +393,19 @@ const PRESENT_PARTS = /^(?:voice|eyes?|gaze|face|expression|hands?|grip|touch|ar
 // "Niamh's orders" - and never as themselves: a mention, not a presence.
 // names: their name (and first name, aliases); text: the turn's messages.
 // false when they are not named at all (that is no evidence either way).
+// Whether the text names someone at all - by any of their names, as a whole
+// word. Someone the latest turn never names has not been shown leaving: a
+// reply about Remus and Maziel says nothing of the others still in the room.
+export function namedAtAll(names, text) {
+    const t = String(text ?? '');
+    return (names ?? []).some((raw) => {
+        const n = String(raw ?? '').trim();
+        if (n.length < 3) return false;
+        const esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`(^|[^\\p{L}])${esc}(?=$|[^\\p{L}])`, 'iu').test(t);
+    });
+}
+
 export function namedOnlyAsOwner(names, text) {
     const t = String(text ?? '');
     let any = false;

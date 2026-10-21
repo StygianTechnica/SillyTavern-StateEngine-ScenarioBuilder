@@ -91,6 +91,7 @@ import { emptyGiver, normalizeGiver } from '../quests/missions.js';
 import { normalizeDead } from '../state/death.js';
 import { normalizeEnrichments } from '../generate/revert.js';
 import { normalizeCounts } from '../library/creature-form.js';
+import { normalizePowerMeta } from '../library/powers.js';
 import { normalizeFight } from '../director/fight.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
@@ -128,7 +129,7 @@ export function normalizeRealm(r) {
 }
 
 export function emptyEntryMeta() {
-    return { parentId: null, gmNotes: '', nsfw: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, provisional: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '', realm: emptyRealm(), giver: emptyGiver(), enrichments: [], creatureForm: '' };
+    return { parentId: null, gmNotes: '', nsfw: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, provisional: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '', realm: emptyRealm(), giver: emptyGiver(), enrichments: [], creatureForm: '', power: { on: false, acts: '' }, patrons: [], gifts: '' };
 }
 
 export function normalizeEntryMeta(meta) {
@@ -170,6 +171,12 @@ export function normalizeEntryMeta(meta) {
         // Creatures: one being ('individual') or a sort that comes in numbers
         // ('kind'); '' - guessed from the name (src/library/creature-form.js).
         creatureForm: ['individual', 'kind'].includes(m.creatureForm) ? m.creatureForm : '',
+        // A power - a god, spirit or force with no body (src/library/powers.js).
+        power: normalizePowerMeta(m.power),
+        // The powers a character is a champion or devotee of.
+        patrons: strList(m.patrons),
+        // What they can do beyond their weapons (a chaos-warped blade).
+        gifts: str(m.gifts).slice(0, 400),
     };
 }
 
@@ -394,6 +401,8 @@ export function emptyChatDoc() {
         // Wounds from fights broken off: { [lower-case name]: { condition,
         // turn } } (src/director/fight.js, kept a while).
         wounds: {},
+        // When each power last acted: { [powerId]: turn } (src/library/powers.js).
+        powersActed: {},
     };
 }
 
@@ -431,6 +440,7 @@ export function normalizeChatDoc(doc) {
         nsfwMode: ['auto', 'on', 'off'].includes(d.nsfwMode) ? d.nsfwMode : 'auto',
         fight: normalizeFight(d.fight),
         dead: normalizeDead(d.dead),
+        powersActed: isObject(d.powersActed) ? Object.fromEntries(Object.entries(d.powersActed).filter(([k, v]) => k && Number.isInteger(v))) : {},
         wounds: isObject(d.wounds) ? Object.fromEntries(Object.entries(d.wounds).filter(([k, w]) => k && isObject(w) && typeof w.condition === 'string' && Number.isInteger(w.turn))) : {},
     };
 }

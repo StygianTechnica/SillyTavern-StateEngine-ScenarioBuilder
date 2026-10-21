@@ -165,3 +165,13 @@ describe("State Engine's creature tracker", () => {
         expect(withStateEngineCreatures(observed, null)).toBe(observed);
     });
 });
+
+describe('someone not mentioned has not left', () => {
+    it('is named at all, by full name or first name, as a whole word', async () => {
+        const { namedAtAll } = await import('../src/validate/drift.js');
+        const turn = 'Maziel drove his blade down. Remus fell, and somewhere behind him Niamh screamed.';
+        expect(namedAtAll(['Niamh'], turn)).toBe(true);
+        expect(namedAtAll(['Varyn Vance', 'Varyn'], turn)).toBe(false);
+        expect(namedAtAll(['Arin'], 'Marina waited.')).toBe(false);
+    });
+});
