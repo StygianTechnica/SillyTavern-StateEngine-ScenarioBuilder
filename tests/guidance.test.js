@@ -24,7 +24,7 @@ describe('guidance', () => {
         expect(text).toContain('The climate is humid.');
         expect(text).not.toContain('Mira, the innkeeper');
         expect(text).toContain('Hold to these: The scene is still at Brass Market, not the docks.');
-        expect(sections.filter((s) => !['quests', 'summary', 'direction', 'lore', 'limits', 'absent', 'alone', 'style', 'secrets', 'intimacy', 'triggered'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
+        expect(sections.filter((s) => !['quests', 'summary', 'direction', 'lore', 'limits', 'absent', 'alone', 'style', 'secrets', 'intimacy', 'triggered', 'fight'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
         expect(text).not.toMatch(/^\[/m);
     });
 

@@ -325,6 +325,8 @@ export function dossierText(input) {
             lines.push(`- ${clean(x.name)}${where}${bits.length ? `: ${bits.join('; ')}` : ''}`);
         }
     }
+    // The fight as Scenario Builder keeps it (src/director/fight.js).
+    if (clean(input.fightFacts)) { section('THE FIGHT SO FAR'); lines.push(clean(input.fightFacts)); }
     if (input.secrets?.length) {
         section('SECRETS AND OATHS (people act only on what they know)');
         for (const r of input.secrets.slice(0, 8)) lines.push(`- ${r}`);
@@ -426,6 +428,9 @@ export function buildDirectorPrompt(input) {
         'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along):',
         'ENTERS | <name>',
         'LEAVES | <name>',
+        '',
+        `While there is a fight, a line for every fighter but ${userName} - each foe, and each ally who fights - saying how they stand once this reply is done. The condition is one of: unhurt, hurt, wounded, badly wounded, failing, down, fled (or won, for a foe that has beaten the others). It never gets better unless the story heals it, and blows that land make it worse: a foe struck again and again does not stay unhurt. Leave these lines out when no one is fighting:`,
+        'FIGHT | <name> | <condition> | <foe or ally>',
         '',
         'If the latest chat gives a name to someone listed with "no name yet", a line for each (only the name the story gives - never one of your own):',
         'RENAME | <the descriptive name> | <the name the story gives>',
@@ -599,7 +604,7 @@ export function isPlaceholder(value) {
 }
 
 // A format line, whether or not it could be read - never left in the prose.
-const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|NEW|RENAME|BEAT)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|NEW|RENAME|BEAT)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
@@ -620,7 +625,15 @@ export function parseDirectorNote(raw) {
     const enters = [];
     const leaves = [];
     const beats = [];
+    const fights = [];
     for (const line of text.split('\n')) {
+        // FIGHT | <name> | <condition> | <foe or ally> (src/director/fight.js)
+        const fg = line.match(/^\s*(?:[-*]\s*)?\**FIGHT\**\s*:?\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?$/i);
+        if (fg) {
+            const name = clean(fg[1]).replace(/^["'*]+|["'*.]+$/g, '');
+            if (name && !isPlaceholder(name) && !isPlaceholder(fg[2]) && !/^(none|no one|nobody|-)$/i.test(name) && fights.length < 8) fights.push({ name, condition: clean(fg[2]), side: clean(fg[3]) });
+            continue;
+        }
         const bt = line.match(/^\s*(?:[-*]\s*)?\**BEAT\**\s*:?\s*\|\s*\[?(m\d+)\]?\s*\|\s*(done|skipped)\s*(?:\|\s*(.*?)\s*)?$/i);
         if (bt) {
             if (!beats.some((b) => b.id === bt[1].toLowerCase())) beats.push({ id: bt[1].toLowerCase(), status: bt[2].toLowerCase(), note: bt[3] && !isPlaceholder(bt[3]) ? clean(bt[3]) : '' });
@@ -709,7 +722,7 @@ export function parseDirectorNote(raw) {
     // A briefing cut off or told as story lost its "Next:" end; any other
     // paragraph is not direction.
     const parts = tidy.flaws.length && !MARKER.test(text) ? { summary: text, direction: '' } : splitNote(text);
-    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats };
+    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, fights };
 }
 
 // The first library entry `text` names that nothing the scene stands on

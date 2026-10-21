@@ -87,6 +87,7 @@ import { emptyGm, normalizeGm } from '../planner/model.js';
 import { emptyMagic, emptyTech, normalizeMagic, normalizeTech } from '../library/world-options.js';
 import { emptyQuestMeta, normalizeQuestMeta } from '../quests/model.js';
 import { normalizeKnowledgeItem } from '../library/knowledge.js';
+import { normalizeFight } from '../director/fight.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
 export const CHAT_SCHEMA_VERSION = 1;
@@ -371,6 +372,8 @@ export function emptyChatDoc() {
         turn: 0,
         gm: emptyGm(),
         nsfwMode: 'auto',
+        // The fight in the scene (src/director/fight.js), or null.
+        fight: null,
     };
 }
 
@@ -406,6 +409,7 @@ export function normalizeChatDoc(doc) {
         gm: normalizeGm(d.gm),
         // Whether the scene is intimate: the story's reading (auto) or the user's.
         nsfwMode: ['auto', 'on', 'off'].includes(d.nsfwMode) ? d.nsfwMode : 'auto',
+        fight: normalizeFight(d.fight),
     };
 }
 

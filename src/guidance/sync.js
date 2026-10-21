@@ -349,6 +349,8 @@ export async function gatherInputs(chatId, chatKey) {
             // Story triggers set off for this reply (src/triggers/): the
             // narrator gets them even when the director fails.
             triggered: triggerLines(doc.gm.triggers, latestUserIndex()),
+            // The fight the director keeps (src/director/fight.js).
+            fight: settings.director.enabled ? doc.fight : null,
             othersTracked,
             // Secrets kept from those present; oaths binding them.
             secrets: secretRules,

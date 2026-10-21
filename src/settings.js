@@ -76,9 +76,10 @@ const DEFAULTS = {
     // perspectiveTokens of the director's prompt - no extra call.
     // travelAtNight: a journey goes on through the night; off, the party
     // makes camp at dusk and goes on in the morning.
+    // fightReplies: the most replies a fight lasts (src/director/fight.js).
     // contextTokens: the context window of the model the director runs on;
     // its prompt is trimmed to fit (src/director/fit.js).
-    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600, travelAtNight: false, contextTokens: 8192 },
+    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600, travelAtNight: false, contextTokens: 8192, fightReplies: 5 },
     // The clock (src/calendar/clock.js): on = Scenario Builder keeps the
     // time and weather; perTurn = how much time a reply covers when the
     // director does not say.

@@ -27,6 +27,7 @@ import { callModelFirst } from '../generate/llm.js';
 import { replyKeyOf, canUseAhead, shouldThinkAhead } from './ahead.js';
 import { gatherInputs } from '../guidance/sync.js';
 import { fitDirectorPrompt, promptBudget } from './fit.js';
+import { nextFight, fightFacts } from './fight.js';
 import { parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { buildPeoplePrompt, readPeople } from './people.js';
@@ -406,6 +407,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         unknowns: await unknownsHere(guidance.cast ?? [], messages.slice(-6).map((m) => m.text).join('\n'), characters),
         ahead,
         travelAtNight: settings.director.travelAtNight === true,
+        fightFacts: fightFacts(doc.fight, settings.director.fightReplies),
     }, promptBudget(settings.director.contextTokens, settings.director.maxTokens));
     if (fitted.trimmed.length) console.info(LOG_PREFIX, `the director's prompt was trimmed to fit (~${fitted.tokens} of ${fitted.budget} tokens): ${fitted.trimmed.join(', ')}`);
     if (!fitted.fits) console.warn(LOG_PREFIX, `the director's prompt is still ~${fitted.tokens} tokens, over the ${fitted.budget} its model's context leaves - raise "Model context" if the model allows, or expect it to fail`);
@@ -576,6 +578,15 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             const note2 = [moves.in.length ? `${moves.in.join(', ')} arrive${moves.in.length === 1 ? 's' : ''}` : '', moves.out.length ? `${moves.out.join(', ')} leave${moves.out.length === 1 ? 's' : ''}` : ''].filter(Boolean).join('; ');
             setCanonical(chatKey, { castIds: after.castIds }, { chatId, source: 'director', note: note2 });
         }
+        // The fight (src/director/fight.js): each fighter's condition kept
+        // from reply to reply, so blows tell and the fight ends.
+        const fight = nextFight(getChatDoc(chatKey).fight, parsed.fights, {
+            present: (name) => mentionedIn(name, storyText),
+            limit: settings.director.fightReplies,
+            playerNames,
+        });
+        updateChatDoc(chatKey, (d) => { d.fight = fight; });
+        if (fight) console.info(LOG_PREFIX, `the fight, reply ${fight.round}${fight.ended ? ' (it ends)' : ''}: ${fight.fighters.map((f) => `${f.name} ${f.condition}`).join(', ')}`);
         if (settings.time.enabled) {
             // The clock just started: first the story's own time of day.
             if (getChatDoc(chatKey).clock.needsNow) await setTimeOfDay(chatId, chatKey, settingId, parsed.now);
