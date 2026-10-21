@@ -27,7 +27,13 @@ import { callModelFirst } from '../generate/llm.js';
 import { replyKeyOf, canUseAhead, shouldThinkAhead } from './ahead.js';
 import { gatherInputs } from '../guidance/sync.js';
 import { fitDirectorPrompt, promptBudget } from './fit.js';
-import { nextFight, fightFacts } from './fight.js';
+import { nextFight, fightFacts, woundsOf } from './fight.js';
+
+// How many replies a broken-off fight's wounds are remembered.
+const WOUNDS_KEPT = 30;
+import { markDead, deadText } from '../state/death.js';
+import { contextualPlace } from '../library/place-context.js';
+import { creatureFormOf, readCount, addCount, takeCount, creatureLabel } from '../library/creature-form.js';
 import { parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { buildPeoplePrompt, readPeople } from './people.js';
@@ -278,6 +284,13 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
         ...(parentId ? [parentId] : []),
     ];
     let place = matchPlace(move.place, places, nearIds);
+    // "The ruins" is the ruins the scene is at, not the ones a road leads to
+    // (src/library/place-context.js).
+    const meant = place ? contextualPlace({ observedId: place.id, currentId: from, places, parents, recentText }) : null;
+    if (meant) {
+        console.info(LOG_PREFIX, `the director's MOVE read in context: ${meant.why}`);
+        place = places.find((p) => p.id === meant.id) ?? place;
+    }
     if (place?.id === from) return null;
     // Only a real place name - never a sentence the model wrote as one
     // ("Remus leans against a pole inside the gate").
@@ -408,6 +421,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         ahead,
         travelAtNight: settings.director.travelAtNight === true,
         fightFacts: fightFacts(doc.fight, settings.director.fightReplies),
+        deadText: deadText(doc),
     }, promptBudget(settings.director.contextTokens, settings.director.maxTokens));
     if (fitted.trimmed.length) console.info(LOG_PREFIX, `the director's prompt was trimmed to fit (~${fitted.tokens} of ${fitted.budget} tokens): ${fitted.trimmed.join(', ')}`);
     if (!fitted.fits) console.warn(LOG_PREFIX, `the director's prompt is still ~${fitted.tokens} tokens, over the ${fitted.budget} its model's context leaves - raise "Model context" if the model allows, or expect it to fail`);
@@ -549,43 +563,117 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         const creatures = await listEntries(chatId, settingId, 'creature');
         const findCreature = (name) => creatures.find((c) => [c.name, ...(c.aliases ?? c.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === String(name).toLowerCase()))
             ?? creatures.find((c) => mentionedIn(name, c.name));
-        const creatureIds = new Set(getChatDoc(chatKey).canonical.creatureIds);
+        // Creatures are one being (a pet, a mount - like a person) or a kind
+        // that comes in numbers, with a count here (src/library/creature-form.js).
+        const scene0 = getChatDoc(chatKey).canonical;
+        const creatureIds = new Set(scene0.creatureIds);
+        let counts = { ...scene0.creatureCounts };
         const creatureNames = { in: [], out: [] };
-        for (const name of parsed.enters) { const c = !characters.some((x) => x.name.toLowerCase() === name.toLowerCase()) && findCreature(name); if (c && !creatureIds.has(c.id)) { creatureIds.add(c.id); creatureNames.in.push(c.name); } }
-        for (const name of parsed.leaves) { const c = findCreature(name); if (c && creatureIds.has(c.id)) { creatureIds.delete(c.id); creatureNames.out.push(c.name); } }
+        const justIn = new Set();
+        const isKind = (c) => creatureFormOf(c) === 'kind';
+        const isPerson = (name) => characters.some((x) => x.name.toLowerCase() === String(name).toLowerCase());
+        const creatureFor = (raw) => { const { count, name } = readCount(raw); return { c: findCreature(name) ?? findCreature(raw), count }; };
+        const bringIn = (c, count) => {
+            if (isKind(c)) counts = creatureIds.has(c.id) ? addCount(counts, c.id, count) : (count ? { ...counts, [c.id]: count } : counts);
+            if (creatureIds.has(c.id) && !(isKind(c) && count)) return;
+            creatureIds.add(c.id);
+            justIn.add(c.id);
+            creatureNames.in.push(creatureLabel(c.name, { form: isKind(c) ? 'kind' : 'individual', count: isKind(c) ? (counts[c.id] ?? null) : null }));
+        };
+        const takeOut = (c, n = null, { all = false } = {}) => {
+            if (!creatureIds.has(c.id)) return;
+            if (isKind(c)) {
+                const out = takeCount(counts, c.id, n, { all });
+                counts = out.counts;
+                if (!out.gone) return;
+            }
+            creatureIds.delete(c.id);
+            creatureNames.out.push(c.name);
+        };
+        for (const raw of parsed.enters) { if (isPerson(raw)) continue; const { c, count } = creatureFor(raw); if (c) bringIn(c, count); }
+        // "LEAVES | 2 zombies": two go; "LEAVES | the zombies": all of them.
+        for (const raw of parsed.leaves) { const { c, count } = creatureFor(raw); if (c) takeOut(c, count, { all: !count }); }
         // Creatures the SITUATION line has in the scene ("skeletal warriors
         // surge at the breach") are here, as the people it names are - when
         // the story itself names them too: the director's own wording is not
         // enough ("the skeletal warrior's grip" was the Eternal Champion, not
         // the Skeleton Warriors).
         const gone = new Set(creatureNames.out);
-        for (const c of creatures) if (!creatureIds.has(c.id) && !gone.has(c.name) && creatureNamedIn(parsed.situation, c) && creatureNamedIn(recentText, c)) { creatureIds.add(c.id); creatureNames.in.push(c.name); }
-        // A creature the story has stopped speaking of has gone (fled, fallen,
+        for (const c of creatures) if (!creatureIds.has(c.id) && !gone.has(c.name) && creatureNamedIn(parsed.situation, c) && creatureNamedIn(recentText, c)) bringIn(c, null);
+        // A KIND the story has stopped speaking of has gone (fled, fallen,
         // left behind): out of the scene once the last few messages no longer
         // name it - unless the user put it in by hand, or this briefing just
-        // brought it in. Otherwise it would linger, and be made to act.
+        // brought it in. Otherwise it would linger, and be made to act. One
+        // being (a pet, a mount) comes and goes like a person instead.
         const storyText = messages.slice(-6).map((m) => m.text).join('\n');
         const heldIn = new Set(getChatDoc(chatKey).held.filter((h) => h.field === 'creatures' && h.op === 'add' && h.until > getChatDoc(chatKey).turn).map((h) => h.objectId));
-        const justIn = new Set(creatureNames.in);
         for (const c of creatures) {
-            if (creatureIds.has(c.id) && !heldIn.has(c.id) && !justIn.has(c.name) && !creatureNamedIn(storyText, c)) { creatureIds.delete(c.id); creatureNames.out.push(c.name); }
+            if (creatureIds.has(c.id) && isKind(c) && !heldIn.has(c.id) && !justIn.has(c.id) && !creatureNamedIn(storyText, c)) takeOut(c, null, { all: true });
         }
-        if (creatureNames.in.length || creatureNames.out.length) {
-            setCanonical(chatKey, { creatureIds: [...creatureIds] }, { chatId, source: 'director', note: [creatureNames.in.length ? `${creatureNames.in.join(', ')} appear` : '', creatureNames.out.length ? `${creatureNames.out.join(', ')} gone` : ''].filter(Boolean).join('; ') });
+        // Deaths among the creatures (DIES | 2 zombies): a kind's numbers go
+        // down; one being dies like a person (below, src/state/death.js).
+        const creatureDeaths = [];
+        for (const d of parsed.deaths ?? []) {
+            if (isPerson(d.name)) continue;
+            const { c, count } = creatureFor(d.name);
+            if (!c || !creatureIds.has(c.id)) continue;
+            if (isKind(c)) takeOut(c, count);
+            else creatureDeaths.push({ c, how: d.how });
+        }
+        if (creatureNames.in.length || creatureNames.out.length || JSON.stringify(counts) !== JSON.stringify(scene0.creatureCounts)) {
+            setCanonical(chatKey, { creatureIds: [...creatureIds], creatureCounts: counts }, { chatId, source: 'director', note: [creatureNames.in.length ? `${creatureNames.in.join(', ')} appear` : '', creatureNames.out.length ? `${creatureNames.out.join(', ')} gone` : ''].filter(Boolean).join('; ') || 'Creature numbers change' });
+        }
+        for (const { c, how } of creatureDeaths) {
+            if (await markDead(chatKey, { id: c.id, name: c.name, how, source: 'director', chatId })) console.info(LOG_PREFIX, `${c.name} died: ${how || 'in the story'}`);
         }
         moves = after.names;
         if (moves.in.length || moves.out.length) {
             const note2 = [moves.in.length ? `${moves.in.join(', ')} arrive${moves.in.length === 1 ? 's' : ''}` : '', moves.out.length ? `${moves.out.join(', ')} leave${moves.out.length === 1 ? 's' : ''}` : ''].filter(Boolean).join('; ');
             setCanonical(chatKey, { castIds: after.castIds }, { chatId, source: 'director', note: note2 });
         }
+        // Deaths the briefing reports (src/state/death.js): marked, out of the
+        // scene, never back. Never the player character.
+        for (const d of parsed.deaths ?? []) {
+            const key = d.name.toLowerCase();
+            const who = characters.find((c) => [c.name, ...(c.aliases ?? c.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === key))
+                ?? characters.find((c) => getChatDoc(chatKey).canonical.castIds.includes(c.id) && c.name.toLowerCase().includes(key));
+            if (who && !playerNames.some((p) => p.toLowerCase() === who.name.toLowerCase()) && await markDead(chatKey, { id: who.id, name: who.name, how: d.how, source: 'director', chatId })) {
+                console.info(LOG_PREFIX, `${who.name} died: ${d.how || 'in the story'}`);
+            }
+        }
         // The fight (src/director/fight.js): each fighter's condition kept
         // from reply to reply, so blows tell and the fight ends.
-        const fight = nextFight(getChatDoc(chatKey).fight, parsed.fights, {
+        const before = getChatDoc(chatKey);
+        // Wounds from a fight broken off are remembered a while
+        // (WOUNDS_KEPT replies), so a fight taken up again goes on from them.
+        const remembered = Object.fromEntries(Object.entries(before.wounds ?? {}).filter(([, w]) => before.turn - w.turn <= WOUNDS_KEPT).map(([k, w]) => [k, w.condition]));
+        const fight = nextFight(before.fight, parsed.fights, {
             present: (name) => mentionedIn(name, storyText),
             limit: settings.director.fightReplies,
             playerNames,
+            remembered,
         });
-        updateChatDoc(chatKey, (d) => { d.fight = fight; });
+        updateChatDoc(chatKey, (d) => {
+            d.fight = fight;
+            // Remember how everyone stood when a fight stops or ends; drop
+            // what is old.
+            const stopped = before.fight && (!fight || fight.ended) ? woundsOf(fight ?? before.fight) : {};
+            const kept = Object.fromEntries(Object.entries(d.wounds ?? {}).filter(([, w]) => d.turn - w.turn <= WOUNDS_KEPT));
+            for (const [name, condition] of Object.entries(stopped)) kept[name] = { condition, turn: d.turn };
+            // A fighter now fighting again carries their wounds in the fight.
+            for (const f of fight?.fighters ?? []) delete kept[f.name.toLowerCase()];
+            d.wounds = kept;
+        });
+        // A kind of creature beaten or driven off in the fight is gone from
+        // the scene (one being that goes down is only down, not dead).
+        const beaten = (fight?.fighters ?? []).filter((f) => f.side === 'foe' && (f.condition === 'down' || f.condition === 'fled'))
+            .map((f) => creatureFor(f.name).c).filter((c) => c && isKind(c) && getChatDoc(chatKey).canonical.creatureIds.includes(c.id));
+        if (beaten.length) {
+            const now = getChatDoc(chatKey).canonical;
+            let left = { ...now.creatureCounts };
+            for (const c of beaten) left = takeCount(left, c.id, null, { all: true }).counts;
+            setCanonical(chatKey, { creatureIds: now.creatureIds.filter((id) => !beaten.some((c) => c.id === id)), creatureCounts: left }, { chatId, source: 'director', note: `${beaten.map((c) => c.name).join(', ')} beaten off` });
+        }
         if (fight) console.info(LOG_PREFIX, `the fight, reply ${fight.round}${fight.ended ? ' (it ends)' : ''}: ${fight.fighters.map((f) => `${f.name} ${f.condition}`).join(', ')}`);
         if (settings.time.enabled) {
             // The clock just started: first the story's own time of day.

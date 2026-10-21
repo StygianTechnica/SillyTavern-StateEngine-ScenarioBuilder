@@ -23,6 +23,8 @@ import { getObject, listObjects } from '../api/objects.js';
 import { PRESET_NAME } from '../preset/blueprint.js';
 import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.js';
 import { triggerLines } from '../triggers/model.js';
+import { deadText } from '../state/death.js';
+import { creatureFormOf } from '../library/creature-form.js';
 import { latestUserIndex } from '../triggers/run.js';
 import { getBoundSettingId, readField, listEntries, playerIdOf, allKnowledge } from '../library/library.js';
 import { sceneKnowledge } from '../library/knowledge.js';
@@ -147,6 +149,10 @@ export async function gatherInputs(chatId, chatKey) {
                             ...short(o),
                             id: o.id,
                             active: c.creatureIds.includes(o.id),
+                            // One being, or a kind with its count here
+                            // (src/library/creature-form.js).
+                            form: creatureFormOf(o),
+                            count: Number.isInteger(c.creatureCounts?.[o.id]) ? c.creatureCounts[o.id] : null,
                             traits: Array.isArray(base.traits) ? base.traits.join(', ') : (typeof base.traits === 'string' ? base.traits : ''),
                             danger: typeof base.danger_level === 'string' ? base.danger_level : '',
                             state: await readField(chatId, o.id, '', 'state'),
@@ -261,6 +267,8 @@ export async function gatherInputs(chatId, chatKey) {
                 description: q.description,
                 // Where it is heading: the story can work toward its end.
                 completion: q.completion ?? '',
+                // A mission's parts: who it is for, from whom, what it pays.
+                mission: q.mission ? { client: q.mission.client, giver: q.mission.giverName, reward: q.mission.reward, difficulty: q.mission.difficulty } : null,
                 why: [q.priority.level, ...q.priority.reasons].join(', '),
             }));
         } catch (err) {
@@ -349,6 +357,8 @@ export async function gatherInputs(chatId, chatKey) {
             // Story triggers set off for this reply (src/triggers/): the
             // narrator gets them even when the director fails.
             triggered: triggerLines(doc.gm.triggers, latestUserIndex()),
+            // Who has died in this story (src/state/death.js).
+            dead: deadText(doc),
             // The fight the director keeps (src/director/fight.js).
             fight: settings.director.enabled ? doc.fight : null,
             othersTracked,

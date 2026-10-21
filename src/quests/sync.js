@@ -268,6 +268,8 @@ export async function questBoard(chatId, chatKey, settingId) {
             involved,
             completion: meta.completion,
             abandon: meta.abandon,
+            // A mission's client, giver, difficulty, target and reward.
+            mission: meta.mission,
             runtime: {
                 progress: await readField(chatId, q.id, null, 'progress'),
                 current: await readField(chatId, q.id, null, 'current_objective'),

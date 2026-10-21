@@ -27,6 +27,8 @@ import { withStateEngineCast, SE_CAST, withStateEngineCreatures, SE_CREATURES } 
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry, playerIdOf, listEntries } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
+import { deadIds, withoutDead } from '../state/death.js';
+import { contextualPlace } from '../library/place-context.js';
 import { catchUpWithStory, holdStoryWeather, travelAlong, followStoryTimeOfDay, followStoryElapsed } from '../calendar/clock.js';
 import { detectDrift, decide, DEFAULT_POLICIES, namedOnlyAsOwner, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
 
@@ -200,7 +202,18 @@ async function reconcileOnce() {
     const doc = getChatDoc(chatKey);
     // The player character never leaves the scene: the scene goes with them.
     const playerId = settingId ? playerIdOf(settingId, await listEntries(chatId, settingId, 'character')) : '';
-    const observed = followPlayer(withStateEngineCreatures(withStateEngineCast(readObserved(raw), await stateEngineCast(chatId)), await stateEngineCreatures(chatId, settingId)), doc.canonical, playerId);
+    const read = followPlayer(withStateEngineCreatures(withStateEngineCast(readObserved(raw), await stateEngineCast(chatId)), await stateEngineCreatures(chatId, settingId)), doc.canonical, playerId);
+    // The dead never come back by the story's reading (src/state/death.js).
+    const observed = { ...read, cast: withoutDead(read.cast, deadIds(doc)) };
+    // "The ruins" is the ruins the story is at, not the ones it is heading
+    // for (src/library/place-context.js).
+    if (settingId && observed.location && doc.canonical.locationId && observed.location !== doc.canonical.locationId) {
+        const meant = contextualPlace({ observedId: observed.location, currentId: doc.canonical.locationId, places: await listEntries(chatId, settingId, 'location'), parents: getParents(settingId), recentText: latestTurnText() });
+        if (meant) {
+            console.info(LOG_PREFIX, `the story's place read in context: ${meant.why}`);
+            observed.location = meant.id;
+        }
+    }
     const replySource = latestReplySource(chatId);
     const newReply = !!replySource && replySource !== doc.lastReply;
 

@@ -13,6 +13,7 @@
 // NOT deterministic (a recorded exception to SB-015); everything around it
 // is.
 
+import { creatureLabel } from '../library/creature-form.js';
 import { WEATHER_VALUES } from '../store/schema.js';
 import { lookLines } from '../library/world-options.js';
 import { shortTitle } from '../validate/drift.js';
@@ -322,9 +323,14 @@ export function dossierText(input) {
                 clean(x.state) && `now: ${cut(x.state, 160)}`,
             ].filter(Boolean).map(bare);
             const where = x.active === false ? ' [lives here - lurking, unseen; not in the scene unless the story brings it in]' : ' [in the scene]';
-            lines.push(`- ${clean(x.name)}${where}${bits.length ? `: ${bits.join('; ')}` : ''}`);
+            // A kind in numbers ("3 Zombies"), one being by its name.
+            const label = x.active === false ? clean(x.name) : creatureLabel(x.name, { form: x.form, count: x.count });
+            const kind = x.form === 'kind' ? ' (a kind - its numbers count down as they fall)' : '';
+            lines.push(`- ${label}${where}${kind}${bits.length ? `: ${bits.join('; ')}` : ''}`);
         }
     }
+    // Who has died in this story (src/state/death.js).
+    if (clean(input.deadText)) { section('THE DEAD (gone for good - they can be mourned, remembered or spoken of, never shown alive, speaking or acting)'); lines.push(clean(input.deadText)); }
     // The fight as Scenario Builder keeps it (src/director/fight.js).
     if (clean(input.fightFacts)) { section('THE FIGHT SO FAR'); lines.push(clean(input.fightFacts)); }
     if (input.secrets?.length) {
@@ -388,7 +394,7 @@ export function buildDirectorPrompt(input) {
         ? 'No NPCs are present, so the reply is not empty: the world itself reacts. Brief the narrator ONLY on the environment, the weather, sounds, smells, distant movement, creatures acting independently (the ones here, or ones the latest chat shows coming) and divine or supernatural forces - including what they do in answer to the latest message. Do not describe or suggest anything the player character does, thinks or feels. If the chat shows creatures or people arriving that are not listed as here, name them with an ENTERS line below. Someone may turn up only if the story calls for it - do not invent a companion just to have someone to talk to.'
         : `what the people around ${userName} want, feel toward one another and are likely to do about it - woven together, not person by person. Give each of them an agenda of their own and show it moving: in this reply at least one of them takes the initiative - starts something, presses their own plan, pursues what they want, or acts on someone else - without waiting to be asked. They answer ${userName} only as far as it serves their own aims.`;
     // Creatures in the scene act too, NPCs or not - by their nature, unasked.
-    const activeCreatures = (input.location?.creatures ?? []).filter((x) => clean(x?.name) && x.active !== false).map((x) => clean(x.name));
+    const activeCreatures = (input.location?.creatures ?? []).filter((x) => clean(x?.name) && x.active !== false).map((x) => creatureLabel(x.name, { form: x.form, count: x.count }));
     const creatureTask = activeCreatures.length
         ? `The creatures in the scene (${activeCreatures.join(', ')}) act on their own in this reply, by their nature and without waiting to be provoked: a predator stalks, tests and strikes; a scavenger circles; the undead press in; a frightened animal bolts or turns at bay; a mount shies. Say what each does now and how it changes the scene - a dangerous one that is active is never just background; it closes in, attacks, blocks the way or forces a choice. They act on instinct and hunger, not on plans, speeches or schemes the story has not set up, and act on ${userName} only from the outside.`
         : '';
@@ -425,12 +431,15 @@ export function buildDirectorPrompt(input) {
         `A journey goes straight to where ${userName} is heading, even when it is further on: the MOVE line names that place, not a road or a stop on the way, and the TIME line covers the whole journey. A journey where nothing happens passes in a few sentences that sum up the road. ${input.travelAtNight ? 'The party travels on through the night when the journey runs past dusk: the TIME line covers the whole of it.' : 'If it runs on past dusk, the party makes camp for the night and goes on in the morning: the TIME line covers the night as well (to "the next morning", or later).'} Stop somewhere on the way only when the latest message stops there, or for a real turn in the story (an ambush, a discovery, someone met) - never to drag the trip out with talk.`,
         'MOVE | <the place the scene is in now> | <who goes along, comma-separated, or none> | <indoors or outdoors>',
         '',
-        'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along):',
+        'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along). For creatures of a kind, say how many (ENTERS | 3 zombies; LEAVES | 2 zombies):',
         'ENTERS | <name>',
         'LEAVES | <name>',
         '',
         `While there is a fight, a line for every fighter but ${userName} - each foe, and each ally who fights - saying how they stand once this reply is done. The condition is one of: unhurt, hurt, wounded, badly wounded, failing, down, fled (or won, for a foe that has beaten the others). It never gets better unless the story heals it, and blows that land make it worse: a foe struck again and again does not stay unhurt. Leave these lines out when no one is fighting:`,
         'FIGHT | <name> | <condition> | <foe or ally>',
+        '',
+        `If someone other than ${userName} dies in this reply - killed, not just beaten, wounded or knocked out - a line for each, with how in a few words; for creatures of a kind, how many fell (DIES | 2 zombies | cut down by Varyn). The dead stay dead:`,
+        'DIES | <name> | <how>',
         '',
         'If the latest chat gives a name to someone listed with "no name yet", a line for each (only the name the story gives - never one of your own):',
         'RENAME | <the descriptive name> | <the name the story gives>',
@@ -604,7 +613,7 @@ export function isPlaceholder(value) {
 }
 
 // A format line, whether or not it could be read - never left in the prose.
-const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|NEW|RENAME|BEAT)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|NEW|RENAME|BEAT)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
@@ -626,7 +635,15 @@ export function parseDirectorNote(raw) {
     const leaves = [];
     const beats = [];
     const fights = [];
+    const deaths = [];
     for (const line of text.split('\n')) {
+        // DIES | <name> | <how> (src/state/death.js)
+        const dd = line.match(/^\s*(?:[-*]\s*)?\**DIE[SD]\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?$/i);
+        if (dd) {
+            const name = clean(dd[1]).replace(/^["'*]+|["'*.]+$/g, '');
+            if (name && !isPlaceholder(name) && !/^(none|no one|nobody|-)$/i.test(name) && deaths.length < 6) deaths.push({ name, how: isPlaceholder(dd[2]) ? '' : clean(dd[2]) });
+            continue;
+        }
         // FIGHT | <name> | <condition> | <foe or ally> (src/director/fight.js)
         const fg = line.match(/^\s*(?:[-*]\s*)?\**FIGHT\**\s*:?\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?$/i);
         if (fg) {
@@ -722,7 +739,7 @@ export function parseDirectorNote(raw) {
     // A briefing cut off or told as story lost its "Next:" end; any other
     // paragraph is not direction.
     const parts = tidy.flaws.length && !MARKER.test(text) ? { summary: text, direction: '' } : splitNote(text);
-    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, fights };
+    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, fights, deaths };
 }
 
 // The first library entry `text` names that nothing the scene stands on

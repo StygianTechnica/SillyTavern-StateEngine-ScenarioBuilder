@@ -1,4 +1,4 @@
-import { nextFight, readCondition, readSide, normalizeFight, fightFacts, fightGuidance } from '../src/director/fight.js';
+import { nextFight, readCondition, readSide, normalizeFight, fightFacts, fightGuidance, woundsOf } from '../src/director/fight.js';
 import { parseDirectorNote } from '../src/director/prompt.js';
 import { buildGuidance } from '../src/guidance/build.js';
 
@@ -42,9 +42,9 @@ describe('the fight from reply to reply', () => {
         expect(of(fight, 'Varyn').condition).toBe('hurt');
     });
 
-    it('goes on when the director forgets the lines, while the fighters are still here', () => {
+    it('is paused when the director reports no fighting, while the fighters are still here', () => {
         const start = nextFight(null, [champion('hurt')]);
-        expect(nextFight(start, [], { present: () => true }).round).toBe(2);
+        expect(nextFight(start, [], { present: () => true })).toEqual(start);
         expect(nextFight(start, [], { present: () => false })).toBe(null);
     });
 
@@ -92,5 +92,30 @@ describe('the fight told to the director and the narrator', () => {
         expect(built.sections.find((s) => s.key === 'fight').mode).toBe('full');
         const over = nextFight(fight, [champion('slain'), varyn('hurt')]);
         expect(fightGuidance(over)).toMatch(/^The fight ends in this reply\. The Eternal Champion goes down in this reply/);
+    });
+});
+
+describe('a fight broken off and taken up again', () => {
+    it('neither counts nor wears anyone down while nobody fights', () => {
+        let fight = nextFight(null, [champion('wounded'), varyn('hurt')]);
+        for (let i = 0; i < 6; i += 1) fight = nextFight(fight, [], { present: () => true, limit: 5 });
+        expect(fight.round).toBe(1);
+        expect(fight.ended).toBe(false);
+        expect(of(fight, 'The Eternal Champion').condition).toBe('wounded');
+    });
+
+    it('goes on from the wounds everyone left with', () => {
+        const fight = nextFight(null, [champion('badly wounded'), varyn('hurt'), { name: 'Arin', condition: 'unhurt', side: 'ally' }]);
+        const wounds = woundsOf(fight);
+        expect(wounds).toEqual({ 'the eternal champion': 'badly wounded', varyn: 'hurt' });
+        const again = nextFight(null, [champion('unhurt'), varyn('unhurt')], { remembered: wounds });
+        expect(of(again, 'The Eternal Champion').condition).toBe('badly wounded');
+        expect(of(again, 'Varyn').condition).toBe('hurt');
+        expect(again.round).toBe(1);
+    });
+
+    it('never brings back one that went down', () => {
+        const again = nextFight(null, [champion('unhurt')], { remembered: { 'the eternal champion': 'down' } });
+        expect(of(again, 'The Eternal Champion').condition).toBe('unhurt');
     });
 });

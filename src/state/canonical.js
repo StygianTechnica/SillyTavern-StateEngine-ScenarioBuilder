@@ -14,6 +14,7 @@ import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { normalizeCanonical, newLocalId, HISTORY_LIMIT } from '../store/schema.js';
 import { markObjectPresent, markObjectAbsent, getObject } from '../api/objects.js';
 import { missingPatch, idsToCheck } from './missing.js';
+import { deadIds, withoutDead } from './death.js';
 
 const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
@@ -40,6 +41,19 @@ export function setCanonical(chatKey, patch, info = {}) {
     let entry = null;
     let castChange = null;
     updateChatDoc(chatKey, (doc) => {
+        // The dead stay dead (src/state/death.js): no one but the user puts
+        // them back in the scene - and the user doing so brings them back.
+        const dead = deadIds(doc);
+        // The same for creatures that are one being (a pet, a mount).
+        for (const key of ['castIds', 'creatureIds']) {
+            if (!Array.isArray(patch[key]) || !dead.size) continue;
+            if (info.source === 'user') {
+                const back = patch[key].filter((id) => dead.has(id) && !doc.canonical[key].includes(id));
+                if (back.length) doc.dead = doc.dead.filter((d) => !back.includes(d.id));
+            } else {
+                patch = { ...patch, [key]: withoutDead(patch[key], dead) };
+            }
+        }
         const next = normalizeCanonical({ ...doc.canonical, ...patch });
         const before = {};
         const after = {};

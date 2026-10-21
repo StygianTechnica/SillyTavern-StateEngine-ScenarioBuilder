@@ -25,6 +25,14 @@ export async function updatePreset(name, patch) {
     return stateEngine.updatePreset(EXTENSION_ID, instanceId, NAMESPACE, name, patch);
 }
 
+// Runs one of our presets' prompted update now, on its own call, and
+// resolves when its values are written (State Engine's independent-preset
+// dispatcher, which runs any preset). -> State Engine's result.
+export async function runPreset(chatId, name) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.runIndependentPreset(EXTENSION_ID, instanceId, chatId, { namespace: NAMESPACE, name });
+}
+
 // Binds a preset (ours by default, any namespace allowed) to a chat.
 export async function activatePreset(chatId, name, namespace = NAMESPACE) {
     const { stateEngine, instanceId } = await getStateEngine();

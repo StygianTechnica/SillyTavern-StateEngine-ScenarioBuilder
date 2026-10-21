@@ -79,6 +79,11 @@ const DEFAULTS = {
     // fightReplies: the most replies a fight lasts (src/director/fight.js).
     // contextTokens: the context window of the model the director runs on;
     // its prompt is trimmed to fit (src/director/fit.js).
+    // Story triggers (src/triggers/): onMessage - their flags are also
+    // checked against the player's message before each reply (one small
+    // State Engine call, only while some are armed), waiting at most
+    // waitSeconds; off, only after AI replies.
+    triggers: { onMessage: true, waitSeconds: 20 },
     director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600, travelAtNight: false, contextTokens: 8192, fightReplies: 5 },
     // The clock (src/calendar/clock.js): on = Scenario Builder keeps the
     // time and weather; perTurn = how much time a reply covers when the
@@ -114,6 +119,8 @@ export function getSettings() {
     // New sections/policies added by an update get their defaults.
     for (const [key, value] of Object.entries(DEFAULT_SECTIONS)) settings.sections[key] ??= value;
     for (const [key, value] of Object.entries(DEFAULTS.director)) settings.director[key] ??= value;
+    settings.triggers ??= {};
+    for (const [key, value] of Object.entries(DEFAULTS.triggers)) settings.triggers[key] ??= value;
     for (const [key, value] of Object.entries(DEFAULTS.time)) settings.time[key] ??= value;
     settings.planner ??= structuredClone(DEFAULTS.planner);
     for (const [key, value] of Object.entries(DEFAULTS.planner)) if (settings.planner[key] === undefined) settings.planner[key] = value;

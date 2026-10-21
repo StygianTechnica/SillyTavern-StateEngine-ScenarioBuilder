@@ -48,6 +48,10 @@
                     <input id="sb_director_ahead" type="checkbox" />
                     <span>Think after each reply (no wait before yours)</span>
                 </label>
+                <label class="checkbox_label" title="Story triggers (the GM Plan's Story triggers, and mission givers waiting to be asked) are checked against YOUR message before the reply, so a condition your message meets - opening the sarcophagus - plays out in that very reply. Without it, State Engine only judges them after an AI reply, and the effect comes two replies late. One small extra State Engine call per message, only while a story trigger is armed.">
+                    <input id="sb_triggers_on_message" type="checkbox" />
+                    <span>Check story triggers on my message (one small call)</span>
+                </label>
                 <label class="checkbox_label" title="For each person here, the game master is told the recent things they did not witness and were not told (from Archivist's memories: who was present, and dreams, visions and thoughts kept to the one who had them), so no one speaks of what they never saw. No extra call: about 600 tokens more in the briefing's prompt at most.">
                     <input id="sb_director_perspective" type="checkbox" />
                     <span>Perspective: people know only what they witnessed</span>

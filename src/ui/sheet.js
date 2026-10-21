@@ -22,6 +22,12 @@ import { safeImageSrc } from '../images/attach.js';
 import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
 import { renderQuestTab } from './quest-board.js';
+import { renderMissionsTab, GIVER_TYPES } from './missions-tab.js';
+import { isDead, markDead, bringBack } from '../state/death.js';
+import { suggestParents } from '../library/place-context.js';
+import { creatureFormOf } from '../library/creature-form.js';
+import { recordEnrichment, enrichmentRecord, normalizeEnrichments, revertPlan, revertEnrichment } from '../generate/revert.js';
+import { newLocalId } from '../store/schema.js';
 import { suggestQuestEnds } from '../quests/ends.js';
 import { writeIntimacyNote } from '../generate/intimacy.js';
 import { questMeta, setQuestMeta } from '../quests/sync.js';
@@ -50,6 +56,7 @@ const SHEET_TABS = Object.freeze([
     ['gm', 'GM notes', 'fa-user-secret'],
     ['intimacy', 'Intimate scenes', 'fa-fire'],
     ['quest', 'Quest', 'fa-scroll'],
+    ['missions', 'Missions', 'fa-briefcase'],
 ]);
 
 // ---- fields
@@ -259,6 +266,8 @@ export async function renderSheet(type, all) {
     const status = isNew ? 'unused' : chatStatusOf(entry.id, doc);
     const placeId = type.id === 'location' ? (draft?.meta.parentId ?? entry.meta?.parentId) : (entry.base?.location ?? entry.location);
     const where = placeId ? pathNames(placeId) : [];
+    // A place with no parent: where it probably belongs (src/library/place-context.js).
+    const parentHints = type.id === 'location' && !isNew && !ws.editing && !placeId ? suggestParents(entry, { places: all.location ?? [], parents, history: doc.history }) : [];
     const src = safeImageSrc(entry.image);
     const quick = [];
     if (!isNew && !ws.editing) {
@@ -270,15 +279,49 @@ export async function renderSheet(type, all) {
                 rerender();
             }, { iconName: 'fa-gamepad', cls: isPlayer ? 'sb-primary' : '', title: isPlayer ? 'The character you play - the guidance never writes their words, actions, thoughts or feelings. Click to unmark.' : 'The character you play. The guidance is then written from the other characters\' side and never speaks for this one.' }));
             const present = doc.canonical.castIds.includes(entry.id);
-            quick.push(button(present ? 'Remove from scene' : 'Bring into scene', () => void setScene({
-                castIds: present ? doc.canonical.castIds.filter((id) => id !== entry.id) : [...doc.canonical.castIds, entry.id],
-            }, `${entry.name} ${present ? 'left' : 'joined'} the scene`), { iconName: present ? 'fa-user-minus' : 'fa-user-plus' }));
+            const dead = isDead(doc, entry.id);
+            if (!dead) {
+                quick.push(button(present ? 'Remove from scene' : 'Bring into scene', () => void setScene({
+                    castIds: present ? doc.canonical.castIds.filter((id) => id !== entry.id) : [...doc.canonical.castIds, entry.id],
+                }, `${entry.name} ${present ? 'left' : 'joined'} the scene`), { iconName: present ? 'fa-user-minus' : 'fa-user-plus' }));
+            }
+            // Death is remembered (src/state/death.js): not for the player character.
+            if (!isPlayer) {
+                quick.push(dead
+                    ? button('Bring back', () => void bringBack(ws.ctx.chatKey, entry.id).then(() => { toast('info', `${entry.name} is no longer dead in this story.`); rerender(); }), { iconName: 'fa-heart-pulse', title: 'Raised, resurrected, or never really dead: they can come back into the story' })
+                    : button('Mark dead', () => void markDead(ws.ctx.chatKey, { id: entry.id, name: entry.name, source: 'user', chatId: ws.ctx.chatId }).then(() => { toast('info', `${entry.name} is dead in this story: out of the scene, and never brought back unless you do.`); rerender(); }), { iconName: 'fa-skull', title: 'They died in this story: taken out of the scene, and the director and the story never bring them back' }));
+            }
         }
         if (type.id === 'creature') {
+            // One being (a pet, a mount - like a person) or a kind that comes
+            // in numbers (src/library/creature-form.js).
             const present = doc.canonical.creatureIds.includes(entry.id);
-            quick.push(button(present ? 'Remove from scene' : 'Bring into scene', () => void setScene({
-                creatureIds: present ? doc.canonical.creatureIds.filter((id) => id !== entry.id) : [...doc.canonical.creatureIds, entry.id],
-            }, `${entry.name} ${present ? 'left' : 'appeared in'} the scene`), { iconName: present ? 'fa-minus' : 'fa-plus' }));
+            const form = creatureFormOf(entry);
+            const dead = form === 'individual' && isDead(doc, entry.id);
+            const count = doc.canonical.creatureCounts?.[entry.id] ?? null;
+            const setCount = (n) => (n > 0
+                ? setScene({ creatureCounts: { ...doc.canonical.creatureCounts, [entry.id]: n } }, `${n} ${entry.name} here`)
+                : setScene({ creatureIds: doc.canonical.creatureIds.filter((id) => id !== entry.id) }, `The last of the ${entry.name} gone`));
+            if (!dead) {
+                quick.push(button(present ? 'Remove from scene' : 'Bring into scene', () => void setScene({
+                    creatureIds: present ? doc.canonical.creatureIds.filter((id) => id !== entry.id) : [...doc.canonical.creatureIds, entry.id],
+                }, `${entry.name} ${present ? 'left' : 'appeared in'} the scene`), { iconName: present ? 'fa-minus' : 'fa-plus' }));
+            }
+            if (present && form === 'kind') {
+                quick.push(h('span', { class: 'sb-row sb-count' },
+                    h('span', { class: 'sb-iconbtn', title: 'One fewer here', onclick: () => void setCount((count ?? 1) - 1) }, icon('fa-minus')),
+                    h('span', { class: 'sb-chip', title: 'How many are in the scene' }, count ? `${count} here` : 'some here'),
+                    h('span', { class: 'sb-iconbtn', title: 'One more here', onclick: () => void setCount((count ?? 0) + 1) }, icon('fa-plus'))));
+            }
+            quick.push(button(form === 'kind' ? 'A kind (in numbers)' : 'One being', () => {
+                setEntryMeta(ws.ctx.settingId, entry.id, { creatureForm: form === 'kind' ? 'individual' : 'kind' });
+                rerender({ force: true });
+            }, { iconName: form === 'kind' ? 'fa-users' : 'fa-paw', title: form === 'kind' ? 'A sort that turns up in numbers - zombies, wolves: counted in the scene, never dies as a whole. Click to make it one being.' : 'One being - a pet, a mount, a familiar, a unique monster: comes and goes like a person, and can die. Click to make it a kind that comes in numbers.' }));
+            if (form === 'individual') {
+                quick.push(dead
+                    ? button('Bring back', () => void bringBack(ws.ctx.chatKey, entry.id).then(() => { toast('info', `${entry.name} is no longer dead in this story.`); rerender(); }), { iconName: 'fa-heart-pulse' })
+                    : button('Mark dead', () => void markDead(ws.ctx.chatKey, { id: entry.id, name: entry.name, source: 'user', chatId: ws.ctx.chatId }).then(() => { toast('info', `${entry.name} is dead in this story.`); rerender(); }), { iconName: 'fa-skull', title: 'It died in this story: out of the scene, never brought back unless you do' }));
+            }
         }
     }
     const header = h('div', { class: 'sb-sheet-head', style: `--sb-accent: ${type.color}` },
@@ -290,10 +333,15 @@ export async function renderSheet(type, all) {
             ws.editing ? textInput('aliases', csv(draft.aliases), { placeholder: 'Also known as… (comma-separated)', oninput: (e) => set('aliases', fromCsv(e.target.value)) })
                 : (entry.aliases?.length ? h('small', { class: 'sb-aka' }, `also ${entry.aliases.join(', ')}`) : null),
             where.length ? h('div', { class: 'sb-where' }, icon('fa-location-dot'), where.map((n, i) => [i ? ' › ' : '', n])) : null,
+            parentHints.length ? h('div', { class: 'sb-where sb-parent-hints' }, icon('fa-sitemap'), h('small', { class: 'sb-hint' }, ' Inside…? '),
+                parentHints.map((s) => button(names.get(s.id)?.name ?? s.id, () => {
+                    if (setParent(settingId, entry.id, s.id)) { toast('success', `${entry.name} is now inside ${names.get(s.id)?.name}.`); rerender(); } else toast('warning', 'That would put a place inside itself.');
+                }, { iconName: 'fa-turn-up', title: `Put ${entry.name} inside it - ${s.why}` }))) : null,
             h('div', { class: 'sb-chips' },
                 status !== 'unused' ? h('span', { class: `sb-badge sb-badge-${status}` }, STATUS_LABELS[status]) : null,
                 (draft?.meta.tags ?? entry.meta?.tags ?? []).map((t) => h('span', { class: 'sb-tag' }, `#${t}`)),
-                entry.confirmed === false ? h('span', { class: 'sb-badge' }, 'not in the setting yet') : null),
+                entry.confirmed === false ? h('span', { class: 'sb-badge' }, 'not in the setting yet') : null,
+                !isNew && isDead(doc, entry.id) ? h('span', { class: 'sb-badge sb-danger', title: (doc.dead.find((d) => d.id === entry.id)?.how) || 'Died in this story' }, icon('fa-skull'), ' Dead in this story') : null),
             quick.length ? h('div', { class: 'sb-actions' }, quick) : null));
 
     // ---- tabs
@@ -302,7 +350,7 @@ export async function renderSheet(type, all) {
         (ws.questTabSeen ??= new Set()).add(entry.id);
         ws.sheetTab = 'quest';
     }
-    const tabs = h('div', { class: 'sb-sheet-tabs' }, SHEET_TABS.filter(([key]) => (key !== 'quest' || (type.id === 'quest' && !isNew)) && (key !== 'intimacy' || (type.id === 'character' && getSettings().generation.showNsfw === true))).map(([key, label, i]) => h('div', {
+    const tabs = h('div', { class: 'sb-sheet-tabs' }, SHEET_TABS.filter(([key]) => (key !== 'quest' || (type.id === 'quest' && !isNew)) && (key !== 'missions' || (GIVER_TYPES.includes(type.id) && !isNew)) && (key !== 'intimacy' || (type.id === 'character' && getSettings().generation.showNsfw === true))).map(([key, label, i]) => h('div', {
         class: `sb-sheet-tab${ws.sheetTab === key ? ' active' : ''}`,
         onclick: () => { ws.sheetTab = key; rerender(); },
     }, icon(i), h('span', {}, label))));
@@ -440,6 +488,7 @@ async function sheetBody(tab, c) {
         case 'gm': return gmTab(c);
         case 'intimacy': return intimacyTab(c);
         case 'quest': return c.isNew ? overviewTab(c) : renderQuestTab(c.entry);
+        case 'missions': return c.isNew ? overviewTab(c) : renderMissionsTab(c.entry);
         default: return overviewTab(c);
     }
 }
@@ -464,7 +513,41 @@ function overviewTab({ type, entry, isNew, defs, doc }) {
                 h('span', { class: 'sb-iconbtn', title: 'Clear - use the description again', onclick: () => { setNarrative(ws.ctx.chatKey, entry.id, ''); void syncNow(); } }, icon('fa-xmark'))),
             h('div', { class: 'sb-prose' }, narrative)) : null,
         narrative ? h('details', { class: 'sb-base-desc' }, h('summary', {}, 'Original description'), base) : base,
-        glance.length ? h('dl', { class: 'sb-glance' }, glance.flatMap((d) => [h('dt', {}, d.label), h('dd', {}, String(entry.base?.[d.name] ?? entry[d.name]))])) : null);
+        glance.length ? h('dl', { class: 'sb-glance' }, glance.flatMap((d) => [h('dt', {}, d.label), h('dd', {}, String(entry.base?.[d.name] ?? entry[d.name]))])) : null,
+        isNew ? null : enrichmentCard(entry, defs));
+}
+
+// What generation wrote on this entry, and what was there before: a field,
+// or a whole enrichment, can be put back (src/generate/revert.js).
+function enrichmentCard(entry, defs) {
+    const records = normalizeEnrichments(entry.meta?.enrichments).filter((r) => Object.keys(r.fields).some((k) => !r.reverted.includes(k))).reverse();
+    if (!records.length) return null;
+    const labelOf = (k) => (k === 'description' ? 'Description' : k === 'aliases' ? 'Also known as' : defs.find((d) => d.name === k)?.label ?? k);
+    const show = (v) => { const t = Array.isArray(v) ? v.join(', ') : String(v ?? ''); return t.trim() ? (t.length > 90 ? `${t.slice(0, 89)}…` : t) : '(empty)'; };
+    const revert = async (record, keys) => {
+        const { settingId, chatId } = ws.ctx;
+        const base = entry.base ?? entry;
+        const current = Object.fromEntries(Object.keys(record.fields).map((k) => [k, k === 'description' || k === 'aliases' ? entry[k] : base[k]]));
+        const { changedSince } = revertPlan(record, current, keys);
+        if (changedSince.length && !await confirmAction(`${changedSince.map(labelOf).join(', ')} ${changedSince.length === 1 ? 'was' : 'were'} changed after the enrichment wrote ${changedSince.length === 1 ? 'it' : 'them'}.
+Put back what was there before anyway? Those later changes are lost.`)) return;
+        const out = await revertEnrichment(chatId, settingId, entry.id, record.id, keys);
+        if (!out) return toast('error', 'Could not put it back - see the console.');
+        toast('success', `Put back: ${out.reverted.map(labelOf).join(', ')}.`);
+        await syncNow();
+        rerender({ force: true });
+    };
+    return h('details', { class: 'sb-card sb-enrichments' },
+        h('summary', { class: 'sb-card-title' }, icon('fa-wand-magic-sparkles'), ` Generated detail (${records.length}) - can be put back`),
+        records.map((r) => h('div', { class: 'sb-enrichment' },
+            h('div', { class: 'sb-row' },
+                h('b', {}, r.source === 'sheet' ? 'Generated on this sheet' : 'Filled in automatically'),
+                h('small', { class: 'sb-hint' }, r.at ? new Date(r.at).toLocaleString() : ''),
+                h('span', { class: 'sb-push' }), button('Put all back', () => void revert(r, null), { iconName: 'fa-rotate-left', title: 'Every field this enrichment wrote goes back to what it was before' })),
+            Object.entries(r.fields).filter(([k]) => !r.reverted.includes(k)).map(([k, f]) => h('div', { class: 'sb-row sb-enrichment-field' },
+                h('span', { class: 'sb-field-label' }, labelOf(k)),
+                h('small', { class: 'sb-hint', title: `Before: ${show(f.before)}` }, `was ${show(f.before)}`),
+                h('span', { class: 'sb-iconbtn sb-push', title: `Put ${labelOf(k)} back to what it was`, onclick: () => void revert(r, [k]) }, icon('fa-rotate-left')))))));
 }
 
 function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
@@ -959,6 +1042,13 @@ async function saveSheet(type, entry, defs, isNew) {
         } else {
             if (!await updateEntry(chatId, settingId, entry.id, patch)) return toast('error', 'State Engine refused the change - see the console.');
             setEntryMeta(settingId, entry.id, meta);
+            // Generation saved here may have replaced the user's own text:
+            // kept so it can be put back (src/generate/revert.js).
+            if (ws.generatedFields?.size) {
+                const keys = [...ws.generatedFields].filter((k) => k !== 'name' && k in patch);
+                const was = (k) => (k === 'description' || k === 'aliases' ? entry[k] : (entry.base ?? entry)[k]);
+                await recordEnrichment(settingId, entry.id, enrichmentRecord({ id: newLocalId('e'), at: new Date().toISOString(), source: 'sheet', before: Object.fromEntries(keys.map((k) => [k, was(k) ?? null])), after: Object.fromEntries(keys.map((k) => [k, patch[k]])) }));
+            }
             if (type.id === 'location' && (d.meta.parentId || null) !== (entry.meta?.parentId ?? null) && !setParent(settingId, entry.id, d.meta.parentId || null)) {
                 toast('warning', 'A place cannot go inside itself or one of its own parts.');
             }

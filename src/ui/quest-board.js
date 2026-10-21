@@ -31,6 +31,9 @@ async function scan() {
     }
 }
 
+// A mission's parts in a line: from whom, for whom, how hard, for what pay.
+const missionLine = (m) => [m.giverName && `from ${m.giverName}`, m.client && `for ${m.client}`, m.difficulty, m.reward && `pays ${m.reward}`].filter(Boolean).join(' · ');
+
 function questCard(q, color) {
     const pct = Math.round(q.progress.ratio * 100);
     return h('div', { class: `sb-quest sb-quest-${q.status.replace(/\s/g, '').toLowerCase()}`, style: `--sb-accent: ${color}`, onclick: () => openSheet(q.id, 'quest') },
@@ -40,6 +43,7 @@ function questCard(q, color) {
             h('span', { class: `sb-badge sb-prio-${q.priority.level}`, title: q.priority.reasons.join(', ') || 'priority' }, q.priority.level),
             h('span', { class: 'sb-badge' }, q.type),
             q.from !== 'none' ? h('small', { class: 'sb-hint sb-push' }, `${q.status} · ${FROM_TEXT[q.from]}`) : null),
+        q.mission ? h('small', { class: 'sb-hint' }, icon('fa-briefcase'), ` ${missionLine(q.mission)}`) : null,
         q.conflict ? h('small', { class: 'sb-warn' }, icon('fa-circle-exclamation'), ` Archivist thinks it is ${q.conflict.toLowerCase()} - open it to confirm.`) : null,
         q.progress.total ? h('div', { class: 'sb-progress sb-progress-small', title: `${q.progress.done} of ${q.progress.total} objectives` }, h('div', { class: 'sb-progress-bar', style: `width: ${pct}%` })) : null,
         q.runtime.current || q.current ? h('small', { class: 'sb-hint' }, `Now: ${q.runtime.current || q.current.text}`) : null);
@@ -74,6 +78,19 @@ export async function renderQuestBoard(type) {
                 h('div', {}, h('b', {}, 'No quests yet.'), h('div', {}, hasArchivistThreads() ? 'Scan Archivist for the quest seeds, goals and plans the story has set up - or create one.' : 'Create one - or install Archivist to have quests made from the story.'))));
 }
 
+// A mission's parts on its quest tab; the giver, client and target open
+// their own pages when they are in the library.
+function missionCard(m) {
+    const typeOf = (id) => ({ chr: 'character', fac: 'faction', loc: 'location', itm: 'item', crt: 'creature' })[String(id).split('_')[0]] ?? null;
+    const link = (name, id) => (id ? h('a', { class: 'sb-link', onclick: () => openSheet(id, typeOf(id)) }, name) : h('span', {}, name || '-'));
+    return h('div', { class: 'sb-card' }, h('div', { class: 'sb-card-title' }, icon('fa-briefcase'), ` A ${m.difficulty} mission`),
+        h('div', {}, h('b', {}, 'Giver: '), link(m.giverName, m.giverId)),
+        m.client ? h('div', {}, h('b', {}, 'Client: '), link(m.client, m.clientId)) : null,
+        m.target ? h('div', {}, h('b', {}, 'Target: '), link(m.target, m.targetId)) : null,
+        m.task ? h('div', { class: 'sb-prose' }, m.task) : null,
+        m.reward ? h('div', {}, h('b', {}, 'Reward: '), m.reward) : null);
+}
+
 // The quest tab of a quest's sheet. Changes save at once.
 export async function renderQuestTab(entry) {
     const { chatId, chatKey, settingId } = ws.ctx;
@@ -93,6 +110,7 @@ export async function renderQuestTab(entry) {
             h('small', { class: 'sb-hint' }, FROM_TEXT[q.from]),
             q.dormant ? h('span', { class: 'sb-chip', title: 'The story has not touched it in a long while: it is not put before the narrator. Set its status to Active to follow it again.' }, icon('fa-moon'), ' dormant') : null,
             q.priority.reasons.length ? h('small', { class: 'sb-hint' }, `(${q.priority.reasons.join(', ')})`) : null) : null,
+        q?.mission ? missionCard(q.mission) : null,
         q?.conflict ? h('div', { class: 'sb-callout sb-warn' }, icon('fa-circle-exclamation'),
             h('span', {}, `Archivist thinks this quest is ${q.conflict.toLowerCase()}, but the story still has it active.`),
             button(`Mark ${q.conflict.toLowerCase()}`, () => save({ status: q.conflict }), { iconName: 'fa-check' })) : null,

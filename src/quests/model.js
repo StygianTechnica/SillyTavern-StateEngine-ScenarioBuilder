@@ -11,7 +11,9 @@
 // A disagreement (Archivist says resolved, the runtime still says Active)
 // is shown, not silently resolved.
 
-export const QUEST_TYPES = Object.freeze(['main', 'side', 'personal', 'faction', 'mystery', 'task']);
+import { normalizeMission } from './missions.js';
+
+export const QUEST_TYPES = Object.freeze(['main', 'side', 'personal', 'faction', 'mystery', 'task', 'mission']);
 export const QUEST_PRIORITIES = Object.freeze(['low', 'medium', 'high']);
 // State Engine's quest status values, plus Abandoned (spec SB-439, C7).
 export const QUEST_STATUSES = Object.freeze(['Not started', 'Active', 'Completed', 'Failed', 'Abandoned']);
@@ -245,7 +247,7 @@ export function sortQuests(quests) {
 }
 
 export function emptyQuestMeta() {
-    return { type: '', priority: 'medium', status: '', objectives: [], removed: [], completion: '', abandon: '', threadId: '', ended: '', endsTried: false };
+    return { type: '', priority: 'medium', status: '', objectives: [], removed: [], completion: '', abandon: '', threadId: '', ended: '', endsTried: false, mission: null };
 }
 
 export function normalizeQuestMeta(value) {
@@ -265,6 +267,9 @@ export function normalizeQuestMeta(value) {
         // Ended by its own condition; whether its ends were written for it.
         ended: q.ended === 'Completed' || q.ended === 'Failed' ? q.ended : '',
         endsTried: q.endsTried === true,
+        // A mission's own parts - client, giver, difficulty, target, reward
+        // (src/quests/missions.js) - or null.
+        mission: normalizeMission(q.mission),
     };
 }
 

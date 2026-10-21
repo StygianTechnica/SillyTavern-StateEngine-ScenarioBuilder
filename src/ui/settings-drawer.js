@@ -88,6 +88,7 @@ function renderSettings() {
     byId('sb_director').checked = settings.director.enabled === true;
     byId('sb_director_create').checked = settings.director.allowCreate === true;
     byId('sb_director_ahead').checked = settings.director.thinkAhead === true;
+    byId('sb_triggers_on_message').checked = settings.triggers?.onMessage !== false;
     byId('sb_director_perspective').checked = settings.director.perspective !== false;
     byId('sb_director_night').checked = settings.director.travelAtNight === true;
     byId('sb_director_timeout').value = settings.director.timeout;
@@ -145,6 +146,7 @@ export async function addSettingsDrawer() {
     byId('sb_director').addEventListener('change', (e) => { settings.director.enabled = e.target.checked; changed(); });
     byId('sb_director_create').addEventListener('change', (e) => { settings.director.allowCreate = e.target.checked; saveSettings(); });
     byId('sb_director_ahead').addEventListener('change', (e) => { settings.director.thinkAhead = e.target.checked; saveSettings(); });
+    byId('sb_triggers_on_message').addEventListener('change', (e) => { settings.triggers = { ...(settings.triggers ?? {}), onMessage: e.target.checked }; saveSettings(); });
     byId('sb_director_perspective').addEventListener('change', (e) => { settings.director.perspective = e.target.checked; saveSettings(); });
     byId('sb_director_night').addEventListener('change', (e) => { settings.director.travelAtNight = e.target.checked; saveSettings(); });
     byId('sb_director_timeout').addEventListener('change', (e) => {

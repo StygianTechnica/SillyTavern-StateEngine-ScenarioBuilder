@@ -27,8 +27,9 @@ import { runIntake } from '../library/intake.js';
 import { runLoreSync } from '../library/lore-sync.js';
 import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { checkQuestEnds, fillMissingEnds } from '../quests/ends.js';
+import { followMissions } from '../quests/missions.js';
 import { ensureCharacterFields } from '../library/character-fields.js';
-import { checkTriggers, markTriggersShown, latestUserIndex } from '../triggers/run.js';
+import { checkTriggers, checkTriggersOnMessage, markTriggersShown, latestUserIndex } from '../triggers/run.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage, followContinuedReply } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
 import { directBeforeReply, addNamedPeople, thinkAfterReply } from '../director/run.js';
@@ -52,6 +53,8 @@ async function intakeOpenChat() {
     const settingId = await getBoundSettingId(ref.chatId);
     await runIntake(ref.chatId, chatKeyFor(ref), settingId);
     await runQuestSync(ref.chatId, chatKeyFor(ref), settingId);
+    // A giver whose last mission ended offers the next (src/quests/missions.js).
+    void followMissions(ref.chatId, chatKeyFor(ref), settingId);
     await runLoreSync(ref.chatId, chatKeyFor(ref), settingId);
     hookArchivist();
 }
@@ -152,6 +155,9 @@ async function prepareReply(ref, type) {
         // the narrator's guidance); marked here, where the reply is surely
         // written, so a failed briefing never uses one up. Not for an
         // impersonation: that is the player's own line.
+        // A condition the player's own message meets fires in this reply:
+        // the triggers' flags are checked against it first (one small call).
+        if (newTurn && settings.triggers?.onMessage !== false) await checkTriggersOnMessage(ref.chatId, chatKey, { waitMs: Math.max(3, Number(settings.triggers?.waitSeconds) || 20) * 1000 });
         if (type !== 'impersonate') markTriggersShown(chatKey, latestUserIndex());
         // The game master thinks before the reply (src/director/): the one
         // step here that waits on a model, bounded by its timeout. It also

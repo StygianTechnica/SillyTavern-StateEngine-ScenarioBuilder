@@ -6,9 +6,9 @@
 import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { findPreset, createPreset, activatePreset } from '../api/presets.js';
+import { findPreset, createPreset, activatePreset, runPreset } from '../api/presets.js';
 import { createVariable, deleteVariable, getVariableValues } from '../api/variables.js';
-import { triggerPresetName, triggerVariableName, triggerVariableDef, firedTriggers, ARMED_LIMIT, PLANNER_ARMED_LIMIT, sameWhen } from './model.js';
+import { triggerPresetName, triggerVariableName, triggerVariableDef, firedTriggers, ARMED_LIMIT, PLANNER_ARMED_LIMIT, sameWhen, plannerTriggerPlan } from './model.js';
 
 // The chat's trigger preset, made and active in this chat.
 async function ensurePreset(chatId, chatKey) {
@@ -91,14 +91,35 @@ export async function checkTriggers(chatId, chatKey) {
     }
 }
 
+// Before a reply to the player's message: the chat's trigger preset is
+// asked about that message now - and waited for - so a condition the
+// player's own message meets (opening the sarcophagus) fires in THIS reply,
+// not two replies later. State Engine otherwise judges the flags only after
+// an AI reply. One small call, only while story flags are armed; never
+// longer than `waitMs`. -> the fired triggers. Never throws.
+export async function checkTriggersOnMessage(chatId, chatKey, { waitMs = 20000 } = {}) {
+    try {
+        const armed = getChatDoc(chatKey).gm.triggers.filter((t) => t.status === 'armed' && t.kind === 'story' && t.variable);
+        if (!armed.length) return [];
+        let timer;
+        const late = new Promise((resolve) => { timer = setTimeout(() => resolve('late'), waitMs); });
+        const outcome = await Promise.race([runPreset(chatId, triggerPresetName(chatKey)), late]);
+        clearTimeout(timer);
+        if (outcome === 'late') console.info(LOG_PREFIX, `the story triggers took longer than ${waitMs / 1000}s to check; this reply goes on without waiting`);
+        return await checkTriggers(chatId, chatKey);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not check the story triggers against the message', err);
+        return [];
+    }
+}
+
 // The planner's triggers from an outline pass: [{ when, then }]. Those it
 // still wants stay, new ones are armed (story flags), and its earlier ones
 // that the new outline no longer wants are retired.
 export async function plannerTriggers(chatId, chatKey, wanted = []) {
-    const list = (wanted ?? []).filter((w) => w?.when && w?.then);
-    const mine = getChatDoc(chatKey).gm.triggers.filter((t) => t.source === 'planner' && t.status === 'armed');
-    for (const t of mine) if (!list.some((w) => sameWhen(w.when, t.when))) await retireTrigger(chatKey, t.id);
-    for (const w of list) await armTrigger(chatId, chatKey, { kind: 'story', when: w.when, then: w.then, source: 'planner' });
+    const { retire, arm } = plannerTriggerPlan(getChatDoc(chatKey).gm.triggers, wanted);
+    for (const id of retire) await retireTrigger(chatKey, id);
+    for (const w of arm) await armTrigger(chatId, chatKey, { kind: 'story', when: w.when, then: w.then, source: 'planner' });
 }
 
 // Every armed trigger the planner made, retired (a volume closes).

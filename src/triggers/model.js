@@ -37,7 +37,9 @@ export function normalizeTrigger(t) {
         day: Number.isInteger(t.day) && t.day > 0 ? t.day : null,
         then: clean(t.then).slice(0, 500),
         variable: clean(t.variable),
-        source: t.source === 'planner' ? 'planner' : 'user',
+        // planner: the GM planner's; giver: a mission giver's offer
+        // (src/quests/missions.js); user: the user's.
+        source: ['planner', 'giver'].includes(t.source) ? t.source : 'user',
         status: TRIGGER_STATUSES.includes(t.status) ? t.status : 'armed',
         at: str(t.at),
         firedAt: str(t.firedAt),
@@ -98,11 +100,28 @@ export function triggerLines(triggers, userIndex) {
 }
 
 // Whether two trigger conditions are the same one in other words.
-export function sameWhen(a, b) {
+// `share`: how much of the shorter one's words must be in the other.
+export function sameWhen(a, b, share = 0.7) {
     const words = (s) => new Set((clean(s).toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter((w) => w.length >= 4));
     const wa = words(a);
     const wb = words(b);
     if (!wa.size || !wb.size) return false;
     const shared = [...wa].filter((w) => wb.has(w)).length;
-    return shared / Math.min(wa.size, wb.size) >= 0.7;
+    return shared / Math.min(wa.size, wb.size) >= share;
+}
+
+// The planner's triggers from an outline pass, against those it has: which to
+// retire and which to arm. -> { retire: [id], arm: [{ when, then }] }
+// The outline is rewritten often and words the same moment differently each
+// time ("opens his predecessor's tomb" / "... crypt"), so an armed one is
+// kept while the new outline wants anything like it, and a moment that has
+// already happened (fired) is never armed again.
+export const KEEP_SHARE = 0.5;
+export function plannerTriggerPlan(triggers, wanted = []) {
+    const list = (wanted ?? []).filter((w) => w?.when && w?.then);
+    const mine = (triggers ?? []).filter((t) => t.source === 'planner' && t.status === 'armed');
+    const happened = (triggers ?? []).filter((t) => t.status === 'fired' || t.status === 'done');
+    const retire = mine.filter((t) => !list.some((w) => sameWhen(w.when, t.when, KEEP_SHARE))).map((t) => t.id);
+    const arm = list.filter((w) => !happened.some((t) => sameWhen(w.when, t.when)) && !mine.some((t) => !retire.includes(t.id) && sameWhen(w.when, t.when, KEEP_SHARE)));
+    return { retire, arm };
 }

@@ -19,6 +19,8 @@ import { getEntryMeta } from '../store/setting-store.js';
 import { getObjectType, getObjectTypes, listEntries, updateEntry, setEntryMeta, mayAddGeneratedDetail } from '../library/library.js';
 import { baselineFields } from '../library/fields.js';
 import { generateEntry } from './run.js';
+import { recordEnrichment, enrichmentRecord } from './revert.js';
+import { newLocalId } from '../store/schema.js';
 
 export const ENRICH_EVENT = 'scenario_builder_enrichment';
 const PAUSE_MS = 1500;
@@ -120,6 +122,8 @@ async function enrichOne(job) {
             if (!await updateEntry(chatId, settingId, job.objectId, patch)) throw new Error('State Engine refused the change');
             const generated = getEntryMeta(settingId, job.objectId).generated;
             setEntryMeta(settingId, job.objectId, { generated: [...new Set([...generated, ...Object.keys(patch)])] });
+            // Kept so it can be put back (src/generate/revert.js).
+            await recordEnrichment(settingId, job.objectId, enrichmentRecord({ id: newLocalId('e'), at: new Date().toISOString(), source: 'auto', before: Object.fromEntries(Object.keys(patch).map((k) => [k, now[k] ?? null])), after: patch }));
         }
         setItem(job, 'done');
     } catch (err) {

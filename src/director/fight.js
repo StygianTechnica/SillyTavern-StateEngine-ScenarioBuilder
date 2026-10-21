@@ -72,9 +72,11 @@ const standing = (f) => !FIGHT_OUT.includes(f.condition);
 // The fight after the director's briefing for a new reply.
 // prev: the stored fight or null; lines: the FIGHT lines read ([{ name,
 // condition, side }]); present(name): whether that fighter is still in the
-// scene; limit: the most replies a fight lasts; playerNames: never fighters.
+// scene; limit: the most replies a fight lasts; playerNames: never fighters;
+// remembered: { [lower-case name]: condition } - wounds from a fight that
+// was broken off, so someone who fights again starts as they left off.
 // -> the fight for this reply, or null when there is none.
-export function nextFight(prev, lines = [], { present = () => true, limit = FIGHT_REPLIES, playerNames = [] } = {}) {
+export function nextFight(prev, lines = [], { present = () => true, limit = FIGHT_REPLIES, playerNames = [], remembered = {} } = {}) {
     const last = prev && !prev.ended ? normalizeFight(prev) : null;
     const said = (lines ?? [])
         .map((l) => ({ name: clean(l?.name), condition: readCondition(l?.condition), side: readSide(l?.side) }))
@@ -84,12 +86,17 @@ export function nextFight(prev, lines = [], { present = () => true, limit = FIGH
     const fighters = (last?.fighters ?? []).map((f) => ({ ...f }));
     for (const l of said) {
         if (!fighters.some((f) => sameName(f.name, l.name)) && fighters.length < MAX_FIGHTERS) {
-            fighters.push({ name: l.name, side: l.side || 'foe', condition: 'unhurt', steady: 0, fresh: true });
+            // Back in a fight with the wounds it left with (never as good
+            // as down - that was the end of it).
+            const was = remembered?.[clean(l.name).toLowerCase()];
+            const start = FIGHT_LADDER.includes(was) && was !== 'down' ? was : 'unhurt';
+            fighters.push({ name: l.name, side: l.side || 'foe', condition: start, steady: 0, fresh: true });
         }
     }
-    // A fight the briefing no longer speaks of, with no fighter left in the
-    // scene, is over.
-    if (last && !said.length && !last.fighters.some((f) => standing(f) && present(f.name))) return null;
+    // A reply the briefing reports no fighting in: the fight is paused while
+    // its fighters are still around (nothing counts, no one wears down - the
+    // player may have stepped out), and over once none of them is.
+    if (last && !said.length) return last.fighters.some((f) => standing(f) && present(f.name)) ? last : null;
     const round = last ? last.round + 1 : 1;
     const out = fighters.map((f) => {
         const l = said.find((x) => sameName(x.name, f.name));
@@ -139,6 +146,14 @@ const ALLY_CUES = {
     down: 'goes down in this reply - knocked out or cut down (alive unless the story has said otherwise)',
     fled: 'is out of the fight - pulled back or driven off',
 };
+
+// Wounds to remember when a fight is broken off or over: each fighter still
+// standing and hurt, by lower-case name. -> { [name]: condition }
+export function woundsOf(fight) {
+    const f = normalizeFight(fight);
+    if (!f) return {};
+    return Object.fromEntries(f.fighters.filter((x) => standing(x) && x.condition !== 'unhurt').map((x) => [x.name.toLowerCase(), x.condition]));
+}
 
 const listNames = (fighters) => fighters.map((f) => f.name).join(', ');
 

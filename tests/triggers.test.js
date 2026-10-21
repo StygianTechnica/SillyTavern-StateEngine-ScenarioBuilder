@@ -56,3 +56,25 @@ describe('the bookkeeping', () => {
         expect(sameWhen("Remus opens his predecessor's tomb", 'Maziel attacks them at the exit')).toBe(false);
     });
 });
+
+describe("the planner's triggers across outline passes", () => {
+    const t = (id, when, status = 'armed', source = 'planner') => ({ id, when, then: 'x', status, source });
+    it('keeps one the new outline words differently, and arms nothing twice', async () => {
+        const { plannerTriggerPlan } = await import('../src/triggers/model.js');
+        const plan = plannerTriggerPlan([t('a', 'Maziel attacks Remus with his divine might')], [{ when: 'Maziel attacks Remus with divine power', then: 'y' }]);
+        expect(plan).toEqual({ retire: [], arm: [] });
+    });
+
+    it('never arms again a moment that has already happened', async () => {
+        const { plannerTriggerPlan } = await import('../src/triggers/model.js');
+        const plan = plannerTriggerPlan([t('d', "Remus opens his predecessor's crypt", 'done')], [{ when: "Remus opens his predecessor's tomb", then: 'y' }]);
+        expect(plan.arm).toEqual([]);
+    });
+
+    it('retires one the outline no longer wants, and leaves the user\'s and givers\' alone', async () => {
+        const { plannerTriggerPlan } = await import('../src/triggers/model.js');
+        const plan = plannerTriggerPlan([t('a', 'The bridge collapses under them'), t('u', 'The bridge collapses', 'armed', 'user'), t('g', 'Remus asks Orren for work', 'armed', 'giver')], [{ when: 'Upon reaching the temple ruin', then: 'y' }]);
+        expect(plan.retire).toEqual(['a']);
+        expect(plan.arm.map((w) => w.when)).toEqual(['Upon reaching the temple ruin']);
+    });
+});

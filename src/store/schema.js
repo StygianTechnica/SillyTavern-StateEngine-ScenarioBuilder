@@ -87,6 +87,10 @@ import { emptyGm, normalizeGm } from '../planner/model.js';
 import { emptyMagic, emptyTech, normalizeMagic, normalizeTech } from '../library/world-options.js';
 import { emptyQuestMeta, normalizeQuestMeta } from '../quests/model.js';
 import { normalizeKnowledgeItem } from '../library/knowledge.js';
+import { emptyGiver, normalizeGiver } from '../quests/missions.js';
+import { normalizeDead } from '../state/death.js';
+import { normalizeEnrichments } from '../generate/revert.js';
+import { normalizeCounts } from '../library/creature-form.js';
 import { normalizeFight } from '../director/fight.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
@@ -124,7 +128,7 @@ export function normalizeRealm(r) {
 }
 
 export function emptyEntryMeta() {
-    return { parentId: null, gmNotes: '', nsfw: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, provisional: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '', realm: emptyRealm() };
+    return { parentId: null, gmNotes: '', nsfw: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, provisional: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '', realm: emptyRealm(), giver: emptyGiver(), enrichments: [], creatureForm: '' };
 }
 
 export function normalizeEntryMeta(meta) {
@@ -158,6 +162,14 @@ export function normalizeEntryMeta(meta) {
         // technology - for the places inside too (a planet, a realm, a
         // dead-magic zone; '' = inherit). See world-options.js placeOverview.
         realm: normalizeRealm(m.realm),
+        // A mission giver: the work it hands out (src/quests/missions.js).
+        giver: normalizeGiver(m.giver),
+        // What generation wrote, and what was there before - for reverting
+        // (src/generate/revert.js).
+        enrichments: normalizeEnrichments(m.enrichments),
+        // Creatures: one being ('individual') or a sort that comes in numbers
+        // ('kind'); '' - guessed from the name (src/library/creature-form.js).
+        creatureForm: ['individual', 'kind'].includes(m.creatureForm) ? m.creatureForm : '',
     };
 }
 
@@ -266,7 +278,7 @@ export function emptyCanonical() {
     // time: the canonical moment, scalar seconds on the setting's calendar
     // (src/calendar/clock.js); null until the clock starts. dayPart and day
     // follow it whenever it is set.
-    return { locationId: '', castIds: [], creatureIds: [], weather: [], temperature: '', indoor: null, dayPart: '', day: 1, time: null, sceneTitle: '', sceneSummary: '', scenePremise: '' };
+    return { locationId: '', castIds: [], creatureIds: [], creatureCounts: {}, weather: [], temperature: '', indoor: null, dayPart: '', day: 1, time: null, sceneTitle: '', sceneSummary: '', scenePremise: '' };
 }
 
 export function normalizeCanonical(value) {
@@ -277,6 +289,9 @@ export function normalizeCanonical(value) {
         // Creatures the story (or the director) has in the scene, beyond
         // those the library places here.
         creatureIds: strList(c.creatureIds),
+        // How many of each kind of creature are here ({ id: n }; a kind
+        // without one is here in unknown numbers - src/library/creature-form.js).
+        creatureCounts: normalizeCounts(c.creatureCounts, strList(c.creatureIds)),
         weather: strList(c.weather).filter((w) => WEATHER_VALUES.includes(w)),
         temperature: TEMPERATURES.includes(c.temperature) ? c.temperature : '',
         indoor: typeof c.indoor === 'boolean' ? c.indoor : null,
@@ -374,6 +389,11 @@ export function emptyChatDoc() {
         nsfwMode: 'auto',
         // The fight in the scene (src/director/fight.js), or null.
         fight: null,
+        // Who has died in this story (src/state/death.js).
+        dead: [],
+        // Wounds from fights broken off: { [lower-case name]: { condition,
+        // turn } } (src/director/fight.js, kept a while).
+        wounds: {},
     };
 }
 
@@ -410,6 +430,8 @@ export function normalizeChatDoc(doc) {
         // Whether the scene is intimate: the story's reading (auto) or the user's.
         nsfwMode: ['auto', 'on', 'off'].includes(d.nsfwMode) ? d.nsfwMode : 'auto',
         fight: normalizeFight(d.fight),
+        dead: normalizeDead(d.dead),
+        wounds: isObject(d.wounds) ? Object.fromEntries(Object.entries(d.wounds).filter(([k, w]) => k && isObject(w) && typeof w.condition === 'string' && Number.isInteger(w.turn))) : {},
     };
 }
 

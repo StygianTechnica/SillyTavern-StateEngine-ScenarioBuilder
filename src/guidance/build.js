@@ -13,6 +13,7 @@ import { REFERENCE_HEADER } from '../constants.js';
 import { fitToBudget, estimateTokens } from './budget.js';
 import { WORLD_TYPES, describeMagic, describeTech, lookLines } from '../library/world-options.js';
 import { isPlaceholder } from '../director/prompt.js';
+import { creatureLabel } from '../library/creature-form.js';
 import { fightGuidance } from '../director/fight.js';
 import { intimacySection } from './intimacy.js';
 
@@ -33,6 +34,7 @@ export const SECTIONS = Object.freeze([
     { key: 'scene', title: 'Scene premise', priority: 3, keep: false },
     { key: 'lore', title: 'Lore', priority: 2, keep: false },
     { key: 'corrections', title: 'Corrections', priority: 6, keep: true },
+    { key: 'dead', title: 'The dead', priority: 7, keep: true },
     { key: 'secrets', title: 'Secrets and oaths', priority: 7, keep: true },
     { key: 'summary', title: 'Where things stand', priority: 7, keep: true },
     { key: 'style', title: 'How the story is run', priority: 8, keep: true },
@@ -113,7 +115,7 @@ export function aloneText(input) {
     if (!list.some((c) => c.player) || list.some((c) => !c.player)) return '';
     // State Engine's tracker has someone else here: the cast is behind, not empty.
     if (input.othersTracked) return '';
-    const creatures = (input.location?.creatures ?? []).map((x) => clean(x.name)).filter(Boolean);
+    const creatures = (input.location?.creatures ?? []).filter((x) => clean(x.name) && x.active !== false).map((x) => creatureLabel(x.name, { form: x.form, count: x.count }));
     const lines = [
         'When no NPCs are present, the reply is not empty. The world itself reacts. Describe ONLY:',
         '- the environment',
@@ -209,7 +211,12 @@ function locationSection(input) {
     // not as things the reply should reach for.
     if (lying.length) around.push(`Also here, should the scene turn to them: ${andList(named(lying, 8))}.`);
     if (carried.length) around.push(`Carried by those present: ${andList(named(carried, 8))}.`);
-    if (loc?.creatures?.length) around.push(`Also here: ${andList(named(loc.creatures, 6))}.`);
+    // Creatures in the scene, a kind with its numbers ("3 Zombies"); those
+    // that only live here are not in it until the story brings them in.
+    const inScene = (loc?.creatures ?? []).filter((x) => x.active !== false).map((x) => ({ ...x, name: creatureLabel(x.name, { form: x.form, count: x.count }) }));
+    const lurking = (loc?.creatures ?? []).filter((x) => x.active === false);
+    if (inScene.length) around.push(`Also here: ${andList(named(inScene, 6))}.`);
+    if (lurking.length) around.push(`Living hereabouts, unseen unless the story brings them in: ${andList(lurking.slice(0, 4).map((x) => clean(x.name)))}.`);
     // A place saved under a template word ("Place name") is not a way on.
     const real = (list) => (list ?? []).filter((x) => !isPlaceholder(x?.name));
     const roads = real(loc?.routes).slice(0, 8).map((r) => `${clean(r.name)} (${[clean(r.travel), clean(r.note)].filter(Boolean).join(', ')})`);
@@ -321,6 +328,8 @@ function questsSection(quests) {
         if (compact) return text;
         if (q.progress) text += ` ${sentence(firstUpper(q.progress))}`;
         if (q.description) text += ` ${sentence(truncate(q.description, 180))}`;
+        const m = q.mission;
+        if (m && (m.giver || m.difficulty)) text += ` A ${m.difficulty ? `${m.difficulty} ` : ''}job${m.giver ? ` from ${clean(m.giver)}` : ''}${m.reward && !lower(q.description).includes(lower(m.reward)) ? `, paying ${unstop(m.reward)}` : ''}.`;
         if (clean(q.completion)) text += ` It is done when ${unstop(firstLower(truncate(q.completion, 160)))}.`;
         return text;
     };
@@ -354,6 +363,8 @@ const BUILDERS = {
     summary: (input) => directorPart(input.director, 'summary'),
     absent: (input) => absentSection(input.absent),
     triggered: (input) => triggeredSection(input.triggered),
+    // Who has died in this story (src/state/death.js).
+    dead: (input) => (clean(input.dead) ? { full: `Dead and gone in this story - they can be mourned, remembered or spoken of, but never written alive, speaking or acting: ${clean(input.dead)}`, compact: '' } : null),
     // Each fighter's condition, kept from reply to reply (src/director/fight.js).
     fight: (input) => (fightGuidance(input.fight) ? { full: fightGuidance(input.fight), compact: '' } : null),
     intimacy: (input) => intimacySection(input),
@@ -408,6 +419,7 @@ export function buildGuidance(input) {
         direction: "The game master's direction: what should probably happen in this reply.",
         style: 'Your own instructions for running the story (the front page: How the game master runs this story).',
         absent: 'People you took out of the scene by hand, for the next few replies.',
+        dead: 'Who has died in this story (marked by the director or by you on their sheet); they never come back.',
         fight: 'The fight the director keeps: each fighter but the player character, their condition from reply to reply, and when it ends.',
         triggered: 'Story triggers the story has just set off (Story triggers in the GM Plan): played in this reply, and on a swipe of it.',
         alone: 'Shown when the player character is the only one present: the world, its creatures and the consequences carry the reply.',
@@ -437,7 +449,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_setting', 'THE SETTING', ['overview']],
     ['guidance_rules', 'WORLD RULES', ['limits']],
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
-    ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'secrets', 'corrections']],
+    ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'secrets', 'corrections', 'dead']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
     ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'triggered', 'fight', 'intimacy', 'absent', 'alone']],
 ]);
