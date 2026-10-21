@@ -9,6 +9,8 @@
 //                                     message is taken first
 //   MESSAGE_SWIPED / EDITED / DELETED -> revert what that message caused (SB-224)
 //   CHAT_CHANGED                   -> drop pending work, bind the setting, rebuild (SB-501)
+//                                     (a new playthrough's chat bound first - src/worlds/)
+//   CHAT_DELETED / GROUP_CHAT_DELETED -> the chat's document is forgotten
 //   GENERATION_ENDED               -> the GM planner keeps pace and runs due passes (src/planner/)
 //   (after validation and on a chat change, newly confirmed objects are
 //   taken into the library and enriched - src/library/intake.js)
@@ -41,6 +43,8 @@ import { setReplying } from '../generate/llm.js';
 import { syncFactions } from '../library/faction-sync.js';
 import { LIBRARY_CHANGED_EVENT } from '../store/setting-store.js';
 import { afterReply } from '../planner/run.js';
+import { followChatChange, maybeSaveOriginal, followDeletedChat } from '../worlds/run.js';
+import { storyNotBegun } from '../worlds/model.js';
 
 const VALIDATE_DEBOUNCE_MS = 1000;
 let timer = null;
@@ -126,6 +130,9 @@ async function onUserMessageRendered() {
 async function prepareReply(ref, type) {
     try {
         if (!(await getPresetStatus(ref.chatId)).active) return;
+        // Before the story's first reply changes the world, it is kept as its
+        // "Original" starting point (once per world).
+        if ((!type || type === 'normal') && storyNotBegun(SillyTavern.getContext().chat ?? [])) await maybeSaveOriginal();
         await reconcileOpenChat();
         await healMissing(ref.chatId, chatKeyFor(ref));
         await pushCanonicalToObserved(ref.chatId, chatKeyFor(ref));
@@ -183,6 +190,9 @@ async function onChatChanged() {
     clearTimeout(timer);
     const ref = getCurrentChatRef();
     if (!ref) return;
+    // A new playthrough's chat is bound to its world before anything reads
+    // the setting; a world's first use keeps its "Original" (src/worlds/).
+    await followChatChange();
     // The setting is State Engine's to choose (SB-600): only when the
     // scenario is in use here does State Engine ask, once.
     let active = false;
@@ -264,4 +274,7 @@ export function startLifecycle() {
     // The payload is the chat's length after the deletion.
     if (eventTypes.MESSAGE_DELETED) eventSource.on(eventTypes.MESSAGE_DELETED, safely((length) => revertFromMessage(Number(length))));
     eventSource.on(eventTypes.CHAT_CHANGED, safely(onChatChanged));
+    // A deleted chat's document goes with it (src/worlds/run.js).
+    if (eventTypes.CHAT_DELETED) eventSource.on(eventTypes.CHAT_DELETED, (name) => followDeletedChat(name, 'char'));
+    if (eventTypes.GROUP_CHAT_DELETED) eventSource.on(eventTypes.GROUP_CHAT_DELETED, (id) => followDeletedChat(id, 'group'));
 }

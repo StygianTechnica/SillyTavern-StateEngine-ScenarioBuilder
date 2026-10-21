@@ -40,6 +40,16 @@ export function updateSettingDoc(settingId, mutate) {
     return structuredClone(settings.library[settingId]);
 }
 
+// Forgets a setting's document (the setting itself was deleted).
+export function deleteSettingDoc(settingId) {
+    const settings = getSettings();
+    if (!settings.library[settingId]) return false;
+    delete settings.library[settingId];
+    saveSettings();
+    emit(settingId);
+    return true;
+}
+
 // Drops documents of settings State Engine no longer has (spec SB-601:
 // cleaned up when the setting is deleted). `existingIds` from listSettings.
 export function pruneSettingDocs(existingIds) {

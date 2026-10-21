@@ -46,3 +46,13 @@ export function updateChatDoc(chatKey, mutate) {
     emit(chatKey);
     return structuredClone(settings.chats[chatKey]);
 }
+
+// Forgets a chat's document (the chat was deleted, or its playthrough).
+export function deleteChatDoc(chatKey) {
+    const settings = getSettings();
+    if (isStaleTab() || !settings.chats[chatKey]) return false;
+    delete settings.chats[chatKey];
+    saveSettings();
+    emit(chatKey);
+    return true;
+}

@@ -32,6 +32,36 @@ export async function getSetting(settingId) {
     return stateEngine.getSetting(EXTENSION_ID, instanceId, settingId) ?? null;
 }
 
+// Deletes a setting and its objects (they leave every chat). -> boolean.
+export async function deleteSetting(settingId) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.deleteSetting(EXTENSION_ID, instanceId, settingId) === true;
+}
+
+// A setting as plain data: { format, version, name, fields, objects, ... }, or null.
+export async function exportSetting(settingId, options = {}) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.exportSetting?.(EXTENSION_ID, instanceId, settingId, options) ?? null;
+}
+
+// A new setting from an export (new ids): { setting, idMap, droppedFields }, or null.
+export async function importSetting(data, options = {}) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.importSetting?.(EXTENSION_ID, instanceId, data, options) ?? null;
+}
+
+// Objects copied into another setting (new ids): { idMap, droppedFields }, or null.
+export async function copyObjects(fromSettingId, ids, toSettingId) {
+    const { stateEngine, instanceId } = await getStateEngine();
+    return stateEngine.copyObjects?.(EXTENSION_ID, instanceId, fromSettingId, ids, toSettingId) ?? null;
+}
+
+// Whether this State Engine can export, import and copy settings.
+export async function canCopyWorlds() {
+    const { stateEngine } = await getStateEngine();
+    return typeof stateEngine.exportSetting === 'function' && typeof stateEngine.importSetting === 'function';
+}
+
 export async function getChatSetting(chatId) {
     const { stateEngine, instanceId } = await getStateEngine();
     return stateEngine.getChatSetting(EXTENSION_ID, instanceId, chatId) ?? null;

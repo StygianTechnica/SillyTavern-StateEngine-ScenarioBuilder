@@ -106,6 +106,9 @@ const DEFAULTS = {
     library: {},
     // { [chatKey]: chat document } - src/store/chat-store.js.
     chats: {},
+    // Starting points and playthroughs (src/worlds/model.js); the starting
+    // points themselves are files in the user's data folder.
+    worlds: { startingPoints: {}, playthroughs: {} },
 };
 
 // Returns the live settings object, creating it (and filling in any

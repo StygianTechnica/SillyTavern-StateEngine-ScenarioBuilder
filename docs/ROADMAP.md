@@ -346,9 +346,39 @@ calls (one entry at a time, retry, and the entry text as a fallback).
 - [x] Entries that list many things (a pantheon, a roster): split into one
   object per named thing.
 - [ ] Memories from lorebook text (SB-153/154, OPEN-14).
-- [ ] Narrative and structured lorebook export with round trip (SB-160..164).
+- [x] Narrative lorebook export (SB-160, SB-164): Worlds tab, "A lorebook for
+  plain SillyTavern" - one entry per object, the overview as a constant
+  entry, GM notes and excluded entries left out by default; from the world
+  as it is or from any starting point; always a new book (SB-162).
+- [~] Structured export with round trip (SB-161): the world file (Worlds tab
+  - download / load) carries State Engine's setting export and the library
+  document, with a format and version (SB-163). It loads as a NEW world;
+  it does not yet update an existing one or ask about id conflicts (SB-126).
 - [ ] Lore-sourced memories for Archivist (SB-154, OPEN-14 - needs an
   Archivist design).
+
+## Worlds and playthroughs (added 2026-10-21)
+
+Done: the Worlds tab (src/worlds/, src/ui/worlds-tab.js).
+- [x] Starting points: "Original" kept on its own the first time a world is
+  played from a fresh chat (before the first reply); "Save the world as it
+  is now" any time. Kept as files in user/files; download, rename, delete.
+- [x] Start over: a new playthrough (a State Engine setting copied with
+  importSetting - new ids, references kept) and a new chat on it. The old
+  playthrough is untouched. A world played before it had a starting point
+  can start over without the entries the story or director added (edits to
+  the user's own entries cannot be told apart, so they stay).
+- [x] Delete a playthrough: type its name; optionally save the story first,
+  have Archivist forget its chats (forgetChat), delete the solo chat files.
+  The playthrough open now cannot be deleted.
+- [x] Copy an entry (and a place's sub-places) to another world, from the
+  sheet: references follow to the other world's namesakes.
+- [x] A deleted chat's document is forgotten (CHAT_DELETED).
+- [x] The story so far: saved with the world and chat in the file name, the
+  volume under way included, from the first chronicle line.
+- [ ] Undo enrichment added during play in a clean copy (needs telling
+  story-time enrichment from the user's).
+- [ ] Group chats: delete their files through SillyTavern's group API.
 
 ## Guidance and state (phases 0.2-0.5)
 

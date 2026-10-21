@@ -44,6 +44,7 @@ import { splitAliases, mergeAliases } from '../generate/prompt.js';
 import { WORLD_TYPES, MAGIC_PRESENCE, TECH_LEVELS, inheritedRealm } from '../library/world-options.js';
 import { duplicateScore } from '../library/merge.js';
 import { confirmAction } from './confirm.js';
+import { openCopyPanel, copyPanel } from './copy-panel.js';
 import { ws, rerender, openSheet, closeSheet, markDirty, stopEditing } from './ws.js';
 import { h, icon, button, select, field, csv, fromCsv, toast } from './dom.js';
 
@@ -249,6 +250,7 @@ export async function renderSheet(type, all) {
             : [button('Enrich', () => { ws.editing = true; ws.pendingGen = 'enrich'; rerender(); }, { iconName: 'fa-wand-magic-sparkles', disabled: !gate.ok, title: gate.reason || 'Add detail to every field - fill the empty ones and deepen the rest. You review it before saving.' }),
                 button('Edit', () => { ws.editing = true; rerender(); }, { iconName: 'fa-pen', cls: 'sb-primary' }),
                 button('Merge…', () => { ws.mergeFor = ws.mergeFor === entry.id ? null : entry.id; ws.mergePick = null; ws.mergeQuery = ''; rerender(); }, { iconName: 'fa-code-merge', title: 'This is a duplicate of another entry - merge the two into one' }),
+                type.scope === 'world' ? button('', () => void openCopyPanel(entry), { iconName: 'fa-clone', title: 'Copy to another world' }) : null,
                 button('', () => void removeEntry(entry), { iconName: 'fa-trash', cls: 'sb-danger', title: 'Delete' })]);
 
     // ---- generation strip (edit mode)
@@ -372,7 +374,8 @@ export async function renderSheet(type, all) {
         body = h('div', { class: 'sb-error' }, `Something went wrong: ${err?.message ?? err}`);
     }
     const merging = !isNew && !ws.editing && ws.mergeFor === entry.id ? mergePanel(entry, type, all) : null;
-    return h('div', { class: `sb-sheet${ws.editing ? ' sb-editing' : ''}` }, topbar, merging, header, genStrip, tabs, h('div', { class: 'sb-sheet-body' }, body));
+    const copying = !isNew && !ws.editing && ws.copyFor === entry.id ? copyPanel(entry, type) : null;
+    return h('div', { class: `sb-sheet${ws.editing ? ' sb-editing' : ''}` }, topbar, merging, copying, header, genStrip, tabs, h('div', { class: 'sb-sheet-body' }, body));
 }
 
 // ---- generation on the sheet

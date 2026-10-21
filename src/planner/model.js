@@ -855,8 +855,9 @@ export function previousVolumesText(gm, { full = true } = {}) {
 }
 
 // The whole story so far as Markdown: every finished volume's recap, in
-// order.
-export function storyMarkdown(gm, title = 'The story so far') {
+// order - and, with `inProgress`, the volume under way: its direction and
+// what its chronicle has so far.
+export function storyMarkdown(gm, title = 'The story so far', { inProgress = false } = {}) {
     const out = [`# ${title}`, ''];
     for (const v of gm.volumes) {
         out.push(`## Volume ${v.number}: ${v.title}`, '');
@@ -865,7 +866,18 @@ export function storyMarkdown(gm, title = 'The story so far') {
         out.push(v.recap || '(no recap)', '');
         if (v.threads.length) out.push('**Threads carried forward:**', ...v.threads.map((t) => `- ${t}`), '');
     }
+    const now = gm.volume;
+    if (inProgress && (now?.chronicle?.length || now?.direction)) {
+        out.push(`## Volume ${now.number} (under way)`, '', '*Not finished yet - what has happened so far.*', '');
+        if (now.direction) out.push(now.direction, '');
+        if (now.chronicle.length) out.push(...now.chronicle.map((c) => `- ${Number.isInteger(c.day) ? `Day ${c.day}: ` : ''}${c.text}`), '');
+    }
     return out.join('\n').trim() + '\n';
+}
+
+// Whether there is any story to save yet.
+export function hasStory(gm) {
+    return gm.volumes.length > 0 || gm.volume.chronicle.length > 0;
 }
 
 // ---------------------------------------------------------------- ideas (§3.4)

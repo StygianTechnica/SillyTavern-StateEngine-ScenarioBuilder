@@ -7,7 +7,7 @@
 import { getSettings, saveSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { getSettingDoc } from '../store/setting-store.js';
-import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeiled, openRequests, currentAct, volumeComplete, volumeReadings, storyMarkdown, openIdeas, sameBeat } from '../planner/model.js';
+import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeiled, openRequests, currentAct, volumeComplete, volumeReadings, storyMarkdown, hasStory, openIdeas, sameBeat } from '../planner/model.js';
 import { SHAPES, shapeCurve, targetAt } from '../planner/shapes.js';
 import {
     getPlannerStatus, runDay, runCheck, runInspire, runOutline, runBeat, queueRequest, withdrawRequest, addInspiration, removeInspiration,
@@ -17,7 +17,8 @@ import {
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
 import { armTrigger, retireTrigger, clearFinishedTriggers } from '../triggers/run.js';
-import { listEntries } from '../library/library.js';
+import { listEntries, getSettingSummary } from '../library/library.js';
+import { downloadText, safeFileName } from '../store/files.js';
 import { ws, rerender, markDirty } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
 
@@ -359,27 +360,26 @@ function volumeRecord(gm, v, chatKey) {
             v.editedByUser ? h('small', { class: 'sb-hint' }, icon('fa-user-pen'), ' Edited by you') : null));
 }
 
-// The finished volumes, newest first, with the story so far to copy or save.
+// The finished volumes, newest first, with the story so far to copy or save
+// (the volume under way included, from its first chronicle line).
 function volumesCard(gm) {
-    if (!gm.volumes.length) return null;
-    const { chatKey } = ws.ctx;
-    const markdown = () => storyMarkdown(gm);
+    if (!hasStory(gm)) return null;
+    const { chatKey, chatId, settingId } = ws.ctx;
+    const markdown = (title) => storyMarkdown(gm, title, { inProgress: true });
     const copy = async () => {
         try { await navigator.clipboard.writeText(markdown()); toast('success', 'The story so far is copied.'); } catch { toast('warning', 'Could not copy - your browser blocked it.'); }
     };
-    const save = () => {
-        const url = URL.createObjectURL(new Blob([markdown()], { type: 'text/markdown' }));
-        const a = h('a', { href: url, download: 'story-so-far.md' });
-        document.body.append(a);
-        a.click();
-        a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const save = async () => {
+        const world = (await getSettingSummary(settingId))?.name ?? 'Story';
+        const name = `${world} - ${chatId} - ${new Date().toISOString().slice(0, 10)}`;
+        downloadText(`${safeFileName(name, 'story-so-far')}.md`, markdown(`${world}: the story so far`), 'text/markdown');
     };
     return h('div', { class: 'sb-card' },
         h('div', { class: 'sb-card-title' }, icon('fa-book-bookmark'), 'The story so far',
             h('span', { class: 'sb-gm-title-tools' },
-                button('Copy', () => void copy(), { iconName: 'fa-copy', title: 'Copy every recap, in order, as Markdown' }),
-                button('Save', save, { iconName: 'fa-download', title: 'Save every recap as a Markdown file' }))),
+                button('Copy', () => void copy(), { iconName: 'fa-copy', title: 'Copy every recap, and the volume under way, as Markdown' }),
+                button('Save', () => void save(), { iconName: 'fa-download', title: 'Save every recap, and the volume under way, as a Markdown file' }))),
+        gm.volumes.length ? null : h('small', { class: 'sb-hint' }, 'No volume has finished yet - saving gives what the one under way has so far.'),
         ...gm.volumes.slice().reverse().map((v) => volumeRecord(gm, v, chatKey)));
 }
 
