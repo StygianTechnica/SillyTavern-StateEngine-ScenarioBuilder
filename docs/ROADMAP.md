@@ -463,7 +463,7 @@ The user's original motivation for these extensions: guardrails so the model
 can run a sequenced event or process inside a roleplay chat. The GM planner
 (outline, beats, coming moments) and story triggers come close, but they are
 loose guidance - nothing holds the story to an order of steps, keeps count,
-or knows when a step is over. Three examples it must be able to carry:
+or knows when a step is over. Four kinds it must be able to carry:
 
 1. **A tournament** - rounds, a bracket of entrants, winners going on, a
    grand final.
@@ -471,7 +471,27 @@ or knows when a step is over. Three examples it must be able to carry:
    waits there, cleared as the party goes through.
 3. **An arena** - opponents sent out one after another for combat, each
    fought until beaten (or the player is), then the next.
+4. **Missions and jobs** - ready-to-go work handed out by a giver, again and
+   again: a guild hall's board of quests fit for the character's level or
+   power; a job that regularly assigns a task of its kind - an assassin's
+   marks, an adventurer's quests, a thief's things to steal for pay. A team
+   gets work of a different nature (taking over a property, intimidating a
+   mark), shaped by who the group is, who they work for and who the
+   clients are.
 
+- [ ] Missions: each has (1) a **client** - who wants it done; (2) a
+  **giver** - boss, agent, guild master, guild clerk; (3) a **difficulty**,
+  matched to the character's or group's level or power; (4) a **target or
+  task**; (5) a **reward** for completion. Probably a kind of quest (the
+  quest board, objectives and status already exist - src/quests/), with
+  these as its fields.
+- [ ] Generated to fit: the planner makes a mission from the giver (their
+  trade - a thieves' guild, an assassins' order, an adventurers' hall),
+  the group taking it, the clients the setting has, and the character's
+  standing - the client and target drawn from the library where they fit.
+- [ ] Givers offer the next one: once a mission is done (or failed), its
+  giver can offer a new one of its kind - on the next visit, when asked, or
+  after a while (on the calendar) - so a job keeps running through a story.
 - [ ] Design first: what an event is (stages in order, or a graph of
   stages), what each stage holds (who or what is faced, its place, what
   ends it - a win, a loss, leaving, a day), the state it keeps (round,
@@ -493,7 +513,7 @@ or knows when a step is over. Three examples it must be able to carry:
   its end condition is met. Likely built from what exists: story triggers
   (State Engine flags answering "has this stage ended?") and the director's
   briefing, with the event's state in Scenario Builder's chat document.
-- [ ] Templates for the three examples, so an event can be set up in a few
+- [ ] Templates for the four kinds, so an event can be set up in a few
   steps and reused across chats.
 - [ ] Generated events: the user gives loose guidance ("a tournament in
   the capital, five rounds") and the GM planner fills in the detailed event
