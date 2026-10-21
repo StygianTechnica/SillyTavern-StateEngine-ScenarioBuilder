@@ -242,6 +242,14 @@ API (docs/api.md, SB-640..642); Pretty Panels owns where they appear.
 - [ ] Nice to have: a **mini map** panel element - a small version of the
   map view with a pip per location, hover for details (name, what is
   there, who is there, travel time from here), click to open its page.
+- [ ] **Fight status in a panel (added 2026-10-20).** Expose the fight
+  tracker (src/director/fight.js, the chat document's `fight`) to State
+  Engine as Scenario Builder variables, written like the other canonical
+  values (src/guidance/sync.js): e.g. `sb__fight_active` (a flag, for
+  showing a panel only during a fight), `sb__fight_round` / the reply
+  limit, and the fighters with their side and condition (a list, or an
+  object per fighter so a card can show a condition bar or icon). Then a
+  Pretty Panels layout can show the fight while it runs.
 
 ## World definition
 
@@ -422,6 +430,32 @@ calls (one entry at a time, retry, and the entry text as a fallback).
 - [ ] Public API: `getPerspective` (SB-641).
 - [ ] Ask State Engine for a `location.parent` field (SB-145, C1), then move
   the tree out of Scenario Builder's metadata.
+
+## Combat (added 2026-10-20)
+
+The fight tracker (src/director/fight.js) keeps each fighter's condition on
+a ladder and ends a fight within a few replies. The user does not use stats
+in their games, but wants combat resolution more configurable:
+
+- [ ] Settings for how combat resolves, set by the user: how long fights
+  last, how readily foes fall, how hard allies are pressed.
+- [ ] A **power rating** for some monsters (and people): a strong foe takes
+  longer to wear down and hits harder; a weak one breaks quickly. No stats -
+  a few steps (minor, standard, strong, deadly) the tracker reads.
+- [ ] Flags on entries:
+  - **Plot device** - in a losing fight it flees (or is driven off) rather
+    than being killed; the story still needs it.
+  - **Unkillable** - a character who can be beaten, hurt or captured but
+    never dies.
+  - A chat-wide stance: some users like a free-for-all, others want their
+    favourite characters protected from an unfortunate end.
+- [ ] **Death is remembered.** When someone dies, they are marked dead (a
+  status on the entry, in this chat), taken out of the scene, and never
+  brought back by the director, the planner or the scene readers - unless
+  the story itself raises them (undead, resurrection).
+- [ ] (Future) Optional **stats** for characters, creatures and combat, for
+  users who want them - rolled or compared by Scenario Builder rather than
+  left to the model.
 
 ## Structured events (added 2026-10-20)
 
