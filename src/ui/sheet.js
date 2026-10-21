@@ -35,6 +35,7 @@ import { baselineFields } from '../library/fields.js';
 import { CLIMATES } from '../calendar/weather.js';
 import { listRoutes, routesFrom, addRoute, removeRoute, updateRoute, guessRoute } from '../library/routes.js';
 import { suggestRoutes, suggestEnvironment, randomClimate } from '../generate/places.js';
+import { suggestGifts, suggestActs } from '../generate/gifts.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
 import { sparkButton, fieldWithTools } from './controls.js';
@@ -525,28 +526,75 @@ function overviewTab({ type, entry, isNew, defs, doc, all }) {
             h('div', { class: 'sb-prose' }, narrative)) : null,
         narrative ? h('details', { class: 'sb-base-desc' }, h('summary', {}, 'Original description'), base) : base,
         glance.length ? h('dl', { class: 'sb-glance' }, glance.flatMap((d) => [h('dt', {}, d.label), h('dd', {}, String(entry.base?.[d.name] ?? entry[d.name]))])) : null,
-        isNew ? null : giftsCard(type, entry, all),
+        isNew ? null : giftsCard(type, entry, all, defs),
         isNew ? null : enrichmentCard(entry, defs));
 }
 
 // Gifts and patron (characters, creatures), or - for a power - how it makes
 // itself known (src/library/powers.js). Saves at once.
-function giftsCard(type, entry, all) {
+function giftsCard(type, entry, all, defs = []) {
     if (!['character', 'creature'].includes(type.id)) return null;
     const { settingId } = ws.ctx;
     const save = (patch) => { setEntryMeta(settingId, entry.id, patch); void syncNow(); rerender({ force: true }); };
+    // The sparkles (src/generate/gifts.js): the text written from the sheet
+    // (and, for a person, the powers they serve); what was there before can
+    // be put back. `what`: 'gifts' | 'acts'.
+    const gate = canGenerateFor(settingId, entry.id);
+    const facts = () => defs.filter((d) => d.kind !== 'ref' && d.kind !== 'refs')
+        .map((d) => [d.label, entry.base?.[d.name] ?? entry[d.name]])
+        .filter(([, v]) => (!isEmpty(v) && typeof v !== 'object') || (Array.isArray(v) && v.length && v.every((x) => typeof x === 'string')))
+        .map(([label, v]) => `${label}: ${Array.isArray(v) ? v.join(', ') : v}`);
+    const sparkTools = (what, current, write, store, title) => {
+        const key = `${entry.id}:${what}`;
+        const before = ws.giftsUndo?.key === key ? ws.giftsUndo.text : null;
+        const run = async () => {
+            ws.giftsBusy = key;
+            rerender({ force: true });
+            try {
+                const text = await write();
+                ws.giftsUndo = { key, text: current };
+                setEntryMeta(settingId, entry.id, store(text));
+                void syncNow();
+                toast('info', 'Written - change it in the box, or put back what was there.');
+            } catch (err) {
+                toast('error', `Could not write it: ${err?.message ?? err}`);
+            }
+            ws.giftsBusy = null;
+            rerender({ force: true });
+        };
+        return [
+            before !== null ? h('span', { class: 'sb-iconbtn', title: 'Put back what was there before', onclick: () => { ws.giftsUndo = null; save(store(before)); } }, icon('fa-rotate-left')) : null,
+            sparkButton(() => void run(), { title, busy: ws.giftsBusy === key, disabledReason: gate.ok ? '' : gate.reason }),
+        ];
+    };
     if (isPower(entry)) {
+        const acts = entry.meta?.power?.acts ?? '';
+        const champions = (all.character ?? []).filter((c) => patronsOf(c).includes(entry.id)).map((c) => c.name);
+        const actsTools = sparkTools('acts', acts,
+            () => suggestActs({ power: { name: entry.name, description: entry.description, facts: facts() }, champions, overview: getOverview(settingId), current: acts }),
+            (text) => ({ power: { on: true, acts: text } }),
+            'Write how it makes itself known, from this sheet');
         return h('div', { class: 'sb-card' },
             h('div', { class: 'sb-card-title' }, icon('fa-sun'), ' A power - no body'),
             h('small', { class: 'sb-hint' }, 'Never in a scene in person. It acts through omens, a voice, visions and dreams, and blessings on those tied to it - when called on, when a champion is failing, or now and then. It may answer a call with a price. It can also give missions (its Missions tab), sent in dreams.'),
-            field('How it makes itself known', h('input', { class: 'text_pole', placeholder: 'e.g. a voice in the storm; dreams of falling stars; a cold wind and whispers', value: entry.meta?.power?.acts ?? '', onchange: (e) => save({ power: { on: true, acts: e.target.value } }) })));
+            fieldWithTools('How it makes itself known', h('input', { class: 'text_pole', placeholder: 'e.g. a voice in the storm; dreams of falling stars; a cold wind and whispers', value: acts, onchange: (e) => save({ power: { on: true, acts: e.target.value } }) }), actsTools));
     }
     const powers = (all.character ?? []).filter((c) => isPower(c) && c.id !== entry.id);
     const patrons = patronsOf(entry);
+    const gifts = entry.meta?.gifts ?? '';
+    const tools = sparkTools('gifts', gifts,
+        () => suggestGifts({
+            entry: { name: entry.name, noun: type.noun, description: entry.description, facts: facts() },
+            patrons: powers.filter((p) => patrons.includes(p.id)).map((p) => ({ name: p.name, description: p.description, acts: p.meta?.power?.acts ?? '' })),
+            overview: getOverview(settingId),
+            current: gifts,
+        }),
+        (text) => ({ gifts: text }),
+        patrons.length ? 'Write their gifts from this sheet and the powers they serve' : 'Write their gifts from this sheet');
     return h('div', { class: 'sb-card' },
         h('div', { class: 'sb-card-title' }, icon('fa-hand-sparkles'), ' Gifts and powers'),
-        field('What they can do beyond their weapons', h('textarea', { class: 'text_pole', rows: 2, placeholder: 'e.g. a chaos-touched blade that warps whatever it strikes; can tear open small rifts', value: entry.meta?.gifts ?? '', onchange: (e) => save({ gifts: e.target.value }) }),
-            'The game master and the narrator use these - in a fight above all.'),
+        fieldWithTools('What they can do beyond their weapons', h('textarea', { class: 'text_pole', rows: 2, placeholder: 'e.g. a chaos-touched blade that warps whatever it strikes; can tear open small rifts', value: entry.meta?.gifts ?? '', onchange: (e) => save({ gifts: e.target.value }) }),
+            tools, 'The game master and the narrator use these - in a fight above all.'),
         type.id === 'character' ? field('Champion of', powers.length
             ? h('div', { class: 'sb-chips' },
                 powers.map((p) => h('label', { class: 'checkbox_label' },
