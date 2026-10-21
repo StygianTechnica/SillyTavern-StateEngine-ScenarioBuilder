@@ -577,7 +577,7 @@ function giftsCard(type, entry, all, defs = []) {
         return h('div', { class: 'sb-card' },
             h('div', { class: 'sb-card-title' }, icon('fa-sun'), ' A power - no body'),
             h('small', { class: 'sb-hint' }, 'Never in a scene in person. It acts through omens, a voice, visions and dreams, and blessings on those tied to it - when called on, when a champion is failing, or now and then. It may answer a call with a price. It can also give missions (its Missions tab), sent in dreams.'),
-            fieldWithTools('How it makes itself known', h('input', { class: 'text_pole', placeholder: 'e.g. a voice in the storm; dreams of falling stars; a cold wind and whispers', value: acts, onchange: (e) => save({ power: { on: true, acts: e.target.value } }) }), actsTools));
+            fieldWithTools('How it makes itself known', h('textarea', { class: 'text_pole', rows: 2, placeholder: 'e.g. a voice in the storm; dreams of falling stars; a cold wind and whispers', value: acts, onchange: (e) => save({ power: { on: true, acts: e.target.value } }) }), actsTools));
     }
     const powers = (all.character ?? []).filter((c) => isPower(c) && c.id !== entry.id);
     const patrons = patronsOf(entry);

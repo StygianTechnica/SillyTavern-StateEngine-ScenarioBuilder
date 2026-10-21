@@ -6,13 +6,15 @@
 // the generation connection. Nothing is written here - the sheet keeps it.
 
 import { describeMagic, describeTech } from '../library/world-options.js';
+import { fitText, GIFTS_MAX, ACTS_MAX } from '../library/powers.js';
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
-const cut = (text, max) => {
-    const t = clean(text);
-    return t.length <= max ? t : `${t.slice(0, max - 1).replace(/\s+\S*$/, '')}…`;
-};
-export const GIFTS_CHARS = 400;
+// Excerpts end at a whole phrase - a "…" shown to the model gets copied.
+const cut = fitText;
+export const GIFTS_CHARS = GIFTS_MAX;
+// The length asked for - well inside what is kept, so nothing is shortened.
+const GIFTS_WORDS = 70;
+const ACTS_WORDS = 50;
 
 // entry: { name, noun, description, facts: [text] } (facts: a few of its
 // fields, "Role: guard captain"); patrons: [{ name, description, acts }];
@@ -39,7 +41,7 @@ export function buildGiftsPrompt({ entry, patrons = [], overview = {}, current =
         clean(current) ? `\nWhat is written so far - keep it, and build on it: ${cut(current, GIFTS_CHARS)}` : '',
         clean(brief) ? `Make it this: ${clean(brief)}` : '',
         '',
-        `Write their gifts in one to three sentences (under ${Math.round(GIFTS_CHARS / 6)} words): concrete things they can do that show in a scene, above all in a fight - and their limits or price, if any. Nothing they could not plausibly have from what is written above. No preamble, no heading.`,
+        `Write their gifts in one to three sentences (under ${GIFTS_WORDS} words): concrete things they can do that show in a scene, above all in a fight - and their limits or price, if any. Nothing they could not plausibly have from what is written above. No preamble, no heading.`,
     ].filter((l) => l !== '' && l !== false).join('\n');
     return { system, user, plain: true };
 }
@@ -51,12 +53,12 @@ export function readGifts(text) {
         .replace(/^["“]|["”]$/g, '');
     if (!t || t.length < 12) return { values: '', error: 'the reply held no gifts' };
     if (/^[{[]/.test(t)) return { values: '', error: 'the reply was JSON, not text' };
-    return { values: cut(t, GIFTS_CHARS), error: '' };
+    return { values: fitText(t, GIFTS_CHARS), error: '' };
 }
 
 // ---- a power: how it makes itself known (meta.power.acts)
 
-export const ACTS_CHARS = 300;
+export const ACTS_CHARS = ACTS_MAX;
 
 // power: { name, description, facts }; champions: [names] of those tied to
 // it; current: what is written so far (built on). -> { system, user, plain }
@@ -74,7 +76,7 @@ export function buildActsPrompt({ power, champions = [], overview = {}, current 
         clean(current) ? `\nWhat is written so far - keep it, and build on it: ${cut(current, ACTS_CHARS)}` : '',
         clean(brief) ? `Make it this: ${clean(brief)}` : '',
         '',
-        `Write how it makes itself known, as a short list of signs that fit its nature - omens, a voice, visions or dreams, what its blessing feels like (e.g. "a voice in the storm; dreams of falling stars; a cold wind and whispers"). Under ${Math.round(ACTS_CHARS / 6)} words, separated by semicolons. No preamble, no heading.`,
+        `Write how it makes itself known, as a short list of signs that fit its nature - omens, a voice, visions or dreams, what its blessing feels like (e.g. "a voice in the storm; dreams of falling stars; a cold wind and whispers"). Under ${ACTS_WORDS} words, separated by semicolons. No preamble, no heading.`,
     ].filter((l) => l !== '' && l !== false).join('\n');
     return { system, user, plain: true };
 }
@@ -85,7 +87,7 @@ export function readActs(text) {
         .replace(/^["“]|["”]$/g, '');
     if (!t || t.length < 8) return { values: '', error: 'the reply held no signs' };
     if (/^[{[]/.test(t)) return { values: '', error: 'the reply was JSON, not text' };
-    return { values: cut(t, ACTS_CHARS), error: '' };
+    return { values: fitText(t, ACTS_CHARS), error: '' };
 }
 
 export async function suggestActs(input) {

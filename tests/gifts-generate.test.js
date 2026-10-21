@@ -52,3 +52,25 @@ describe('writing how a power makes itself known', () => {
         expect(readActs('word '.repeat(200)).values.length).toBeLessThanOrEqual(ACTS_CHARS);
     });
 });
+
+describe('fitting text to its room', () => {
+    it('leaves short text alone, and shortens long text at a whole phrase - never mid-word, never with "…"', async () => {
+        const { fitText } = await import('../src/library/powers.js');
+        expect(fitText('a voice in the storm', 100)).toBe('a voice in the storm');
+        const signs = 'a voice in the storm; dreams of falling stars; a cold wind and whispers; frost on the altar';
+        expect(fitText(signs, 60)).toBe('a voice in the storm; dreams of falling stars');
+        const prose = 'He never tires. His wounds close as he fights. He hears the war god in the clash of steel.';
+        expect(fitText(prose, 50)).toBe('He never tires. His wounds close as he fights.');
+        const out = fitText('word '.repeat(50), 33);
+        expect(out.endsWith('word')).toBe(true);
+        expect(out).not.toContain('…');
+    });
+
+    it('keeps a power\'s signs and a person\'s gifts long enough for what is written', async () => {
+        const { normalizePowerMeta } = await import('../src/library/powers.js');
+        const { normalizeEntryMeta } = await import('../src/store/schema.js');
+        const long = 'a voice in the storm; '.repeat(20);
+        expect(normalizePowerMeta({ on: true, acts: long }).acts.length).toBeGreaterThan(300);
+        expect(normalizeEntryMeta({ gifts: 'He never tires. '.repeat(40) }).gifts.length).toBeGreaterThan(400);
+    });
+});

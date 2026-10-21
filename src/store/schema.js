@@ -91,7 +91,7 @@ import { emptyGiver, normalizeGiver } from '../quests/missions.js';
 import { normalizeDead } from '../state/death.js';
 import { normalizeEnrichments } from '../generate/revert.js';
 import { normalizeCounts } from '../library/creature-form.js';
-import { normalizePowerMeta } from '../library/powers.js';
+import { normalizePowerMeta, fitText, GIFTS_MAX } from '../library/powers.js';
 import { normalizeFight } from '../director/fight.js';
 import { normalizeEvent, normalizeEventsDone } from '../events/model.js';
 
@@ -177,7 +177,7 @@ export function normalizeEntryMeta(meta) {
         // The powers a character is a champion or devotee of.
         patrons: strList(m.patrons),
         // What they can do beyond their weapons (a chaos-warped blade).
-        gifts: str(m.gifts).slice(0, 400),
+        gifts: fitText(str(m.gifts), GIFTS_MAX),
     };
 }
 
@@ -253,7 +253,9 @@ export function normalizeSettingDoc(doc) {
     const groups = Array.isArray(d.groups)
         ? d.groups.filter(isObject).filter((g) => typeof g.id === 'string' && g.id).map((g) => ({ id: g.id, name: str(g.name) || 'Group', entryIds: strList(g.entryIds) }))
         : [];
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, characterFieldsAdded: d.characterFieldsAdded === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true,
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview, canonOnly: d.canonOnly === true, characterFieldsAdded: d.characterFieldsAdded === true,
+        // Background and Voice made long text (src/library/character-fields.js).
+        characterFieldsLong: d.characterFieldsLong === true, entries, groups, tracked: strList(d.tracked), trackedReady: d.trackedReady === true,
         imports: Array.isArray(d.imports) ? d.imports.filter(isObject).slice(-IMPORTS_KEPT) : [],
         relations: normalizeRelations(d.relations), graph: { positions: normalizePositions(d.graph?.positions), map: normalizePositions(d.graph?.map), images: normalizeMapImages(d.graph?.images) }, calendar: normalizeCalendar(d.calendar), playerId: str(d.playerId),
         // Secrets and oaths the user wrote (src/library/knowledge.js).

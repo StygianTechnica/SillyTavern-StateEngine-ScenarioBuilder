@@ -1,7 +1,7 @@
 // A character's Background and Voice & mannerisms: added once to the
 // setting, a description of looks only beside a Background, voice in the
 // guidance, and an intimate-scene note written from who they are.
-import { missingCharacterFields, CHARACTER_EXTRA_FIELDS } from '../src/library/character-fields.js';
+import { missingCharacterFields, lengthenCharacterFields, CHARACTER_EXTRA_FIELDS } from '../src/library/character-fields.js';
 import { editorKind } from '../src/library/fields.js';
 import { buildGenerationPrompt, APPEARANCE_ABOUT } from '../src/generate/prompt.js';
 import { buildIntimacyPrompt } from '../src/generate/intimacy.js';
@@ -13,6 +13,22 @@ describe('the extra character fields', () => {
     it('adds only what is missing', () => {
         expect(missingCharacterFields([{ name: 'personality' }]).map((f) => f.name)).toEqual(['background', 'voice']);
         expect(missingCharacterFields([{ name: 'background' }, { name: 'voice' }])).toEqual([]);
+    });
+
+    it('are long text, so State Engine never cuts them at 300 characters', () => {
+        expect(CHARACTER_EXTRA_FIELDS.every((f) => f.multiline === true)).toBe(true);
+    });
+
+    it('makes those added before as short text long text, keeping their ids - and nothing else', () => {
+        const defs = [
+            { id: 'f1', name: 'personality', type: 'string', multiline: true },
+            { id: 'f2', name: 'background', type: 'string' },
+            { id: 'f3', name: 'voice', type: 'string', multiline: true },
+            { id: 'f4', name: 'role', type: 'string' },
+        ];
+        const out = lengthenCharacterFields(defs);
+        expect(out.map((d) => [d.id, d.multiline === true])).toEqual([['f1', true], ['f2', true], ['f3', true], ['f4', false]]);
+        expect(lengthenCharacterFields(out)).toBeNull();
     });
 
     it("tells generation what each is for, from the field's description", () => {

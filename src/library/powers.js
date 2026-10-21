@@ -19,12 +19,30 @@ const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 
 export const POWERS_SHOWN = 2;
 export const POWER_EVERY = 8;
+// How long a power's signs and a person's gifts may be.
+export const ACTS_MAX = 600;
+export const GIFTS_MAX = 800;
+
+// `text` no longer than `max`, shortened - when it must be - at the end of
+// a whole sentence or phrase (". " "; "), else of a word: never mid-word,
+// never with a dangling "…".
+export function fitText(text, max) {
+    const t = clean(text);
+    if (t.length <= max) return t;
+    const head = t.slice(0, max + 1);
+    const phrase = Math.max(...['. ', '; ', '! ', '? '].map((m) => head.lastIndexOf(m)));
+    if (phrase > max * 0.5) return t.slice(0, phrase + 1).replace(/;$/, '').trim();
+    const comma = head.lastIndexOf(', ');
+    if (comma > max * 0.6) return t.slice(0, comma).trim();
+    const space = head.lastIndexOf(' ');
+    return (space > 0 ? t.slice(0, space) : t.slice(0, max)).replace(/[\s,;:-]+$/, '').trim();
+}
 
 // meta.power: { on, acts } - acts: how it makes itself known (dreams,
 // storms, a voice in the fire), its own words.
 export function normalizePowerMeta(value) {
     const p = isObject(value) ? value : {};
-    return { on: p.on === true, acts: clean(p.acts).slice(0, 300) };
+    return { on: p.on === true, acts: fitText(p.acts, ACTS_MAX) };
 }
 
 export const isPower = (entry) => entry?.meta?.power?.on === true;
@@ -76,5 +94,5 @@ export function powersText(list) {
 export function giftsText(entry, nameOf = () => '') {
     const gifts = clean(entry?.meta?.gifts ?? entry?.gifts);
     const patrons = patronsOf(entry).map(nameOf).filter(Boolean);
-    return [gifts && `gifts: ${gifts.slice(0, 200)}`, patrons.length && `champion of ${patrons.join(' and ')}`].filter(Boolean).join('; ');
+    return [gifts && `gifts: ${fitText(gifts, 400)}`, patrons.length && `champion of ${patrons.join(' and ')}`].filter(Boolean).join('; ');
 }
