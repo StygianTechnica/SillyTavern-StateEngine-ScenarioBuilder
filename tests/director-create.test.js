@@ -266,3 +266,18 @@ describe('arrivals in the words a small model bends', () => {
         expect(parsed.note).toContain('The dead lurch out of the dark.');
     });
 });
+
+describe('a new thing has a name, not a sentence', () => {
+    it('refuses a relationship written as a faction, and takes real names', async () => {
+        const { namesSomething } = await import('../src/director/prompt.js');
+        expect(namesSomething('Maziel serves Morvath, god of Death', 'faction')).toBe(false);
+        expect(namesSomething('The Ravagers follow Graxx', 'faction')).toBe(false);
+        expect(namesSomething('Varyn is wounded', 'character')).toBe(false);
+        expect(namesSomething('The Graveborn Compact', 'faction')).toBe(true);
+        expect(namesSomething('The Eyepatched Man', 'character')).toBe(true);
+        expect(namesSomething('Order of the Ember Who Burn Away the Old Kingdoms Forever', 'faction')).toBe(false);
+        expect(namesSomething('Find the stolen ledger', 'quest')).toBe(true);
+        expect(namesSomething('The Iron Guards', 'faction')).toBe(true);
+        expect(namesSomething('Followers of the Ember', 'faction')).toBe(true);
+    });
+});

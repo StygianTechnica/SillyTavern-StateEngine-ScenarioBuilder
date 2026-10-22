@@ -488,6 +488,7 @@ export function buildDirectorPrompt(input) {
             'NEW creature | <name> | <one-sentence description> | <tied to>',
             'A named animal - a pet, a mount, a hound, a beast companion - is a creature, however dear to someone. Only one that talks and thinks like a person (a sentient familiar, a dragon, a bound spirit) is a character.',
             'NEW faction | <name> | <one-sentence description> | <tied to>',
+            'A faction is a group with a name of its own (the Graveborn Compact, the Ravagers) - never a sentence about who serves, follows or worships whom: that is a relationship, not a new thing.',
             'NEW lore | <name> | <one-sentence description> | <tied to>',
             'NEW event | <name> | <one-sentence description> | <tied to>',
             'NEW quest | <name> | <what it asks of the characters> | <tied to>',
@@ -891,6 +892,20 @@ export function placeNamedIn(item, places = []) {
         }
     }
     return best?.id ?? null;
+}
+
+// Whether a NEW person, creature, faction or item has a name, not a sentence
+// about one ("Maziel serves Morvath, god of Death" is a relationship, not a
+// faction): no linking verb (only those that never name a group - "the
+// Iron Guards" stays), at most seven words. Quests, events and scenes
+// are titled with phrases ("Find the stolen ledger") and are not checked.
+const SENTENCE_VERBS = /\b(serve|serves|served|serving|worship|worships|worshipped|follow|follows|followed|obey|obeys|obeyed|is|are|was|were|has|have|had|belongs|belonged|betrays|betrayed|swore|swears|becomes|became)\b/i;
+export function namesSomething(name, kind) {
+    if (['quest', 'event', 'scene', 'lore'].includes(kind)) return true;
+    const n = clean(name).replace(/^the\s+/i, '');
+    if (!n) return false;
+    if (n.split(/\s+/).length > 7) return false;
+    return !SENTENCE_VERBS.test(n);
 }
 
 // The place a sentence names, as a short name: "Remus is in the infirmary

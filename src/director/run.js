@@ -39,7 +39,7 @@ const WOUNDS_KEPT = 30;
 import { markDead, deadText, deadByName, bringBack } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
 import { creatureFormOf, readCount, addCount, takeCount, creatureLabel } from '../library/creature-form.js';
-import { parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
+import { namesSomething, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { buildPeoplePrompt, readPeople } from './people.js';
 import { unknownsFor, PERSPECTIVE_TOKENS } from './perspective.js';
@@ -517,6 +517,11 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         }
         if (c.kind === 'location' && routeName(c.name)) {
             console.info(LOG_PREFIX, `the director did not add location "${c.name}": a way to somewhere, not a place`);
+            continue;
+        }
+        // A sentence is not a name ("Maziel serves Morvath, god of Death").
+        if (!namesSomething(c.name, c.kind)) {
+            console.info(LOG_PREFIX, `the director did not add ${c.kind} "${c.name}": a sentence about something, not a name`);
             continue;
         }
         const r = relevance(c, { recentText, latestUserText, quests: guidance.quests, known });
