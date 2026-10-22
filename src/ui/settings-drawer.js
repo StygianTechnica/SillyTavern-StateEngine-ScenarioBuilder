@@ -20,6 +20,7 @@ import { DRIFT_CHANGED_EVENT } from '../validate/reconcile.js';
 import { curatorStatus, curatorLine, presetLine, sceneLine } from './status-model.js';
 import { openWorkspace } from './workspace.js';
 import { listConnectionProfiles } from './connection-profiles.js';
+import { witnessCoverage, POV_MODES } from '../director/perspective.js';
 import { h, icon, toast } from './dom.js';
 
 // SillyTavern resolves extension templates relative to
@@ -72,6 +73,25 @@ async function renderChat() {
     const curatorEl = byId('sb_curator_line');
     curatorEl.textContent = curator.text;
     curatorEl.classList.toggle('sb-warn', curator.warn);
+    await witnessNote();
+}
+
+// How much of this chat's memory says who was present: perspective works
+// from it, and older chats were extracted without it.
+async function witnessNote() {
+    const note = byId('sb_director_witness_note');
+    if (!note) return;
+    note.hidden = true;
+    const archivist = window.StateEngineArchivist;
+    if (getSettings().director.perspective === false || typeof archivist?.getAllMemories !== 'function') return;
+    try {
+        const { total, witnessed } = witnessCoverage(await archivist.getAllMemories());
+        if (!total || witnessed / total >= 0.6) return;
+        note.textContent = `Only ${witnessed} of this chat's ${total} memories record who was present, so perspective has little to go on for what came before. Archivist's "Rebuild memories from chat" (in its memory browser) reads the chat again and fills it in.`;
+        note.hidden = false;
+    } catch {
+        // No memories to look at.
+    }
 }
 
 function refresh() {
@@ -90,7 +110,10 @@ function renderSettings() {
     byId('sb_director_ahead').checked = settings.director.thinkAhead === true;
     byId('sb_triggers_on_message').checked = settings.triggers?.onMessage !== false;
     byId('sb_director_perspective').checked = settings.director.perspective !== false;
+    byId('sb_director_pov').value = POV_MODES.includes(settings.director.pov) ? settings.director.pov : 'free';
     byId('sb_director_night').checked = settings.director.travelAtNight === true;
+    byId('sb_changes_suggest').checked = settings.changes?.suggest !== false;
+    byId('sb_changes_auto').checked = settings.changes?.auto === true;
     byId('sb_director_timeout').value = settings.director.timeout;
     byId('sb_director_context').value = settings.director.contextTokens;
     byId('sb_director_fight').value = settings.director.fightReplies;
@@ -148,8 +171,11 @@ export async function addSettingsDrawer() {
     byId('sb_director_create').addEventListener('change', (e) => { settings.director.allowCreate = e.target.checked; saveSettings(); });
     byId('sb_director_ahead').addEventListener('change', (e) => { settings.director.thinkAhead = e.target.checked; saveSettings(); });
     byId('sb_triggers_on_message').addEventListener('change', (e) => { settings.triggers = { ...(settings.triggers ?? {}), onMessage: e.target.checked }; saveSettings(); });
-    byId('sb_director_perspective').addEventListener('change', (e) => { settings.director.perspective = e.target.checked; saveSettings(); });
+    byId('sb_director_perspective').addEventListener('change', (e) => { settings.director.perspective = e.target.checked; saveSettings(); refresh(); });
+    byId('sb_director_pov').addEventListener('change', (e) => { settings.director.pov = e.target.value; changed(); });
     byId('sb_director_night').addEventListener('change', (e) => { settings.director.travelAtNight = e.target.checked; saveSettings(); });
+    byId('sb_changes_suggest').addEventListener('change', (e) => { settings.changes = { ...(settings.changes ?? {}), suggest: e.target.checked }; saveSettings(); });
+    byId('sb_changes_auto').addEventListener('change', (e) => { settings.changes = { ...(settings.changes ?? {}), auto: e.target.checked }; saveSettings(); });
     byId('sb_director_timeout').addEventListener('change', (e) => {
         const value = Math.round(Number(e.target.value));
         settings.director.timeout = Number.isFinite(value) ? Math.min(300, Math.max(5, value)) : 45;

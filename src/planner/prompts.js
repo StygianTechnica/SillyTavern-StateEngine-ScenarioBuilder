@@ -508,8 +508,9 @@ export function buildIdeasPrompt(input) {
             ? 'This setting is fixed canon: invent no new quests and add no detail to existing ones. Give only happenings and seeds.'
             : 'At most two of each kind; fewer is fine, and none of a kind is fine. A quest is a new potential quest tied to the current story (it starts not yet taken up). An enrichment adds lore, a complication or objectives to an open quest above. ',
         'A happening is something set for a later in-game day (one to fourteen days on) that should come up then without disrupting the scene now. A seed is a small thing to plant now so a later beat pays off.',
+        'An event is a structured contest or expedition - an arena, a tournament, a dungeon crawl, or a programme (a festival, a trial) - but only when the story itself speaks of one coming ("the tournament at midsummer", "the old mine nobody comes back from") or the place would plainly hold one now. At most one; usually none.',
         'Answer in this JSON shape:',
-        `{${canon ? '' : '"quests":[{"name":"<quest name>","description":"<two sentences>","why":"<what it grows out of, by name>","ties":["<names>"]}],"enrich":[{"quest":"<an open quest\'s name>","text":"<the lore or complication>","objectives":["<a new objective>"]}],'}"happenings":[{"text":"<what happens>","in_days":3,"when":"<time of day, or empty>","why":"<what it grows out of>","ties":["<names>"]}],"seeds":[{"text":"<what to plant>","payoff":"<what it pays off later>"}]}`,
+        `{${canon ? '' : '"quests":[{"name":"<quest name>","description":"<two sentences>","why":"<what it grows out of, by name>","ties":["<names>"]}],"enrich":[{"quest":"<an open quest\'s name>","text":"<the lore or complication>","objectives":["<a new objective>"]}],'}"happenings":[{"text":"<what happens>","in_days":3,"when":"<time of day, or empty>","why":"<what it grows out of>","ties":["<names>"]}],"seeds":[{"text":"<what to plant>","payoff":"<what it pays off later>"}],"events":[{"kind":"arena|tournament|crawl|programme","name":"<its name>","text":"<what it is, where, and who takes part>","in_days":0,"why":"<what in the story points to it>","ties":["<names>"]}]}`,
     );
     return { system, prompt: parts.join('\n') };
 }
@@ -533,5 +534,71 @@ export function readIdeas(json, { canonOnly = false } = {}) {
     for (const s of list(json.seeds).filter((x) => isObject(x) && clean(x.text)).slice(0, 2)) {
         out.push({ kind: 'seed', text: cut(s.text, 300), why: cut(s.payoff, 200) });
     }
+    for (const e of list(json.events).filter((x) => isObject(x) && clean(x.name) && clean(x.text)).slice(0, 1)) {
+        const kind = clean(e.kind).toLowerCase().replace(/^dungeon\s*(crawl)?$/, 'crawl');
+        const n = Math.round(Number(e.in_days ?? e.inDays));
+        out.push({ kind: 'event', eventKind: ['arena', 'tournament', 'crawl', 'programme'].includes(kind) ? kind : 'programme', name: cut(e.name, 80), text: cut(e.text, 400), why: cut(e.why, 200), ties: texts(e.ties, 6), inDays: Number.isFinite(n) ? Math.min(60, Math.max(0, n)) : 0 });
+    }
+    return out;
+}
+
+// STEER OBJECTS: the people, places and groups the user names in a new
+// volume's steer that the library does not have yet - taken out first, with
+// the user's own words about them, before anything else reads the steer, so
+// the detail the user wrote is kept on the objects themselves.
+// input: { steer, known: [name] (the library's), userName }
+export function buildSteerObjectsPrompt(input) {
+    const userName = clean(input.userName) || 'the player';
+    const known = texts(input.known, 400);
+    const system = [
+        'You read a game master\'s notes for the next part of a roleplay and list the named people, places and groups in them that are not in the world yet. You copy what the notes say about each - you add nothing.',
+        `${userName} is the player character: never list them.`,
+    ].join(' ');
+    const parts = [
+        'THE NOTES (the user\'s own words)', String(input.steer ?? '').trim().slice(0, 4000),
+        '',
+        known.length ? `ALREADY IN THE WORLD (never list these, or another name for one of them)\n${known.join(', ')}` : '',
+        '',
+        'YOUR TASK',
+        'List every person, place and group the notes name with a proper name (or a clear title such as "the Ash Queen") and that is not already in the world. A person is anyone - a protagonist, an antagonist, an ally, a god. A place is anywhere - a city, a temple, a ruin, a room. A group is a faction, an order, a cult, a guild, an army.',
+        '- details: everything the notes say about it, as close to the notes\' own words as you can - who they are, what they want, what they look like, what they do in this part of the story. Never add anything the notes do not say. Empty if they say nothing.',
+        '- role (people only): protagonist, antagonist, ally or other - as the notes make them.',
+        '- inside (places only): the larger place the notes put it in, or empty.',
+        'Nothing named and new: empty lists.',
+        'Answer in this JSON shape:',
+        '{"people":[{"name":"<name>","role":"antagonist","details":"<from the notes>"}],"places":[{"name":"<name>","inside":"<a larger place, or empty>","details":"<from the notes>"}],"groups":[{"name":"<name>","details":"<from the notes>"}]}',
+    ].filter((p, i, all) => p !== '' || all[i - 1] !== '');
+    return { system, prompt: parts.join('\n') };
+}
+
+const STEER_ROLES = ['protagonist', 'antagonist', 'ally', 'other'];
+
+// -> [{ type: 'character' | 'location' | 'faction', name, details, role,
+// inside }], without the player character, names the library has (known:
+// [{ name, aliases }] through isKnown), or names the notes never use.
+export function readSteerObjects(json, { steer = '', userName = '', isKnown = () => false } = {}) {
+    if (!isObject(json)) return [];
+    const text = String(steer ?? '').toLowerCase();
+    const player = clean(userName).toLowerCase();
+    const out = [];
+    const seen = new Set();
+    const take = (type, x) => {
+        const name = cut(x?.name, 80);
+        const key = name.toLowerCase();
+        if (!name || seen.has(key) || key === player || isKnown(name)) return;
+        // Only what the user wrote: the name (or its last word, "Maziel" for
+        // "Lord Maziel") is in their text.
+        const last = key.split(' ').pop();
+        if (!text.includes(key) && !(last.length > 3 && text.includes(last))) return;
+        seen.add(key);
+        out.push({
+            type, name, details: cut(x?.details, 1200),
+            role: type === 'character' && STEER_ROLES.includes(clean(x?.role).toLowerCase()) ? clean(x.role).toLowerCase() : '',
+            inside: type === 'location' ? cut(x?.inside, 80) : '',
+        });
+    };
+    for (const p of list(json.people).slice(0, 12)) take('character', p);
+    for (const p of list(json.places).slice(0, 12)) take('location', p);
+    for (const g of list(json.groups).slice(0, 8)) take('faction', g);
     return out;
 }

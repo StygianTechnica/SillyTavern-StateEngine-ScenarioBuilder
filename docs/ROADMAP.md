@@ -12,26 +12,26 @@ From a review of what is left, in the user's words where it matters:
   men" brought Graxx back); events that fire on conditions, built on State
   Engine's prompted and calculated variables (story triggers, SB-435 below);
   a toggleable "think after each reply" mode for the game master.
-- **Under way (2026-10-19):** perspective - people know only what they
+- **Done (2026-10-22):** perspective - people know only what they
   witnessed or were told ("Graxx keeps talking about Remus's divine power
-  before he ever saw it"); "an impressive feat" if done well. A standing
-  narrator and director rule, Archivist recording who was present for every
-  memory (a dream, vision or thought only for the one who had it), and the
-  director told, per person here, what they did not witness - no extra
-  call. See the Perspective item below.
-- **Wanted:** current descriptions updated from the story ("would be
-  amazing").
+  before he ever saw it"). A standing narrator and director rule, Archivist
+  recording who was present for every memory, the director told per person
+  what they did not witness, what the player tells the people with them
+  taken as known from then on, a point-of-view setting, and a pointer to
+  Archivist's rebuild for chats with little witness data - no extra call.
+  See the Perspective item below.
+- **Done (2026-10-22):** current descriptions updated from the story ("would
+  be amazing") - src/state/changes.js; see Generation below.
 - **Done (2026-10-20):** revert an enrichment, a field or all of it ("I need
   to be able to" - src/generate/revert.js); a contextual place lookup -
   "the ruins" finds "Roadside Ruins" when that is where the story is, not
   the temple ruins it is heading for, plus a suggested parent on a place
   with none (src/library/place-context.js); death is remembered
   (src/state/death.js); missions and jobs (src/quests/missions.js).
-- **Wanted (2026-10-20) - the reason these extensions exist:** guardrails
-  for the model to run a sequenced event or process in a roleplay. The GM
-  planner approaches it but lacks the structure for: a tournament with
-  rounds and a grand final; a dungeon crawl; an arena where different
-  opponents come out to fight. See Structured events below.
+- **Done (2026-10-22) - the reason these extensions exist:** guardrails
+  for the model to run a sequenced event or process in a roleplay: an arena,
+  a tournament with rounds and a grand final, a dungeon crawl, a programme,
+  missions and jobs. See Structured events below.
 - **Nice to have, can wait:** an image gallery per entry (goes with updated
   descriptions: before and after pictures).
 - **Not wanted:** a status line in the chat - Pretty Panels shows the state
@@ -346,8 +346,18 @@ newly confirmed objects, a separate generation connection profile.
   characters from personas/cards (SB-139a).
 - [ ] Temperature per generation (needs the connection profile's own
   setting today).
-- [ ] Suggesting a current description from Archivist memories ("the docks
-  burned - update the description?").
+- [x] Suggesting a current description from Archivist memories ("the docks
+  burned - update the description?") - src/state/changes.js: after each
+  reply (and when Archivist's memories change) the memories are read for a
+  change of the thing's own kind near its name - a place burned, rebuilt or
+  overrun; a thing broken or reforged; a group scattered or taken over; a
+  person scarred, maimed or crowned - never one only threatened or planned,
+  never the player character; a chat's first look takes only its latest 40
+  memories. No call to find them. Review lists them ("Changed in the
+  story"); "Write how it is now" is one call that rewrites the description
+  for what the story did, to edit and use as the current description (the
+  setting's own stays). Settings: offer them (on), write them at once (off,
+  one call each).
 
 ## Lorebooks (spec 6.6, 6.7 - phase 0.4)
 
@@ -424,6 +434,13 @@ Done: the Worlds tab (src/worlds/, src/ui/worlds-tab.js).
   its tension chart (edit, lock, add, finish or remove beats; rewrite).
 - [x] GM planner, phase 3: volumes - when a story ends, a narrative recap of
   it and a new volume of chapters that grows out of it.
+- [x] GM planner, volumes (2026-10-22): the people, places and groups a new
+  volume's steer names that the world lacks (its antagonist, the temple it
+  sets out for) are made first - one call, before the recap or the outline
+  reads the steer - with the user's own words as their description, a place
+  inside the place the steer names, the role in GM notes, listed in Review.
+  Also when the steer is edited. A switch on the next-volume panel
+  (settings.planner.steerObjects, on); never in a canon-only setting.
 - [x] GM planner: /sb-request and /sb-requests - queue and list requests for
   the game master from the chat box.
 - [x] GM planner, phase 4: proactive ideas (quest hooks, quest detail,
@@ -465,9 +482,18 @@ Done: the Worlds tab (src/worlds/, src/ui/worlds-tab.js).
     sleep restlessly"). Older memories with no witnesses count only when
     they read as someone's vision or dream, and not once a later memory
     shows it was told. Toggle: "Perspective" in the settings (on).
-  - Still open: chats extracted before this have almost no witness data
-    (God War: 6 of 867) - a re-extraction would fill it in; things a person
-    was told are only detected from later memories' wording; POV modes.
+  - Done 2026-10-22: what the player tells the people with them, in their
+    own messages (a telling word or speech, and the memory's distinctive
+    words or its kind of inner experience), is theirs from then on
+    (doc.perspectiveTold) - only the player's words count, never the
+    narrator's, which is what lets things slip. A point of view (settings:
+    the narrator's own, third person close on the player character, second
+    person, all-seeing) given to the narrator with the perspective rule and
+    to the director. The settings drawer says when few of a chat's memories
+    record who was present, and points to Archivist's "Rebuild memories from
+    chat", which reads the chat again and fills it in.
+  - Still open: things the others tell each other (not the player) are only
+    detected from later memories' wording.
 - [x] Quests (9.5): made automatically from Archivist's quest seeds, goals,
   plans and hooks (plus a "Scan Archivist for quests" catch-up), objectives
   kept in step with the plan's steps, type and base priority, effective
@@ -574,14 +600,15 @@ or knows when a step is over. Four kinds it must be able to carry:
   One model call when one is made; the difficulty grows with the giver's
   record (or is fixed); the offer goes to the director through the GM
   plan's queue.
-- [~] Givers offer the next one: once a mission is done (or failed), its
+- [x] Givers offer the next one: once a mission is done (or failed), its
   giver can offer a new one of its kind - on the next visit, when asked, or
   after a while (on the calendar) - so a job keeps running through a story.
-  Done: the next is written once the last has ended, and offered when they
-  next meet, only when asked for work, or only on a condition (a story
-  trigger). Difficulty grows, is fixed, random, or follows the story's
-  tension. Not yet: "after a while" on the calendar, a board of
-  several at once to choose from.
+  The next is written once the last has ended, and offered when they next
+  meet, only when asked for work, only on a condition (a story trigger), or
+  some days later (a day trigger, 2026-10-22). Difficulty grows, is fixed,
+  random, or follows the story's tension. A board (2026-10-22): a giver
+  keeps up to six jobs on offer at once, the character picks one; none new
+  while one is under way, and the board fills up again when it ends.
 - [x] **Design written (2026-10-21):** docs/DESIGN - STRUCTURED EVENTS.md.
   **Phase 1, the arena, built:** set up in the GM Plan (Event card) -
   opponents in order, an opening and a close, a prize; the director sees
@@ -590,42 +617,59 @@ or knows when a step is over. Four kinds it must be able to carry:
   lost - which ends the arena); moments last one reply; the user can mark
   won / lost / skip or end it; stages keyed to the reply count, so swipes
   never move it on twice; sb__event_* for panels. No extra model calls.
-  Next: tournament (bracket, off-screen matches, waits on the calendar),
-  dungeon crawl (rooms on the routes), templates, generated events.
+  **Phase 2, built 2026-10-22:** the tournament (a bracket drawn round by
+  round, the other matches decided off screen by the entrants' strength with
+  the event's own seeded roll and reported in a moment, an optional wait
+  between rounds on the clock, the grand final), the dungeon crawl (rooms
+  are places; the room the scene is in is the stage, followed through the
+  director's MOVE; foes beaten, a puzzle or trap cleared by a story trigger,
+  treasure taken once a room is left; ways on from the routes; the final
+  room ends it), the programme (moments, bouts and waits from lines), wait
+  stages, templates per world, generated events (one call), dated events on
+  the calendar's agenda that begin by themselves, and the planner's ideas
+  pass proposing an event the story points to. sb__event_kind and
+  sb__event_bracket for panels (preset version 14).
 - [x] Design first (was): what an event is (stages in order, or a graph of
   stages), what each stage holds (who or what is faced, its place, what
   ends it - a win, a loss, leaving, a day), the state it keeps (round,
   bracket, opponents left, rooms cleared) and what follows a win or a loss.
-- [ ] Planned-out parts: an event runs like a programme - an introduction
+- [x] Planned-out parts (2026-10-22: wait stages hold a stage until a time on
+  the clock; dated events): an event runs like a programme - an introduction
   (the herald, the crowd, the entrants presented), its stages with their
   timing on the clock and calendar (round one at noon, the final the next
   day, rests between bouts), the moments between them, and a close (the
   victor crowned, the prize, the aftermath). A tournament or arena is
   mostly a timeline of these.
-- [ ] Dungeon crawls need more thought: not a timeline but a series of
+- [x] Dungeon crawls (2026-10-22, the crawl in src/events/model.js): not a timeline but a series of
   events in an environment the party moves through - places linked to one
   another (the location tree and routes may carry it), each with what waits
   there, entered in any order the routes allow, with state kept per place
   (cleared, looted, a door opened, something still lurking).
-- [ ] Guardrails: the director and narrator see the current stage only and
+- [x] Guardrails: the director and narrator see the current stage only and
   are told what it is and what ends it; the story cannot skip ahead,
   repeat a stage or invent the next opponent; the stage moves on only when
   its end condition is met. Likely built from what exists: story triggers
   (State Engine flags answering "has this stage ended?") and the director's
   briefing, with the event's state in Scenario Builder's chat document.
-- [ ] Templates for the four kinds, so an event can be set up in a few
-  steps and reused across chats.
-- [ ] Generated events: the user gives loose guidance ("a tournament in
+- [x] Templates for the four kinds, so an event can be set up in a few
+  steps and reused across chats (2026-10-22: kept per world, src/events/setup.js).
+- [x] Generated events (2026-10-22, src/events/generate.js; a crawl's new
+  rooms are made as places inside the dungeon, joined by routes): the user
+  gives loose guidance ("a tournament in
   the capital, five rounds") and the GM planner fills in the detailed event
   (entrants, bracket, rooms, opponents, prizes) from the setting - or the
   planner proposes one on its own when the story seems to call for it.
-- [ ] The planner reads the story for events: when the player character
+- [x] The planner reads the story for events (2026-10-22: an "event" idea in
+  the ideas pass - no extra call; taking it up writes it with one call and
+  puts it on the calendar; random events stay with happenings): when the player character
   mentions one ("the tournament at midsummer"), it is put on the calendar
   (a calendar event with its date) and becomes a structured event when the
   day comes. It may also insert random events - an ambush on the road, a
   festival, a challenge - where they fit the setting and the story, within
   the director's restraint (they arise from the world, never for the
   player character).
-- [ ] Shown in Pretty Panels (current round, bracket, opponents left).
-- [ ] Mind the call budget: no extra model call per reply unless it earns
-  its place and can be switched off.
+- [x] Shown in Pretty Panels (current round, bracket, opponents left) - as
+  sb__event_* variables; a layout for them is Pretty Panels' own.
+- [x] Mind the call budget: no extra model call per reply unless it earns
+  its place and can be switched off. (Running an event costs none; a
+  generated event or an accepted event idea costs one, when made.)

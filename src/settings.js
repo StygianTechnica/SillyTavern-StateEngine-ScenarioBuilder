@@ -74,6 +74,9 @@ const DEFAULTS = {
     // perspective: each person here is listed with the recent memories they
     // did not witness (src/director/perspective.js), at most
     // perspectiveTokens of the director's prompt - no extra call.
+    // pov: the narration's point of view - 'free' (the narrator's habit),
+    // 'limited' (third person, the player character's senses), 'second'
+    // ("you"), 'omniscient' (src/director/perspective.js povRule).
     // travelAtNight: a journey goes on through the night; off, the party
     // makes camp at dusk and goes on in the morning.
     // fightReplies: the most replies a fight lasts (src/director/fight.js).
@@ -87,7 +90,11 @@ const DEFAULTS = {
     // State Engine call, only while some are armed), waiting at most
     // waitSeconds; off, only after AI replies.
     triggers: { onMessage: true, waitSeconds: 20 },
-    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600, travelAtNight: false, contextTokens: 8192, fightReplies: 5, powersEvery: 8 },
+    // Changes the story makes to the world (src/state/changes.js): suggest -
+    // list them in Review (no call); auto - write each one's current
+    // description at once (one call per change).
+    changes: { suggest: true, auto: false },
+    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600, pov: 'free', travelAtNight: false, contextTokens: 8192, fightReplies: 5, powersEvery: 8 },
     // The clock (src/calendar/clock.js): on = Scenario Builder keeps the
     // time and weather; perTurn = how much time a reply covers when the
     // director does not say.
@@ -99,7 +106,7 @@ const DEFAULTS = {
     // outlineEvery, ideasEvery); pacing: 'off' | 'gentle' |
     // 'brisk' | 'fast' (how readily an idle scene moves on); showSpoilers:
     // the day plan is shown in the GM Plan tab (off: veiled).
-    planner: { enabled: true, level: 'moderate', checkEvery: null, dayExpire: null, outlineEvery: null, ideasEvery: null, pacing: 'gentle', showSpoilers: false, maxTokens: 1200 },
+    planner: { enabled: true, level: 'moderate', checkEvery: null, dayExpire: null, outlineEvery: null, ideasEvery: null, pacing: 'gentle', showSpoilers: false, maxTokens: 1200, steerObjects: true },
     // Settings migrations already applied.
     migrated: [],
     // { [settingId]: library document } - src/store/setting-store.js.

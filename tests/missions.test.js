@@ -104,3 +104,30 @@ describe('difficulty modes and when a giver offers', () => {
             .toBe('Orren offers Remus a job: "The Silent Ledger" - Take the ledger, paying 200 gold. It can be turned down.');
     });
 });
+
+describe('a board of jobs, and waiting a while', () => {
+    const hall = normalizeGiver({ on: true, trade: 'quests for adventurers', board: 3 });
+
+    it('keeps up to its size on offer, none new while one is under way', () => {
+        expect(hall.board).toBe(3);
+        expect(missionToFollow(hall, [{ id: 'q1', status: 'Not started' }])).toEqual({ id: 'q1', status: 'Not started' });
+        expect(missionToFollow({ ...hall, lastFollowed: 'q1' }, [{ id: 'q1', status: 'Not started' }])).toBe(null);
+        expect(missionToFollow(hall, [{ id: 'q1', status: 'Not started' }, { id: 'q2', status: 'Not started' }, { id: 'q3', status: 'Not started' }])).toBe(null);
+        expect(missionToFollow(hall, [{ id: 'q1', status: 'Active' }, { id: 'q2', status: 'Not started' }])).toBe(null);
+        expect(missionToFollow({ ...hall, lastFollowed: 'q2' }, [{ id: 'q1', status: 'Completed' }, { id: 'q2', status: 'Not started' }, { id: 'q3', status: 'Not started' }])).toEqual({ id: 'q3', status: 'Not started' });
+        // One at a time, as before: nothing new while one waits.
+        expect(missionToFollow(guild, [{ id: 'q1', status: 'Not started' }])).toBe(null);
+    });
+
+    it('posts a job beside the others, for the character to pick', () => {
+        const text = offerText({ name: 'Rats in the Cellar', task: 'Clear the cellar.', reward: '5 silver' }, { giverName: 'The Guild Hall', takerName: 'Remus', others: ['The Lost Ring'] });
+        expect(text).toContain('"The Lost Ring" and now "Rats in the Cellar"');
+        expect(text).toContain('they pick one, or none');
+    });
+
+    it('waits some days after one ends', () => {
+        expect(normalizeGiver({ on: true, offer: 'after', afterDays: 5 })).toMatchObject({ offer: 'after', afterDays: 5 });
+        expect(normalizeGiver({ on: true, offer: 'after', afterDays: 0 }).afterDays).toBe(3);
+        expect(offerCondition({ offer: 'after' })).toBe('');
+    });
+});

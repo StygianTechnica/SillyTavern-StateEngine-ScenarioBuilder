@@ -21,6 +21,7 @@ import { activateForOpenChat } from './activate.js';
 import { enrichListed } from '../library/intake.js';
 import { holdStoryWeather, advanceBy } from '../calendar/clock.js';
 import { getEnrichmentStatus, cancelEnrichment } from '../generate/enrich.js';
+import { openChanges, writeChange, useChange, dismissChange, editChangeDraft } from '../state/changes.js';
 import { runDirector, getDirectorStatus } from '../director/run.js';
 import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
 
@@ -202,12 +203,14 @@ export async function renderReview() {
 
     const section = (title, iconName, items, empty) => [h('h3', {}, icon(iconName), ` ${title}`), items.length ? items : h('div', { class: 'sb-muted' }, empty)];
     const status = getEnrichmentStatus();
+    const changed = openChanges(doc).map((s) => changeItem(s, types.get(s.type)));
     return h('div', { class: 'sb-review' },
         h('small', { class: 'sb-hint' }, 'New places and characters the story mentions are confirmed in State Engine\'s own object review. Once confirmed, they appear here - tracked, placed, and (if auto-enrich is on) given detail.'),
         status.current || status.queued ? h('div', { class: 'sb-callout' }, icon('fa-spinner fa-spin'),
             h('span', {}, `Adding detail${status.current ? ` to ${status.current.name}` : ''}${status.queued ? ` - ${status.queued} more waiting` : ''}.`),
             status.queued ? button('Stop', () => cancelEnrichment(), { iconName: 'fa-stop' }) : null) : null,
         section('New in the setting', 'fa-seedling', adopted, 'Nothing new. Objects confirmed into the setting while you play land here.'),
+        changed.length ? section('Changed in the story', 'fa-hourglass-half', changed, '') : null,
         pending.length ? section('Questions', 'fa-circle-question', questions, '') : null,
         candidates.length ? section('Waiting for you', 'fa-inbox', candidates, '') : null,
         ...rejectedSection(doc, chatKey, section),
@@ -215,6 +218,39 @@ export async function renderReview() {
         resolved.length ? h('div', { class: 'sb-list' }, resolved.map((d) => h('div', { class: 'sb-log' },
             h('span', { class: `sb-badge sb-badge-${d.classification}` }, d.classification.replace('_', ' ')), ` ${scrubIds(d.text)}`, h('small', { class: 'sb-hint' }, ` - ${d.resolution}`))))
             : h('div', { class: 'sb-muted' }, 'Nothing yet.'));
+}
+
+// Something the story changed (src/state/changes.js): what it says happened,
+// and its current description written on request - one call - to look over,
+// edit and use. The setting's own description stays as it is.
+let writingChange = '';
+function changeItem(s, type) {
+    const { chatId, chatKey, settingId } = ws.ctx;
+    const current = getChatDoc(chatKey).narrative[s.objectId]?.text ?? '';
+    const write = async () => {
+        writingChange = s.id;
+        rerender();
+        try {
+            if (!await writeChange(chatId, chatKey, settingId, s.id)) toast('warning', 'The model\'s answer could not be used - try again.');
+        } finally {
+            writingChange = '';
+            rerender();
+        }
+    };
+    const draft = h('textarea', { class: 'text_pole', rows: 4, oninput: (e) => { editChangeDraft(chatKey, s.id, e.target.value); markDirty(); } });
+    draft.value = s.draft;
+    return h('div', { class: 'sb-review-item sb-adopted', style: `--sb-accent: ${type?.color ?? '#888'}` },
+        h('div', { class: 'sb-row' }, h('i', { class: `fa-solid ${type?.icon ?? 'fa-star'}` }), h('b', {}, s.name),
+            h('small', { class: 'sb-hint' }, current ? 'has a current description - update it?' : 'update its description for this story?')),
+        h('ul', { class: 'sb-gm-threads' }, s.texts.map((t) => h('li', {}, t))),
+        s.draft ? field('How it is now (this chat)', draft, 'Replaces its description in this chat\'s guidance and image prompts. The setting\'s description is not changed.') : null,
+        h('div', { class: 'sb-actions' },
+            s.draft
+                ? button('Use it', async () => { useChange(chatKey, s.id, draft.value); ws.dirty = false; await syncNow(); rerender(); }, { iconName: 'fa-check', cls: 'sb-primary' })
+                : button(writingChange === s.id ? 'Writing…' : 'Write how it is now', () => void write(), { iconName: writingChange === s.id ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles', cls: 'sb-primary', disabled: !!writingChange, title: 'One model call: its description, rewritten for what the story did to it' }),
+            s.draft ? button('Write again', () => void write(), { iconName: 'fa-rotate', disabled: !!writingChange }) : null,
+            button('Open sheet', () => openSheet(s.objectId, s.type), { iconName: 'fa-pen' }),
+            button('Not needed', () => { dismissChange(chatKey, s.id); rerender(); }, { iconName: 'fa-xmark', title: 'Take it off the list - the description stays as it is' })));
 }
 
 // What the user rejected: kept out of the story for good. Each can be

@@ -7,7 +7,9 @@ inventing the next opponent, or losing count. The GM planner and story
 triggers are loose guidance; an event is a fixed order of steps that
 Scenario Builder keeps, and the story is held to it.
 
-Status: phase 1 (the arena) is built. The rest is the plan.
+Status: built - the arena (phase 1, 2026-10-21); the tournament, the dungeon
+crawl, the programme, waits, templates, generated and dated events (phase 2,
+2026-10-22). Sections 5 and 6 describe them as built.
 
 ## 1. What an event is
 
@@ -17,6 +19,10 @@ An event is a **programme of stages**, kept in the chat document
 ```
 event = {
   id, kind: 'arena' | 'tournament' | 'crawl' | 'programme',
+  startDay,                   a planned event that begins by itself that day
+  seed,                       a tournament's roll for its off-screen matches
+  bracket,                    a tournament's { entrants: [{ name, objectId,
+                              strength, player }], rounds: [[{ a, b, winner }]] }
   name,                       "The Pit of Brassport"
   placeId,                    where it is held (a location), or ''
   intro, close,               what opens and ends it (a herald, a crowd)
@@ -30,7 +36,14 @@ event = {
 }
 
 stage = {
-  id, kind: 'bout' | 'moment',
+  id, kind: 'bout' | 'moment' | 'wait' | 'room',
+  round,                      a tournament's bout and results moment
+  waitFor, until,             a wait: "noon", "the next morning"; its end on
+                              the calendar (set when it begins)
+  placeId, loot, looted,      a crawl's room: the place, its treasure,
+  clearWhen, triggerId,       a puzzle or trap (a story trigger watches it),
+  final, visited, beaten,     the room that ends it, and its state
+  solved,
   title,                      "Bout 2"
   opponents: [{ name, objectId }]   a bout: who comes out
   note,                       what this stage is about, for the director
@@ -90,7 +103,9 @@ player is), then the next.
   event is lost, and the director is told so once.
 - Panels (Pretty Panels): `sb__event_active`, `sb__event_name`,
   `sb__event_stage` ("Bout 2 of 4: Graxx the Pit-Wolf"),
-  `sb__event_progress` ("2 / 4").
+  `sb__event_progress` ("2 / 4"; a tournament "Round 2 of 3", a crawl rooms
+  cleared "3 / 7"), `sb__event_kind`, `sb__event_bracket` (a tournament's
+  results and pairings so far).
 
 ## 4. Where it lives
 
@@ -105,14 +120,14 @@ player is), then the next.
 
 ## 5. Later phases
 
-**Tournament.** Entrants and a bracket. Each round the player's match is a
+**Tournament (built).** Entrants and a bracket. Each round the player's match is a
 bout; the other matches are decided off screen (by the entrants' power
 ratings - Combat in ROADMAP.md - or at random) and reported by a moment.
 Rounds at times on the calendar ("round one at noon, the final the next
 day"): a **wait** stage holds the event until the clock reaches it, the
 story free meanwhile. The bracket is shown in a panel.
 
-**Dungeon crawl.** Not a timeline: places linked by routes (the location
+**Dungeon crawl (built).** Not a timeline: places linked by routes (the location
 tree and src/library/routes.js), each a **room** stage with what waits
 there, entered in any order the routes allow. State per room: cleared,
 looted, a door opened, something still lurking. The current stage is the
@@ -121,12 +136,17 @@ is cleared by its bout(s), or by a story flag (a story trigger) for a
 puzzle or a trap. The director sees this room and the ways on, never
 what waits beyond.
 
-**Programme.** A free sequence of moments and bouts (a festival, a
+**Programme (built).** A free sequence of moments and bouts (a festival, a
 trial): the general case the arena is one setup of.
 
 **Missions** are already built (src/quests/missions.js) and stay quests.
 
-## 6. Templates and generation
+## 6. Templates and generation (built)
+
+Where it lives: src/events/setup.js (the Event card's form, templates in the
+setting document's eventTemplates), src/events/generate.js (one call: the
+form filled from loose guidance), src/planner/ (the "event" idea), and
+doc.eventsComing (dated events, on the agenda).
 
 - Templates for each kind, kept per setting, so an event set up once can
   run in any chat on the world.

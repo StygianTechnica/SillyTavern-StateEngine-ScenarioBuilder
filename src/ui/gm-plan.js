@@ -12,7 +12,7 @@ import { SHAPES, shapeCurve, targetAt } from '../planner/shapes.js';
 import {
     getPlannerStatus, runDay, runCheck, runInspire, runOutline, runBeat, queueRequest, withdrawRequest, addInspiration, removeInspiration,
     setMotifs, peek, setHold, storyState, setShape, editOutlineBeat, lockOutlineBeat, removeOutlineBeat, addOutlineBeat,
-    finishOutlineBeat, restoreOutlineBeat, setOutlineText, setJoin, finishVolume, editFinishedVolume,
+    finishOutlineBeat, restoreOutlineBeat, setOutlineText, setJoin, finishVolume, editFinishedVolume, steerObjects,
     runIdeas, acceptIdea, dismissIdea, editProposal, addAgendaItem, removeAgendaItem, setCreationMode,
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
@@ -306,7 +306,17 @@ function volumeSteer(gm, chatKey) {
     const text = gm.volume?.direction ?? '';
     if (isEditing('vsteer')) {
         return inlineEditor('vsteer', {
-            onSave: (t) => { updateChatDoc(chatKey, (d) => { d.gm.volume.direction = t; d.gm.outlineWanted = true; }); done(); },
+            onSave: (t) => {
+                const before = getChatDoc(chatKey).gm.volume.direction;
+                updateChatDoc(chatKey, (d) => { d.gm.volume.direction = t; d.gm.outlineWanted = true; });
+                // People and places newly named in it are made first.
+                if (t && t !== before) {
+                    void steerObjects(ws.ctx.chatId, chatKey, ws.ctx.settingId, t, { number: getChatDoc(chatKey).gm.volume.number }).then((made) => {
+                        if (made.length) toast('success', `Made from your steer: ${made.join(', ')} - see Review.`);
+                    });
+                }
+                done();
+            },
             placeholder: 'Where this volume should go', allowEmpty: true,
             hint: 'The next outline pass follows it. Ctrl+Enter to save, Esc to cancel.',
         });
@@ -333,9 +343,13 @@ function nextVolumePanel(gm, chatId, chatKey, complete) {
             placeholder: 'Where should the next volume go? (optional - e.g. "the war comes to Redhaven", "something quieter")',
             saveLabel: `Write the recap and begin volume ${next}`, saveIcon: 'fa-feather', allowEmpty: true,
             hint: 'The recap is written in the background; the new outline follows on the next pass.',
-            extra: field('Story shape', select(SHAPES.map((sh) => ({ value: sh.id, label: sh.label })), editing?.flag ?? gm.shape, {
-                onchange: (e) => { if (editing) editing.flag = e.target.value; },
-            })),
+            extra: h('div', {},
+                field('Story shape', select(SHAPES.map((sh) => ({ value: sh.id, label: sh.label })), editing?.flag ?? gm.shape, {
+                    onchange: (e) => { if (editing) editing.flag = e.target.value; },
+                })),
+                h('label', { class: 'checkbox_label', title: 'Before anything else reads your steer, one model call takes out the people, places and groups it names that the world does not have yet - a new antagonist, the temple you set out for - and makes them, with your own words as their description. Listed in Review. Not in a canon-only setting.' },
+                    h('input', { type: 'checkbox', checked: getSettings().planner.steerObjects !== false, onchange: (e) => { getSettings().planner.steerObjects = e.target.checked; saveSettings(); } }),
+                    h('span', {}, 'Add the new people and places I name to the world (one call)'))),
         }));
 }
 
@@ -566,7 +580,8 @@ function inspirationCard(gm) {
 
 // ---- ideas (§3.4) and the agenda (§3.3)
 
-const IDEA_LABEL = { quest: ['Quest', 'fa-scroll'], enrich: ['Quest detail', 'fa-feather'], happening: ['Happening', 'fa-calendar-day'], seed: ['Seed', 'fa-seedling'] };
+const IDEA_LABEL = { quest: ['Quest', 'fa-scroll'], enrich: ['Quest detail', 'fa-feather'], happening: ['Happening', 'fa-calendar-day'], seed: ['Seed', 'fa-seedling'], event: ['Event', 'fa-trophy'] };
+const EVENT_IDEA_KIND = { arena: 'an arena', tournament: 'a tournament', crawl: 'a dungeon crawl', programme: 'a programme' };
 
 function ideaRow(idea, chatId, chatKey) {
     const [label, iconName] = IDEA_LABEL[idea.kind] ?? ['Idea', 'fa-lightbulb'];
@@ -576,12 +591,13 @@ function ideaRow(idea, chatId, chatKey) {
         rerender();
     };
     const key = `idea:${idea.id}`;
-    const head = idea.kind === 'quest' ? idea.name : idea.kind === 'enrich' ? `For "${idea.target}"` : '';
+    const head = idea.kind === 'quest' || idea.kind === 'event' ? idea.name : idea.kind === 'enrich' ? `For "${idea.target}"` : '';
     return h('div', { class: 'sb-gm-idea' },
         h('div', { class: 'sb-gm-idea-head' },
             h('span', { class: 'sb-chip' }, icon(iconName), label),
             head ? h('b', {}, head) : null,
             idea.kind === 'happening' ? h('small', { class: 'sb-hint' }, `in ${idea.inDays ?? 3} day${idea.inDays === 1 ? '' : 's'}${idea.when ? `, ${idea.when}` : ''}`) : null,
+            idea.kind === 'event' ? h('small', { class: 'sb-hint' }, `${EVENT_IDEA_KIND[idea.eventKind] ?? 'an event'}${idea.inDays ? `, in ${idea.inDays} day${idea.inDays === 1 ? '' : 's'}` : ''} - accepting writes it (one call)`) : null,
             h('span', { class: 'sb-gm-title-tools' },
                 h('div', { class: 'sb-iconbtn', title: 'Accept', onclick: () => void accept() }, icon('fa-check')),
                 h('div', { class: 'sb-iconbtn', title: 'Edit before accepting', onclick: () => startEdit(key, idea.text) }, icon('fa-pen')),

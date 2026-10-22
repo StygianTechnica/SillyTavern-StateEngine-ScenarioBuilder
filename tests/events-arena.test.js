@@ -95,7 +95,7 @@ describe('what the director, the narrator and panels see', () => {
     });
 
     it('panels: a flag, the name, the stage and the progress', () => {
-        expect(eventValues(e)).toEqual({ event_active: true, event_name: 'The Pit', event_stage: 'Bout 1 of 2: Graxx', event_progress: '1 / 2' });
+        expect(eventValues(e)).toEqual({ event_active: true, event_name: 'The Pit', event_kind: 'arena', event_stage: 'Bout 1 of 2: Graxx', event_progress: '1 / 2', event_bracket: '' });
         expect(eventValues(null).event_active).toBe(false);
     });
 

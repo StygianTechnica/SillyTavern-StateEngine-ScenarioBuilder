@@ -52,6 +52,8 @@ export function noticeText(doc) {
     const parts = [];
     if (fresh) parts.push(`${fresh} new ${fresh === 1 ? 'entry' : 'entries'} in the setting${doc.adopted.some((a) => a.enrich === 'done') ? ' (detail added)' : ''}`);
     if (questions) parts.push(`${questions} ${questions === 1 ? 'question' : 'questions'} about the scene`);
+    const changed = (doc.changes?.suggestions ?? []).filter((s) => s.status === 'open').length;
+    if (changed) parts.push(`${changed} ${changed === 1 ? 'thing' : 'things'} the story changed`);
     return parts.length ? `Scenario Builder: ${parts.join(', ')} - click to review.` : '';
 }
 

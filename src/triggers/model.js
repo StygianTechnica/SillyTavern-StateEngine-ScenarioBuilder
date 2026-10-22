@@ -38,8 +38,9 @@ export function normalizeTrigger(t) {
         then: clean(t.then).slice(0, 500),
         variable: clean(t.variable),
         // planner: the GM planner's; giver: a mission giver's offer
-        // (src/quests/missions.js); user: the user's.
-        source: ['planner', 'giver'].includes(t.source) ? t.source : 'user',
+        // (src/quests/missions.js); event: a crawl room's puzzle
+        // (src/events/); user: the user's.
+        source: ['planner', 'giver', 'event'].includes(t.source) ? t.source : 'user',
         status: TRIGGER_STATUSES.includes(t.status) ? t.status : 'armed',
         at: str(t.at),
         firedAt: str(t.firedAt),

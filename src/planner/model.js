@@ -882,7 +882,9 @@ export function hasStory(gm) {
 
 // ---------------------------------------------------------------- ideas (§3.4)
 
-export const IDEA_KINDS = Object.freeze(['quest', 'enrich', 'happening', 'seed']);
+// event: a structured event the story points to (a tournament at midsummer, a
+// dungeon to delve) - set up when taken up and put on the calendar (src/events/).
+export const IDEA_KINDS = Object.freeze(['quest', 'enrich', 'happening', 'seed', 'event']);
 const IDEA_LIMIT = 30;
 const DISMISSED_LIMIT = 120;
 const AGENDA_LIMIT = 40;
@@ -900,6 +902,7 @@ function normalizeIdea(x) {
         objectives: strList(x.objectives).slice(0, 5),
         inDays: Number.isInteger(x.inDays) && x.inDays >= 0 ? Math.min(x.inDays, 365) : null,
         when: clean(x.when).slice(0, 40),
+        eventKind: ['arena', 'tournament', 'crawl', 'programme'].includes(x.eventKind) ? x.eventKind : '',
         status: ['proposed', 'accepted', 'dismissed'].includes(x.status) ? x.status : 'proposed',
         at: str(x.at),
     };

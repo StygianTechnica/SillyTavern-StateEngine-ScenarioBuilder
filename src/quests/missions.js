@@ -21,8 +21,11 @@ export const MISSION_DIFFICULTIES = Object.freeze(['trivial', 'easy', 'moderate'
 // fixed, random, or from the tension the story wants now.
 export const DIFFICULTY_MODES = Object.freeze(['grow', 'fixed', 'random', 'story']);
 // When a giver offers a mission: when they next meet, only when asked for
-// work, or only once a condition holds (a story trigger watches for it).
-export const OFFER_MODES = Object.freeze(['meet', 'asked', 'when']);
+// work, only once a condition holds (a story trigger watches for it), or
+// some days after the last one ended (a day trigger on the calendar).
+export const OFFER_MODES = Object.freeze(['meet', 'asked', 'when', 'after']);
+// A board holds up to this many jobs on offer at once.
+export const BOARD_MAX = 6;
 const DIFFICULTY_TEXT = {
     trivial: 'trivial - a routine errand; little can go wrong',
     easy: 'easy - a simple job with a small risk',
@@ -41,7 +44,7 @@ const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 // ---- the giver (an entry's metadata: meta.giver)
 
 export function emptyGiver() {
-    return { on: false, trade: '', clients: '', reward: '', team: false, auto: true, difficultyMode: 'grow', difficulty: '', offer: 'meet', offerWhen: '', lastFollowed: '' };
+    return { on: false, trade: '', clients: '', reward: '', team: false, auto: true, difficultyMode: 'grow', difficulty: '', offer: 'meet', offerWhen: '', afterDays: 3, board: 1, lastFollowed: '' };
 }
 
 export function normalizeGiver(value) {
@@ -66,6 +69,11 @@ export function normalizeGiver(value) {
         // When it offers a mission, and the condition for 'when'.
         offer: OFFER_MODES.includes(g.offer) ? g.offer : 'meet',
         offerWhen: clean(g.offerWhen).slice(0, 300),
+        // For 'after': how many days after the last one ended.
+        afterDays: Number.isInteger(g.afterDays) && g.afterDays > 0 ? Math.min(g.afterDays, 60) : 3,
+        // How many jobs it keeps on offer at once (a guild hall's board: the
+        // character picks one); 1 is one job at a time.
+        board: Number.isInteger(g.board) && g.board > 0 ? Math.min(g.board, BOARD_MAX) : 1,
         // The ended mission it last followed with a new one.
         lastFollowed: clean(g.lastFollowed),
     };
@@ -187,10 +195,19 @@ export function readMission(text) {
 // their next meeting, or `now` (a trigger has fired: the moment is here).
 // A power (a god, a spirit - src/library/powers.js) gives its tasks in a
 // dream or a vision instead (`vision`).
-export function offerText(mission, { giverName = '', takerName = '', now = false, vision = false } = {}) {
+// On a board (`others`: the names of the jobs already on offer there) the job
+// is posted beside them, and the character picks.
+export function offerText(mission, { giverName = '', takerName = '', now = false, vision = false, others = [] } = {}) {
     const who = clean(giverName) || 'The giver';
     const taker = clean(takerName) || 'its champion';
     const job = `"${clean(mission.name)}" - ${unstop(clean(mission.task))}${clean(mission.reward) ? `, promising ${unstop(clean(mission.reward))}` : ''}`;
+    const posted = (others ?? []).map(clean).filter(Boolean);
+    if (posted.length && !vision) {
+        const list = `${posted.map((n) => `"${n}"`).join(', ')} and now "${clean(mission.name)}" - ${unstop(clean(mission.task))}${clean(mission.reward) ? `, paying ${unstop(clean(mission.reward))}` : ''}`;
+        return now
+            ? `${who} has several jobs on offer${clean(takerName) ? ` for ${clean(takerName)}` : ''}: ${list}. Show the choice; ${clean(takerName) || 'the character'} picks one, or none.`
+            : `A new job is on offer from ${who}, beside the others there: ${list}. Shown the next time ${clean(takerName) || 'the character'} looks at what ${who} has on offer; they pick one, or none.`;
+    }
     if (vision) return now
         ? `${who} comes to ${taker} in a vision or a dream with a task: ${job}. It can be refused, at a cost the power may remember.`
         : `${who} sends ${taker} a task in a dream or vision, the next time ${taker} sleeps, prays or is alone: ${job}. It can be refused.`;
@@ -199,13 +216,14 @@ export function offerText(mission, { giverName = '', takerName = '', now = false
 }
 const unstop = (text) => clean(text).replace(/[.!?]+$/, '');
 
-// Whether a giver's missions call for the next one: it offers more, its
-// latest mission has ended, nothing of its is still open, and that ending
-// has not been followed yet. missions: [{ id, status }] oldest first.
-// -> the ended mission to follow, or null.
+// Whether a giver's missions call for the next one: it offers more, nothing
+// of its is under way, it has fewer jobs on offer than its board holds (one
+// job at a time: none), and its latest mission has not been followed yet.
+// missions: [{ id, status }] oldest first. -> the mission to follow, or null.
 export function missionToFollow(giver, missions = []) {
     if (!giver?.on || !giver.auto || !missions.length) return null;
-    if (missions.some((m) => m.status === 'Active' || m.status === 'Not started')) return null;
+    if (missions.some((m) => m.status === 'Active')) return null;
+    if (missions.filter((m) => m.status === 'Not started').length >= Math.max(1, giver.board ?? 1)) return null;
     const last = missions[missions.length - 1];
     return last && last.id !== giver.lastFollowed ? last : null;
 }
@@ -258,9 +276,10 @@ async function findPart(chatId, settingId, name) {
 let offering = false;
 
 // Writes a mission from a giver and puts it on the board, Not started, with
-// the offer queued for the director. options: { difficulty, request }.
+// the offer queued for the director. options: { difficulty, request,
+// follow (the next after one ended: a giver that waits some days waits) }.
 // -> the quest made, or null. Never throws.
-export async function offerMission(chatId, chatKey, settingId, giverId, { difficulty = '', request = '' } = {}) {
+export async function offerMission(chatId, chatKey, settingId, giverId, { difficulty = '', request = '', follow = false } = {}) {
     if (offering) return null;
     offering = true;
     try {
@@ -330,15 +349,22 @@ export async function offerMission(chatId, chatKey, settingId, giverId, { diffic
         // A power gives its tasks in dreams and visions.
         const vision = giverEntry.meta?.power?.on === true;
         const condition = offerCondition(giver, { giverName: giverEntry.name, takerName });
+        // Jobs already on offer there (a board): the new one is posted beside them.
+        const others = giver.board > 1 ? past.filter((q) => q.status === 'Not started').map((q) => q.name) : [];
         let watched = null;
-        if (condition) {
+        if (follow && giver.offer === 'after') {
             const { armTrigger } = await import('../triggers/run.js');
-            watched = await armTrigger(chatId, chatKey, { kind: 'story', when: condition, then: offerText(m, { giverName: giverEntry.name, takerName, now: true, vision }), source: 'giver' });
+            const day = doc.canonical.day + giver.afterDays;
+            watched = await armTrigger(chatId, chatKey, { kind: 'day', day, when: `day ${day}: ${giverEntry.name} has work again`, then: offerText(m, { giverName: giverEntry.name, takerName, now: true, vision, others }), source: 'giver' });
+            if (!watched) console.info(LOG_PREFIX, `could not put ${giverEntry.name}'s next job on the calendar - offered when they next meet instead`);
+        } else if (condition) {
+            const { armTrigger } = await import('../triggers/run.js');
+            watched = await armTrigger(chatId, chatKey, { kind: 'story', when: condition, then: offerText(m, { giverName: giverEntry.name, takerName, now: true, vision, others }), source: 'giver' });
             if (!watched) console.info(LOG_PREFIX, `could not watch for "${condition}" (too many triggers armed?) - ${giverEntry.name} offers the job when they next meet instead`);
         }
         if (!watched) {
             const together = vision || doc.canonical.castIds.includes(giverId) || doc.canonical.locationId === giverId;
-            updateChatDoc(chatKey, (d) => { addRequest(d.gm, { id: newLocalId('r'), text: offerText(m, { giverName: giverEntry.name, takerName, vision }), urgency: together ? 'soon' : 'whenever', at: new Date().toISOString() }); });
+            updateChatDoc(chatKey, (d) => { addRequest(d.gm, { id: newLocalId('r'), text: offerText(m, { giverName: giverEntry.name, takerName, vision, others }), urgency: together ? 'soon' : 'whenever', at: new Date().toISOString() }); });
         }
         console.info(LOG_PREFIX, `${giverEntry.name} has a new ${level} mission: ${m.name}`);
         return quest;
@@ -365,7 +391,7 @@ export async function followMissions(chatId, chatKey, settingId) {
             const ended = missionToFollow(giver, await giverMissions(chatId, chatKey, settingId, id));
             if (!ended) continue;
             lib.setEntryMeta(settingId, id, { giver: { ...giver, lastFollowed: ended.id } });
-            return await offerMission(chatId, chatKey, settingId, id);
+            return await offerMission(chatId, chatKey, settingId, id, { follow: true });
         }
         return null;
     } catch (err) {

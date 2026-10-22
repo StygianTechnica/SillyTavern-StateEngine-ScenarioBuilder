@@ -93,7 +93,9 @@ import { normalizeEnrichments } from '../generate/revert.js';
 import { normalizeCounts } from '../library/creature-form.js';
 import { normalizePowerMeta, fitText, GIFTS_MAX } from '../library/powers.js';
 import { normalizeFight } from '../director/fight.js';
-import { normalizeEvent, normalizeEventsDone } from '../events/model.js';
+import { normalizeEvent, normalizeEventsDone, normalizeEventsComing } from '../events/model.js';
+import { normalizeTemplates } from '../events/setup.js';
+import { emptyChanges, normalizeChanges } from '../state/changes-model.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
 export const CHAT_SCHEMA_VERSION = 1;
@@ -228,7 +230,7 @@ export function normalizeCalendar(value) {
 export function emptySettingDoc() {
     // playerId: the character the user plays ('' = the one named like the
     // SillyTavern persona, if any) - the guidance never writes for them.
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {}, map: {} }, calendar: emptyCalendar(), playerId: '', routes: [], knowledge: [], gm: { creation: 'proposals' } };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {}, map: {} }, calendar: emptyCalendar(), playerId: '', routes: [], knowledge: [], gm: { creation: 'proposals' }, eventTemplates: [] };
 }
 
 // Brings any stored setting document (or nothing) to the current shape.
@@ -263,6 +265,8 @@ export function normalizeSettingDoc(doc) {
         // The GM planner for this setting (src/planner/): where its ideas land -
         // 'proposals' (the user decides) or 'silent' (made at once, listed in Review).
         gm: { creation: d.gm?.creation === 'silent' ? 'silent' : 'proposals' },
+        // Structured events set up once, to run in any chat on the world (src/events/setup.js).
+        eventTemplates: normalizeTemplates(d.eventTemplates),
         // Routes between places: { id, from, to, travel, note, guessed? } (src/library/routes.js).
         routes: Array.isArray(d.routes) ? d.routes.filter((r) => isObject(r) && str(r.id) && str(r.from) && str(r.to) && r.from !== r.to).map((r) => ({ id: r.id, from: r.from, to: r.to, travel: str(r.travel), note: str(r.note), ...(r.guessed === true ? { guessed: true } : {}) })) : [] };
 }
@@ -403,6 +407,14 @@ export function emptyChatDoc() {
         // finished ones (src/events/model.js).
         event: null,
         eventsDone: [],
+        // Planned events waiting for their day on the calendar.
+        eventsComing: [],
+        // What the player told whom (src/director/perspective.js toldInChat):
+        // { [memoryKey]: [personId] }.
+        perspectiveTold: {},
+        // Changes the story made to the world, offered as current
+        // descriptions (src/state/changes.js).
+        changes: emptyChanges(),
         // Who has died in this story (src/state/death.js).
         dead: [],
         // Wounds from fights broken off: { [lower-case name]: { condition,
@@ -452,7 +464,10 @@ export function normalizeChatDoc(doc) {
         fight: normalizeFight(d.fight),
         event: normalizeEvent(d.event),
         eventsDone: normalizeEventsDone(d.eventsDone),
+        eventsComing: normalizeEventsComing(d.eventsComing),
         dead: normalizeDead(d.dead),
+        changes: normalizeChanges(d.changes),
+        perspectiveTold: isObject(d.perspectiveTold) ? Object.fromEntries(Object.entries(d.perspectiveTold).filter(([k, v]) => k && Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === 'string')])) : {},
         powersDid: isObject(d.powersDid) ? Object.fromEntries(Object.entries(d.powersDid).filter(([k, v]) => k && typeof v === 'string').map(([k, v]) => [k, v.slice(0, 200)])) : {},
         powersNarrator: str(d.powersNarrator).slice(0, 800),
         powersActed: isObject(d.powersActed) ? Object.fromEntries(Object.entries(d.powersActed).filter(([k, v]) => k && Number.isInteger(v))) : {},

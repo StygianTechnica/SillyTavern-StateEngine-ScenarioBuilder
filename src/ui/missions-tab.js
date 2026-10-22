@@ -18,6 +18,7 @@ const OFFER_TEXT = {
     meet: ['When they next meet', 'The giver offers each new mission the next time the character is with them.'],
     asked: ['Only when asked for work', 'The giver waits until the character asks for work - a story trigger watches for it.'],
     when: ['Only when…', 'The giver waits for the condition below - a story trigger watches for it (e.g. "Remus is at the guild hall during working hours").'],
+    after: ['After a while', 'Once a mission ends, the next is written and offered some days later - put on the calendar as a day trigger. A mission you ask for now is offered when they next meet.'],
 };
 import { syncNow } from '../guidance/sync.js';
 import { ws, rerender, openSheet } from './ws.js';
@@ -67,7 +68,10 @@ export async function renderMissionsTab(entry) {
                     giver.difficultyMode === 'fixed' ? select(MISSION_DIFFICULTIES.map((d) => ({ value: d, label: d })), giver.difficulty || 'moderate', { onchange: (e) => save({ difficulty: e.target.value }) }) : null),
                     `${MODE_TEXT[giver.difficultyMode][1]}${giver.difficultyMode === 'grow' ? ` Next: ${next}.` : ''}`),
                 field('Offers a mission', select(Object.entries(OFFER_TEXT).map(([value, [label]]) => ({ value, label })), giver.offer, { onchange: (e) => save({ offer: e.target.value }) }), OFFER_TEXT[giver.offer][1]),
-                giver.offer === 'when' ? field('Only when', text('offerWhen', 'e.g. Remus is at the guild hall during working hours', 2)) : null),
+                giver.offer === 'when' ? field('Only when', text('offerWhen', 'e.g. Remus is at the guild hall during working hours', 2)) : null,
+                giver.offer === 'after' ? field('Days later', h('input', { type: 'number', class: 'text_pole', min: 1, max: 60, value: giver.afterDays, onchange: (e) => save({ afterDays: Math.max(1, Math.min(60, Math.round(Number(e.target.value) || 3))) }) })) : null,
+                field('Jobs on offer at once', select([1, 2, 3, 4, 5, 6].map((n) => ({ value: String(n), label: n === 1 ? 'one at a time' : `a board of ${n}` })), String(giver.board), { onchange: (e) => save({ board: Number(e.target.value) }) }),
+                    giver.board > 1 ? 'A board: up to this many jobs wait at once and the character picks one. While one is under way no new ones are posted; when it ends, the board fills up again (one model call per new job).' : 'One job at a time: the next is written once the last has ended.')),
             h('label', { class: 'checkbox_label', title: 'Write the work for the group present with the player character, not for them alone' },
                 h('input', { type: 'checkbox', checked: giver.team, onchange: (e) => save({ team: e.target.checked }) }),
                 h('span', {}, 'Missions for a group')),

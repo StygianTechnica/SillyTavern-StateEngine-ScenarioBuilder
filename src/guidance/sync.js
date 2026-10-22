@@ -401,6 +401,7 @@ export async function gatherInputs(chatId, chatKey) {
             othersTracked,
             // Secrets kept from those present; oaths binding them.
             secrets: secretRules,
+            pov: settings.director.pov ?? 'free',
             lore,
             // Never a correction that puts a power (no body) or the dead in the
             // scene ("Ferunox ... is still present in this scene").

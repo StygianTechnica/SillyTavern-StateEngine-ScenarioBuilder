@@ -16,6 +16,7 @@ import { isPlaceholder } from '../director/prompt.js';
 import { creatureLabel } from '../library/creature-form.js';
 import { fightGuidance } from '../director/fight.js';
 import { eventGuidance } from '../events/model.js';
+import { povRule } from '../director/perspective.js';
 import { intimacySection } from './intimacy.js';
 
 const labelOf = (list, id) => list.find(([key]) => key === id)?.[1] ?? id;
@@ -414,9 +415,13 @@ const BUILDERS = {
     // What people can know - always: no one knows another's dreams, visions
     // or unspoken thoughts (Varyn knowing the vision Remus had asleep) - then
     // who here must not know a secret, and the oaths that bind those present.
-    secrets: (input) => ((input.secrets ?? []).length || (input.cast ?? []).length
-        ? { full: [PERSPECTIVE, ...(input.secrets ?? []).slice(0, 8)].join(' '), compact: PERSPECTIVE }
-        : null),
+    // The point of view the narration keeps (settings.director.pov) goes with it.
+    secrets: (input) => {
+        const pov = povRule(input.pov, (input.cast ?? []).find((c) => c.player)?.name);
+        return (input.secrets ?? []).length || (input.cast ?? []).length || pov
+            ? { full: [PERSPECTIVE, pov, ...(input.secrets ?? []).slice(0, 8)].filter(Boolean).join(' '), compact: [PERSPECTIVE, pov].filter(Boolean).join(' ') }
+            : null;
+    },
 };
 
 // input: { overview, location: { path, description, environment, indoor },

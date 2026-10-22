@@ -56,9 +56,27 @@
                     <input id="sb_director_perspective" type="checkbox" />
                     <span>Perspective: people know only what they witnessed</span>
                 </label>
+                <small id="sb_director_witness_note" class="sb-hint" hidden></small>
+                <label class="sb-field" title="How the narration sees the story. Close on your character: only what they can see, hear and sense - the others' thoughts show only in what they say and do, and nothing out of sight is shown. All-seeing: the narrator may show others' thoughts and what happens elsewhere, though people still act only on what they know. No extra call.">
+                    <span>Point of view</span>
+                    <select id="sb_director_pov" class="text_pole">
+                        <option value="free">The narrator's own</option>
+                        <option value="limited">Third person, close on my character</option>
+                        <option value="second">Second person ("you")</option>
+                        <option value="omniscient">All-seeing narrator</option>
+                    </select>
+                </label>
                 <label class="checkbox_label" title="On a long journey, the game master has the party ride on through the night. Off: they make camp at dusk, the night passes, and they go on in the morning. No extra call.">
                     <input id="sb_director_night" type="checkbox" />
                     <span>Travel through the night (off: camp at dusk)</span>
+                </label>
+                <label class="checkbox_label" title="When Archivist's memories tell of a change to a place, a thing, a group or a person - the docks burned, Graxx lost an eye - it is listed in Review, where one model call writes how it is now (its current description in this chat). Finding them costs no call.">
+                    <input id="sb_changes_suggest" type="checkbox" />
+                    <span>Offer to update descriptions the story changes</span>
+                </label>
+                <label class="checkbox_label" title="Write the current description of each change at once, without asking: one model call per change the story makes.">
+                    <input id="sb_changes_auto" type="checkbox" />
+                    <span>...and write them at once (one call each)</span>
                 </label>
                 <label class="checkbox_label" title="The game master may add the rooms, people and items the scene needs to the library (under the current location). Never in a canon-only setting.">
                     <input id="sb_director_create" type="checkbox" />

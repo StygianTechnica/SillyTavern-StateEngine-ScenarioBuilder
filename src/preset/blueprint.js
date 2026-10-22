@@ -44,7 +44,7 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 // 9: sb__scene_characters adds who the messages show here but the list lacks.
 // 13: the fight (sb__fight_*) and the structured event (sb__event_*), for
 //     panels that show them while they run.
-export const PRESET_VERSION = 13;
+export const PRESET_VERSION = 14;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -228,12 +228,14 @@ export const FIGHT_VARIABLES = Object.freeze([
 // A structured event under way (src/events/model.js eventValues), for panels.
 export const EVENT_VARIABLES = Object.freeze([
     ['event_active', {
-        label: 'Event under way', description: 'On while a structured event (an arena) runs.',
+        label: 'Event under way', description: 'On while a structured event (an arena, a tournament, a dungeon crawl, a programme) runs.',
         type: 'boolean', defaultValue: 'false', scope: 'chat', showInTracker: false, behaviors: { prompted: false, increment: false },
     }],
     ['event_name', text('Event', 'The structured event under way.', { showInTracker: false })],
-    ['event_stage', text('Event stage', 'The stage now: "Bout 2 of 4: Graxx", "The opening".', { showInTracker: false })],
-    ['event_progress', text('Event progress', 'How far it has come: "2 / 4".', { showInTracker: false })],
+    ['event_kind', text('Event kind', 'What kind of event: arena, tournament, crawl or programme.', { showInTracker: false })],
+    ['event_stage', text('Event stage', 'The stage now: "Bout 2 of 4: Graxx", "The semi-finals: against Sela", "Crypt of Bones", "The opening".', { showInTracker: false })],
+    ['event_progress', text('Event progress', 'How far it has come: "2 / 4", "Round 2 of 3", rooms cleared "3 / 7".', { showInTracker: false })],
+    ['event_bracket', text('Event bracket', 'A tournament\'s bracket so far: each round\'s results and the pairings drawn.', { showInTracker: false })],
 ]);
 
 export const ALL_VARIABLES = Object.freeze([...OBSERVED_VARIABLES, ...QUEST_VARIABLES, ...CANONICAL_VARIABLES, ...FIGHT_VARIABLES, ...EVENT_VARIABLES, ...OUTPUT_VARIABLES, ...CALCULATED_VARIABLES]);

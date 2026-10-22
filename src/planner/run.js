@@ -22,7 +22,7 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings, isActive } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { getBoundSettingId, listEntries, getObjectTypes, createEntry, updateEntry, isCanonOnly, mayAddGeneratedDetail, allKnowledge } from '../library/library.js';
+import { getBoundSettingId, listEntries, getObjectTypes, createEntry, updateEntry, isCanonOnly, mayAddGeneratedDetail, allKnowledge, playerIdOf, setParent } from '../library/library.js';
 import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { setQuestMeta, questMeta } from '../quests/sync.js';
 import { callModel } from '../generate/llm.js';
@@ -43,6 +43,7 @@ import { questBoard } from '../quests/sync.js';
 import {
     buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline,
     buildBeatPrompt, readBeat, buildRecapPrompt, readRecap, readRecapText, closeCutJson, buildIdeasPrompt, readIdeas,
+    buildSteerObjectsPrompt, readSteerObjects,
 } from './prompts.js';
 
 export const PLANNER_EVENT = 'scenario_builder_planner';
@@ -598,6 +599,53 @@ const RECAP_TOKENS = 2000;
 // small pass: cut off, it was no JSON at all.
 const OUTLINE_TOKENS = 2400;
 
+// A volume's steer names people, places and groups the library lacks (its
+// antagonist, the temple it sets out for): one call takes them out with the
+// user's own words, and they are made - before the recap or the outline
+// reads the steer - so the detail the user wrote lives on the objects. Made
+// with the user's words as their description (enrichment, when on, fills
+// only what is still empty), listed in Review, a place put inside the place
+// the steer names. Never in a canon-only setting. -> the names made.
+export async function steerObjects(chatId, chatKey, settingId, steer, { number = 0 } = {}) {
+    if (!settingId || !String(steer ?? '').trim() || plannerSettings().steerObjects === false || isCanonOnly(settingId)) return [];
+    try {
+        const known = await knownEntries(chatId, settingId);
+        const found = readSteerObjects(await ask(buildSteerObjectsPrompt({ steer, known: known.map((e) => e.name), userName: userName() })), {
+            steer, userName: userName(), isKnown: (name) => !!knownAs(name, known),
+        });
+        if (!found.length) return [];
+        const made = [];
+        const roleNote = { protagonist: 'a protagonist', antagonist: 'the antagonist', ally: 'an ally' };
+        for (const f of found) {
+            const obj = await createEntry(chatId, settingId, f.type, { name: f.name, description: f.details }, {
+                origin: 'steer',
+                gmNotes: `From your steer for volume ${number || 'the next'}${f.role && roleNote[f.role] ? ` - ${roleNote[f.role]}` : ''}.`,
+            }).catch((err) => { console.warn(LOG_PREFIX, `could not make ${f.name} from the steer`, err); return null; });
+            if (obj) made.push({ ...f, id: obj.id });
+        }
+        // Places inside the place the steer puts them in: one it made, or one the library has.
+        const places = [...made.filter((m) => m.type === 'location').map((m) => ({ id: m.id, name: m.name, aliases: [] })), ...known.filter((e) => e.type === 'location')];
+        for (const m of made.filter((x) => x.type === 'location' && x.inside)) {
+            const parent = knownAs(m.inside, places.filter((p) => p.id !== m.id));
+            if (parent) setParent(settingId, m.id, parent.id);
+        }
+        // Listed in Review like the director's additions; detail added to
+        // what the steer left empty when auto-enrich is on.
+        const auto = getSettings().generation.autoEnrich === true;
+        const items = made.map((m) => ({ id: newLocalId('a'), objectId: m.id, type: m.type, name: m.name, at: new Date().toISOString(), placedUnder: '', enrich: auto && mayAddGeneratedDetail(settingId, m.id) ? 'queued' : 'off', error: '' }));
+        updateChatDoc(chatKey, (d) => { d.adopted = [...d.adopted, ...items]; });
+        if (items.some((i) => i.enrich === 'queued')) {
+            const { enqueueEnrichment } = await import('../generate/enrich.js');
+            for (const i of items.filter((x) => x.enrich === 'queued')) enqueueEnrichment({ settingId, chatId, chatKey, objectId: i.objectId, name: i.name, adoptedId: i.id });
+        }
+        if (made.length) console.info(LOG_PREFIX, `made from the steer: ${made.map((m) => `${m.name} (${m.type})`).join(', ')}`);
+        return made.map((m) => m.name);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not take the people and places out of the steer', err);
+        return [];
+    }
+}
+
 // Writes the recap of the volume under way, files it away and begins the
 // next volume on `shape` with the user's steer. Nothing changes if the
 // recap fails. -> an outcome line, or null on failure.
@@ -606,6 +654,8 @@ export async function finishVolume(chatId, chatKey, { shape = '', direction = ''
         const doc = getChatDoc(chatKey);
         const gm = doc.gm;
         const settingId = await getBoundSettingId(chatId);
+        // First of all: who and where the steer names that the world lacks.
+        const madeFromSteer = await steerObjects(chatId, chatKey, settingId, direction, { number: gm.volume.number + 1 });
         let summary = '';
         let events = [];
         try {
@@ -644,7 +694,7 @@ export async function finishVolume(chatId, chatKey, { shape = '', direction = ''
             record = closeVolume(d.gm, recap, { shape: shapeOf(d.gm.shape)?.label ?? '', turn: d.gm.counters.turn, day: d.canonical.day, index, closedEarly: !complete });
             startVolume(d.gm, { shape: shapeOf(shape) ? shape : d.gm.shape, direction, turn: d.gm.counters.turn, day: d.canonical.day, index });
         });
-        return `"${record.title}" filed; volume ${record.number + 1} begins`;
+        return `"${record.title}" filed; volume ${record.number + 1} begins${madeFromSteer.length ? `; made from your steer: ${madeFromSteer.join(', ')}` : ''}`;
     });
 }
 
@@ -772,6 +822,7 @@ async function applyIdea(chatId, chatKey, settingId, idea, { silent = false } = 
             updateChatDoc(chatKey, (d) => { made = addHappening(d.gm, { id: newLocalId('ag'), text: idea.text, day: d.canonical.day + (idea.inDays ?? 3), when: idea.when, ties: idea.ties, source: 'ideas' }); });
             return made ? { ok: true, message: `On the calendar in ${idea.inDays ?? 3} days.` } : { ok: false, message: 'Could not put it on the calendar.' };
         }
+        if (idea.kind === 'event') return await applyEventIdea(chatId, chatKey, settingId, idea);
         if (idea.kind === 'seed') {
             let ok = false;
             updateChatDoc(chatKey, (d) => { ok = addSeed(d.gm, { text: idea.text, payoff: idea.why }); });
@@ -782,6 +833,35 @@ async function applyIdea(chatId, chatKey, settingId, idea, { silent = false } = 
         return { ok: false, message: String(err?.message ?? err) };
     }
     return { ok: false, message: 'Unknown idea.' };
+}
+
+// An event idea taken up: one call writes it from the setting (src/events/
+// generate.js), and it is set up - on the calendar when it lies days ahead.
+async function applyEventIdea(chatId, chatKey, settingId, idea) {
+    const { generateEventForm } = await import('../events/generate.js');
+    const { eventFromForm, foeMatcher } = await import('../events/setup.js');
+    const { planEvent, makeRooms } = await import('../events/run.js');
+    const known = await knownEntries(chatId, settingId);
+    const place = idea.ties.map((t) => knownAs(t, known.filter((e) => e.type === 'location'))).find(Boolean);
+    const kind = idea.eventKind || 'programme';
+    let form = await generateEventForm(chatId, settingId, { kind, request: [idea.name, idea.text].filter(Boolean).join(': '), placeId: place?.id ?? '' });
+    if (!form) return { ok: false, message: 'The event could not be written - try again, or set it up on the Event card.' };
+    if (!form.name) form.name = idea.name;
+    if (form.kind === 'crawl') {
+        if (!form.placeId) return { ok: false, message: 'A dungeon crawl needs its dungeon: set it up on the Event card.' };
+        form = { ...form, rooms: await makeRooms(chatId, settingId, form.placeId, form.rooms.map((r) => ({ ...r, leadsTo: r.leadsTo.split(/\s*,\s*/).filter(Boolean) }))) };
+    }
+    const foes = known.filter((e) => e.type === 'character' || e.type === 'creature');
+    const characters = known.filter((e) => e.type === 'character');
+    const playerName = characters.find((c) => c.id === playerIdOf(settingId, characters))?.name ?? userName();
+    const event = eventFromForm(form, { matchFoe: foeMatcher(foes), playerName });
+    if (!event) return { ok: false, message: 'The event came out empty - set it up on the Event card.' };
+    const days = idea.inDays ?? 0;
+    const doc = getChatDoc(chatKey);
+    const startDay = days > 0 ? doc.canonical.day + days : null;
+    if (!startDay && (doc.event?.status === 'running' || doc.event?.status === 'planned')) return { ok: false, message: 'An event is already set up or under way - end or discard it first.' };
+    planEvent(chatKey, event, { startDay });
+    return { ok: true, message: startDay ? `${event.name} is on the calendar, in ${days} day${days === 1 ? '' : 's'}.` : `${event.name} is set up on the Event card - start it when the story gets there.` };
 }
 
 // The user accepts a proposal (with any edits already made to it).

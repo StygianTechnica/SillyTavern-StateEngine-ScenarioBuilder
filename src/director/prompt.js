@@ -17,7 +17,7 @@ import { creatureLabel } from '../library/creature-form.js';
 import { WEATHER_VALUES } from '../store/schema.js';
 import { lookLines } from '../library/world-options.js';
 import { shortTitle } from '../validate/drift.js';
-import { unknownsLines } from './perspective.js';
+import { unknownsLines, povBrief } from './perspective.js';
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
@@ -389,6 +389,7 @@ export function buildDirectorPrompt(input) {
         'People act as the story has shown them: never give someone a betrayal, an attack or a hidden scheme the story has not set up.',
         `In a fight, a contest or any clash, you are the referee for everyone but ${userName}: decide how each action between the others turns out and state it as settled - who strikes, whether it lands, what it does (a wound, a crack in armour, a limb that will not bear weight, ground given), and what the one struck does in answer. "Varyn's blade finds the joint behind its knee; the leg buckles and it lurches sideways" - never "Varyn may try to strike its joints". An opponent here acts every reply - it attacks, presses, shrugs off a blow or uses what it is - it is never a still target. For a blow aimed at ${userName}, say what it is and what it threatens as it comes; how ${userName} meets it is ${userName}'s to say.`,
         'People know only what they saw, heard or were told: what happens inside someone - thoughts, dreams, visions, unspoken feelings - is theirs alone; others see only outward signs and learn the rest only if told. A secret stays hidden from those who do not know it - they never act on it, hint at it or guess it - unless the story reveals it in front of them; an oath binds those who swore it.',
+        povBrief(input.pov, userName),
         clean(input.overview?.gmStyle) ? `How the user wants this story run - follow it: ${cut(input.overview.gmStyle, 800)}` : '',
     ].filter(Boolean).join(' ');
 

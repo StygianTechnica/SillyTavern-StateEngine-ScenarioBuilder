@@ -235,6 +235,25 @@ export async function advanceFrom(settingId, from, text) {
     return to;
 }
 
+// The moment a wait ends, after `from`: "noon" / "at dusk" / "14:00" is the
+// next time the day reaches it; "two hours", "the next morning" is that much
+// later. -> a scalar or null.
+export async function momentAfter(settingId, from, text) {
+    const t = String(text ?? '').trim().replace(/^(until|till|at|by)\s+/i, '');
+    if (!t || !Number.isFinite(from)) return null;
+    if (!/\d+\s*(?:min|hour|hr|day|week|month)|\b(?:next|tomorrow|later|after|days?|weeks?)\b/i.test(t)) {
+        const { def } = await calendarFor(settingId);
+        const fraction = timeOfDayFraction(t, def);
+        if (fraction !== null) {
+            const perDay = secondsPerDay(def);
+            let to = dayIndexOf(def, from) * perDay + Math.round(fraction * perDay);
+            if (to <= from) to += perDay;
+            return to;
+        }
+    }
+    return advanceFrom(settingId, from, t);
+}
+
 // Moves the clock on by `text` ("20 minutes", "the next morning").
 // planned: this is the advance for the reply about to be written - kept
 // to compare with what the story then says passed. -> { from, to } or null.

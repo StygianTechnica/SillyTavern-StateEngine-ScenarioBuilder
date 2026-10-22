@@ -30,6 +30,7 @@ import { runLoreSync } from '../library/lore-sync.js';
 import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { checkQuestEnds, fillMissingEnds } from '../quests/ends.js';
 import { followMissions } from '../quests/missions.js';
+import { scanStoryChanges } from './changes.js';
 import { ensureCharacterFields } from '../library/character-fields.js';
 import { checkTriggers, checkTriggersOnMessage, markTriggersShown, latestUserIndex } from '../triggers/run.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage, followContinuedReply } from '../validate/reconcile.js';
@@ -60,6 +61,8 @@ async function intakeOpenChat() {
     // A giver whose last mission ended offers the next (src/quests/missions.js).
     void followMissions(ref.chatId, chatKeyFor(ref), settingId);
     await runLoreSync(ref.chatId, chatKeyFor(ref), settingId);
+    // What the story did to the world: offered as current descriptions.
+    await scanStoryChanges(ref.chatId, chatKeyFor(ref), settingId);
     hookArchivist();
 }
 
@@ -70,6 +73,15 @@ function hookArchivist() {
     if (archivistHooked || !event) return;
     archivistHooked = true;
     SillyTavern.getContext().eventSource.on(event, () => void intakeOpenChat().then(() => syncNow()));
+    // New memories may tell of a change to the world.
+    const memories = window.StateEngineArchivist?.MEMORIES_CHANGED_EVENT;
+    if (memories) {
+        SillyTavern.getContext().eventSource.on(memories, async () => {
+            const ref = getCurrentChatRef();
+            if (!ref || !isActive()) return;
+            if (await scanStoryChanges(ref.chatId, chatKeyFor(ref), await getBoundSettingId(ref.chatId))) await syncNow();
+        });
+    }
 }
 
 function scheduleValidation(chatId) {

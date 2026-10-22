@@ -100,8 +100,9 @@ function learnedOf(x, personId, all) {
 // player, most important first, at most `perPerson` each and `maxTokens`
 // in all. memories: Archivist records; cast: [{ id, name, player }];
 // recentText: the latest chat (what is being talked about counts more);
-// nameOf(id): a name for a witness id (for "private to ...").
-export function unknownsFor(memories, { cast = [], recentText = '', nameOf = () => '', perPerson = PERSPECTIVE_PER_PERSON, maxTokens = PERSPECTIVE_TOKENS, window = PERSPECTIVE_WINDOW } = {}) {
+// nameOf(id): a name for a witness id (for "private to ..."); told: what
+// the player told whom in the chat ({ [memoryKey]: [personId] }, toldInChat).
+export function unknownsFor(memories, { cast = [], recentText = '', nameOf = () => '', perPerson = PERSPECTIVE_PER_PERSON, maxTokens = PERSPECTIVE_TOKENS, window = PERSPECTIVE_WINDOW, told = {} } = {}) {
     const here = (cast ?? []).filter((c) => c?.id && clean(c.name));
     const people = here.filter((c) => !c.player);
     if (!people.length || !Array.isArray(memories) || !memories.length) return [];
@@ -142,7 +143,7 @@ export function unknownsFor(memories, { cast = [], recentText = '', nameOf = () 
             // importance, and not something this person was there for.
             .filter((x) => x.memory.importance !== 'low' && !x.witnesses.includes(person.id))
             .filter((x) => x.entities.some((id) => sceneIds.has(id)) || x.witnesses.some((id) => sceneIds.has(id)))
-            .filter((x) => !learnedOf(x, person.id, all))
+            .filter((x) => !learnedOf(x, person.id, all) && !(told?.[memoryKey(x.memory)] ?? []).includes(person.id))
             .sort((a, b) => score(b) - score(a))
             // One line per private experience (two memories of one vision).
             .filter((x, i, list) => !x.private || list.findIndex((y) => y.private && y.witnesses[0] === x.witnesses[0] && INNER.exec(y.text)?.[1]?.toLowerCase() === INNER.exec(x.text)?.[1]?.toLowerCase() && Math.abs(y.order - x.order) <= 2) === i)
@@ -176,4 +177,75 @@ export function unknownsLines(unknowns) {
         'WHAT EACH PERSON DOES NOT KNOW (they did not witness it and were not told - they must not mention, hint at or act on it. "Private" is someone\'s own dream, vision or thought: others saw at most the outward signs)',
         ...[...who].map(([text, names]) => `- ${text} - not known to ${names.join(', ')}.`),
     ];
+}
+
+// A memory's key: Archivist's id, else the start of its text.
+export const memoryKey = (m) => clean(m?.id) || clean(m?.text).slice(0, 80);
+
+// What the player character has told the people with them, in their own
+// messages: a message that speaks of a memory (enough of its distinctive
+// words, or the same kind of inner experience and one of them) and reads as
+// telling (a telling word, or speech in quotes) is heard by everyone present.
+// Only the player's words count - the narrator letting something slip is the
+// very thing this guards against. memories: Archivist records; messages:
+// [{ text, isUser }]; cast: [{ id, name, player }].
+// -> { [memoryKey]: [personId] } for what was told (empty when nothing).
+export function toldInChat(memories, { messages = [], cast = [] } = {}) {
+    const listeners = (cast ?? []).filter((c) => c?.id && !c.player).map((c) => c.id);
+    const said = (messages ?? []).filter((m) => m?.isUser && clean(m.text)).map((m) => clean(m.text));
+    if (!listeners.length || !said.length || !Array.isArray(memories)) return {};
+    const names = new Set((cast ?? []).flatMap((c) => clean(c?.name).toLowerCase().split(' ')));
+    const out = {};
+    for (const m of memories.slice(-PERSPECTIVE_WINDOW)) {
+        const text = clean(m?.text);
+        if (!text) continue;
+        const words = wordsOf(text, names);
+        const inner = INNER.exec(text)?.[1]?.toLowerCase() ?? '';
+        const heard = said.some((s) => {
+            if (!TOLD.test(s) && !/["“”«»]/.test(s)) return false;
+            const shared = overlap(words, wordsOf(s, names));
+            return shared >= Math.min(3, Math.max(1, words.size - 1)) || (inner && s.toLowerCase().includes(inner) && shared >= 1);
+        });
+        if (heard) out[memoryKey(m)] = listeners;
+    }
+    return out;
+}
+
+// What has been told, kept per chat (doc.perspectiveTold), with more added.
+export function mergeTold(told = {}, more = {}) {
+    const out = { ...told };
+    for (const [key, ids] of Object.entries(more ?? {})) out[key] = [...new Set([...(out[key] ?? []), ...ids])];
+    const keys = Object.keys(out);
+    // The newest few hundred are plenty: the window looks at 80 memories.
+    return keys.length > 400 ? Object.fromEntries(keys.slice(-400).map((k) => [k, out[k]])) : out;
+}
+
+// How many of a chat's memories say who was present - older chats were
+// extracted before Archivist asked for it, and Archivist's "Rebuild memories
+// from chat" fills it in. -> { total, witnessed }
+export function witnessCoverage(memories) {
+    const list = (Array.isArray(memories) ? memories : []).filter((m) => clean(m?.text));
+    return { total: list.length, witnessed: list.filter((m) => Array.isArray(m.witness_ids) && m.witness_ids.length > 0).length };
+}
+
+// ---- point of view (settings.director.pov)
+
+export const POV_MODES = Object.freeze(['free', 'limited', 'second', 'omniscient']);
+
+// The narrator's rule for the point of view, '' for 'free' (the narrator's
+// own habit). player: the player character's name.
+export function povRule(pov, player = '') {
+    const who = clean(player) || 'the player character';
+    if (pov === 'limited') return `Point of view: third person, close on ${who}. Show only what ${who} can see, hear and sense; the others' thoughts and feelings show only in what they say and do, and what happens out of ${who}'s sight is not shown until ${who} learns of it.`;
+    if (pov === 'second') return `Point of view: second person - "you" is ${who}. Show only what you can see, hear and sense; the others' thoughts and feelings show only in what they say and do, and nothing out of your sight is shown.`;
+    if (pov === 'omniscient') return `Point of view: an all-seeing narrator - it may show what the others think and feel and what happens out of ${who}'s sight. Even so, each character acts only on what they themselves know.`;
+    return '';
+}
+
+// The same for the director, so its briefing fits the narration.
+export function povBrief(pov, player = '') {
+    const who = clean(player) || 'the player character';
+    if (pov === 'limited' || pov === 'second') return `The narration stays with ${who}'s senses: brief what the others visibly say and do and what ${who} could notice; their hidden thoughts and anything happening out of ${who}'s sight are for you to keep track of, not for the narrator to show.`;
+    if (pov === 'omniscient') return 'The narration is all-seeing: you may point the narrator to what the others think and feel, or to something happening elsewhere, when it serves the story.';
+    return '';
 }

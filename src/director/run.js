@@ -29,7 +29,7 @@ import { gatherInputs } from '../guidance/sync.js';
 import { fitDirectorPrompt, promptBudget } from './fit.js';
 import { nextFight, fightFacts, woundsOf } from './fight.js';
 import { eventFacts } from '../events/model.js';
-import { eventForBriefing, eventAfterFight } from '../events/run.js';
+import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
 import { whoCouldTurnUp } from './whereabouts.js';
 import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from '../library/powers.js';
 import { namedAtAll } from '../validate/drift.js';
@@ -43,7 +43,7 @@ import { creatureFormOf, readCount, addCount, takeCount, creatureLabel } from '.
 import { namesSomething, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { buildPeoplePrompt, readPeople } from './people.js';
-import { unknownsFor, PERSPECTIVE_TOKENS } from './perspective.js';
+import { unknownsFor, toldInChat, mergeTold, PERSPECTIVE_TOKENS } from './perspective.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
 import { directorPlan, takeBeats, markActive } from '../planner/run.js';
 
@@ -115,7 +115,9 @@ function memoriesFor(ids) {
 // Perspective (src/director/perspective.js): for each person here other
 // than the player, the recent memories they did not witness. [] when it is
 // off or Archivist is not there.
-async function unknownsHere(cast, recentText, characters) {
+// messages: the recent chat - what the player told the people here in it is
+// theirs from then on (kept in doc.perspectiveTold).
+async function unknownsHere(cast, recentText, characters, { chatKey = null, messages = [] } = {}) {
     const director = getSettings().director;
     const archivist = window.StateEngineArchivist;
     if (director.perspective === false || typeof archivist?.getAllMemories !== 'function') return [];
@@ -123,7 +125,13 @@ async function unknownsHere(cast, recentText, characters) {
         const memories = await archivist.getAllMemories();
         const names = new Map([...(characters ?? []), ...(cast ?? [])].filter((c) => c?.id).map((c) => [c.id, c.name]));
         const budget = Number(director.perspectiveTokens);
-        return unknownsFor(memories, { cast, recentText, nameOf: (id) => names.get(id) ?? '', maxTokens: Number.isFinite(budget) && budget > 0 ? budget : PERSPECTIVE_TOKENS });
+        let told = chatKey ? getChatDoc(chatKey).perspectiveTold : {};
+        const heard = toldInChat(memories, { messages, cast });
+        if (chatKey && Object.keys(heard).length) {
+            told = mergeTold(told, heard);
+            updateChatDoc(chatKey, (d) => { d.perspectiveTold = told; });
+        }
+        return unknownsFor(memories, { cast, recentText, nameOf: (id) => names.get(id) ?? '', maxTokens: Number.isFinite(budget) && budget > 0 ? budget : PERSPECTIVE_TOKENS, told });
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not read who knows what from Archivist', err);
         return [];
@@ -430,7 +438,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     if (!ahead) updateChatDoc(chatKey, (d) => { d.powersNarrator = powersNarratorText(atWork); });
     // A structured event (src/events/): moved on when its stage ended in an
     // earlier reply; the director sees the stage under way only.
-    const event = eventForBriefing(chatKey);
+    const event = await eventForBriefing(chatId, chatKey, settingId);
+    const ways = await eventWays(settingId, event).catch(() => []);
     // Trimmed to fit the director model's context (src/director/fit.js).
     const fitted = fitDirectorPrompt({
         ...guidance,
@@ -451,11 +460,12 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         timeKeeping: settings.time.enabled && !!settingId,
         askNow: settings.time.enabled && !!settingId && doc.clock.needsNow,
         gmPlan: settingId ? directorPlan(chatKey, messages) : '',
-        unknowns: await unknownsHere(guidance.cast ?? [], messages.slice(-6).map((m) => m.text).join('\n'), characters),
+        unknowns: await unknownsHere(guidance.cast ?? [], messages.slice(-6).map((m) => m.text).join('\n'), characters, { chatKey, messages: messages.slice(-4) }),
+        pov: settings.director.pov ?? 'free',
         ahead,
         travelAtNight: settings.director.travelAtNight === true,
         fightFacts: fightFacts(doc.fight, settings.director.fightReplies),
-        eventFacts: eventFacts(event, { placeName: event?.placeId ? everything.find((e) => e.id === event.placeId)?.name ?? '' : '', turn: getChatDoc(chatKey).turn }),
+        eventFacts: eventFacts(event, { placeName: event?.placeId ? everything.find((e) => e.id === event.placeId)?.name ?? '' : '', turn: getChatDoc(chatKey).turn, ways }),
         // Only the dead the latest messages speak of.
         // The story going in circles, or the player asking whether it is over.
         loopLine: circling(messages.slice(-8)).line,
@@ -598,6 +608,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         if (moved) {
             movedFrom = moved.from;
             baseCast = moved.castIds;
+            // A crawl's room follows the scene (src/events/).
+            await eventAfterMove(chatId, chatKey, settingId);
         }
     }
 
