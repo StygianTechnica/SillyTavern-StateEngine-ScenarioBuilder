@@ -1,4 +1,4 @@
-import { powersAtWork, powersText, giftsText, isPower, normalizePowerMeta } from '../src/library/powers.js';
+import { powersAtWork, powersText, powersNarratorText, giftsText, isPower, normalizePowerMeta } from '../src/library/powers.js';
 import { parseDirectorNote, dossierText } from '../src/director/prompt.js';
 import { offerText } from '../src/quests/missions.js';
 import { normalizeEntryMeta } from '../src/store/schema.js';
@@ -42,7 +42,7 @@ describe('a power at work', () => {
 
     it('is told to the director in a line, and a person\'s gifts go with them', () => {
         const text = powersText(powersAtWork({ ...base, lastActed: { elyon: 49 } }));
-        expect(text).toBe('- Ferunox (god of chaos); champion here: Varyn; makes itself known by whispers in the dark and twisted luck - its champion Varyn is here, and it has been quiet a while.');
+        expect(text).toBe('- Ferunox (god of chaos); champion: Varyn; makes itself known by whispers in the dark and twisted luck - its champion Varyn is here, and it has been quiet a while.');
         expect(giftsText(varyn, (id) => (id === 'ferunox' ? 'Ferunox' : ''))).toBe('gifts: a chaos-touched blade that warps what it strikes; champion of Ferunox');
         expect(dossierText({ cast: [{ name: 'Remus', player: true }], powersText: text })).toContain('POWERS AT WORK (gods and forces with no body');
     });
@@ -57,5 +57,32 @@ describe('a power at work', () => {
         const m = { name: 'The Shard', task: 'Carry the shard to the rift.', reward: 'his favour' };
         expect(offerText(m, { giverName: 'Ferunox', takerName: 'Varyn', vision: true })).toMatch(/^Ferunox sends Varyn a task in a dream or vision, the next time Varyn sleeps, prays or is alone: "The Shard"/);
         expect(offerText(m, { giverName: 'Ferunox', takerName: 'Varyn', vision: true, now: true })).toMatch(/^Ferunox comes to Varyn in a vision or a dream with a task/);
+    });
+});
+
+describe('powers with weight', () => {
+    const remusChampion = { id: 'remus', name: 'Remus', meta: { patrons: ['elyon'] } };
+    const varynDead = { id: 'varyn', name: 'Varyn', meta: { patrons: ['ferunox'] } };
+
+    it('answers when its own champion calls on it, and the narrator hears of it', () => {
+        const [p] = powersAtWork({ powers: [elyon], cast: [remusChampion], caller: remusChampion, callerText: '"Elyon, hear me!" Remus cried.', recentText: '"Elyon, hear me!" Remus cried.', turn: 10, lastActed: { elyon: 9 } });
+        expect(p.answers).toBe(true);
+        expect(p.why).toMatch(/^its own champion Remus calls on it - it answers in this reply/);
+        expect(p.narrator).toBe("Remus has called on Elyon, whose champion Remus is: Elyon answers in this reply, in Elyon's own way - never in person.");
+    });
+
+    it('comes forward when its champion lies dead, and may restore him at a price', () => {
+        const [p] = powersAtWork({ powers: [ferunox], cast: [remusChampion], dead: [varynDead], caller: remusChampion, callerText: 'Ferunox, give Varyn back!', recentText: 'Ferunox, give Varyn back!', turn: 10 });
+        expect(p.answers).toBe(false);
+        expect(p.why).toContain('its champion Varyn lies dead - a moment it may claim, avenge or restore its own');
+        expect(p.narrator).toContain("Ferunox's champion Varyn lies dead");
+        expect(powersNarratorText([p])).toBe(p.narrator);
+    });
+
+    it('carries what it wants and what it last did', () => {
+        const withWants = { ...ferunox, base: { goals: 'to see the old order burn' } };
+        const [p] = powersAtWork({ powers: [withWants], cast: [varyn], turn: 30, lastActed: { ferunox: 10 }, lastDid: { ferunox: 'set the bridge alight' } });
+        expect(powersText([p])).toContain('wants: to see the old order burn');
+        expect(powersText([p])).toContain('last acted 20 replies ago: set the bridge alight');
     });
 });

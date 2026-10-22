@@ -24,7 +24,7 @@ describe('guidance', () => {
         expect(text).toContain('The climate is humid.');
         expect(text).not.toContain('Mira, the innkeeper');
         expect(text).toContain('Hold to these: The scene is still at Brass Market, not the docks.');
-        expect(sections.filter((s) => !['quests', 'summary', 'direction', 'lore', 'limits', 'absent', 'alone', 'style', 'secrets', 'intimacy', 'triggered', 'fight', 'event', 'dead'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
+        expect(sections.filter((s) => !['quests', 'summary', 'direction', 'lore', 'limits', 'absent', 'alone', 'style', 'secrets', 'intimacy', 'triggered', 'fight', 'event', 'dead', 'powers'].includes(s.key)).every((s) => s.mode === 'full')).toBe(true);
         expect(text).not.toMatch(/^\[/m);
     });
 
@@ -229,5 +229,36 @@ describe('story triggers in the guidance', () => {
         expect(section.text).toMatch(/^The story has set this off - it happens in this reply: Now, because they breach the concrete structure: two corrupted paladins ambush them/);
         expect(guidanceParts(built).guidance_direction).toContain('two corrupted paladins ambush them');
         expect(buildGuidance(input).sections.find((s) => s.key === 'triggered').mode).toBe('empty');
+    });
+});
+
+describe('the setting kept readable under a tight budget', () => {
+    const premise = 'This is a world with gods in it manipulating the world from on-high. For centuries a war has been raging between the god of light (holy paladins, forthright knights) and the god of death. Their champions walk the ruins of the old kingdoms. Few remember the peace before.';
+
+    it('shortens the premise to whole sentences, never cut off mid-word', async () => {
+        const { sentencesUpTo } = await import('../src/guidance/build.js');
+        expect(sentencesUpTo(premise, 250)).toBe('This is a world with gods in it manipulating the world from on-high. For centuries a war has been raging between the god of light (holy paladins, forthright knights) and the god of death. Their champions walk the ruins of the old kingdoms.');
+        expect(sentencesUpTo('One long first sentence without an end', 10)).toBe('One long…');
+        expect(sentencesUpTo('A short one. Then more.', 14)).toBe('A short one.');
+    });
+
+    it('shortens lore and the quests before the setting, whatever the budget', () => {
+        const input = { overview: { premise }, location: { path: ['Crypt'] }, lore: [{ name: 'The Fall', description: 'x'.repeat(600) }], quests: [{ name: 'Find the cache', type: 'main', description: 'y'.repeat(600) }] };
+        let shortened = 0;
+        for (let budget = 400; budget >= 80; budget -= 10) {
+            const mode = (k) => buildGuidance({ ...input, budget }).sections.find((x) => x.key === k).mode;
+            if (mode('overview') === 'full') continue;
+            shortened += 1;
+            expect(mode('lore')).not.toBe('full');
+            expect(mode('quests')).not.toBe('full');
+        }
+        expect(shortened).toBeGreaterThan(0);
+    });
+
+    it('names what is carried and the ways on, without their descriptions', () => {
+        const { text } = buildGuidance({ location: { path: ['Graveyard'], items: [{ name: 'Maps of the Fortress', description: 'Hand-drawn maps detailing escape routes', carriedBy: 'niamh' }], places: [{ name: 'Concrete Structure', description: 'A rusted storage building' }] }, budget: 4000 });
+        expect(text).toContain('Carried by those present: Maps of the Fortress.');
+        expect(text).toContain('From here one can go to Concrete Structure.');
+        expect(text).not.toContain('rusted storage');
     });
 });

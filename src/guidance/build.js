@@ -28,7 +28,9 @@ const labelOf = (list, id) => list.find(([key]) => key === id)?.[1] ?? id;
 // summary of where things stand and, last, where the reply should go
 // (src/director/) - closest to the reply, where it weighs most.
 export const SECTIONS = Object.freeze([
-    { key: 'overview', title: 'Setting', priority: 1, keep: false },
+    // The world's premise (gods at war...) is what the rest stands on: it is
+    // shortened after lore, the quests and the scene premise, not first.
+    { key: 'overview', title: 'Setting', priority: 4, keep: false },
     { key: 'limits', title: 'World rules', priority: 6, keep: true },
     { key: 'quests', title: 'Threads followed', priority: 2, keep: false },
     { key: 'location', title: 'Scene', priority: 5, keep: true },
@@ -42,6 +44,7 @@ export const SECTIONS = Object.freeze([
     { key: 'direction', title: 'Where it should go', priority: 8, keep: true },
     { key: 'triggered', title: 'Set off by the story', priority: 9, keep: true },
     { key: 'fight', title: 'The fight', priority: 9, keep: true },
+    { key: 'powers', title: 'A power answers', priority: 9, keep: true },
     { key: 'event', title: 'The event', priority: 9, keep: true },
     { key: 'intimacy', title: 'Intimate scene', priority: 8, keep: true },
     { key: 'absent', title: 'Not in this scene', priority: 9, keep: true },
@@ -162,7 +165,22 @@ function overviewSection(overview) {
     if (how.length) lines.push(how.join(' '));
     if (clean(o.rules)) lines.push(`Society and law: ${sentence(truncate(o.rules, 400))}`);
     if (!lines.length) return null;
-    return { full: lines.join('\n'), compact: clean(o.premise) ? sentence(truncate(o.premise, 160)) : '' };
+    return { full: lines.join('\n'), compact: clean(o.premise) ? sentencesUpTo(o.premise, 250) : '' };
+}
+
+// The opening sentences of a text, whole, up to about `max` characters - a
+// shortened premise reads as a premise, not as a sentence cut off with
+// "...". Only a first sentence longer than `max` is cut.
+export function sentencesUpTo(text, max) {
+    const all = clean(text).match(/[^.!?…]+(?:[.!?…]+["')\]]*|$)/g)?.map((x) => x.trim()).filter(Boolean) ?? [];
+    if (!all.length) return '';
+    const out = [];
+    for (const one of all) {
+        if (out.length && [...out, one].join(' ').length > max) break;
+        out.push(one);
+    }
+    const kept = out.join(' ');
+    return kept.length > max * 1.5 ? sentence(truncate(kept, max)) : sentence(kept);
 }
 
 function locationSection(input) {
@@ -212,7 +230,8 @@ function locationSection(input) {
     // Named items carry weight with the model; offered as what is here,
     // not as things the reply should reach for.
     if (lying.length) around.push(`Also here, should the scene turn to them: ${andList(named(lying, 8))}.`);
-    if (carried.length) around.push(`Carried by those present: ${andList(named(carried, 8))}.`);
+    // By name: what they are is in the people's own lines and the story.
+    if (carried.length) around.push(`Carried by those present: ${andList(carried.slice(0, 8).map((x) => clean(x.name)))}.`);
     // Creatures in the scene, a kind with its numbers ("3 Zombies"); those
     // that only live here are not in it until the story brings them in.
     const inScene = (loc?.creatures ?? []).filter((x) => x.active !== false).map((x) => ({ ...x, name: creatureLabel(x.name, { form: x.form, count: x.count }) }));
@@ -221,8 +240,10 @@ function locationSection(input) {
     if (lurking.length) around.push(`Living hereabouts, unseen unless the story brings them in: ${andList(lurking.slice(0, 4).map((x) => clean(x.name)))}.`);
     // A place saved under a template word ("Place name") is not a way on.
     const real = (list) => (list ?? []).filter((x) => !isPlaceholder(x?.name));
-    const roads = real(loc?.routes).slice(0, 8).map((r) => `${clean(r.name)} (${[clean(r.travel), clean(r.note)].filter(Boolean).join(', ')})`);
-    const ways = [...named(real(loc?.places), 8), ...roads];
+    // Ways on by name, a road with its travel time and note - not each place's
+    // description, which the reply here does not need.
+    const roads = real(loc?.routes).slice(0, 8).map((r) => { const how = [clean(r.travel), clean(r.note)].filter(Boolean).join(', '); return `${clean(r.name)}${how ? ` (${how})` : ''}`; });
+    const ways = [...real(loc?.places).slice(0, 8).map((x) => clean(x.name)), ...roads];
     const out = loc?.partOf ? `back out to ${clean(loc.partOf.name)}` : '';
     if (ways.length) around.push(`From here one can go to ${orList(ways)}${out ? `, or ${out}` : ''}.`);
     else if (out) around.push(`From here one can go ${out}.`);
@@ -371,6 +392,8 @@ const BUILDERS = {
     dead: (input) => (clean(input.dead) ? { full: `Dead and gone in this story - they can be mourned, remembered or spoken of, but never written alive, speaking or acting: ${clean(input.dead)}`, compact: '' } : null),
     // Each fighter's condition, kept from reply to reply (src/director/fight.js).
     fight: (input) => (fightGuidance(input.fight) ? { full: fightGuidance(input.fight), compact: '' } : null),
+    // A god called on by its champion answers (src/library/powers.js).
+    powers: (input) => (clean(input.powersNarrator) ? { full: clean(input.powersNarrator), compact: '' } : null),
     // A structured event's stage under way, never what comes next (src/events/).
     event: (input) => (eventGuidance(input.event) ? { full: eventGuidance(input.event), compact: '' } : null),
     intimacy: (input) => intimacySection(input),
@@ -426,6 +449,7 @@ export function buildGuidance(input) {
         style: 'Your own instructions for running the story (the front page: How the game master runs this story).',
         absent: 'People you took out of the scene by hand, for the next few replies.',
         dead: 'Who has died in this story (marked by the director or by you on their sheet); they never come back.',
+        powers: 'A power (a god, a spirit) called on by its champion, or over its dead champion: the narrator is told it answers.',
         fight: 'The fight the director keeps: each fighter but the player character, their condition from reply to reply, and when it ends.',
         event: 'A structured event under way (an arena, set up in the GM Plan): the stage now, and never who comes next.',
         triggered: 'Story triggers the story has just set off (Story triggers in the GM Plan): played in this reply, and on a swipe of it.',
@@ -458,7 +482,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
     ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'secrets', 'corrections', 'dead']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
-    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'triggered', 'fight', 'event', 'intimacy', 'absent', 'alone']],
+    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'triggered', 'fight', 'powers', 'event', 'intimacy', 'absent', 'alone']],
 ]);
 
 // buildGuidance()'s result -> { [variable]: text } ('' for an empty part).

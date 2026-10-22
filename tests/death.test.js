@@ -89,3 +89,13 @@ describe('a death the story already showed', () => {
         expect(shownDeadIn('Varyn Vance', 'The knight was dead. Varyn wiped his blade.')).toBe(false);
     });
 });
+
+describe('only the dead the story speaks of', () => {
+    it('are listed - not every death in the story', async () => {
+        const { deadText: text } = await import('../src/state/death.js');
+        const d = { dead: normalizeDead([{ id: 'a', name: 'The Eternal Champion', how: 'burned' }, { id: 'v', name: 'Varyn Vance', how: 'cut down' }]) };
+        expect(text(d, { recentText: 'Remus knelt where Varyn had fallen.' })).toBe('Varyn Vance (cut down).');
+        expect(text(d, { recentText: 'They rode on in silence.' })).toBe('');
+        expect(text(d)).toBe('The Eternal Champion (burned); Varyn Vance (cut down).');
+    });
+});

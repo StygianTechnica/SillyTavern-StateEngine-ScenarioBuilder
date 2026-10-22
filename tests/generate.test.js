@@ -193,7 +193,7 @@ describe('world limits in prompts and guidance', () => {
         const full = buildGuidance({ overview: godWar, budget: 2000 }).text;
         expect(full).toContain("Never break the world's limits.");
         expect(full).toContain('arcane');
-        const tight = buildGuidance({ overview: { ...godWar, premise: 'x'.repeat(900), rules: 'y'.repeat(900) }, location: { path: ['Keep'] }, budget: 160 });
+        const tight = buildGuidance({ overview: { ...godWar, premise: 'x'.repeat(900), rules: 'y'.repeat(900) }, location: { path: ['Keep'] }, budget: 230 });
         expect(tight.sections.find((s) => s.key === 'overview').mode).toBe('compact');
         expect(tight.text).toContain('arcane');
     });

@@ -31,7 +31,8 @@ import { nextFight, fightFacts, woundsOf } from './fight.js';
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight } from '../events/run.js';
 import { whoCouldTurnUp } from './whereabouts.js';
-import { isPower, patronsOf, powersAtWork, powersText } from '../library/powers.js';
+import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from '../library/powers.js';
+import { namedAtAll } from '../validate/drift.js';
 
 // How many replies a broken-off fight's wounds are remembered.
 const WOUNDS_KEPT = 30;
@@ -403,15 +404,29 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // Gods and forces that bear on this reply - invoked, a champion failing,
     // or their occasional turn (src/library/powers.js). Most replies: none.
     const powerEntries = characters.filter(isPower);
+    // Who is calling (the player's latest message) and the dead the recent
+    // story speaks of - a power's own champion calling on it is answered, and
+    // a power whose champion lies dead comes forward.
+    const recentSix = messages.slice(-6).map((m) => m.text).join('\n');
+    const callerText = [...messages].reverse().find((m) => m.isUser)?.text ?? '';
+    const caller = characters.find((c) => c.id === playerIdOf(settingId, characters)) ?? null;
+    const deadHere = characters.filter((c) => doc.dead.some((d) => d.id === c.id) && namedAtAll([c.name, String(c.name).split(/[\s,]+/)[0]], recentSix));
     const atWork = powerEntries.length ? powersAtWork({
         powers: powerEntries,
         cast: characters.filter((c) => castIds.includes(c.id)),
         recentText: messages.slice(-2).map((m) => m.text).join('\n'),
+        callerText,
+        caller,
+        dead: deadHere,
         fight: doc.fight,
         turn: doc.turn,
         lastActed: doc.powersActed,
+        lastDid: doc.powersDid,
         every: Number.isInteger(settings.director.powersEvery) ? settings.director.powersEvery : 8,
     }) : [];
+    // The narrator hears a power called on by its champion (or over its dead
+    // champion) directly, so a briefing that leaves it out cannot lose it.
+    if (!ahead) updateChatDoc(chatKey, (d) => { d.powersNarrator = powersNarratorText(atWork); });
     // A structured event (src/events/): moved on when its stage ended in an
     // earlier reply; the director sees the stage under way only.
     const event = eventForBriefing(chatKey);
@@ -440,7 +455,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         travelAtNight: settings.director.travelAtNight === true,
         fightFacts: fightFacts(doc.fight, settings.director.fightReplies),
         eventFacts: eventFacts(event, { placeName: event?.placeId ? everything.find((e) => e.id === event.placeId)?.name ?? '' : '', turn: getChatDoc(chatKey).turn }),
-        deadText: deadText(doc, { about: (id) => {
+        // Only the dead the latest messages speak of.
+        deadText: deadText(doc, { recentText: messages.slice(-6).map((m) => m.text).join('\n'), about: (id) => {
             const ch = characters.find((x) => x.id === id);
             const patrons = patronsOf(ch).map((p) => characters.find((x) => x.id === p)?.name).filter(Boolean);
             return [ch?.base?.role ?? ch?.role ?? '', patrons.length ? `champion of ${patrons.join(' and ')}` : ''].filter((x) => String(x).trim()).join(', ');
@@ -590,7 +606,14 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         // A power that acted: quiet again for a while.
         const acted = (parsed.powers ?? []).map((p) => powerEntries.find((e) => [e.name, ...(e.aliases ?? [])].some((n) => String(n).toLowerCase() === p.name.toLowerCase()) || mentionedIn(p.name, e.name))).filter(Boolean);
         if (acted.length) {
-            updateChatDoc(chatKey, (d) => { for (const e of acted) d.powersActed = { ...d.powersActed, [e.id]: d.turn }; });
+            updateChatDoc(chatKey, (d) => {
+                for (const e of acted) {
+                    d.powersActed = { ...d.powersActed, [e.id]: d.turn };
+                    // What it did, for the next time it is put before the director.
+                    const said = (parsed.powers ?? []).find((p) => [e.name, ...(e.aliases ?? [])].some((n) => String(n).toLowerCase() === p.name.toLowerCase()) || mentionedIn(p.name, e.name));
+                    if (said?.what) d.powersDid = { ...d.powersDid, [e.id]: said.what };
+                }
+            });
             // A price demanded is a debt owed to the power (an oath, pending -
             // the director hears of it wherever its debtor is): by whoever the
             // price names among those here, else the player character.

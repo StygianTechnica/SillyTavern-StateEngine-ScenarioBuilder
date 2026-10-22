@@ -387,7 +387,10 @@ export async function gatherInputs(chatId, chatKey) {
             // narrator gets them even when the director fails.
             triggered: triggerLines(doc.gm.triggers, latestUserIndex()),
             // Who has died in this story (src/state/death.js).
-            dead: deadText(doc, { about: whoTheyWere }),
+            // Only the dead the latest messages speak of.
+            dead: deadText(doc, { about: whoTheyWere, recentText: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-6).map((m) => String(m.mes ?? '')).join('\n') }),
+            // A power answering its champion (src/library/powers.js).
+            powersNarrator: settings.director.enabled ? doc.powersNarrator : '',
             // The fight the director keeps (src/director/fight.js).
             fight: settings.director.enabled ? doc.fight : null,
             event: settings.director.enabled ? doc.event : null,

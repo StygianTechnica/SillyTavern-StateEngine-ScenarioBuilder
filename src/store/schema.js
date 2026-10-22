@@ -410,6 +410,10 @@ export function emptyChatDoc() {
         wounds: {},
         // When each power last acted: { [powerId]: turn } (src/library/powers.js).
         powersActed: {},
+        // What each power last did: { [powerId]: text }.
+        powersDid: {},
+        // A power's answer the narrator is told of directly this reply.
+        powersNarrator: '',
     };
 }
 
@@ -449,6 +453,8 @@ export function normalizeChatDoc(doc) {
         event: normalizeEvent(d.event),
         eventsDone: normalizeEventsDone(d.eventsDone),
         dead: normalizeDead(d.dead),
+        powersDid: isObject(d.powersDid) ? Object.fromEntries(Object.entries(d.powersDid).filter(([k, v]) => k && typeof v === 'string').map(([k, v]) => [k, v.slice(0, 200)])) : {},
+        powersNarrator: str(d.powersNarrator).slice(0, 800),
         powersActed: isObject(d.powersActed) ? Object.fromEntries(Object.entries(d.powersActed).filter(([k, v]) => k && Number.isInteger(v))) : {},
         wounds: isObject(d.wounds) ? Object.fromEntries(Object.entries(d.wounds).filter(([k, w]) => k && isObject(w) && typeof w.condition === 'string' && Number.isInteger(w.turn))) : {},
     };

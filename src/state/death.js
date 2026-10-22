@@ -67,8 +67,15 @@ export function deadByName(dead, name) {
 // with who they were (`about(id)`: "champion of Ferunox") - out of the cast,
 // a dead person's ties are otherwise forgotten, and a small model fills the
 // gap with whatever the scene is full of. -> text, or '' when no one has died.
-export function deadText(doc, { max = 8, about = () => '' } = {}) {
-    const list = (doc?.dead ?? []).slice(-max);
+// `recentText`: the latest messages - only the dead they mention are listed
+// (the one being mourned, carried off, called back); the rest of the story's
+// dead cost tokens and invite the model to bring them up.
+export function deadText(doc, { max = 8, about = () => '', recentText = null } = {}) {
+    const mentioned = (d) => {
+        const names = [clean(d.name), clean(d.name).split(/[\s,]+/)[0]].filter((n) => n.length >= 3);
+        return names.some((n) => new RegExp(`(^|[^\\p{L}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}])`, 'iu').test(String(recentText)));
+    };
+    const list = (doc?.dead ?? []).filter((d) => recentText === null || mentioned(d)).slice(-max);
     if (!list.length) return '';
     return `${list.map((d) => { const who = clean(about(d.id)); return `${d.name}${who ? `, ${who}` : ''}${d.how ? ` (${d.how})` : ''}`; }).join('; ')}.`;
 }
