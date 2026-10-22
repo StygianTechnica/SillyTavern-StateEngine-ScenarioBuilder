@@ -31,7 +31,7 @@ import { nextFight, fightFacts, woundsOf } from './fight.js';
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight } from '../events/run.js';
 import { whoCouldTurnUp } from './whereabouts.js';
-import { isPower, powersAtWork, powersText } from '../library/powers.js';
+import { isPower, patronsOf, powersAtWork, powersText } from '../library/powers.js';
 
 // How many replies a broken-off fight's wounds are remembered.
 const WOUNDS_KEPT = 30;
@@ -440,7 +440,11 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         travelAtNight: settings.director.travelAtNight === true,
         fightFacts: fightFacts(doc.fight, settings.director.fightReplies),
         eventFacts: eventFacts(event, { placeName: event?.placeId ? everything.find((e) => e.id === event.placeId)?.name ?? '' : '', turn: getChatDoc(chatKey).turn }),
-        deadText: deadText(doc),
+        deadText: deadText(doc, { about: (id) => {
+            const ch = characters.find((x) => x.id === id);
+            const patrons = patronsOf(ch).map((p) => characters.find((x) => x.id === p)?.name).filter(Boolean);
+            return [ch?.base?.role ?? ch?.role ?? '', patrons.length ? `champion of ${patrons.join(' and ')}` : ''].filter((x) => String(x).trim()).join(', ');
+        } }),
         powersText: powersText(atWork),
     }, promptBudget(settings.director.contextTokens, settings.director.maxTokens));
     if (fitted.trimmed.length) console.info(LOG_PREFIX, `the director's prompt was trimmed to fit (~${fitted.tokens} of ${fitted.budget} tokens): ${fitted.trimmed.join(', ')}`);

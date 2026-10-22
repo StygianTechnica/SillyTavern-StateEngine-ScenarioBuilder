@@ -62,3 +62,20 @@ describe('the dead of a story', () => {
         expect(buildDirectorPrompt(base).prompt).not.toContain('RISES | <name>');
     });
 });
+
+describe('the dead keep who they were', () => {
+    it('is told with their ties, so a small model does not fill the gap', async () => {
+        const { deadText: text } = await import('../src/state/death.js');
+        const d = { dead: normalizeDead([{ id: 'chr_varyn', name: 'Varyn Vance', how: "at Maziel's hands" }]) };
+        expect(text(d, { about: () => 'rogue, champion of Ferunox' })).toBe("Varyn Vance, rogue, champion of Ferunox (at Maziel's hands).");
+    });
+
+    it('never lets a correction put a power or the dead in the scene', async () => {
+        const { placesTheAbsent } = await import('../src/state/death.js');
+        const names = ['Ferunox, the Sovereign of the Unbound Ember', 'Ferunox', 'Varyn Vance'];
+        expect(placesTheAbsent('Ferunox, the Sovereign of the Unbound Ember is still present in this scene.', names)).toBe(true);
+        expect(placesTheAbsent('Varyn Vance is in this scene.', names)).toBe(true);
+        expect(placesTheAbsent('Niamh is still present in this scene.', names)).toBe(false);
+        expect(placesTheAbsent('The scene is now at the Graveyard.', names)).toBe(false);
+    });
+});

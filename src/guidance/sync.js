@@ -23,7 +23,7 @@ import { getObject, listObjects } from '../api/objects.js';
 import { PRESET_NAME } from '../preset/blueprint.js';
 import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.js';
 import { triggerLines } from '../triggers/model.js';
-import { deadText } from '../state/death.js';
+import { deadText, placesTheAbsent } from '../state/death.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { giftsText } from '../library/powers.js';
 import { latestUserIndex } from '../triggers/run.js';
@@ -174,6 +174,15 @@ export async function gatherInputs(chatId, chatKey) {
     // A power (a god, a spirit) is never one of those present.
     const powerIds = new Set(Object.entries(library.entries ?? {}).filter(([, m]) => m?.power?.on === true).map(([id]) => id));
     const nameById0 = new Map(allCharacters.map((ch) => [ch.id, ch.name]));
+    // Who the dead were (role, patron), and the names that may never be
+    // placed in the scene: powers' and the dead's.
+    const whoTheyWere = (id) => {
+        const ch = allCharacters.find((x) => x.id === id);
+        const patrons = (library.entries?.[id]?.patrons ?? []).map((p) => nameById0.get(p)).filter(Boolean);
+        return [String(ch?.base?.role ?? ch?.role ?? '').trim(), patrons.length ? `champion of ${patrons.join(' and ')}` : ''].filter(Boolean).join(', ');
+    };
+    const absentNames = allCharacters.filter((ch) => powerIds.has(ch.id) || doc.dead.some((d) => d.id === ch.id))
+        .flatMap((ch) => [ch.name, String(ch.name).split(',')[0], ...(ch.aliases ?? [])]);
     for (const id of castIds) {
         if (powerIds.has(id)) continue;
         const obj = await getObject(chatId, id);
@@ -378,7 +387,7 @@ export async function gatherInputs(chatId, chatKey) {
             // narrator gets them even when the director fails.
             triggered: triggerLines(doc.gm.triggers, latestUserIndex()),
             // Who has died in this story (src/state/death.js).
-            dead: deadText(doc),
+            dead: deadText(doc, { about: whoTheyWere }),
             // The fight the director keeps (src/director/fight.js).
             fight: settings.director.enabled ? doc.fight : null,
             event: settings.director.enabled ? doc.event : null,
@@ -386,7 +395,9 @@ export async function gatherInputs(chatId, chatKey) {
             // Secrets kept from those present; oaths binding them.
             secrets: secretRules,
             lore,
-            corrections: doc.corrections.map((x) => x.text),
+            // Never a correction that puts a power (no body) or the dead in the
+            // scene ("Ferunox ... is still present in this scene").
+            corrections: doc.corrections.map((x) => x.text).filter((t) => !placesTheAbsent(t, absentNames)),
             quests,
             sections: settings.sections,
             budget: settings.tokenBudget,

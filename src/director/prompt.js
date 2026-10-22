@@ -456,12 +456,12 @@ export function buildDirectorPrompt(input) {
         'DIES | <name> | <how>',
         ...(clean(input.deadText) ? [
             '',
-            'Only if the latest chat itself brings back someone under THE DEAD - resurrected, raised as undead, revived, or shown never to have died - a line for each. Never on your own, and never because it would suit the story:',
+            `Only if the latest chat itself brings back someone under THE DEAD - resurrected, raised as undead, revived, or shown never to have died - or a power under POWERS AT WORK brings them back in this reply in its own way (with its POWER line, and the price it demands - bringing back the dead is never free), a line for each. Never on your own, and never because it would suit the story:`,
             'RISES | <name> | <how, a few words>',
         ] : []),
         ...(clean(input.powersText) ? [
             '',
-            `A power under POWERS AT WORK may act in this reply - only if it fits, and never in person: a sign, a voice, a vision or dream to someone tied to it, or a blessing on its champion (a surge of strength, a ward, a miracle that turns a fight). Anyone may call on a power; it answers only as its nature and the story warrant, or stays silent. A power answering a call - above all from someone not its own - may demand a price or a favour in return, sometimes a dire one; the one who called decides whether to pay. It never acts for ${userName} or decides what ${userName} does. If one acts, a line (the price only when it demands one, naming who owes it):`,
+            `A power under POWERS AT WORK may act in this reply - only if it fits, and never in person: a sign, a voice, a vision or dream to someone tied to it, or a blessing on its champion (a surge of strength, a ward, a miracle that turns a fight). A power acts only within its own nature and domain, in its own way (a god of fire and chaos restores with flame and ember - it never raises the undead, which is death's work). Anyone may call on a power; it answers only as its nature and the story warrant, or stays silent. A power answering a call - above all from someone not its own - may demand a price or a favour in return, sometimes a dire one; the one who called decides whether to pay. It never acts for ${userName} or decides what ${userName} does. If one acts, a line (the price only when it demands one, naming who owes it):`,
             'POWER | <its name> | <what it did, a few words> | <its price, e.g. Remus must bring it the sword>',
         ] : []),
         '',

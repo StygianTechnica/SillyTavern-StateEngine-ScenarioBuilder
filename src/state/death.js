@@ -52,12 +52,23 @@ export function deadByName(dead, name) {
     return (dead ?? []).find((d) => d.name.toLowerCase() === key) ?? null;
 }
 
-// What the director and the narrator are told: the most recent deaths.
-// -> text, or '' when no one has died.
-export function deadText(doc, { max = 8 } = {}) {
+// What the director and the narrator are told: the most recent deaths, each
+// with who they were (`about(id)`: "champion of Ferunox") - out of the cast,
+// a dead person's ties are otherwise forgotten, and a small model fills the
+// gap with whatever the scene is full of. -> text, or '' when no one has died.
+export function deadText(doc, { max = 8, about = () => '' } = {}) {
     const list = (doc?.dead ?? []).slice(-max);
     if (!list.length) return '';
-    return `${list.map((d) => `${d.name}${d.how ? ` (${d.how})` : ''}`).join('; ')}.`;
+    return `${list.map((d) => { const who = clean(about(d.id)); return `${d.name}${who ? `, ${who}` : ''}${d.how ? ` (${d.how})` : ''}`; }).join('; ')}.`;
+}
+
+// Whether a line of text puts someone in the scene who cannot be there - a
+// power (no body) or the dead - by any of their names ("Ferunox, the
+// Sovereign of the Unbound Ember is still present in this scene").
+export function placesTheAbsent(text, names = []) {
+    const t = clean(text).toLowerCase();
+    if (!/\b(present|here|in this scene|joined|arrives?|arrived)\b/.test(t)) return false;
+    return names.some((n) => { const k = clean(n).toLowerCase(); return k.length >= 3 && t.includes(k); });
 }
 
 // ---- runners (the chat document; never throw)
@@ -83,6 +94,20 @@ export async function markDead(chatKey, { id, name = '', how = '', source = 'dir
         return true;
     } catch (err) {
         console.warn('[ScenarioBuilder] could not mark a death', err);
+        return false;
+    }
+}
+
+// The user corrects how someone died ("killed by the Eternal Champion, not
+// Maziel"). The death is then the user's: taking back the reply the director
+// reported it in no longer undoes it.
+export async function setDeathHow(chatKey, id, how) {
+    try {
+        const { updateChatDoc } = await import('../store/chat-store.js');
+        updateChatDoc(chatKey, (d) => { d.dead = normalizeDead(d.dead.map((x) => (x.id === id ? { ...x, how: clean(how), source: 'user', reply: null } : x))); });
+        return true;
+    } catch (err) {
+        console.warn('[ScenarioBuilder] could not change how they died', err);
         return false;
     }
 }

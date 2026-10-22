@@ -185,6 +185,25 @@ These came after spec v0.5 and should be folded into its next revision.
   "after the fire" pictures.
 - [ ] Groups (SB-122: "Act I", "Harbor District"), multi-select bulk
   operations (SB-125), an "in play / recently used" view (SB-121).
+- [ ] **Tags, filters and sorting in the catalog (added 2026-10-21).** Today a
+  chapter has a search box, ONE tag filter, a status filter (in scene / in
+  play / unused) and "within a place"; sorts by name, recent or status;
+  tags are typed on the sheet as comma-separated text. Wanted:
+  - Quick filters for what Scenario Builder already knows: powers only,
+    the dead only (this chat), active characters (in the scene or in play)
+    and inactive ones, the player character, canon-locked, made by the
+    story or the director, generated and not yet reviewed.
+  - Filter and group by faction membership (a character's Factions, a
+    place's), and by any field - "Role is guard", "Danger is high".
+  - Sort by faction, by a field, or by a key the user defines.
+  - A proper tagging system: tags picked from the setting's own list
+    (autocomplete, colours), added to many entries at once (with SB-125's
+    multi-select), shown as chips on cards, several tags combined in a
+    filter (all of / any of / none of).
+  - User-defined keys: the user's own fields for sorting and filtering
+    ("Act", "Allegiance", "Threat") - probably State Engine baseline
+    fields added on request (SB-102), so they also reach the guidance.
+  - Saved filters ("my villains", "Act II cast") per setting.
 - [ ] Drag-and-drop re-parenting in card/list views (only the tree has it now).
 - [x] Location connections with travel time (SB-111): routes on a location's
   Details tab, in the guidance, the director's dossier and the graph; a move

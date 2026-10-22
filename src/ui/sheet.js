@@ -22,7 +22,7 @@ import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
 import { renderQuestTab } from './quest-board.js';
 import { renderMissionsTab, GIVER_TYPES } from './missions-tab.js';
-import { isDead, markDead, bringBack } from '../state/death.js';
+import { isDead, markDead, bringBack, setDeathHow } from '../state/death.js';
 import { suggestParents } from '../library/place-context.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { isPower, patronsOf } from '../library/powers.js';
@@ -353,6 +353,10 @@ export async function renderSheet(type, all) {
                 (draft?.meta.tags ?? entry.meta?.tags ?? []).map((t) => h('span', { class: 'sb-tag' }, `#${t}`)),
                 entry.confirmed === false ? h('span', { class: 'sb-badge' }, 'not in the setting yet') : null,
                 !isNew && isDead(doc, entry.id) ? h('span', { class: 'sb-badge sb-danger', title: (doc.dead.find((d) => d.id === entry.id)?.how) || 'Died in this story' }, icon('fa-skull'), ' Dead in this story') : null),
+            // How they died - the director's guess can be wrong; yours stands.
+            !isNew && !ws.editing && isDead(doc, entry.id) ? h('label', { class: 'sb-field sb-death-how', title: 'Told to the game master and the narrator with their name. Saving it makes the death yours: undoing the reply it was reported in no longer undoes it.' },
+                h('span', { class: 'sb-field-label' }, 'How they died'),
+                h('input', { class: 'text_pole', placeholder: 'e.g. cut down by the Eternal Champion in the crypt', value: doc.dead.find((d) => d.id === entry.id)?.how ?? '', onchange: (e) => void setDeathHow(ws.ctx.chatKey, entry.id, e.target.value).then(() => { toast('success', 'Saved.'); void syncNow(); }) })) : null,
             quick.length ? h('div', { class: 'sb-actions' }, quick) : null));
 
     // ---- tabs

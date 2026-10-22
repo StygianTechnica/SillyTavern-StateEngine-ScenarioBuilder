@@ -242,7 +242,8 @@ async function reconcileOnce() {
     for (const item of items) {
         if (item.field !== 'cast' || item.action !== 'accept') continue;
         const gone = item.op === 'remove' ? [item.objectId] : item.op === 'clear' ? (Array.isArray(item.canonical) ? item.canonical : []) : [];
-        const unspoken = gone.filter((id) => id && id !== playerId && !namedAtAll(namesOf(id), turnText));
+        // Never for a power (no body): it was never really here.
+        const unspoken = gone.filter((id) => id && id !== playerId && !powerIds.has(id) && !namedAtAll(namesOf(id), turnText));
         if (!unspoken.length || unspoken.length < gone.length) continue;
         item.action = 'adjust';
         item.classification = 'ambiguous';
