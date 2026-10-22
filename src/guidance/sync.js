@@ -24,6 +24,7 @@ import { PRESET_NAME } from '../preset/blueprint.js';
 import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.js';
 import { triggerLines } from '../triggers/model.js';
 import { deadText, placesTheAbsent } from '../state/death.js';
+import { circling } from '../director/loops.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { giftsText } from '../library/powers.js';
 import { latestUserIndex } from '../triggers/run.js';
@@ -389,6 +390,9 @@ export async function gatherInputs(chatId, chatKey) {
             // Who has died in this story (src/state/death.js).
             // Only the dead the latest messages speak of.
             dead: deadText(doc, { about: whoTheyWere, recentText: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-6).map((m) => String(m.mes ?? '')).join('\n') }),
+            // Going in circles, or the player asking whether it is over
+            // (src/director/loops.js) - read from the chat itself.
+            loop: circling((SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-8).map((m) => ({ text: String(m.mes ?? ''), isUser: !!m.is_user }))).line,
             // A power answering its champion (src/library/powers.js).
             powersNarrator: settings.director.enabled ? doc.powersNarrator : '',
             // The fight the director keeps (src/director/fight.js).

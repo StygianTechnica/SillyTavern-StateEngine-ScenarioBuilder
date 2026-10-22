@@ -33,6 +33,7 @@ import { eventForBriefing, eventAfterFight } from '../events/run.js';
 import { whoCouldTurnUp } from './whereabouts.js';
 import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from '../library/powers.js';
 import { namedAtAll } from '../validate/drift.js';
+import { circling } from './loops.js';
 
 // How many replies a broken-off fight's wounds are remembered.
 const WOUNDS_KEPT = 30;
@@ -456,6 +457,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         fightFacts: fightFacts(doc.fight, settings.director.fightReplies),
         eventFacts: eventFacts(event, { placeName: event?.placeId ? everything.find((e) => e.id === event.placeId)?.name ?? '' : '', turn: getChatDoc(chatKey).turn }),
         // Only the dead the latest messages speak of.
+        // The story going in circles, or the player asking whether it is over.
+        loopLine: circling(messages.slice(-8)).line,
         deadText: deadText(doc, { recentText: messages.slice(-6).map((m) => m.text).join('\n'), about: (id) => {
             const ch = characters.find((x) => x.id === id);
             const patrons = patronsOf(ch).map((p) => characters.find((x) => x.id === p)?.name).filter(Boolean);

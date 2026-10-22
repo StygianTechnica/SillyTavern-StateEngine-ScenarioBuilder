@@ -45,6 +45,7 @@ export const SECTIONS = Object.freeze([
     { key: 'triggered', title: 'Set off by the story', priority: 9, keep: true },
     { key: 'fight', title: 'The fight', priority: 9, keep: true },
     { key: 'powers', title: 'A power answers', priority: 9, keep: true },
+    { key: 'loop', title: 'Going in circles', priority: 9, keep: true },
     { key: 'event', title: 'The event', priority: 9, keep: true },
     { key: 'intimacy', title: 'Intimate scene', priority: 8, keep: true },
     { key: 'absent', title: 'Not in this scene', priority: 9, keep: true },
@@ -392,6 +393,8 @@ const BUILDERS = {
     dead: (input) => (clean(input.dead) ? { full: `Dead and gone in this story - they can be mourned, remembered or spoken of, but never written alive, speaking or acting: ${clean(input.dead)}`, compact: '' } : null),
     // Each fighter's condition, kept from reply to reply (src/director/fight.js).
     fight: (input) => (fightGuidance(input.fight) ? { full: fightGuidance(input.fight), compact: '' } : null),
+    // The story going in circles, or the player asking whether it is over.
+    loop: (input) => (clean(input.loop) ? { full: clean(input.loop), compact: '' } : null),
     // A god called on by its champion answers (src/library/powers.js).
     powers: (input) => (clean(input.powersNarrator) ? { full: clean(input.powersNarrator), compact: '' } : null),
     // A structured event's stage under way, never what comes next (src/events/).
@@ -449,6 +452,7 @@ export function buildGuidance(input) {
         style: 'Your own instructions for running the story (the front page: How the game master runs this story).',
         absent: 'People you took out of the scene by hand, for the next few replies.',
         dead: 'Who has died in this story (marked by the director or by you on their sheet); they never come back.',
+        loop: 'The story going in circles (replies repeating themselves), or the player asking whether a task is over: end it or turn it.',
         powers: 'A power (a god, a spirit) called on by its champion, or over its dead champion: the narrator is told it answers.',
         fight: 'The fight the director keeps: each fighter but the player character, their condition from reply to reply, and when it ends.',
         event: 'A structured event under way (an arena, set up in the GM Plan): the stage now, and never who comes next.',
@@ -482,7 +486,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
     ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'secrets', 'corrections', 'dead']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
-    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'triggered', 'fight', 'powers', 'event', 'intimacy', 'absent', 'alone']],
+    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'loop', 'triggered', 'fight', 'powers', 'event', 'intimacy', 'absent', 'alone']],
 ]);
 
 // buildGuidance()'s result -> { [variable]: text } ('' for an empty part).
