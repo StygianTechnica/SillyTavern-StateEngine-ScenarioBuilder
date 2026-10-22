@@ -603,8 +603,10 @@ export async function revertFromMessage(fromIndex) {
     // after the scene is put back, so whoever died is in it again.
     const deaths = deathsFrom(doc.dead, fromIndex);
     if (!touched && !deaths.length) return;
+    // The story before that message: a death it already shows stands.
+    const before = deaths.length ? (SillyTavern.getContext().chat ?? []).slice(Math.max(0, fromIndex - 40), fromIndex).filter((m) => m && !m.is_system).map((m) => String(m.mes ?? '')).join('\n') : '';
     if (!touched) {
-        await undoDeathsFrom(chatKey, fromIndex, ref.chatId);
+        await undoDeathsFrom(chatKey, fromIndex, ref.chatId, { before });
         await pushCanonicalToObserved(ref.chatId, chatKey);
         announce(chatKey);
         return;
@@ -625,7 +627,7 @@ export async function revertFromMessage(fromIndex) {
             if (affected(d.lastReply)) d.lastReply = '';
         },
     });
-    if (deaths.length) await undoDeathsFrom(chatKey, fromIndex, ref.chatId);
+    if (deaths.length) await undoDeathsFrom(chatKey, fromIndex, ref.chatId, { before });
     await pushCanonicalToObserved(ref.chatId, chatKey);
     announce(chatKey);
 }

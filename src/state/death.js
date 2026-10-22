@@ -46,6 +46,17 @@ export const withoutDead = (ids, dead) => (ids ?? []).filter((id) => !dead.has(i
 // that go when the chat is taken back to before it. The user's own stay.
 export const deathsFrom = (dead, fromIndex) => (dead ?? []).filter((d) => d.source === 'director' && d.reply !== null && d.reply >= fromIndex);
 
+// Whether the story already shows someone dead: a sentence that names them
+// (full or first name) with a word of death - "Varyn's lifeless form",
+// "Kael held Varyn's bleeding body", "Varyn was dead". A death the director
+// only reported later stands when the story before that reply shows it.
+const DEATH_WORDS = /\b(dead|died|dies|death|killed|slain|slew|lifeless|corpse|body|perished|murdered|no longer breath(?:ing|ed)|breathed (?:his|her|their) last|lay still)\b/i;
+export function shownDeadIn(name, text) {
+    const names = [clean(name), clean(name).split(/[\s,]+/)[0]].filter((n) => n.length >= 3);
+    const sentences = String(text ?? '').split(/(?<=[.!?…])\s+|\n+/);
+    return sentences.some((s) => DEATH_WORDS.test(s) && names.some((n) => new RegExp(`(^|[^\\p{L}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}])`, 'iu').test(s)));
+}
+
 // The dead person a RISES line names. -> their record or null.
 export function deadByName(dead, name) {
     const key = clean(name).toLowerCase();
@@ -133,11 +144,14 @@ export async function bringBack(chatKey, id, { intoScene = '', chatId = null, no
 // The chat was taken back to before message `fromIndex` (a reply deleted,
 // swiped or edited): the deaths those replies brought about are undone, and
 // whoever was in the scene when they died is back in it. -> names brought back
-export async function undoDeathsFrom(chatKey, fromIndex, chatId = null) {
+// `before`: the story before that message - a death it already shows
+// (reported only later by the director) stands.
+export async function undoDeathsFrom(chatKey, fromIndex, chatId = null, { before = '' } = {}) {
     try {
         const { getChatDoc } = await import('../store/chat-store.js');
         const back = [];
         for (const d of deathsFrom(getChatDoc(chatKey).dead, fromIndex)) {
+            if (before && shownDeadIn(d.name, before)) continue;
             if (await bringBack(chatKey, d.id, { intoScene: d.wasHere, chatId, note: `${d.name}'s death was taken back with the reply` })) back.push(d.name);
         }
         return back;

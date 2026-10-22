@@ -79,3 +79,13 @@ describe('the dead keep who they were', () => {
         expect(placesTheAbsent('The scene is now at the Graveyard.', names)).toBe(false);
     });
 });
+
+describe('a death the story already showed', () => {
+    it('is seen in the story before the reply that reported it', async () => {
+        const { shownDeadIn } = await import('../src/state/death.js');
+        expect(shownDeadIn('Varyn Vance', "Niamh rushed past to find Kael looming over Varyn's lifeless form.")).toBe(true);
+        expect(shownDeadIn('Varyn Vance', 'Kael held Varyn\'s bleeding body in his arms.')).toBe(true);
+        expect(shownDeadIn('Varyn Vance', 'Varyn parried the blow and pressed on.')).toBe(false);
+        expect(shownDeadIn('Varyn Vance', 'The knight was dead. Varyn wiped his blade.')).toBe(false);
+    });
+});
