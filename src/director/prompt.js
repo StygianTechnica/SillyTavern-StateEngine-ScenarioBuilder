@@ -256,6 +256,11 @@ export function dossierText(input) {
     }
     if (clean(input.scene?.title) || clean(input.scene?.premise)) lines.push(`The scene: ${[clean(input.scene?.title), cut(input.scene?.premise, 300)].filter(Boolean).join(' - ')}`);
     if (input.corrections?.length) lines.push(`Hold to these (the story recently got them wrong): ${input.corrections.map((t) => bare(t)).join('; ')}.`);
+    // A scene the story stepped away from (src/director/suspended.js).
+    if (clean(input.suspendedText)) {
+        section('WAITING WHERE THE STORY LEFT OFF (the story stepped away from this scene and must come back to it; it waits as it was - the people there stay there, and nothing there is settled until the story returns)');
+        lines.push(String(input.suspendedText).trim());
+    }
 
     // The groups at play, what is known here, what is coming.
     const factions = (input.factions ?? []).filter((f) => clean(f?.name));
@@ -447,6 +452,16 @@ export function buildDirectorPrompt(input) {
         `The scene always follows ${userName}. Only if the latest message takes ${userName} somewhere else - leaving the room, walking out, going to another place - never write LEAVES for ${userName}; write a line naming where the scene is now, who goes along with ${userName} (or "none"), and whether it is indoors or outdoors. Everyone else stays behind.`,
         `A journey goes straight to where ${userName} is heading, even when it is further on: the MOVE line names that place, not a road or a stop on the way, and the TIME line covers the whole journey. A journey where nothing happens passes in a few sentences that sum up the road. ${input.travelAtNight ? 'The party travels on through the night when the journey runs past dusk: the TIME line covers the whole of it.' : 'If it runs on past dusk, the party makes camp for the night and goes on in the morning: the TIME line covers the night as well (to "the next morning", or later).'} Stop somewhere on the way only when the latest message stops there, or for a real turn in the story (an ambush, a discovery, someone met) - never to drag the trip out with talk.`,
         'MOVE | <the place the scene is in now> | <who goes along, comma-separated, or none> | <indoors or outdoors>',
+        '',
+        `Only if the latest chat steps the story away from the scene into something it must come back from - a vision, a dream, a trial in another realm, a memory - while the scene itself is left hanging (someone in danger, a plea unanswered, a fight paused), a line saying in one sentence what is left hanging there (with a MOVE line too when the detour is somewhere else):`,
+        'AWAY | <what is left hanging where the story was>',
+        ...(clean(input.suspendedText) ? [
+            `While the story is away, those waiting under WAITING WHERE THE STORY LEFT OFF stay there: no ENTERS for them unless the story itself brings them. Keep the detour short - it builds to its end within a few replies. When it ends (the vision fades, the trial is done, ${userName} wakes or comes back), a line, and the scene returns to where it was with no MOVE line; the briefing then picks up what was left hanging there:`,
+            'BACK | <how the story returns, a few words>',
+        ] : []),
+        '',
+        'If the latest chat shows a god, a spirit or a power - or someone speaking for one - promising something in return for a task, a trial or a price (a life given back once the trials are passed), a line. Only a promise made in the latest chat, never one already under SECRETS AND OATHS; it is kept until the story fulfils or breaks it:',
+        'BARGAIN | <who promises> | <what is promised> | <the price or condition>',
         '',
         'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along). For creatures of a kind, say how many (ENTERS | 3 zombies; LEAVES | 2 zombies):',
         'ENTERS | <name>',
@@ -641,7 +656,7 @@ export function isPlaceholder(value) {
 }
 
 // A format line, whether or not it could be read - never left in the prose.
-const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|NEW|RENAME|BEAT)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|AWAY|BACK|NEW|RENAME|BEAT)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
@@ -666,7 +681,27 @@ export function parseDirectorNote(raw) {
     const deaths = [];
     const risings = [];
     const powers = [];
+    const bargains = [];
+    let away = '';
+    let back = '';
     for (const line of text.split('\n')) {
+        // AWAY | <what is left hanging> / BACK | <how the story returns>
+        // (src/director/suspended.js). A bare "BACK" will do.
+        const aw = line.match(/^\s*(?:[-*]\s*)?\**(AWAY|BACK)\**\s*(?::?\s*\|\s*(.*?)\s*|\s*)$/i);
+        if (aw) {
+            const said = isPlaceholder(aw[2]) ? '' : clean(aw[2]).replace(/^["'*]+|["'*]+$/g, '');
+            if (/^away$/i.test(aw[1])) { if (!away && said) away = said.slice(0, 400); } else if (!back) back = said || 'the story returns';
+            continue;
+        }
+        // BARGAIN | <who promises> | <what is promised> | <the price or condition>
+        const bg = line.match(/^\s*(?:[-*]\s*)?\**BARGAIN\**\s*:?\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?$/i);
+        if (bg) {
+            const by = clean(bg[1]).replace(/^["'*]+|["'*.]+$/g, '');
+            const what = isPlaceholder(bg[2]) ? '' : clean(bg[2]).replace(/^["'*]+|["'*]+$/g, '');
+            const price = isPlaceholder(bg[3]) ? '' : clean(bg[3]).replace(/^(?:price|cost|condition|if|once)\s*[:\-–]\s*/i, '').replace(/^["'*]+|["'*]+$/g, '');
+            if (by && what && !isPlaceholder(by) && bargains.length < 2) bargains.push({ by, what, price });
+            continue;
+        }
         // POWER | <name> | <what it did> | <its price, if any> (src/library/powers.js)
         const pw = line.match(/^\s*(?:[-*]\s*)?\**POWER\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*([^|]*?)\s*)?$/i);
         if (pw) {
@@ -784,7 +819,7 @@ export function parseDirectorNote(raw) {
     // A briefing cut off or told as story lost its "Next:" end; any other
     // paragraph is not direction.
     const parts = tidy.flaws.length && !MARKER.test(text) ? { summary: text, direction: '' } : splitNote(text);
-    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, fights, deaths, risings, powers };
+    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, fights, deaths, risings, powers, bargains, away, back };
 }
 
 // The first library entry `text` names that nothing the scene stands on

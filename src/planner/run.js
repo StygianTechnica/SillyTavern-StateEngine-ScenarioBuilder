@@ -40,6 +40,7 @@ import { triggerSection,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
 import { questBoard } from '../quests/sync.js';
+import { stillWaiting } from '../director/suspended.js';
 import {
     buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline,
     buildBeatPrompt, readBeat, buildRecapPrompt, readRecap, readRecapText, closeCutJson, buildIdeasPrompt, readIdeas,
@@ -424,7 +425,11 @@ export async function afterReply(chatId, chatKey) {
         await refreshTension(chatKey);
         const doc = getChatDoc(chatKey);
         const p = plannerSettings();
-        const due = duePasses(doc.gm, { day: doc.canonical.day, turn: doc.gm.counters.turn, level: p.level, checkEvery: p.checkEvery, dayExpire: p.dayExpire, outlineEvery: p.outlineEvery, ideasEvery: p.ideasEvery });
+        let due = duePasses(doc.gm, { day: doc.canonical.day, turn: doc.gm.counters.turn, level: p.level, checkEvery: p.checkEvery, dayExpire: p.dayExpire, outlineEvery: p.outlineEvery, ideasEvery: p.ideasEvery });
+        // While the story is away from a scene it must come back to (a vision,
+        // a trial elsewhere - src/director/suspended.js), no new day plan: one
+        // made from the detour plans the wrong day. It is made once the story is back.
+        if (stillWaiting(doc.suspended, doc.turn).length) due = due.filter((x) => x !== 'day');
         for (const x of doc.gm.inspirations.filter((i) => !i.motifs.length && !i.error)) void runInspire(chatKey, x.id);
         // The outline first: the day plan follows the story's direction.
         void (async () => {

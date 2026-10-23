@@ -115,3 +115,40 @@ export function knowledgeOf(entry, knowledge) {
     return (knowledge ?? []).filter((k) => isOneOf(me, k.knownBy) || isOneOf(me, k.madeBy) || isOneOf(me, k.madeTo)
         || [me.name, ...me.aliases].some((n) => clean(n).length >= 3 && lower(k.text).includes(lower(n))));
 }
+
+// A bargain the story shows a power (or anyone) making - "Elyon will give
+// Varyn back once Remus passes the trials" - kept as a pending oath, sworn
+// by the one who promises to the one it is promised to, so the director
+// hears of it until the story fulfils or breaks it (src/director/run.js,
+// BARGAIN lines). -> a knowledge item, or null.
+export function bargainItem({ what, price } = {}, { byIds = [], toIds = [] } = {}) {
+    const text = clean(what);
+    if (!text) return null;
+    return { kind: 'oath', text: `${text}${clean(price) ? ` - the price: ${clean(price).replace(/[.!]+$/, '')}` : ''}`, knownBy: [], madeBy: ids(byIds), madeTo: ids(toIds), status: 'pending' };
+}
+
+// Whether `item` is a bargain already kept: the same promiser, and most of
+// the same words for what was promised (the director rewords it).
+const words = (text) => new Set(lower(text).split(/[^a-z0-9'’]+/).filter((w) => w.length >= 4));
+export function sameBargain(existing, item) {
+    const promised = (k) => lower(k.text).split(' - the price:')[0];
+    return (existing ?? []).some((k) => {
+        if (k.kind !== 'oath' || k.status !== 'pending') return false;
+        if (!k.madeBy.some((id) => item.madeBy.includes(id)) && (k.madeBy.length || item.madeBy.length)) return false;
+        const a = words(promised(k));
+        const b = words(promised(item));
+        if (!a.size || !b.size) return promised(k) === promised(item);
+        const shared = [...b].filter((w) => a.has(w)).length;
+        return shared / Math.min(a.size, b.size) >= 0.5;
+    });
+}
+
+// The pending oaths the return of `name` from the dead fulfils: those that
+// promise it (their text names them). -> [item].
+export function fulfilledByReturn(knowledge, name) {
+    const n = lower(name);
+    const first = n.split(/\s+/)[0];
+    if (!n) return [];
+    const names = (text) => { const t = lower(text); return t.includes(n) || (first.length >= 4 && new RegExp(`\\b${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(t)); };
+    return (knowledge ?? []).filter((k) => k.kind === 'oath' && k.status === 'pending' && names(k.text.split(' - the price:')[0]));
+}

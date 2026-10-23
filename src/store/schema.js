@@ -93,6 +93,7 @@ import { normalizeEnrichments } from '../generate/revert.js';
 import { normalizeCounts } from '../library/creature-form.js';
 import { normalizePowerMeta, fitText, GIFTS_MAX } from '../library/powers.js';
 import { normalizeFight } from '../director/fight.js';
+import { normalizeSuspended } from '../director/suspended.js';
 import { normalizeEvent, normalizeEventsDone, normalizeEventsComing } from '../events/model.js';
 import { normalizeTemplates } from '../events/setup.js';
 import { emptyChanges, normalizeChanges } from '../state/changes-model.js';
@@ -426,6 +427,9 @@ export function emptyChatDoc() {
         powersDid: {},
         // A power's answer the narrator is told of directly this reply.
         powersNarrator: '',
+        // Scenes the story stepped away from and will come back to (a
+        // vision, a trial elsewhere), the newest last (src/director/suspended.js).
+        suspended: [],
     };
 }
 
@@ -472,6 +476,7 @@ export function normalizeChatDoc(doc) {
         powersNarrator: str(d.powersNarrator).slice(0, 800),
         powersActed: isObject(d.powersActed) ? Object.fromEntries(Object.entries(d.powersActed).filter(([k, v]) => k && Number.isInteger(v))) : {},
         wounds: isObject(d.wounds) ? Object.fromEntries(Object.entries(d.wounds).filter(([k, w]) => k && isObject(w) && typeof w.condition === 'string' && Number.isInteger(w.turn))) : {},
+        suspended: normalizeSuspended(d.suspended),
     };
 }
 

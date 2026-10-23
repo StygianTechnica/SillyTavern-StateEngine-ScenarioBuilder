@@ -14,7 +14,9 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf, saveKnowledge } from '../library/library.js';
+import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf, saveKnowledge, listKnowledge } from '../library/library.js';
+import { bargainItem, sameBargain, fulfilledByReturn } from '../library/knowledge.js';
+import { stillWaiting, steppedAway, suspend, returnTo, restorePatch, waitingIds, withoutWaiting, suspendedText } from './suspended.js';
 import { routesFrom, listRoutes, headingAlong, placesFurtherOn } from '../library/routes.js';
 import { pathOf } from '../library/hierarchy.js';
 import { listRelations, relationsFor } from '../library/relations-edit.js';
@@ -40,7 +42,7 @@ const WOUNDS_KEPT = 30;
 import { markDead, deadText, deadByName, bringBack } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
 import { creatureFormOf, readCount, addCount, takeCount, creatureLabel } from '../library/creature-form.js';
-import { namesSomething, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn } from './prompt.js';
+import { namesSomething, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn, samePlaceName } from './prompt.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { buildPeoplePrompt, readPeople } from './people.js';
 import { unknownsFor, toldInChat, mergeTold, PERSPECTIVE_TOKENS } from './perspective.js';
@@ -440,6 +442,9 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // earlier reply; the director sees the stage under way only.
     const event = await eventForBriefing(chatId, chatKey, settingId);
     const ways = await eventWays(settingId, event).catch(() => []);
+    // Scenes the story stepped away from and must come back to (src/director/suspended.js).
+    const waiting = stillWaiting(doc.suspended, doc.turn);
+    const nameOfId = (id) => everything.find((e) => e.id === id)?.name ?? '';
     // Trimmed to fit the director model's context (src/director/fit.js).
     const fitted = fitDirectorPrompt({
         ...guidance,
@@ -475,6 +480,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             return [ch?.base?.role ?? ch?.role ?? '', patrons.length ? `champion of ${patrons.join(' and ')}` : ''].filter((x) => String(x).trim()).join(', ');
         } }),
         powersText: powersText(atWork),
+        suspendedText: suspendedText(waiting, nameOfId),
     }, promptBudget(settings.director.contextTokens, settings.director.maxTokens));
     if (fitted.trimmed.length) console.info(LOG_PREFIX, `the director's prompt was trimmed to fit (~${fitted.tokens} of ${fitted.budget} tokens): ${fitted.trimmed.join(', ')}`);
     if (!fitted.fits) console.warn(LOG_PREFIX, `the director's prompt is still ~${fitted.tokens} tokens, over the ${fitted.budget} its model's context leaves - raise "Model context" if the model allows, or expect it to fail`);
@@ -603,6 +609,22 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             headed = true;
         }
     }
+    // Back from a detour (BACK, or a MOVE to where the scene waits): the scene
+    // the story stepped away from is put back as it was, in place of the move.
+    let returned = null;
+    if (isNewTurn(type) && settingId && waiting.length) {
+        returned = returnTo(waiting, { back: parsed.back, movePlace: move?.place ?? '', matchesPlace: (name, id) => { const p = known.find((e) => e.id === id); return !!p && samePlaceName(name, p); } });
+        if (returned) {
+            const patch = restorePatch(returned, { playerId: playerIdOf(settingId, characters), dead: getChatDoc(chatKey).dead.map((d) => d.id) });
+            if (!parsed.scene && returned.sceneTitle) patch.sceneTitle = returned.sceneTitle;
+            if (!parsed.situation && returned.sceneSummary) patch.sceneSummary = returned.sceneSummary;
+            setCanonical(chatKey, patch, { chatId, source: 'director', note: `The story returns to ${nameOfId(returned.locationId) || 'where it left off'}${returned.hanging ? ` - ${returned.hanging}` : ''}` });
+            updateChatDoc(chatKey, (d) => { d.suspended = stillWaiting(d.suspended, d.turn).slice(0, -1); });
+            console.info(LOG_PREFIX, `the story comes back to "${returned.sceneTitle || nameOfId(returned.locationId)}"`);
+            baseCast = patch.castIds;
+            move = null;
+        }
+    }
     if (isNewTurn(type) && settingId && move) {
         const moved = await moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, known, playerNames, canCreate: !headed && settings.director.allowCreate && !canonOnly });
         if (moved) {
@@ -612,6 +634,18 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             await eventAfterMove(chatId, chatKey, settingId);
         }
     }
+    // Stepping away (AWAY, or a move into a vision or another realm): the
+    // scene as it stood before this reply waits until the story returns.
+    if (isNewTurn(type) && settingId && !returned) {
+        const to = getChatDoc(chatKey).canonical.locationId;
+        if (steppedAway({ away: parsed.away, moved: !!movedFrom, newPlace: !!to && !doc.inPlay.includes(to), latestText: messages.slice(-2).map((m) => m.text).join('\n') })) {
+            const hanging = parsed.away || doc.canonical.sceneSummary;
+            updateChatDoc(chatKey, (d) => { d.suspended = suspend(stillWaiting(d.suspended, d.turn), doc.canonical, { hanging, turn: d.turn, at: new Date().toISOString() }); });
+            console.info(LOG_PREFIX, `the story steps away from "${doc.canonical.sceneTitle || nameOfId(doc.canonical.locationId)}"; it waits: ${hanging}`);
+        }
+    }
+    // Those waiting where the story left off stay there.
+    const waitingNow = returned ? new Set() : waitingIds(stillWaiting(getChatDoc(chatKey).suspended, getChatDoc(chatKey).turn), baseCast);
 
     if (isNewTurn(type) && settingId) {
         // Whoever the SITUATION line has doing something is in the scene -
@@ -620,8 +654,13 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         const doc = getChatDoc(chatKey);
         const heldOut = new Set(doc.held.filter((h) => h.field === 'cast' && h.op === 'remove' && h.until > doc.turn).map((h) => h.objectId));
         const left = new Set(parsed.leaves.map((n) => String(n).toLowerCase()));
-        const seen = peopleNamedIn(parsed.situation, characters).filter((c) => !baseCast.includes(c.id) && !heldOut.has(c.id) && !callNames(c).some((n) => left.has(n.toLowerCase())));
+        const seen = peopleNamedIn(parsed.situation, characters).filter((c) => !baseCast.includes(c.id) && !heldOut.has(c.id) && !waitingNow.has(c.id) && !callNames(c).some((n) => left.has(n.toLowerCase())));
         if (seen.length) parsed.enters = [...new Set([...parsed.enters, ...seen.map((c) => c.name)])];
+        const keptBack = parsed.enters.length - withoutWaiting(parsed.enters, characters, waitingNow).length;
+        if (keptBack) {
+            console.info(LOG_PREFIX, `${keptBack} named to enter wait where the story left off - kept out of the detour`);
+            parsed.enters = withoutWaiting(parsed.enters, characters, waitingNow);
+        }
         const after = castAfter(characters.filter((c) => !isPower(c)), baseCast, parsed, made, playerIdOf(settingId, characters));
         // A power that acted: quiet again for a while.
         const acted = (parsed.powers ?? []).map((p) => powerEntries.find((e) => [e.name, ...(e.aliases ?? [])].some((n) => String(n).toLowerCase() === p.name.toLowerCase()) || mentionedIn(p.name, e.name))).filter(Boolean);
@@ -647,6 +686,26 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
                 console.info(LOG_PREFIX, `${power.name} demands a price: ${p.price}`);
             }
             console.info(LOG_PREFIX, `a power acted: ${(parsed.powers ?? []).map((p) => `${p.name}${p.what ? ` - ${p.what}` : ''}`).join('; ')}`);
+        }
+        // A bargain the story shows (BARGAIN): a pending oath, sworn by the
+        // one who promises to those the promise is for - whoever its words
+        // name among those here, else the player character - and before the
+        // director until the story fulfils it (src/library/knowledge.js).
+        for (const b of parsed.bargains ?? []) {
+            const by = characters.find((e) => [e.name, ...(e.aliases ?? e.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === b.by.toLowerCase()) || mentionedIn(b.by, e.name));
+            const here = characters.filter((c) => castIds.includes(c.id) && !isPower(c) && c.id !== by?.id);
+            const named = peopleNamedIn(`${b.what} ${b.price}`, here).map((c) => c.id);
+            const playerId = playerIdOf(settingId, characters);
+            const item = bargainItem({ what: by ? b.what : `${b.by} promises ${b.what}`, price: b.price }, { byIds: by ? [by.id] : [], toIds: named.length ? named : [playerId].filter(Boolean) });
+            if (!item || sameBargain(listKnowledge(settingId), item)) continue;
+            saveKnowledge(settingId, item);
+            if (by && isPower(by)) {
+                updateChatDoc(chatKey, (d) => {
+                    d.powersActed = { ...d.powersActed, [by.id]: d.turn };
+                    d.powersDid = { ...d.powersDid, [by.id]: `promised ${b.what}${b.price ? `, for ${b.price}` : ''}` };
+                });
+            }
+            console.info(LOG_PREFIX, `a bargain: ${by?.name ?? b.by} - ${item.text}`);
         }
         // ENTERS and LEAVES that name creatures (the zombies) change the
         // creatures in the scene.
@@ -739,6 +798,11 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             const intoScene = dead.wasHere || (dead.id.startsWith('crt_') ? 'creatureIds' : 'castIds');
             if (await bringBack(chatKey, dead.id, { intoScene, chatId, note: `${dead.name} is back from the dead${r.how ? ` - ${r.how}` : ''}` })) {
                 console.info(LOG_PREFIX, `${dead.name} rose: ${r.how || 'back from the dead'}`);
+                // A bargain that promised their return is kept.
+                for (const k of fulfilledByReturn(listKnowledge(settingId), dead.name)) {
+                    saveKnowledge(settingId, { ...k, status: 'kept' });
+                    console.info(LOG_PREFIX, `a bargain is fulfilled: ${k.text}`);
+                }
             }
         }
         // The fight (src/director/fight.js): each fighter's condition kept
