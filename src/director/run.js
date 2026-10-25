@@ -30,6 +30,7 @@ import { replyKeyOf, canUseAhead, shouldThinkAhead } from './ahead.js';
 import { gatherInputs } from '../guidance/sync.js';
 import { fitDirectorPrompt, promptBudget } from './fit.js';
 import { nextFight, fightFacts, woundsOf } from './fight.js';
+import { combatOptions, stanceFor, protectionOf, powerRatingOf, mayDie, protectedText } from './combat.js';
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
 import { whoCouldTurnUp } from './whereabouts.js';
@@ -470,6 +471,11 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         ahead,
         travelAtNight: settings.director.travelAtNight === true,
         fightFacts: fightFacts(doc.fight, settings.director.fightReplies),
+        // Who cannot be killed here (src/director/combat.js).
+        protectedText: protectedText([
+            ...characters.filter((c) => castIds.includes(c.id) && !isPower(c)),
+            ...(guidance.location?.creatures ?? []).filter((x) => x.active !== false && x.form !== 'kind').map((x) => everything.find((e) => e.id === x.id)).filter(Boolean),
+        ].filter((e) => e.id !== playerIdOf(settingId, characters)), { stance: stanceFor(doc, settings) }),
         eventFacts: eventFacts(event, { placeName: event?.placeId ? everything.find((e) => e.id === event.placeId)?.name ?? '' : '', turn: getChatDoc(chatKey).turn, ways }),
         // Only the dead the latest messages speak of.
         // The story going in circles, or the player asking whether it is over.
@@ -772,7 +778,17 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         if (creatureNames.in.length || creatureNames.out.length || JSON.stringify(counts) !== JSON.stringify(scene0.creatureCounts)) {
             setCanonical(chatKey, { creatureIds: [...creatureIds], creatureCounts: counts }, { chatId, source: 'director', note: [creatureNames.in.length ? `${creatureNames.in.join(', ')} appear` : '', creatureNames.out.length ? `${creatureNames.out.join(', ')} gone` : ''].filter(Boolean).join('; ') || 'Creature numbers change' });
         }
+        // Who may die here (src/director/combat.js): an unkillable one, a plot
+        // device, or anyone the chat's stance spares lives on.
+        const stance = stanceFor(getChatDoc(chatKey), settings);
+        const foughtFor = (name) => (getChatDoc(chatKey).fight?.fighters ?? []).some((f) => f.side === 'ally' && f.name.toLowerCase() === String(name).toLowerCase());
+        const spared = (entry) => {
+            if (mayDie(entry, { stance, wasAlly: foughtFor(entry.name) })) return false;
+            console.info(LOG_PREFIX, `${entry.name} cannot be killed in this story - the death is not kept`);
+            return true;
+        };
         for (const { c, how } of creatureDeaths) {
+            if (spared(c)) continue;
             if (await markDead(chatKey, { id: c.id, name: c.name, how, source: 'director', chatId, reply: replyIndex })) console.info(LOG_PREFIX, `${c.name} died: ${how || 'in the story'}`);
         }
         moves = after.names;
@@ -786,7 +802,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             const key = d.name.toLowerCase();
             const who = characters.find((c) => [c.name, ...(c.aliases ?? c.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === key))
                 ?? characters.find((c) => getChatDoc(chatKey).canonical.castIds.includes(c.id) && c.name.toLowerCase().includes(key));
-            if (who && !playerNames.some((p) => p.toLowerCase() === who.name.toLowerCase()) && await markDead(chatKey, { id: who.id, name: who.name, how: d.how, source: 'director', chatId, reply: replyIndex })) {
+            if (who && !playerNames.some((p) => p.toLowerCase() === who.name.toLowerCase()) && !spared(who) && await markDead(chatKey, { id: who.id, name: who.name, how: d.how, source: 'director', chatId, reply: replyIndex })) {
                 console.info(LOG_PREFIX, `${who.name} died: ${d.how || 'in the story'}`);
             }
         }
@@ -816,6 +832,15 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             limit: settings.director.fightReplies,
             playerNames,
             remembered,
+            // Each fighter's power rating and protection, from the entry
+            // they are; a creature of a kind is never spared as a whole.
+            traitsOf: (name, side) => {
+                const key = String(name).toLowerCase();
+                const entry = characters.find((c) => [c.name, ...(c.aliases ?? c.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === key)) ?? creatureFor(name).c;
+                return { power: powerRatingOf(entry), protect: protectionOf(entry && creatures.includes(entry) && isKind(entry) ? null : entry, { stance, side }) };
+            },
+            foesFall: combatOptions(settings).foesFall,
+            alliesPressed: combatOptions(settings).alliesPressed,
         });
         updateChatDoc(chatKey, (d) => {
             d.fight = fight;

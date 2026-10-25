@@ -94,6 +94,30 @@
                     <span>Fights last at most (replies)</span>
                     <input id="sb_director_fight" class="text_pole" type="number" min="2" max="30" step="1" />
                 </label>
+                <label class="sb-field" title="How readily foes are worn down when blows land and nothing changes: quickly - every reply; standard - every other; slowly - every third. A foe's own power rating (on its sheet) adds to it: a strong or deadly foe holds out longer, a minor one breaks at once.">
+                    <span>Foes fall</span>
+                    <select id="sb_combat_foes" class="text_pole">
+                        <option value="quickly">Quickly</option>
+                        <option value="standard">Standard</option>
+                        <option value="slowly">Slowly</option>
+                    </select>
+                </label>
+                <label class="sb-field" title="Whether allies (the characters fighting on your side) are worn down too while a fight drags on. Spared: only by what the story does to them - except against a strong or deadly foe, which hits harder. Pressed: every third reply. Hard: every other. Never past failing: how they go down is the story's.">
+                    <span>Allies are pressed</span>
+                    <select id="sb_combat_allies" class="text_pole">
+                        <option value="spared">Spared</option>
+                        <option value="pressed">Pressed</option>
+                        <option value="hard">Hard</option>
+                    </select>
+                </label>
+                <label class="sb-field" title="Who the story may kill, for chats that do not set their own (Scene tab). A character's own fate on its sheet - plot device, unkillable, mortal - comes first. Your own Mark dead always stands.">
+                    <span>Who can die (default)</span>
+                    <select id="sb_combat_stance" class="text_pole">
+                        <option value="free">Anyone can die</option>
+                        <option value="allies">Allies are spared</option>
+                        <option value="named">No named character dies</option>
+                    </select>
+                </label>
                 <label class="sb-field" title="A power (a god, spirit or force with no body) whose champion is in the scene may act unasked - a voice, a vision, a blessing - at most once in this many replies. 0: only when someone calls on it, or its champion is failing in a fight. No extra call: when it may act, one line is added to the game master's prompt.">
                     <span>Powers act unasked at most every (replies)</span>
                     <input id="sb_director_powers" class="text_pole" type="number" min="0" max="100" step="1" />

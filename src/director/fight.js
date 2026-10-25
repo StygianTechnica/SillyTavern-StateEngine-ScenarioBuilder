@@ -7,7 +7,12 @@
 // reply, and the fight ends within a few replies. The narrator is told every
 // fighter's condition in plain words each reply. The player character is
 // never a fighter here: how they fare is the player's to say.
+// Each fighter carries the power rating and protection of the entry they
+// are (src/director/combat.js): a strong foe wears down slower, a plot
+// device flees instead of going down, an unkillable one goes down alive.
 // Pure: the runner is src/director/run.js.
+
+import { POWER_RATINGS, foeSteady, foeStep, extraReplies, allySteady } from './combat.js';
 
 export const FIGHT_LADDER = Object.freeze(['unhurt', 'hurt', 'wounded', 'badly wounded', 'failing', 'down']);
 // Out of the fight: down, fled - or, for a foe, the winner.
@@ -53,6 +58,9 @@ function normalizeFighter(f) {
         condition: [...FIGHT_LADDER, ...FIGHT_OUT].includes(f.condition) ? f.condition : 'unhurt',
         // Replies in a row a foe's condition did not worsen.
         steady: Number.isInteger(f.steady) && f.steady >= 0 ? f.steady : 0,
+        // From the entry (src/director/combat.js): '' - standard / may die.
+        power: POWER_RATINGS.includes(f.power) && f.power !== 'standard' ? f.power : '',
+        protect: ['flee', 'spare'].includes(f.protect) ? f.protect : '',
     };
 }
 
@@ -64,6 +72,8 @@ export function normalizeFight(value) {
         fighters,
         round: Number.isInteger(value.round) && value.round > 0 ? value.round : 1,
         ended: value.ended === true,
+        // The most replies this fight runs (longer while a strong foe stands).
+        ...(Number.isInteger(value.limit) && value.limit > 0 ? { limit: value.limit } : {}),
     };
 }
 
@@ -75,8 +85,10 @@ const standing = (f) => !FIGHT_OUT.includes(f.condition);
 // scene; limit: the most replies a fight lasts; playerNames: never fighters;
 // remembered: { [lower-case name]: condition } - wounds from a fight that
 // was broken off, so someone who fights again starts as they left off.
+// traitsOf(name, side): { power, protect } of the entry the fighter is
+// (src/director/combat.js); foesFall, alliesPressed: the user's settings.
 // -> the fight for this reply, or null when there is none.
-export function nextFight(prev, lines = [], { present = () => true, limit = FIGHT_REPLIES, playerNames = [], remembered = {} } = {}) {
+export function nextFight(prev, lines = [], { present = () => true, limit = FIGHT_REPLIES, playerNames = [], remembered = {}, traitsOf = () => ({}), foesFall = 'standard', alliesPressed = 'spared' } = {}) {
     const last = prev && !prev.ended ? normalizeFight(prev) : null;
     const said = (lines ?? [])
         .map((l) => ({ name: clean(l?.name), condition: readCondition(l?.condition), side: readSide(l?.side) }))
@@ -90,7 +102,10 @@ export function nextFight(prev, lines = [], { present = () => true, limit = FIGH
             // as down - that was the end of it).
             const was = remembered?.[clean(l.name).toLowerCase()];
             const start = FIGHT_LADDER.includes(was) && was !== 'down' ? was : 'unhurt';
-            fighters.push({ name: l.name, side: l.side || 'foe', condition: start, steady: 0, fresh: true });
+            const side = l.side || 'foe';
+            const t = traitsOf(l.name, side) ?? {};
+            fighters.push(normalizeFighter({ name: l.name, side, condition: start, steady: 0, power: t.power, protect: t.protect }));
+            fighters[fighters.length - 1].fresh = true;
         }
     }
     // A reply the briefing reports no fighting in: the fight is paused while
@@ -98,33 +113,58 @@ export function nextFight(prev, lines = [], { present = () => true, limit = FIGH
     // player may have stepped out), and over once none of them is.
     if (last && !said.length) return last.fighters.some((f) => standing(f) && present(f.name)) ? last : null;
     const round = last ? last.round + 1 : 1;
+    // The hardest foe still standing hits allies harder, and draws the
+    // fight out a little.
+    const order = ['', 'minor', 'standard', 'strong', 'deadly'];
+    const hardest = fighters.filter((f) => f.side === 'foe' && standing(f)).reduce((a, f) => (order.indexOf(f.power) > order.indexOf(a) ? f.power : a), '');
+    const allyEvery = allySteady(alliesPressed, hardest);
     const out = fighters.map((f) => {
         const l = said.find((x) => sameName(x.name, f.name));
-        const next = { name: f.name, side: l?.side || f.side, condition: f.condition, steady: f.steady };
+        const next = { name: f.name, side: l?.side || f.side, condition: f.condition, steady: f.steady, power: f.power ?? '', protect: f.protect ?? '' };
         if (!standing(f)) return next;
         // Someone gone from the scene is out of it.
         if (!l && !present(f.name)) return { ...next, condition: 'fled', steady: 0 };
-        if (l && FIGHT_OUT.includes(l.condition)) return { ...next, condition: l.side === 'ally' && l.condition === 'won' ? f.condition : l.condition, steady: 0 };
+        const before = Math.max(0, rank(f.condition));
+        if (l && FIGHT_OUT.includes(l.condition)) {
+            // A strong foe is not felled from fresh in one blow: it is worn
+            // down only so far this reply.
+            if (next.side === 'foe' && l.condition === 'down' && before + foeStep(next.power) < rank('down')) {
+                return { ...next, condition: FIGHT_LADDER[before + foeStep(next.power)], steady: 0 };
+            }
+            return { ...next, condition: l.side === 'ally' && l.condition === 'won' ? f.condition : l.condition, steady: 0 };
+        }
         // Never better than it was (unless the story heals it - then the
         // user or a new fight starts it afresh).
-        const before = Math.max(0, rank(f.condition));
         let now = Math.max(before, l && rank(l.condition) >= 0 ? rank(l.condition) : before);
+        if (next.side === 'foe') now = Math.min(now, before + foeStep(next.power));
         let steady = !f.fresh && now === before ? f.steady + 1 : 0;
-        // A foe two replies without harm: the blows tell.
-        if (next.side === 'foe' && steady >= 2) { now += 1; steady = 0; }
+        // A foe some replies without harm: the blows tell (sooner for a weak
+        // one, later for a strong one).
+        if (next.side === 'foe' && steady >= foeSteady(next.power, foesFall)) { now += 1; steady = 0; }
+        // Allies pressed hard are worn down too - never past failing: how
+        // they go down is the story's.
+        if (next.side === 'ally' && allyEvery && steady >= allyEvery && now < rank('failing')) { now += 1; steady = 0; }
+        // A weak foe that takes harm breaks quickly.
+        if (next.side === 'foe' && next.power === 'minor' && now > before) now += 1;
         now = Math.min(now, rank('down'));
         return { ...next, condition: FIGHT_LADDER[now], steady: FIGHT_LADDER[now] === 'down' ? 0 : steady };
     });
     const foes = out.filter((f) => f.side === 'foe');
+    // A strong foe still standing draws the fight out (the longest it ever
+    // was stands, so a fight never ends sooner than it said).
+    const standingFoes = foes.filter(standing);
+    const longest = Math.max(limit, last?.limit ?? 0, limit + Math.max(0, ...standingFoes.map((f) => extraReplies(f.power))));
     // Its last reply: every foe still standing goes down if the fight has
     // gone against it, otherwise it breaks off.
-    if (round >= limit) {
+    if (round >= longest) {
         for (const f of foes) if (standing(f)) Object.assign(f, { condition: rank(f.condition) >= rank('wounded') ? 'down' : 'fled', steady: 0 });
     }
+    // A plot device does not go down: it flees, or is driven off.
+    for (const f of out) if (f.protect === 'flee' && f.condition === 'down') Object.assign(f, { condition: 'fled', steady: 0 });
     const allies = out.filter((f) => f.side === 'ally');
     const ended = !foes.length || foes.every((f) => !standing(f)) || foes.some((f) => f.condition === 'won')
         || (allies.length > 0 && allies.every((f) => !standing(f)));
-    return { fighters: out, round, ended };
+    return { fighters: out, round, ended, limit: longest };
 }
 
 const CUES = {
@@ -146,6 +186,14 @@ const ALLY_CUES = {
     down: 'goes down in this reply - knocked out or cut down (alive unless the story has said otherwise)',
     fled: 'is out of the fight - pulled back or driven off',
 };
+// One who cannot be killed (src/director/combat.js) goes down alive.
+const SPARED_DOWN = 'is beaten in this reply - knocked down, overpowered or taken captive, but alive: never killed';
+const POWER_CUES = {
+    minor: 'a weak foe: it breaks quickly once hurt',
+    strong: 'a strong foe: it shrugs off lesser blows and hits hard',
+    deadly: 'a deadly foe: every blow it lands is dangerous, and it takes a great deal to wear down',
+};
+const tags = (x) => [x.side, x.power, x.protect === 'flee' ? 'flees rather than dies' : x.protect === 'spare' ? 'never killed' : ''].filter(Boolean).join(', ');
 
 // Wounds to remember when a fight is broken off or over: each fighter still
 // standing and hurt, by lower-case name. -> { [name]: condition }
@@ -161,8 +209,9 @@ const listNames = (fighters) => fighters.map((f) => f.name).join(', ');
 export function fightFacts(fight, limit = FIGHT_REPLIES) {
     const f = normalizeFight(fight);
     if (!f || f.ended) return '';
+    limit = f.limit ?? limit;
     const left = Math.max(1, limit - f.round);
-    const who = f.fighters.map((x) => `${x.name} (${x.side}): ${x.condition}`).join('; ');
+    const who = f.fighters.map((x) => `${x.name} (${tags(x)}): ${x.condition}`).join('; ');
     return `After ${f.round} ${f.round === 1 ? 'reply' : 'replies'}: ${who}. A fight ends within ${limit} replies - ${left === 1 ? 'this is its last: it ends in this reply' : `at most ${left} more`}. A condition only gets worse unless the story heals it.`;
 }
 
@@ -174,6 +223,7 @@ export function fightFacts(fight, limit = FIGHT_REPLIES) {
 export function fightValues(fight, limit = FIGHT_REPLIES, characterId = () => '') {
     const f = normalizeFight(fight);
     if (!f || f.ended) return { fight_active: false, fight_round: 0, fight_summary: '', fight_fighters: [], fight_allies: [], fight_foes: [] };
+    limit = f.limit ?? limit;
     const ids = (side) => [...new Set(f.fighters.filter((x) => x.side === side).map((x) => characterId(x.name)).filter(Boolean))];
     return {
         fight_active: true,
@@ -189,7 +239,13 @@ export function fightValues(fight, limit = FIGHT_REPLIES, characterId = () => ''
 export function fightGuidance(fight) {
     const f = normalizeFight(fight);
     if (!f) return '';
-    const line = (x) => `${x.name} ${x.side === 'ally' ? (x.condition === 'down' || x.condition === 'fled' ? ALLY_CUES[x.condition] : `is ${ALLY_CUES[x.condition] ?? ALLY_CUES.unhurt}`) : (['down', 'fled', 'won'].includes(x.condition) ? CUES[x.condition] : `is ${CUES[x.condition] ?? CUES.unhurt}`)}.`;
+    const cue = (x) => {
+        if (x.condition === 'down' && x.protect === 'spare') return SPARED_DOWN;
+        if (x.side === 'ally') return x.condition === 'down' || x.condition === 'fled' ? ALLY_CUES[x.condition] : `is ${ALLY_CUES[x.condition] ?? ALLY_CUES.unhurt}`;
+        if (['down', 'fled', 'won'].includes(x.condition)) return CUES[x.condition];
+        return `is ${CUES[x.condition] ?? CUES.unhurt}${POWER_CUES[x.power] ? ` (${POWER_CUES[x.power]})` : ''}`;
+    };
+    const line = (x) => `${x.name} ${cue(x)}.`;
     const up = f.fighters.filter((x) => x.side === 'foe' && standing(x));
     const lines = f.fighters.map(line).join(' ');
     return f.ended

@@ -3,6 +3,7 @@
 // History (every change, with undo) and Preview (the exact outputs).
 
 import { getSettings } from '../settings.js';
+import { STANCES, STANCE_LABELS, combatOptions } from '../director/combat.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { DAY_PARTS, TEMPERATURES, WEATHER_VALUES } from '../store/schema.js';
 import { getObject } from '../api/objects.js';
@@ -138,6 +139,9 @@ export async function renderScene() {
                 field('Scene title', h('input', { class: 'text_pole', value: draft.sceneTitle, oninput: (e) => set('sceneTitle', e.target.value) })),
                 // Saved at once: not part of the canonical scene.
                 getSettings().generation.showNsfw !== true ? null : field('Intimate scene (NSFW)', select([{ value: 'auto', label: 'Auto - as the story reads' }, { value: 'on', label: 'Yes' }, { value: 'off', label: 'No' }], doc.nsfwMode, { onchange: (e) => { updateChatDoc(chatKey, (d) => { d.nsfwMode = e.target.value; }); void syncNow(); } }), 'While it is, the characters\' intimate-scene notes are given to the narrator.'),
+                // Who may die in this chat (src/director/combat.js) - saved at once.
+                field('Who can die', select([{ value: '', label: `Default - ${STANCE_LABELS[combatOptions(getSettings()).stance].toLowerCase()}` }, ...STANCES.map((x) => ({ value: x, label: STANCE_LABELS[x] }))], doc.combatStance, { onchange: (e) => { updateChatDoc(chatKey, (d) => { d.combatStance = e.target.value; }); void syncNow(); } }),
+                    'In this chat. Anyone: the story may kill whoever it will. Allies spared: those fighting on your side are beaten or captured at worst. No named character: only nameless foes and creatures of a kind die. A character\'s own fate (plot device, unkillable, mortal) comes first; your own "Mark dead" always stands.'),
                 (() => { const el = h('textarea', { class: 'text_pole', rows: 3, oninput: (e) => set('scenePremise', e.target.value) }); el.value = draft.scenePremise; return field('Scene premise', el, 'What the scene is about: its stakes and tone.'); })(),
                 h('div', { class: 'sb-savebar' }, button('Save scene', () => void save(), { iconName: 'fa-floppy-disk', cls: 'sb-primary' }))),
             h('div', { class: 'sb-card' },

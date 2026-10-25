@@ -43,16 +43,22 @@ const lower = (s) => clean(s).toLowerCase();
 export function foeMatcher(foes = []) {
     return (name) => {
         const found = (foes ?? []).find((f) => [f.name, ...(f.aliases ?? [])].some((n) => lower(n) === lower(name)));
-        return { name: found?.name ?? clean(name), objectId: found?.id ?? '' };
+        const out = { name: found?.name ?? clean(name), objectId: found?.id ?? '' };
+        // Its power rating (src/director/combat.js), for a tournament
+        // entrant's strength - not stored on the opponent.
+        Object.defineProperty(out, 'power', { value: found?.meta?.combat?.power ?? '', enumerable: false });
+        return out;
     };
 }
 
-// "Graxx | strong" / "Graxx (deadly)" / "Graxx" -> { name, objectId, strength }.
+// "Graxx | strong" / "Graxx (deadly)" / "Graxx" -> { name, objectId, strength }
+// (with no strength given: the entry's power rating, else standard).
 export function readEntrants(text, matchFoe = foeMatcher()) {
     return lines(text).map((line) => {
         const m = line.match(/^(.+?)\s*(?:\||[-–—:]\s+|\()\s*(minor|standard|strong|deadly)\)?\s*$/i);
         const name = clean(m ? m[1] : line);
-        return { ...matchFoe(name), strength: m ? m[2].toLowerCase() : 'standard' };
+        const foe = matchFoe(name);
+        return { ...foe, strength: m ? m[2].toLowerCase() : (STRENGTHS.includes(foe.power) ? foe.power : 'standard') };
     }).filter((x) => x.name);
 }
 

@@ -342,6 +342,8 @@ export function dossierText(input) {
     }
     // Who has died in this story (src/state/death.js).
     if (clean(input.deadText)) { section('THE DEAD (gone for good - they can be mourned, remembered or spoken of, never shown alive, speaking or acting - unless the latest chat itself brings one back: RISES)'); lines.push(clean(input.deadText)); }
+    // Who cannot be killed here (src/director/combat.js).
+    if (clean(input.protectedText)) { section('NEVER KILLED IN THIS STORY'); lines.push(clean(input.protectedText)); }
     // The fight as Scenario Builder keeps it (src/director/fight.js).
     if (clean(input.fightFacts)) { section('THE FIGHT SO FAR'); lines.push(clean(input.fightFacts)); }
     // A structured event under way - its current stage only (src/events/).
@@ -472,6 +474,7 @@ export function buildDirectorPrompt(input) {
         '',
         `If someone other than ${userName} dies in this reply - killed, not just beaten, wounded or knocked out - a line for each, with how in a few words; for creatures of a kind, how many fell (DIES | 2 zombies | cut down by Varyn). The dead stay dead:`,
         'DIES | <name> | <how>',
+        ...(clean(input.protectedText) ? ['Never a DIES line for anyone under NEVER KILLED IN THIS STORY: they are beaten, wounded, captured or driven off instead.'] : []),
         ...(clean(input.deadText) ? [
             '',
             `Only if the latest chat itself brings back someone under THE DEAD - resurrected, raised as undead, revived, or shown never to have died - or a power under POWERS AT WORK brings them back in this reply in its own way (with its POWER line, and the price it demands - bringing back the dead is never free), a line for each. Never on your own, and never because it would suit the story:`,

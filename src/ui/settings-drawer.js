@@ -117,6 +117,9 @@ function renderSettings() {
     byId('sb_director_timeout').value = settings.director.timeout;
     byId('sb_director_context').value = settings.director.contextTokens;
     byId('sb_director_fight').value = settings.director.fightReplies;
+    byId('sb_combat_foes').value = settings.combat.foesFall;
+    byId('sb_combat_allies').value = settings.combat.alliesPressed;
+    byId('sb_combat_stance').value = settings.combat.stance;
     byId('sb_director_powers').value = settings.director.powersEvery;
 
     byId('sb_sections').replaceChildren(...SECTIONS.map((s) => h('label', { class: 'checkbox_label' },
@@ -200,6 +203,10 @@ export async function addSettingsDrawer() {
         e.target.value = settings.director.fightReplies;
         saveSettings();
     });
+    // How fights go (src/director/combat.js).
+    byId('sb_combat_foes').addEventListener('change', (e) => { settings.combat.foesFall = e.target.value; saveSettings(); });
+    byId('sb_combat_allies').addEventListener('change', (e) => { settings.combat.alliesPressed = e.target.value; saveSettings(); });
+    byId('sb_combat_stance').addEventListener('change', (e) => { settings.combat.stance = e.target.value; changed(); });
     byId('sb_open_workspace').addEventListener('click', () => void openWorkspace());
 
     // Generation: its own connection profile, detail level and answer size.

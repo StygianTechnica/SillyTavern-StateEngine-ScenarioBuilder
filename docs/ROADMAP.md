@@ -39,6 +39,39 @@ From a review of what is left, in the user's words where it matters:
 - **Cost:** every extra model call per reply must earn its place and be
   switchable; the user streamlined State Engine for the same reason.
 
+## Getting started (added 2026-10-25)
+
+Setting up a new chat on a new setting, perhaps with a new panel layout, is
+clunky today - the user's words: people would "get upset and unhappy with
+how the different extensions work". The process needs refining so a new
+user can get started easily.
+
+- [ ] **A start-up wizard in Scenario Builder** that makes sure everything
+  is lined up the way it ought to be: the setting, its presets active in
+  State Engine (Scenario State and the rest), Curator placement, Archivist,
+  the panel layout in Pretty Panels - checking each and offering to fix
+  what is missing or wrong.
+- [ ] **The panel layout check, at start-up:** whether the layout in use
+  reads State Engine's own preset variables or Scenario Builder's sb__
+  ones (Scenario State) in its state preset. If it uses State Engine's,
+  suggest changing the preset to Scenario State - or offer to fix it for
+  the user.
+- [ ] **A new setting opens on the catalog's front page.** When a setting
+  has never been opened in the workspace, start on its front page (the
+  overview), not the last tab and chapter remembered - that is where you
+  should start filling in the setting's details, and it took the user a
+  while to find it.
+- [ ] **A default Pretty Panels layout** that reliably shows Scenario
+  Builder's state values (sb__canon_*, sb__cast, sb__quests, sb__fight_*,
+  sb__event_*...) rather than State Engine's own. Start from the user's
+  "Scenario Builder Test" layout (they are making a variation of it now).
+- [ ] **State Engine change:** send an event when the active presets change,
+  so attached extensions can refresh what is available (and what is not).
+  Today Pretty Panels' variable dropdowns do not update when presets are
+  switched on or off in State Engine - it shows up when setting up a new
+  setting. Pretty Panels (and Scenario Builder, where it lists variables)
+  then listens for it.
+
 ## Decisions that change the spec
 
 These came after spec v0.5 and should be folded into its next revision.
@@ -529,18 +562,31 @@ The fight tracker (src/director/fight.js) keeps each fighter's condition on
 a ladder and ends a fight within a few replies. The user does not use stats
 in their games, but wants combat resolution more configurable:
 
-- [ ] Settings for how combat resolves, set by the user: how long fights
-  last, how readily foes fall, how hard allies are pressed.
-- [ ] A **power rating** for some monsters (and people): a strong foe takes
-  longer to wear down and hits harder; a weak one breaks quickly. No stats -
-  a few steps (minor, standard, strong, deadly) the tracker reads.
-- [ ] Flags on entries:
+- [x] Settings for how combat resolves, set by the user (2026-10-25,
+  src/director/combat.js; the drawer): how long fights last (as before),
+  how readily foes fall (quickly / standard / slowly), how hard allies are
+  pressed (spared / pressed / hard - never past failing by wear alone).
+- [x] A **power rating** for monsters and people (2026-10-25, the sheet's
+  "In a fight" card): minor, standard, strong, deadly. A strong or deadly
+  foe takes longer to wear down, cannot be felled from fresh in one reply,
+  draws the fight out a reply or two, and wears allies down even when they
+  are otherwise spared; a minor one breaks quickly. The narrator and the
+  director are told. A tournament entrant with no strength given takes the
+  entry's rating.
+- [x] Fates on entries (2026-10-25, the same card):
   - **Plot device** - in a losing fight it flees (or is driven off) rather
     than being killed; the story still needs it.
   - **Unkillable** - a character who can be beaten, hurt or captured but
-    never dies.
-  - A chat-wide stance: some users like a free-for-all, others want their
-    favourite characters protected from an unfortunate end.
+    never dies: goes down alive.
+  - **Mortal** - can die whatever the chat's stance.
+  - A chat-wide stance (the Scene tab; a default in the drawer): anyone can
+    die, allies are spared (those fighting on the player's side), or no
+    named character dies (only nameless foes and creatures of a kind).
+  The director's dossier lists who here cannot be killed (NEVER KILLED IN
+  THIS STORY) and a DIES line for one of them is not kept; the user's own
+  "Mark dead" always stands. No extra model calls.
+  Not yet: a protection line in the narrator's guidance outside a fight
+  (an execution, a fall) - today only the director hears it there.
 - [x] **Death is remembered** (src/state/death.js). The director reports a
   death with a DIES line, or the user marks it on the sheet; the dead are
   out of the scene, listed to the director and narrator as never to be

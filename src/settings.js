@@ -90,6 +90,12 @@ const DEFAULTS = {
     // State Engine call, only while some are armed), waiting at most
     // waitSeconds; off, only after AI replies.
     triggers: { onMessage: true, waitSeconds: 20 },
+    // Combat (src/director/combat.js): stance - who may die by default
+    // ('free' | 'allies' | 'named'; a chat can set its own); foesFall - how
+    // readily foes are worn down ('quickly' | 'standard' | 'slowly');
+    // alliesPressed - whether allies are worn down too ('spared' |
+    // 'pressed' | 'hard').
+    combat: { stance: 'free', foesFall: 'standard', alliesPressed: 'spared' },
     // Changes the story makes to the world (src/state/changes.js): suggest -
     // list them in Review (no call); auto - write each one's current
     // description at once (one call per change).
@@ -132,6 +138,8 @@ export function getSettings() {
     // New sections/policies added by an update get their defaults.
     for (const [key, value] of Object.entries(DEFAULT_SECTIONS)) settings.sections[key] ??= value;
     for (const [key, value] of Object.entries(DEFAULTS.director)) settings.director[key] ??= value;
+    settings.combat ??= {};
+    for (const [key, value] of Object.entries(DEFAULTS.combat)) settings.combat[key] ??= value;
     settings.triggers ??= {};
     for (const [key, value] of Object.entries(DEFAULTS.triggers)) settings.triggers[key] ??= value;
     for (const [key, value] of Object.entries(DEFAULTS.time)) settings.time[key] ??= value;

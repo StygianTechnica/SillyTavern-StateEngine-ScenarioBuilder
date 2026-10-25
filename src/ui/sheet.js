@@ -26,6 +26,7 @@ import { isDead, markDead, bringBack, setDeathHow } from '../state/death.js';
 import { suggestParents } from '../library/place-context.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { isPower, patronsOf } from '../library/powers.js';
+import { POWER_RATINGS, POWER_LABELS, FATES, FATE_LABELS, STANCE_LABELS, normalizeCombatMeta, stanceFor } from '../director/combat.js';
 import { recordEnrichment, enrichmentRecord, normalizeEnrichments, revertPlan, revertEnrichment } from '../generate/revert.js';
 import { newLocalId } from '../store/schema.js';
 import { suggestQuestEnds } from '../quests/ends.js';
@@ -531,6 +532,7 @@ function overviewTab({ type, entry, isNew, defs, doc, all }) {
         narrative ? h('details', { class: 'sb-base-desc' }, h('summary', {}, 'Original description'), base) : base,
         glance.length ? h('dl', { class: 'sb-glance' }, glance.flatMap((d) => [h('dt', {}, d.label), h('dd', {}, String(entry.base?.[d.name] ?? entry[d.name]))])) : null,
         isNew ? null : giftsCard(type, entry, all, defs),
+        isNew ? null : combatCard(type, entry, all),
         isNew ? null : enrichmentCard(entry, defs));
 }
 
@@ -606,6 +608,27 @@ function giftsCard(type, entry, all, defs = []) {
                     h('span', {}, p.name))))
             : h('small', { class: 'sb-hint' }, 'No powers yet - mark a god or spirit as "A power" on its own sheet.'),
         'A power may speak to its champions, send them visions, or bless them in a fight.') : null);
+}
+
+// How they fare in a fight (src/director/combat.js): a power rating the
+// fight tracker reads, and a fate - plot device, unkillable or mortal - that
+// overrides the chat's stance. Not for a power or the player character.
+// Saves at once.
+function combatCard(type, entry, all) {
+    if (!['character', 'creature'].includes(type.id) || isPower(entry)) return null;
+    const { settingId, chatKey } = ws.ctx;
+    if (type.id === 'character' && playerIdOf(settingId, all.character ?? []) === entry.id) return null;
+    const combat = normalizeCombatMeta(entry.meta?.combat);
+    const save = (patch) => { setEntryMeta(settingId, entry.id, { combat: { ...combat, ...patch } }); void syncNow(); rerender({ force: true }); };
+    const kind = type.id === 'creature' && creatureFormOf(entry) === 'kind';
+    const stance = stanceFor(getChatDoc(chatKey), getSettings());
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-shield-halved'), ' In a fight'),
+        field('Power', select([{ value: '', label: 'Standard (not set)' }, ...POWER_RATINGS.filter((p) => p !== 'standard').map((p) => ({ value: p, label: POWER_LABELS[p] }))], combat.power, { onchange: (e) => save({ power: e.target.value }) }),
+            'A strong foe takes longer to wear down and hits harder; a deadly one more so; a minor one breaks quickly. Also its strength in a tournament.'),
+        kind ? h('small', { class: 'sb-hint' }, 'A kind that comes in numbers is never spared as a whole: its numbers fall as the story kills them.')
+            : field('Fate', select(['', ...FATES].map((f) => ({ value: f, label: FATE_LABELS[f] })), combat.fate, { onchange: (e) => save({ fate: e.target.value }) }),
+                `This chat: ${STANCE_LABELS[stance].toLowerCase()} (Scene tab). A plot device flees a losing fight or is driven off; an unkillable one can be beaten, hurt or captured but never dies. Your own "Mark dead" always stands.`));
 }
 
 // What generation wrote on this entry, and what was there before: a field,

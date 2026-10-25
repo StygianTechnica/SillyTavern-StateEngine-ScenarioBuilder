@@ -93,6 +93,7 @@ import { normalizeEnrichments } from '../generate/revert.js';
 import { normalizeCounts } from '../library/creature-form.js';
 import { normalizePowerMeta, fitText, GIFTS_MAX } from '../library/powers.js';
 import { normalizeFight } from '../director/fight.js';
+import { normalizeCombatMeta, STANCES } from '../director/combat.js';
 import { normalizeSuspended } from '../director/suspended.js';
 import { normalizeEvent, normalizeEventsDone, normalizeEventsComing } from '../events/model.js';
 import { normalizeTemplates } from '../events/setup.js';
@@ -133,7 +134,7 @@ export function normalizeRealm(r) {
 }
 
 export function emptyEntryMeta() {
-    return { parentId: null, gmNotes: '', nsfw: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, provisional: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '', realm: emptyRealm(), giver: emptyGiver(), enrichments: [], creatureForm: '', power: { on: false, acts: '' }, patrons: [], gifts: '' };
+    return { parentId: null, gmNotes: '', nsfw: '', tags: [], pinned: false, excluded: false, origin: '', canonLocked: false, provisional: false, generated: [], source: '', quest: emptyQuestMeta(), archivist: { syncedText: '' }, environment: { climate: '', lighting: '', rules: '' }, climate: '', sky: '', realm: emptyRealm(), giver: emptyGiver(), enrichments: [], creatureForm: '', power: { on: false, acts: '' }, patrons: [], gifts: '', combat: { power: '', fate: '' } };
 }
 
 export function normalizeEntryMeta(meta) {
@@ -181,6 +182,9 @@ export function normalizeEntryMeta(meta) {
         patrons: strList(m.patrons),
         // What they can do beyond their weapons (a chaos-warped blade).
         gifts: fitText(str(m.gifts), GIFTS_MAX),
+        // How they fare in a fight: a power rating and a fate (plot device,
+        // unkillable, mortal) - src/director/combat.js.
+        combat: normalizeCombatMeta(m.combat),
     };
 }
 
@@ -418,6 +422,9 @@ export function emptyChatDoc() {
         changes: emptyChanges(),
         // Who has died in this story (src/state/death.js).
         dead: [],
+        // Who may die in this chat ('' = the default in the settings):
+        // src/director/combat.js STANCES.
+        combatStance: '',
         // Wounds from fights broken off: { [lower-case name]: { condition,
         // turn } } (src/director/fight.js, kept a while).
         wounds: {},
@@ -470,6 +477,7 @@ export function normalizeChatDoc(doc) {
         eventsDone: normalizeEventsDone(d.eventsDone),
         eventsComing: normalizeEventsComing(d.eventsComing),
         dead: normalizeDead(d.dead),
+        combatStance: STANCES.includes(d.combatStance) ? d.combatStance : '',
         changes: normalizeChanges(d.changes),
         perspectiveTold: isObject(d.perspectiveTold) ? Object.fromEntries(Object.entries(d.perspectiveTold).filter(([k, v]) => k && Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === 'string')])) : {},
         powersDid: isObject(d.powersDid) ? Object.fromEntries(Object.entries(d.powersDid).filter(([k, v]) => k && typeof v === 'string').map(([k, v]) => [k, v.slice(0, 200)])) : {},
