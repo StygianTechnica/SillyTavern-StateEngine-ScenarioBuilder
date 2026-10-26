@@ -135,6 +135,7 @@ function namingRule(input) {
 //   naming (src/naming/, docs/DESIGN - NAMING.md section 4):
 //     fixedName, nameMeaning   a new entry's name, decided already
 //     nameFrom: { tie, candidates }   a new entry named from an existing one
+//     nameApart                        an entry it stands apart from (a rival)
 //     namePool: { people, places }    names for anyone or anywhere else
 //     avoidNames                       overused names never to write }
 // -> { system, user, keys, plain } (plain: one field, answered as text)
@@ -221,6 +222,8 @@ export function buildGenerationPrompt(input) {
                 : input.nameFrom?.candidates?.length
                     ? `Name it from ${input.nameFrom.tie}, which it belongs to - for example ${input.nameFrom.candidates.map((c) => `"${c}"`).join(', ')} - or build your own name from "${input.nameFrom.tie}" and plain words. Do not invent a new made-up word for its name.`
                     : 'Give it a name in plain words that says what it is; any made-up proper noun in it must come from the names below.',
+            // A rival, an enemy, another of its kind: never one of them.
+            input.nameApart ? `It stands apart from ${input.nameApart} - a rival, an enemy or another of its kind, not a part of it: ${input.fixedName ? '' : `its name shares no word with "${input.nameApart}", and `}nothing about it makes it a branch, an heir or a copy of ${input.nameApart}.` : '',
         ].filter(Boolean).join('\n');
     } else if (task === 'fill') {
         job = `Write the empty fields of the ${subject}, consistent with everything written above.`;

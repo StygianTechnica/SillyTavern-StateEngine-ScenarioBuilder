@@ -34,7 +34,11 @@ const FEATURES = [
 const FACTION_KINDS = [
     ['house', ['house', 'clan', 'family', 'dynasty', 'bloodline', 'lineage', 'noble family', 'royal family']],
     ['gang', ['gang', 'street gang', 'thieves', "thieves' guild", 'smugglers', 'mob', 'cartel', 'syndicate', 'crew']],
-    ['company', ['mercenary', 'mercenaries', 'sellswords', 'free company', 'company', 'warband', 'war band', 'band', 'legion', 'regiment', 'army', 'militia', 'raiders']],
+    ['company', ['mercenary', 'mercenaries', 'sellswords', 'sellsword', 'free company', 'warband', 'war band', 'band', 'legion', 'regiment', 'army', 'militia', 'raiders', 'soldiers', 'private military']],
+    // A business: a corporation in a later age, a merchant house in an
+    // earlier one. A plain "company" is a business; a mercenary company is
+    // caught above.
+    ['business', ['corporation', 'corporations', 'corp', 'megacorp', 'megacorporation', 'conglomerate', 'firm', 'multinational', 'holdings', 'zaibatsu', 'keiretsu', 'chaebol', 'bank', 'consortium', 'startup', 'business', 'enterprise', 'trading company', 'trading house', 'merchant house', 'merchant company', 'partnership', 'trading partnership', 'shipping company', 'company', 'manufacturer', 'brand', 'franchise', 'chain']],
     ['order', ['guild', 'order', 'cult', 'brotherhood', 'sisterhood', 'circle', 'society', 'church', 'sect', 'covenant', 'league', 'council', 'cabal', 'coven', 'faith', 'priesthood', 'conclave', 'academy', 'college', 'lodge']],
 ];
 
@@ -82,8 +86,11 @@ export function nameKindFor(typeId, text = '', { hasParent = false } = {}) {
         return hasParent ? null : { kind: 'settlement' };
     }
     if (typeId === 'faction') {
-        const sub = kindIn(t, FACTION_KINDS) ?? 'order';
-        return sub === 'house' ? { kind: 'house' } : { kind: 'faction', subtype: sub };
+        const sub = kindIn(t, FACTION_KINDS);
+        if (sub === 'house') return { kind: 'house' };
+        // Nothing says what kind of group: an order, unless what it is tied
+        // to says otherwise (a rival of a corporation is a business).
+        return sub ? { kind: 'faction', subtype: sub } : { kind: 'faction', subtype: 'order', guessed: true };
     }
     if (typeId === 'item' && any(t, SHIP)) {
         return { kind: 'ship', subtype: any(t, PIRATE) ? 'pirate' : any(t, NAVAL) ? 'naval' : any(t, ['longship', 'drakkar']) ? 'native' : 'merchant' };
@@ -98,6 +105,28 @@ export function nameInBrief(text) {
     if (quoted) return quoted[1].trim();
     const called = t.match(/\b(?:called|named|known as|by the name of)\s+((?:the\s+)?[A-Z][\w'’-]*(?:\s+(?:of|the|de|van|von|al|[A-Z][\w'’-]*))*)/);
     return called ? called[1].trim() : '';
+}
+
+// How a brief relates a new thing to an entry it names: 'from' - it comes
+// from it and is named from it (the followers of Morvath, the temple to
+// Morvath, a branch of the bank, an inn in Brassport); 'apart' - it stands
+// beside or against it and its name is its own (a rival to Omicron
+// Innovations, an enemy of the guild, something like it). Unclear is
+// 'apart': a name of its own is never wrong.
+const APART = ['rival', 'rivals', 'rivalling', 'rivaling', 'enemy', 'enemies', 'competitor', 'competitors', 'competing', 'compete', 'against', 'opposed', 'opposing', 'opposes', 'opposition', 'hunts', 'hunting', 'hunt', 'unlike', 'nemesis', 'foe', 'foes', 'at war', 'war with', 'feud', 'feuding', 'versus', 'vs', 'instead of', 'replacing', 'like', 'similar', 'counterpart', 'alternative', 'challenger', 'challenging', 'undermine', 'undermining', 'sabotage', 'sabotaging', 'betray', 'betrayed', 'hostile', 'targets', 'targeting', 'spying on', 'spies on'];
+const FROM = ['of', 'for', 'to', 'from', 'under', 'within', 'inside', 'in', 'at', 'serving', 'serves', 'serve', 'worshippers', 'worshipers', 'worshipping', 'followers', 'following', 'servants', 'devotees', 'disciples', 'branch', 'subsidiary', 'division', 'offshoot', 'splinter', 'arm', 'wing', 'son', 'daughter', 'child', 'heir', 'cult', 'church', 'temple', 'shrine', 'chapel', 'order', 'priests', 'priesthood', 'owned by', 'run by', 'founded by', 'loyal to', 'sworn to'];
+export function tieRelation(text, matched) {
+    const t = String(text ?? '').toLowerCase();
+    const at = t.indexOf(String(matched ?? '').toLowerCase());
+    if (at < 0) return 'apart';
+    const has = (s, words) => words.some((w) => new RegExp(`\\b${w}\\b`).test(s));
+    const before = t.slice(Math.max(0, at - 80), at).split(/\s+/).slice(-8).join(' ');
+    const after = t.slice(at + matched.length, at + matched.length + 40);
+    // A rival or an enemy near the name sets it apart ("a rival corporation
+    // to X", "X's main competitor").
+    if (has(before, APART) || has(after.split(/\s+/).slice(0, 5).join(' '), APART)) return 'apart';
+    if (has(before, FROM) || /^['’]s\b/.test(after) || has(after.split(/\s+/).slice(0, 3).join(' '), ['worshippers', 'worshipers', 'followers', 'cult', 'church', 'temple', 'shrine', 'faithful', 'loyalists', 'branch', 'subsidiary'])) return 'from';
+    return 'apart';
 }
 
 // Existing entries the brief names (by name or alias, whole words), longest

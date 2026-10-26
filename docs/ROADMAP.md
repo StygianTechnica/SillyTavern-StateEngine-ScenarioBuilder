@@ -426,7 +426,10 @@ newly confirmed objects, a separate generation connection profile.
   one call each).
 - [x] **Names from the name generator (2026-10-26):** docs/DESIGN - NAMING.md
   phase 1 - real-world name stocks, cultures, the registry; Generate is told
-  a name instead of making one up.
+  a name instead of making one up. Businesses are a kind of faction
+  (corporations in a later age, merchant houses and trading partnerships
+  before), and a brief that names a rival ("a rival corporation to Omicron
+  Innovations") gets a name of its own, not one built from the rival's.
 - [x] **Kinds of alias (2026-10-26):** a character's other names each have a
   kind - nickname, codename / callsign, title / epithet, pen / stage name -
   and who uses them (people or factions). The sheet's "Other names" card

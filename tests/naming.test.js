@@ -2,7 +2,7 @@ import { STOCKS, REAL_CULTURES, listsFor } from '../src/naming/stocks/index.js';
 import { icelandicPatronym, russianPatronymic, feminineSurname, composePerson } from '../src/naming/conventions.js';
 import { resolveCulture, defaultCultureId, PRESETS } from '../src/naming/cultures.js';
 import { planName, namePool } from '../src/naming/engine.js';
-import { nameKindFor, nameInBrief, tiesInBrief, genderFrom } from '../src/naming/classify.js';
+import { nameKindFor, nameInBrief, tiesInBrief, genderFrom, tieRelation } from '../src/naming/classify.js';
 import { buildIndex, acceptable, recordName, spreadScore, CLICHE_NAMES, OFFER_RETURNS_AFTER } from '../src/naming/registry.js';
 import { tooClose, fold } from '../src/naming/text.js';
 import { applyShifts, rollShifts } from '../src/naming/mutate.js';
@@ -253,5 +253,64 @@ describe('the generation prompt and names', () => {
         expect(user).toContain('people - Orrin Maul');
         expect(user).toContain('places - Skar Water');
         expect(user).toContain('Never use these overused names: Elara');
+    });
+});
+
+describe('ties that are rivals, and businesses', () => {
+    const entries = [{ name: 'Omicron Innovations', aliases: [], type: 'faction' }, { name: 'Morvath', aliases: [], type: 'character' }, { name: 'The Ledger Guild', aliases: [], type: 'faction' }];
+    const world = (overview, seed = 'b') => ({ naming: { seed }, overview, names: entries.map((e) => e.name), entries });
+    const cyber = { worldType: 'science_fiction', tone: 'noir' };
+
+    it('reads whether a new thing comes from what it names or stands apart from it', () => {
+        expect(tieRelation('rival corporation to Omicron Innovations', 'Omicron Innovations')).toBe('apart');
+        expect(tieRelation("Omicron Innovations' main competitor", 'Omicron Innovations')).toBe('apart');
+        expect(tieRelation('an enemy of the Ledger Guild', 'Ledger Guild')).toBe('apart');
+        expect(tieRelation('an order that hunts the followers of Morvath', 'Morvath')).toBe('apart');
+        expect(tieRelation('a subsidiary of Omicron Innovations', 'Omicron Innovations')).toBe('from');
+        expect(tieRelation('a cult of Morvath worshippers', 'Morvath')).toBe('from');
+        expect(tieRelation("Morvath's faithful", 'Morvath')).toBe('from');
+        expect(tieRelation('a temple to Morvath', 'Morvath')).toBe('from');
+        expect(tieRelation('something about Morvath', 'Morvath')).toBe('apart');
+    });
+
+    it('gives a rival a name of its own, sharing no word with its rival', () => {
+        for (const seed of ['r1', 'r2', 'r3', 'r4', 'r5']) {
+            const r = planName({ typeId: 'faction', brief: 'rival corporation to Omicron Innovations' }, world(cyber, seed));
+            expect(r.mode).toBe('rolled');
+            expect(r.apart).toBe('Omicron Innovations');
+            expect(r.name.toLowerCase()).not.toMatch(/omicron|innovations/);
+        }
+        // Nothing in the brief says business: it takes its rival's kind.
+        expect(planName({ typeId: 'faction', brief: "Omicron Innovations' main competitor" }, world(cyber)).kind).toBe('faction');
+        expect(nameKindFor('faction', 'a group')).toMatchObject({ subtype: 'order', guessed: true });
+    });
+
+    it('names a subsidiary from its parent\'s brand', () => {
+        const r = planName({ typeId: 'faction', brief: 'a subsidiary of Omicron Innovations' }, world(cyber));
+        expect(r.mode).toBe('derived');
+        expect(r.candidates.every((c) => c.startsWith('Omicron ') && !c.includes('Innovations'))).toBe(true);
+    });
+
+    it('names a business as a corporation in a later age and a merchant house before it', () => {
+        expect(nameKindFor('faction', 'a megacorporation')).toMatchObject({ kind: 'faction', subtype: 'business' });
+        expect(nameKindFor('faction', 'a trading company')).toMatchObject({ subtype: 'business' });
+        expect(nameKindFor('faction', 'a mercenary company')).toMatchObject({ subtype: 'company' });
+        const trade = /(& Sons|& |Brothers|and Company|House |Company|Mercantile|Exchange|Bank|Counting House)/;
+        const corp = /(Industries|Holdings|Group|Corporation|Incorporated|Dynamics|Systems|Technologies|Consolidated|Partners|Capital|Labs|Works|International|Enterprises|Combine|Conglomerate|Global|Solutions|& |[A-Z][a-z]+ [A-Z][a-z]+)/;
+        for (const seed of ['m1', 'm2', 'm3', 'm4']) {
+            const later = planName({ typeId: 'faction', brief: 'a corporation' }, world(cyber, seed));
+            const earlier = planName({ typeId: 'faction', brief: 'a trading partnership' }, world({ worldType: 'fantasy', tech: { level: 'tl3' } }, seed));
+            expect(later.name, later.name).toMatch(corp);
+            expect(earlier.name, earlier.name).toMatch(trade);
+        }
+    });
+
+    it('tells the model a rival is not a part of what it rivals', () => {
+        const type = { id: 'faction', label: 'Faction', noun: 'faction' };
+        const told = buildGenerationPrompt({ task: 'create', type, fields: [], fixedName: 'Lodestar Biologics', nameApart: 'Omicron Innovations' }).user;
+        expect(told).toContain('It stands apart from Omicron Innovations');
+        expect(told).not.toContain('shares no word');
+        const asked = buildGenerationPrompt({ task: 'create', type, fields: [], nameApart: 'Omicron Innovations' }).user;
+        expect(asked).toContain('its name shares no word with "Omicron Innovations"');
     });
 });

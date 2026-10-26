@@ -101,7 +101,41 @@ Sexton, Verger, Ferryman, Lamplighter, Chimney, Gutter, Steeple, Vesper/c, Matin
 const CALL_NUMBERS = pool('One, Two, Three, Four, Five, Six, Seven, Eight, Nine, Actual, Lead, Prime, Zero');
 const TRADES = pool('Smithy, Forge, Bakery, Apothecary, Emporium, Workshop, Tailors, Cobblers, Chandlery, Mercantile, Provisions, Curios, Pawnshop, Bindery, Cartographers, Tannery, Cooperage, Brewery, Herbalist, Bookshop');
 
+// Businesses: a corporation's words in a later age, a merchant house's in
+// an earlier one. Brand words are real words (Lodestar, Meridian), never
+// coined ones - coined tech words are the model's clichés (the overused
+// ones are kept, at a low weight, so a world can still have one).
+const CORP_SUFFIXES = pool(`Industries, Holdings, Group, Corporation, Incorporated, Dynamics, Systems, Technologies, Heavy Industries,
+Consolidated, Partners, Capital, Labs, Works, International, Enterprises, Combine, Conglomerate, Global, Solutions/c`);
+const SECTORS = pool(`Biologics, Pharmaceuticals, Logistics, Orbital, Robotics, Cybernetics, Aerospace, Security, Media, Energy, Mining,
+Freight, Neural Systems, Arms, Data, Analytics, Materials, Chemical, Medical, Finance, Insurance, Shipping, Construction, Telecom,
+Water, Hydroponics, Genetics, Optics, Microsystems, Defence, Biotech, Fusion, Semiconductors, Agrisciences, Prosthetics, Armaments,
+Infrastructure, Transit, Entertainment, Foods, Textiles, Petrochemicals, Bioengineering, Exploration`);
+const BRANDS = pool(`Meridian, Halcyon, Lodestar, Bellwether, Keystone, Wayfarer, Kestrel, Juniper, Saltire, Corvid, Obelisk,
+Vantage, Paragon, Sterling, Northgate, Greywater, Ironbridge, Blackwell, Cardinal, Covenant, Fathom, Gallant, Harrow, Lattice,
+Monolith, Palisade, Quarry, Rampart, Sextant, Tessera, Umbra, Vanguard, Waypoint, Zenith, Ascendant, Bastion, Caldera, Driftwood,
+Equinox, Foundry, Granite, Helix, Inkwell, Jetstream, Kingfisher, Longview, Mosaic, Orchard, Pinnacle, Redline, Silverline,
+Tidewater, Union, Veridian, Wolfram, Atlas, Beacon, Carrion, Dominion, Ember/c, Firebrand, Gauntlet, Horizon, Lantern, Mantle,
+Nexus/c, Quantum/c, Apex/c, Omni/c, Synth/c, Neo/c, Cyber/c, Aegis/c, Titan/c, Vertex/c`);
+const GROUP_WORDS = pool('Group, Consortium, Combine, Trust, Syndicate, Collective, Holdings, Concern');
+const GREEK = pool('Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Eta, Theta, Iota, Kappa, Lambda, Sigma, Tau, Upsilon, Phi, Chi, Psi, Omega');
+const TRADE_HOUSES = pool('Trading Company, Merchant Company, Trading House, Mercantile, Exchange, Shipping Company, Bank, Counting House, Chartered Company, Company of Merchants, Carrying Company, Caravan Company');
+
 export const KITS = Object.freeze({
+    business_modern: {
+        label: 'Corporations',
+        patterns: [
+            ['{family} {corpSuffix}', 4], ['{family} {sector}', 3], ['{family} & {family}', 1], ['{brand} {sector}', 4],
+            ['{brand} {corpSuffix}', 2], ['{initials} {corpSuffix}', 1], ['{place} {sector} {groupWord}', 1], ['{greek} {sector}', 0.5],
+        ],
+    },
+    business_trade: {
+        label: 'Merchant houses and trading companies',
+        patterns: [
+            ['{family} & Sons', 3], ['{family} & {family}', 3], ['The {place} {tradeHouse}', 3], ['House {family}', 2],
+            ['{family} Brothers', 1], ["{family}, {family} and Company", 1], ['The {adj} {thing} Company', 1], ['{family} {tradeHouse}', 2],
+        ],
+    },
     codename: {
         label: 'Codenames and callsigns',
         patterns: [['{callWord}', 6], ['{callWord} {callNumber}', 3], ['{colour} {callWord}', 2], ['{callWord}-{callNumber}', 1]],
@@ -157,6 +191,7 @@ export const POOLS = Object.freeze({
     merchantVirtue: VIRTUES_MERCHANT, cargo: CARGO, merchantNoun: pool('Trader, Lass, Belle, Merchant, Packet, Pride, Venture, Star, Rose'),
     companyNoun: COMPANY_NOUNS, gangNoun: GANG_NOUNS, gangAdj: GANG_ADJ, orderHead: ORDER_HEADS, orderNoun: ORDER_NOUNS, trade: TRADES,
     callWord: CALL_WORDS, callNumber: CALL_NUMBERS,
+    corpSuffix: CORP_SUFFIXES, sector: SECTORS, brand: BRANDS, groupWord: GROUP_WORDS, greek: GREEK, tradeHouse: TRADE_HOUSES,
     part: pool('Whisker, Beard, Tail, Ear, Nose, Paw, Hoof, Horn, Tooth, Eye, Head, Knees/j, Bollocks/j, Breakfast/j, Supper, Wedding/j, Funeral/g, Revenge, Folly, Rest, Delight/j, Lament/g'),
 });
 

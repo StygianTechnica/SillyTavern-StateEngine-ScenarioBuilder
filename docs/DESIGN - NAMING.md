@@ -549,9 +549,9 @@ files with the rest of the library.
 | `random.js`, `text.js` | Seeded rolls; folding, closeness (Kael / Kaelen) and casing. |
 | `markov.js`, `mutate.js` | The weighted blend; the catalogue of sound shifts, signature endings and recombination by mutation level. |
 | `conventions.js` | Icelandic genitives, Russian and Ukrainian patronymics, feminine surnames (Russian, Polish, Byzantine, Roman), and the order of parts in each tradition. |
-| `kits.js` | Wilderness features, inns and taverns, shops, pirate / naval / merchant ships, companies, gangs, orders - with grim, jolly, sea and overused tags on the words. |
+| `kits.js` | Wilderness features, inns and taverns, shops, pirate / naval / merchant ships, companies, gangs, orders, businesses (corporations at TL6 and later worlds, merchant houses before), codenames - with grim, jolly, sea and overused tags on the words. |
 | `cultures.js` | The 15 presets, real cultures, a blend for science fiction, and the world default read from the front page. |
-| `classify.js` | The kind of name a brief needs, its gender, a name the brief gives, and the entries it is tied to. |
+| `classify.js` | The kind of name a brief needs, its gender, a name the brief gives, the entries it is tied to, and how: `from` (its followers, its temple, a subsidiary - named from it) or `apart` (a rival, an enemy - a name of its own sharing no word with it; unclear is `apart`). |
 | `registry.js` | The registry, the cliché list, piece counts and the checks. |
 | `engine.js` | `planName` (given / derived / rolled / none, best spread of ten candidates) and `namePool`. |
 | `run.js` | Reads the world, records the counter and registry, the shared list across worlds, the culture picker. |

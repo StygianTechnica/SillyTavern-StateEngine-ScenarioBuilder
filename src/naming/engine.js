@@ -11,8 +11,9 @@ import { composePerson } from './conventions.js';
 import { KITS, POOLS, headsFor, wordWeight, wordOf, moodOf } from './kits.js';
 import { resolveCulture, defaultCultureId } from './cultures.js';
 import { buildIndex, acceptable, spreadScore } from './registry.js';
-import { nameKindFor, nameInBrief, tiesInBrief } from './classify.js';
-import { capitalize, titleCase, isVowel } from './text.js';
+import { nameKindFor, nameInBrief, tiesInBrief, tieRelation } from './classify.js';
+import { capitalize, titleCase, isVowel, nameTokens } from './text.js';
+import { isLaterAge } from '../library/world-options.js';
 
 const CANDIDATES = 10;
 const MAX_LEN = 26;
@@ -269,6 +270,8 @@ function fillKit(kitId, rand, { mood = {}, feature = 'forest', trade = '', perso
             case 'givenF': return person('f').split(' ')[0];
             case 'family': return person('', true);
             case 'place': return place();
+            // A company's initials: "KTM Systems".
+            case 'initials': return Array.from({ length: chance(rand, 0.6) ? 3 : 2 }, () => String.fromCharCode(65 + Math.floor(rand() * 26))).join('');
             default: return POOLS[key] ? from(key) : key;
         }
     });
@@ -283,6 +286,13 @@ function demonym(name, culture) {
     return isVowel(base.at(-1)) && isVowel(end[0]) ? base.slice(0, -1) + end : base + end;
 }
 
+// A business's name: one ending in a corporate or trade word (Omicron
+// Innovations, Halloran & Sons, the Ledger Bank).
+const BUSINESS_TAIL = /\b(innovations|industries|holdings|group|corporation|corp|inc|incorporated|ltd|limited|llc|dynamics|systems|technologies|tech|labs|works|enterprises|international|global|solutions|partners|capital|consolidated|conglomerate|biologics|pharmaceuticals|logistics|robotics|cybernetics|aerospace|media|energy|mining|freight|bank|trading company|trading house|mercantile|& sons|brothers|and company|co)\.?$/i;
+export const looksLikeBusiness = (name) => BUSINESS_TAIL.test(String(name ?? '').trim());
+// The brand of a business's name, without its corporate tail: "Omicron".
+const brandOf = (name) => String(name).replace(/^the\s+/i, '').replace(BUSINESS_TAIL, '').replace(/[\s,&]+$/, '').trim() || String(name);
+
 export function derivedNames(tie, kindInfo, culture, rand) {
     const X = String(tie.name).replace(/^the\s+/i, '').trim();
     const last = X.split(/\s+/).pop();
@@ -294,8 +304,15 @@ export function derivedNames(tie, kindInfo, culture, rand) {
     if (kind === 'faction' || kind === 'house') {
         if (kind === 'house') list = isPerson ? [`House ${last}`, `The House of ${X}`, `The ${adj}`] : [`House ${X}`, `The Lords of ${X}`];
         else if (isPerson) list = [`Children of ${X}`, `${X}'s Hand`, `The ${adj}`, `The Sworn of ${X}`, `Disciples of ${X}`, `The Order of ${X}`, `Keepers of ${X}`, `${X}'s Chosen`];
-        else if (isPlace) list = [`The ${X} ${pick(rand, ['Watch', 'Guard', 'Company', 'Council', 'League', 'Guild', 'Wardens'])}`, `The ${X} Free Company`, `The Lords of ${X}`, `The ${adj} League`];
-        else list = [`The True ${X}`, `${X} Reborn`, `The Last of ${X}`, `The ${adj} Remnant`];
+        else if (isPlace) list = kindInfo.subtype === 'business'
+            ? [`${X} ${wordOf(pick(rand, POOLS.sector))}`, `The ${X} ${wordOf(pick(rand, POOLS.tradeHouse))}`, `${X} ${wordOf(pick(rand, POOLS.corpSuffix))}`]
+            : [`The ${X} ${pick(rand, ['Watch', 'Guard', 'Company', 'Council', 'League', 'Guild', 'Wardens'])}`, `The ${X} Free Company`, `The Lords of ${X}`, `The ${adj} League`];
+        // A subsidiary or a division of a business keeps the parent's brand
+        // and names its own trade: Omicron Innovations -> Omicron Biologics.
+        else if (kindInfo.subtype === 'business' || looksLikeBusiness(X)) {
+            const brand = brandOf(X);
+            list = [`${brand} ${wordOf(pick(rand, POOLS.sector))}`, `${brand} ${wordOf(pick(rand, POOLS.sector))}`, `${brand} ${wordOf(pick(rand, POOLS.corpSuffix))}`, `${brand} Labs`];
+        } else list = [`The True ${X}`, `${X} Reborn`, `The Last of ${X}`, `The ${adj} Remnant`];
     } else if (kind === 'ship') {
         list = isPlace ? [X, `Pride of ${X}`, `${X} Trader`, `Spirit of ${X}`] : [`${X}'s Pride`, `${X}'s Revenge`, `Spirit of ${X}`, `${X}'s Fortune`];
     } else if (kind === 'person') {
@@ -327,7 +344,7 @@ export function planName(req, world) {
     const counter = naming.counter ?? 0;
     const given = nameInBrief(req.brief);
     if (given) return { mode: 'given', name: given, aliases: [], meaning: '', candidates: [], counter };
-    const kindInfo = req.kindInfo ?? nameKindFor(req.typeId, req.brief, { hasParent: req.hasParent });
+    let kindInfo = req.kindInfo ?? nameKindFor(req.typeId, req.brief, { hasParent: req.hasParent });
     const cultureId = req.cultureId || defaultCultureId(world.overview, naming);
     const culture = resolveCulture(cultureId, { naming, seed: naming.seed ?? 'world' }) ?? resolveCulture('preset:old_kingdom', { seed: naming.seed });
     const meta = { kind: kindInfo?.kind ?? '', culture: { id: culture.id, label: culture.label } };
@@ -336,11 +353,19 @@ export function planName(req, world) {
 
     // Tied to an existing entry the brief names: built from its name.
     const ties = req.typeId === 'character' ? [] : tiesInBrief(req.brief, world.entries ?? []);
-    if (ties.length && kindInfo) {
-        const candidates = derivedNames(ties[0], kindInfo, culture, rand).filter((n) => n.length <= 48 && acceptable(n, index, { kit: true }));
+    // ...if it comes from that entry (its followers, its temple). A rival or
+    // an enemy gets a name of its own, sharing no word with the other's.
+    const relation = ties.length ? tieRelation(req.brief, ties[0].matched) : '';
+    // A group whose kind the brief leaves open takes its tie's: a rival of a
+    // corporation is a business.
+    if (kindInfo?.guessed && ties.length && looksLikeBusiness(ties[0].name)) kindInfo = { kind: 'faction', subtype: 'business' };
+    if (relation === 'from' && kindInfo) {
+        const candidates = [...new Set(derivedNames(ties[0], kindInfo, culture, rand))].filter((n) => n.length <= 48 && acceptable(n, index, { kit: true }));
         if (candidates.length) return { mode: 'derived', name: '', aliases: [], meaning: '', candidates: candidates.slice(0, 4), tie: ties[0].name, counter: counter + 1, ...meta };
     }
-    if (!kindInfo) return { mode: 'none', name: '', aliases: [], meaning: '', candidates: [], counter, ...meta };
+    const apart = relation === 'apart' ? ties[0].name : '';
+    const apartWords = new Set(apart ? nameTokens(apart) : []);
+    if (!kindInfo) return { mode: 'none', name: '', aliases: [], meaning: '', candidates: [], counter, apart, ...meta };
 
     const mood = moodOf(world.overview?.tone, `${req.brief ?? ''} ${req.placeText ?? ''}`);
     const person = (g, familyOnly = false) => {
@@ -377,6 +402,8 @@ export function planName(req, world) {
                 return { name: culture.root === 'scottish_gaelic' ? `Clan Mac${fam}` : `House ${fam}`, meaning: '' };
             }
             case 'faction':
+                // A business: a corporation in a later age, a merchant house before.
+                if (kindInfo.subtype === 'business') return fillKit(isLaterAge(world.overview) ? 'business_modern' : 'business_trade', rand, { mood, person, place });
                 if (oneOf('faction') === 'native' && kindInfo.subtype === 'order') return { name: `The ${pick(rand, POOLS.orderHead).replace(/s$/, '')} of ${place()}`, meaning: '', kit: 'order' };
                 return fillKit(kindInfo.subtype, rand, { mood, person, place });
             // An alias: a callsign from the kit (src/library/alias-kinds.js).
@@ -393,10 +420,11 @@ export function planName(req, world) {
         const r = roll();
         if (!r?.name || r.name.length > MAX_LEN + (r.kit ? 16 : 0)) continue;
         if (!acceptable(r.name, index, { kit: Boolean(r.kit) })) continue;
+        if (apartWords.size && nameTokens(r.name).some((t) => apartWords.has(t))) continue;
         if (found.some((f) => f.name === r.name)) continue;
         found.push(r);
     }
-    if (!found.length) return { mode: 'none', name: '', aliases: [], meaning: '', candidates: [], counter: counter + 1, ...meta };
+    if (!found.length) return { mode: 'none', name: '', aliases: [], meaning: '', candidates: [], counter: counter + 1, apart, ...meta };
     // The best spread: the candidate whose pieces have been used least.
     let best = found[0];
     let bestScore = Infinity;
@@ -404,7 +432,7 @@ export function planName(req, world) {
         const sc = spreadScore(f.name, index);
         if (sc < bestScore) { best = f; bestScore = sc; }
     }
-    return { mode: 'rolled', name: best.name, aliases: best.aliases ?? [], meaning: best.meaning ?? '', gender: best.gender ?? '', candidates: [], counter: counter + 1, ...meta };
+    return { mode: 'rolled', name: best.name, aliases: best.aliases ?? [], meaning: best.meaning ?? '', gender: best.gender ?? '', candidates: [], counter: counter + 1, apart, ...meta };
 }
 
 // A few names for any other person or place a text may mention ("her

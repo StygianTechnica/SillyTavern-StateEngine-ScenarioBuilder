@@ -182,11 +182,13 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     let fixedName = '';
     let nameMeaning = '';
     let nameFrom = null;
+    let nameApart = '';
     if (task === 'create' && !(draft?.name ?? entry?.name)) {
         if (naming.name) fixedName = naming.name;
         else {
             const placeText = parentForPrompt ? pathOf(parents, parentForPrompt).map((id) => allEntries.find((e) => e.id === id)).filter(Boolean).map((e) => `${e.name} ${e.description ?? e.base?.description ?? ''}`).join(' ') : '';
             const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId: naming.cultureId, gender: naming.gender, hasParent: Boolean(parentForPrompt), placeText }, all);
+            nameApart = plan.apart ?? '';
             if (plan.mode === 'rolled' || plan.mode === 'given') {
                 fixedName = plan.name;
                 nameMeaning = plan.meaning;
@@ -195,7 +197,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     }
     const namePool = namePoolFor(ctx.settingId, all, { cultureId: naming.cultureId });
     const base = {
-        fixedName, nameMeaning, nameFrom, namePool, avoidNames: PROMPT_CLICHES,
+        fixedName, nameMeaning, nameFrom, nameApart, namePool, avoidNames: PROMPT_CLICHES,
         type, fields, brief,
         // The world as it holds where the entry is: a place's own realm, or
         // the place an entry lies in (a planet at TL12, a dead-magic zone).
