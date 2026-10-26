@@ -109,3 +109,28 @@ describe('faction image prompts', () => {
         expect(buildImagePrompt({ entry: guild, overview: { worldType: 'fantasy', tech: { level: 'tl8' } } }).prompt).toContain('logo and branding');
     });
 });
+
+describe('the anime style', () => {
+    const mira = { type: 'character', name: 'Mira', aliases: [], description: 'A tired innkeeper with ink-stained fingers.', role: 'innkeeper' };
+    const wood = { type: 'location', name: 'Ironwood', aliases: [], description: 'An ancient forest of black-barked trees.' };
+    it('leads the prompt, uses Midjourney\'s anime model and keeps photorealism out', () => {
+        const { prompt } = buildImagePrompt({ entry: mira, options: { provider: 'midjourney', style: 'anime' } });
+        expect(prompt.startsWith('anime key visual, Japanese animation style')).toBe(true);
+        expect(prompt).toContain('expressive anime eyes');
+        expect(prompt).toContain('--niji 6');
+        expect(prompt).not.toContain('--v 7');
+        expect(prompt).toMatch(/--no [^-]*photorealistic/);
+        expect(buildImagePrompt({ entry: wood, options: { provider: 'midjourney', style: 'anime' } }).prompt).not.toContain('eyes');
+        // Another style keeps the chosen version.
+        expect(buildImagePrompt({ entry: mira, options: { provider: 'midjourney', style: 'painterly' } }).prompt).toContain('--v 7');
+    });
+    it('gives Stable Diffusion anime tags and a negative that pulls away from realism', () => {
+        const { prompt, negative } = buildImagePrompt({ entry: wood, options: { provider: 'stable_diffusion', style: 'anime' } });
+        expect(prompt.startsWith('anime, anime key visual, anime screencap')).toBe(true);
+        expect(negative).toContain('photorealistic');
+        expect(negative).toContain('3d render');
+    });
+    it('opens a sentence prompt with the look', () => {
+        expect(buildImagePrompt({ entry: wood, options: { provider: 'natural', style: 'anime' } }).prompt.startsWith('An anime key visual in Japanese animation style')).toBe(true);
+    });
+});

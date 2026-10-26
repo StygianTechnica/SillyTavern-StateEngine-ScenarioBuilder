@@ -22,7 +22,7 @@ import {
 } from '../library/world-options.js';
 import { generateOverview, generateEntry, rollEntryName } from '../generate/run.js';
 import { cultureOptions, markNameDeclined } from '../naming/run.js';
-import { fieldDefs } from './sheet.js';
+import { fieldDefs, wantsNsfwNote } from './sheet.js';
 import { renderQuestBoard } from './quest-board.js';
 import { locationMap } from './map.js';
 import { runLoreSync, hasArchivistLore } from '../library/lore-sync.js';
@@ -452,6 +452,8 @@ function generatePanel(type, all, pathLabel) {
             g.name = '';
             g.rolled = '';
             ws.prefill = { values, parentId: g.parentId || null };
+            // Its intimate-scene note follows on the sheet, when the setting writes one.
+            ws.pendingNsfw = type.id === 'character' && wantsNsfwNote();
             ws.genPanel = null;
             if (dropped.length) toast('info', `Left out what did not fit: ${dropped.slice(0, 4).join('; ')}`);
             openSheet('new');

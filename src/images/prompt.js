@@ -22,7 +22,22 @@ export const STYLES = Object.freeze([
     { id: 'concept', label: 'Concept art', text: 'concept art, matte painting, detailed environment design' },
     { id: 'dark_oil', label: 'Dark oil painting', text: 'dark fantasy oil painting, chiaroscuro, muted palette, heavy texture' },
     { id: 'ink', label: 'Ink & watercolour', text: 'ink and watercolour sketch, loose linework, soft washes, parchment' },
-    { id: 'anime', label: 'Anime key visual', text: 'anime key visual, clean cel shading, vivid colour' },
+    // A style may also carry: first (its words lead the prompt, where the
+    // models weigh them most), sd (Stable Diffusion's tags, for anime
+    // checkpoints), sdNegative and mjNo (what pulls it away from the look),
+    // natural (the lead of a sentence prompt), niji (Midjourney's anime model),
+    // portrait (more words for a character).
+    {
+        id: 'anime', label: 'Anime key visual',
+        text: 'anime key visual, Japanese animation style, cel shading, crisp clean lineart, flat vibrant colours, detailed painted anime background',
+        portrait: 'expressive anime eyes',
+        first: true,
+        sd: 'anime, anime key visual, anime screencap, cel shading, flat color, clean lineart, vibrant colors, detailed background, masterpiece, best quality',
+        sdNegative: 'photorealistic, realistic, photo, 3d render, cgi, western cartoon, oil painting, sketch',
+        mjNo: 'photorealistic, 3d render',
+        natural: 'An anime key visual in Japanese animation style - crisp clean lineart, cel-shaded flat vibrant colours, a detailed painted background -',
+        niji: true,
+    },
     { id: 'photo', label: 'Photographic', text: 'photorealistic photograph, 35mm, natural light, high detail' },
     { id: 'engraving', label: 'Woodcut / engraving', text: 'antique woodcut engraving, crosshatching, monochrome, old book plate' },
     { id: 'pixel', label: 'Pixel art', text: 'detailed pixel art, limited palette, 16-bit' },
@@ -36,6 +51,8 @@ export const DEFAULT_ASPECT = Object.freeze({
 });
 
 export const MJ_VERSIONS = Object.freeze(['7', '6.1', 'niji 6']);
+// The niji model an anime style uses when another version is chosen.
+const NIJI = 'niji 6';
 
 export const DEFAULT_IMAGE_OPTIONS = Object.freeze({
     provider: 'midjourney',
@@ -265,10 +282,11 @@ export function flavourOf(overview) {
 
 // The style's words - its "fantasy" made this world's genre ("dark fantasy
 // oil painting" is "dark post-apocalyptic oil painting" in a wasteland).
-export function styleOf(options, overview = {}) {
+export function styleOf(options, overview = {}, { provider = '' } = {}) {
     const preset = STYLES.find((s) => s.id === options.style);
     const genre = GENRES[overview?.worldType];
-    const text = genre ? (preset?.text ?? '').replace(/\bfantasy\b/gi, genre) : (preset?.text ?? '');
+    const own = provider === 'stable_diffusion' && preset?.sd ? preset.sd : (preset?.text ?? '');
+    const text = genre ? own.replace(/\bfantasy\b/gi, genre) : own;
     return [text, clean(options.customStyle)].filter(Boolean).join(', ');
 }
 
@@ -293,24 +311,32 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
     const source = isVisualEnough(narrative) ? narrative : (entry.description || narrative || '');
     const description = visualDescription(source, { own: names, others, kind: entry.type === 'character' ? '' : kindWord(entry.name) });
     const env = [clean(environment.climate), clean(environment.lighting)].filter(Boolean).join(', ');
+    const preset = STYLES.find((s) => s.id === opts.style);
+    const styleText = styleOf(opts, overview, { provider: opts.provider });
+    // A style that leads (anime) goes first, where the models weigh it most.
+    const leads = preset?.first && opts.provider !== 'natural';
     const parts = [
+        leads ? styleText : '',
         opts.includeNames && entry.type === 'character' ? clean(entry.name) : '',
         ...subjectOf(entry, description, others, overview),
+        entry.type === 'character' ? clean(preset?.portrait) : '',
         entry.type === 'location' || entry.type === 'scene' ? env : '',
         flavourOf(overview),
-        styleOf(opts, overview),
+        leads ? '' : styleText,
     ].map(clean).filter(Boolean);
     const subject = parts.join(', ').replace(/\.\s*,/g, ',').replace(/\.+$/, '');
 
     if (opts.provider === 'midjourney') {
         const mj = opts.midjourney;
         const params = [`--ar ${DEFAULT_ASPECT[entry.type] ?? '1:1'}`];
-        if (String(mj.version).startsWith('niji')) params.push(`--niji ${String(mj.version).replace(/^niji\s*/, '')}`);
-        else params.push(`--v ${mj.version}`);
+        // An anime style draws on Midjourney's anime model, niji.
+        const version = preset?.niji && !String(mj.version).startsWith('niji') ? NIJI : String(mj.version);
+        if (version.startsWith('niji')) params.push(`--niji ${version.replace(/^niji\s*/, '')}`);
+        else params.push(`--v ${version}`);
         if (Number.isFinite(Number(mj.stylize)) && Number(mj.stylize) !== 100) params.push(`--stylize ${Math.round(Number(mj.stylize))}`);
         if (Number(mj.chaos) > 0) params.push(`--chaos ${Math.round(Number(mj.chaos))}`);
         if (mj.raw) params.push('--style raw');
-        const no = [...new Set([...clean(mj.no).split(',').map(clean).filter(Boolean), ...(opts.respectLimits === false ? [] : worldExclusions(overview))])];
+        const no = [...new Set([...clean(mj.no).split(',').map(clean).filter(Boolean), ...clean(preset?.mjNo).split(',').map(clean).filter(Boolean), ...(opts.respectLimits === false ? [] : worldExclusions(overview))])];
         if (no.length) params.push(`--no ${no.join(', ')}`);
         if (clean(mj.sref)) params.push(`--sref ${clean(mj.sref)}`);
         if (clean(mj.extra)) params.push(clean(mj.extra));
@@ -318,12 +344,12 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
         return { provider: 'midjourney', prompt: `${subject.replace(/--+/g, '-')} ${params.join(' ')}`, negative: '' };
     }
     if (opts.provider === 'stable_diffusion') {
-        const negative = [clean(opts.negative), ...(opts.respectLimits === false ? [] : worldExclusions(overview))].filter(Boolean).join(', ');
+        const negative = [clean(opts.negative), clean(preset?.sdNegative), ...(opts.respectLimits === false ? [] : worldExclusions(overview))].filter(Boolean).join(', ');
         return { provider: 'stable_diffusion', prompt: `${subject}, highly detailed`, negative };
     }
-    const style = styleOf(opts, overview);
+    const style = styleText;
     const body = parts.slice(opts.includeNames && entry.type === 'character' ? 1 : 0).filter((p) => p !== style).join(', ');
-    const lead = style ? `${style.split(',')[0]} of ` : 'An image of ';
+    const lead = preset?.natural ? `${preset.natural} of ` : style ? `${style.split(',')[0]} of ` : 'An image of ';
     const sentence = `${lead}${body.charAt(0).toLowerCase()}${body.slice(1)}.`;
     return { provider: 'natural', prompt: sentence.charAt(0).toUpperCase() + sentence.slice(1), negative: '' };
 }

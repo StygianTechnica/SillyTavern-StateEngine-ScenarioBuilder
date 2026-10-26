@@ -233,6 +233,17 @@ export async function renderSheet(type, all) {
     genCtx = { type, entry, defs, all, isNew };
     const gate = canGenerateFor(settingId, isNew ? null : entry.id);
     const busy = ws.generating?.scope === 'sheet';
+    // A character generated in the catalog: its intimate-scene note, when the
+    // setting writes one with Enrich all / Fill empty.
+    if (ws.editing && ws.pendingNsfw && isNew && type.id === 'character' && !ws.generating) {
+        ws.pendingNsfw = false;
+        queueMicrotask(async () => {
+            if (!ws.draft || (ws.draft.meta.nsfw ?? '').trim()) return;
+            ws.generating = { scope: 'sheet', field: 'meta.nsfw' };
+            rerender({ force: true });
+            try { await writeNsfw(); } finally { ws.generating = null; rerender({ force: true }); }
+        });
+    }
     if (ws.editing && ws.pendingGen) {
         const { task, field } = typeof ws.pendingGen === 'string' ? { task: ws.pendingGen, field: null } : ws.pendingGen;
         ws.pendingGen = null;
@@ -410,7 +421,9 @@ async function runGen(task, field = null) {
         // Quest tab), when that is still empty - so it can finish.
         if (type.id === 'quest' && !isNew && (effective === 'fill' || effective === 'enrich')) await fillQuestEnds(entry);
         // A character's intimate-scene note too, when the setting says so.
-        if (type.id === 'character' && (effective === 'fill' || effective === 'enrich') && getSettings().generation.showNsfw && getSettings().generation.nsfwInEnrich && !(ws.draft.meta.nsfw ?? '').trim()) await writeNsfw();
+        // A new character written whole counts too (src/ui/catalog.js: Generate,
+        // Surprise me).
+        if (type.id === 'character' && ['fill', 'enrich', 'create'].includes(effective) && wantsNsfwNote() && !(ws.draft.meta.nsfw ?? '').trim()) await writeNsfw();
     } catch (err) {
         toast('error', `Could not generate: ${err?.message ?? err}`);
     } finally {
@@ -435,6 +448,12 @@ async function fillQuestEnds(entry) {
 
 // A character's intimate-scene note, from who they are (the draft as it
 // stands): written when empty, added to otherwise.
+// Whether a new or enriched character also gets its intimate-scene note.
+export function wantsNsfwNote() {
+    const g = getSettings().generation;
+    return g.showNsfw === true && g.nsfwInEnrich === true;
+}
+
 async function writeNsfw() {
     const d = ws.draft;
     if (!d) return;
