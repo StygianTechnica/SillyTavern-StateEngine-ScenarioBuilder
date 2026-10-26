@@ -51,3 +51,19 @@ describe('point of view', () => {
         expect(system).toContain('stays with Remus\'s senses');
     });
 });
+
+describe('a whole group taking something in', () => {
+    const cast = [{ id: 'chr_remus', name: 'Remus', player: true }, { id: 'chr_varyn', name: 'Varyn' }, { id: 'chr_graxx', name: 'Graxx' }];
+    const vision = { id: 'm1', text: 'Remus had a dream of a burning gate and a voice calling him by a god\'s name.', importance: 'high', private: true, entity_ids: ['chr_remus'], witness_ids: ['chr_remus'], source_message_id: 'God War#1@d' };
+    it('counts for everyone, so no one is said not to know', () => {
+        expect(unknownsFor([vision], { cast })).not.toEqual([]);
+        for (const words of ['the group', 'everyone', 'the others', 'all of them', 'the party', 'the companions']) {
+            const heard = { id: 'm2', text: `Around the campfire ${words} pondered the dream of the burning gate.`, importance: 'medium', entity_ids: [], witness_ids: [], source_message_id: 'God War#2@d' };
+            expect(unknownsFor([vision, heard], { cast }), words).toEqual([]);
+        }
+    });
+    it('needs the group as whole words, not inside another word', () => {
+        const heard = { id: 'm3', text: 'Around the campfire noeveryones pondered the dream of the burning gate.', importance: 'medium', entity_ids: [], witness_ids: [], source_message_id: 'God War#3@d' };
+        expect(unknownsFor([vision, heard], { cast })).not.toEqual([]);
+    });
+});

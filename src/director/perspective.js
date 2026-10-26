@@ -75,7 +75,7 @@ function legacyOwner(text, people) {
     return null;
 }
 
-const GROUP = /(?:the group|everyone|the others|all of them|the party|the companions)/i;
+const GROUP = /\b(?:the group|everyone|the others|all of them|the party|the companions)\b/i;
 
 // Whether `personId` learned of memory `x` by `later` memories: one at the
 // same message or after that they take part in (as a witness; for a memory
