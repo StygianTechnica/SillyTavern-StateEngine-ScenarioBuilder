@@ -121,7 +121,47 @@ const GROUP_WORDS = pool('Group, Consortium, Combine, Trust, Syndicate, Collecti
 const GREEK = pool('Alpha, Beta, Gamma, Delta, Epsilon, Zeta, Eta, Theta, Iota, Kappa, Lambda, Sigma, Tau, Upsilon, Phi, Chi, Psi, Omega');
 const TRADE_HOUSES = pool('Trading Company, Merchant Company, Trading House, Mercantile, Exchange, Shipping Company, Bank, Counting House, Chartered Company, Company of Merchants, Carrying Company, Caravan Company');
 
+// Bases, districts, venues, streets. Tags: m - a later age only (a
+// sector, an arcology), o - an earlier one only (an undercroft, a belfry).
+const LAIRS = pool(`Kennel, Cistern, Undercroft/o, Sump, Warren, Rookery, Nest, Burrow, Den, Cellar, Vault, Hollow, Pit, Boiler Room/m,
+Old Mill/o, Pumphouse, Drain, Ossuary/o, Belfry/o, Loft, Signal Box/m, Coal Store/o, Ice House/o, Foundry, Bathhouse, Water Tower,
+Sub-Basement/m, Annex/m, Substation/m, Server Farm/m, Cold Store/m, Morgue, Chapel, Kiln/o, Lighthouse, Observatory, Aviary, Cannery, Tannery/o`);
+const DISTRICT_WORDS = pool(`Ward, Quarter, District, Heights, Flats, Docks/s, Row, End, Hill, Gate, Market, Commons, Yards, Sector/m, Block/m,
+Stacks/m, Arcology/m, Strip/m, Terrace, Narrows, Bottoms, Reach, Side, Town, Shambles/o, Liberty/o`);
+const DISTRICT_NOUNS = pool(`Shambles/o, Narrows, Rookery, Warrens, Stacks/m, Sprawl/m, Gutters, Pits, Tangle, Maze, Sinks, Bottoms, Hive/m,
+Ditch, Steeps, Spires, Undercity/m, Mire, Rag Fair/o, Sumps, Kennels, Grid/m, Cages/m, Scrapyard/m, Tanneries/o, Tenements`);
+const STREET_WORDS = pool('Street, Avenue, Road, Lane, Row, Alley, Way, Walk, Square, Close, Court, Terrace, Boulevard/m, Plaza/m, Hill, Gate, Steps, Passage');
+const SECRET_SITES = pool('Site, Station, Facility, Outpost, Annex, Depot, Room, Camp, Point, Building');
+
 export const KITS = Object.freeze({
+    base_secret: {
+        label: 'Secret bases and hideouts',
+        patterns: [['Site {callWord}', 3], ['{callWord} {secretSite}', 2], ['The {callWord} Room', 1], ['Facility {initials}-{digit}', 1], ['Building {num2}', 1], ['The {lair}', 3], ['Station {greek}', 1]],
+    },
+    hideout: {
+        label: 'Hideouts and lairs (an earlier age)',
+        patterns: [['The {lair}', 4], ['The {adjInn} {lair}', 2], ["The {beast}'s {lair}", 2], ['The {owner} {lair}', 1]],
+    },
+    base_open: {
+        label: 'Bases, offices and headquarters',
+        patterns: [['{brand} Tower', 2], ['{place} Command', 1], ['Fort {family}', 2], ['Camp {family}', 1], ['The {callWord} Facility', 1], ['{brand} House', 1], ['The {adjInn} {lair}', 1]],
+    },
+    district: {
+        label: 'Districts and neighbourhoods',
+        patterns: [['{place} {districtWord}', 4], ['The {districtNoun}', 3], ['{brand} {districtWord}', 2], ['The {ordinal} Ward', 1], ['Little {place}', 1], ['{adj} {districtWord}', 2], ['{owner} {districtWord}', 1]],
+    },
+    venue: {
+        label: 'Clubs, clinics, hotels and the like',
+        patterns: [['{brand} {venue}', 3], ['The {brand} {venue}', 1], ["{family}'s {venue}", 2], ['The {adjInn} {beast}', 2], ['{place} {venue}', 1]],
+    },
+    institution: {
+        label: 'Hospitals, clinics, schools and offices',
+        patterns: [['{brand} {venue}', 3], ['{family} {venue}', 2], ['{place} {venue}', 2], ["Saint {given}'s {venue}", 1], ['The {brand} {venue}', 1]],
+    },
+    street: {
+        label: 'Streets and squares',
+        patterns: [['{family} {streetWord}', 3], ['{brand} {streetWord}', 1], ['{place} {streetWord}', 2], ['{thing} {streetWord}', 2], ['{owner} {streetWord}', 1], ['{adj} {streetWord}', 1]],
+    },
     business_modern: {
         label: 'Corporations',
         patterns: [
@@ -191,6 +231,7 @@ export const POOLS = Object.freeze({
     merchantVirtue: VIRTUES_MERCHANT, cargo: CARGO, merchantNoun: pool('Trader, Lass, Belle, Merchant, Packet, Pride, Venture, Star, Rose'),
     companyNoun: COMPANY_NOUNS, gangNoun: GANG_NOUNS, gangAdj: GANG_ADJ, orderHead: ORDER_HEADS, orderNoun: ORDER_NOUNS, trade: TRADES,
     callWord: CALL_WORDS, callNumber: CALL_NUMBERS,
+    lair: LAIRS, districtWord: DISTRICT_WORDS, districtNoun: DISTRICT_NOUNS, streetWord: STREET_WORDS, secretSite: SECRET_SITES,
     corpSuffix: CORP_SUFFIXES, sector: SECTORS, brand: BRANDS, groupWord: GROUP_WORDS, greek: GREEK, tradeHouse: TRADE_HOUSES,
     part: pool('Whisker, Beard, Tail, Ear, Nose, Paw, Hoof, Horn, Tooth, Eye, Head, Knees/j, Bollocks/j, Breakfast/j, Supper, Wedding/j, Funeral/g, Revenge, Folly, Rest, Delight/j, Lament/g'),
 });
@@ -203,7 +244,8 @@ const parseWord = (raw) => {
     return { word, tags };
 };
 
-// A pool word's weight for the mood and the place: { grim, jolly, sea }.
+// A pool word's weight for the mood and the place: { grim, jolly, sea,
+// later (a modern or later world) }.
 export function wordWeight(raw, mood = {}) {
     const { tags } = parseWord(raw);
     let w = 1;
@@ -211,6 +253,9 @@ export function wordWeight(raw, mood = {}) {
     if (tags.includes('g')) w *= mood.grim ? 3 : mood.jolly ? 0.25 : 1;
     if (tags.includes('j')) w *= mood.jolly ? 3 : mood.grim ? 0.25 : 1;
     if (tags.includes('s')) w *= mood.sea ? 4 : 0.6;
+    // A later age's words, an earlier age's: kept to their own worlds.
+    if (tags.includes('m')) w *= mood.later ? 1.5 : 0.02;
+    if (tags.includes('o')) w *= mood.later ? 0.2 : 1.5;
     return w;
 }
 

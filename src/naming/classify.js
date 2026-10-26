@@ -7,15 +7,24 @@ import { fold } from './text.js';
 const any = (text, words) => words.find((w) => new RegExp(`\\b${w}\\b`, 'i').test(text)) ?? null;
 
 const LOCATION_KINDS = [
-    ['room', ['room', 'rooms', 'cellar', 'chamber', 'kitchen', 'attic', 'corridor', 'hallway', 'bedroom', 'study', 'pantry', 'larder', 'stable', 'stables', 'courtyard', 'balcony', 'office', 'cell', 'dormitory', 'parlour', 'parlor', 'foyer', 'lobby', 'basement', 'loft']],
+    ['room', ['room', 'rooms', 'cellar', 'chamber', 'kitchen', 'attic', 'corridor', 'hallway', 'bedroom', 'study', 'pantry', 'larder', 'stable', 'stables', 'courtyard', 'balcony', 'cell', 'dormitory', 'parlour', 'parlor', 'foyer', 'lobby', 'basement', 'loft']],
+    // A base, a hideout: a cover name when it is secret, its owner's otherwise.
+    ['base', ['headquarters', 'hq', 'base', 'hideout', 'hide-out', 'safehouse', 'safe house', 'bunker', 'compound', 'facility', 'laboratory', 'lab', 'depot', 'armory', 'armoury', 'command center', 'command centre', 'black site', 'den', 'warehouse', 'garrison', 'barracks', 'station', 'hangar', 'nest']],
     ['inn', ['inn', 'tavern', 'taverns', 'alehouse', 'pub', 'taproom', 'bar', 'saloon', 'roadhouse', 'brewery', 'hostel', 'coaching inn', 'gin palace', 'cantina', 'speakeasy']],
+    // A place of business in a later age: a club, a clinic, a hotel.
+    ['venue', ['nightclub', 'club', 'restaurant', 'cafe', 'café', 'diner', 'hotel', 'motel', 'casino', 'brothel', 'theatre', 'theater', 'cinema', 'gym', 'clinic', 'hospital', 'school', 'office', 'offices', 'studio', 'garage', 'mall', 'arcade', 'gallery', 'museum', 'library', 'salon', 'teahouse', 'bathhouse', 'embassy', 'arena', 'stadium', 'parlour', 'lounge', 'boutique', 'pharmacy', 'dojo']],
     ['shop', ['shop', 'store', 'smithy', 'forge', 'bakery', 'apothecary', 'stall', 'emporium', 'workshop', 'tailor', 'cobbler', 'chandlery', 'pawnshop', 'bookshop', 'herbalist', 'tannery', 'mercantile']],
     ['site', ['tomb', 'crypt', 'barrow', 'ruin', 'ruins', 'catacomb', 'catacombs', 'vault', 'dungeon', 'lair', 'henge', 'cairn', 'sepulchre', 'mausoleum', 'necropolis']],
     ['temple', ['temple', 'shrine', 'church', 'chapel', 'cathedral', 'monastery', 'abbey', 'sanctum', 'sanctuary', 'priory', 'convent', 'mosque', 'synagogue', 'pagoda']],
     ['fort', ['castle', 'fortress', 'keep', 'citadel', 'fort', 'stronghold', 'bastion', 'tower', 'watchtower', 'manor', 'palace', 'hall']],
+    ['district', ['district', 'neighborhood', 'neighbourhood', 'quarter', 'ward', 'sector', 'slum', 'slums', 'ghetto', 'enclave', 'arcology', 'megablock', 'undercity', 'sprawl', 'downtown', 'uptown', 'dockside', 'barrio', 'favela', 'hutong', 'red-light district']],
+    ['street', ['street', 'avenue', 'alley', 'alleyway', 'boulevard', 'lane', 'plaza', 'square', 'piazza']],
     ['settlement', ['city', 'town', 'village', 'hamlet', 'port', 'harbor', 'harbour', 'capital', 'settlement', 'outpost', 'colony', 'township', 'borough', 'farmstead', 'homestead', 'thorp', 'stead', 'market town', 'trading post']],
     ['region', ['kingdom', 'realm', 'empire', 'province', 'region', 'land', 'lands', 'country', 'duchy', 'barony', 'county', 'march', 'principality', 'territory', 'dominion', 'republic', 'nation', 'shire', 'canton']],
 ];
+
+// What makes a base secret: it gets a cover name, not its owner's.
+const SECRET = ['secret', 'hidden', 'covert', 'clandestine', 'undercover', 'underground', 'black site', 'off the books', 'concealed', 'unmarked', 'classified'];
 
 const FEATURES = [
     ['forest', ['forest', 'wood', 'woods', 'woodland', 'jungle', 'grove', 'thicket', 'weald', 'copse', 'greenwood']],
@@ -77,7 +86,10 @@ export function nameKindFor(typeId, text = '', { hasParent = false } = {}) {
         if (feature && (!place || (settled && at(FEATURES, feature) < at(LOCATION_KINDS, place)))) return { kind: 'feature', feature };
         if (place === 'room') return null;
         if (place === 'inn') return { kind: 'building', subtype: 'inn' };
-        if (place === 'shop') return { kind: 'building', subtype: 'shop', noun: any(t, LOCATION_KINDS[2][1]) };
+        if (place === 'shop') return { kind: 'building', subtype: 'shop', noun: any(t, LOCATION_KINDS.find(([k]) => k === 'shop')[1]) };
+        if (place === 'venue') return { kind: 'building', subtype: 'venue', noun: any(t, LOCATION_KINDS.find(([k]) => k === 'venue')[1]) };
+        // Secret: a cover name, never its owner's.
+        if (place === 'base') return { kind: 'base', secret: Boolean(any(t, SECRET)), noun: any(t, LOCATION_KINDS.find(([k]) => k === 'base')[1]) };
         if (place === 'site') return { kind: 'feature', feature: 'site' };
         if (place === 'temple' || place === 'fort') return { kind: 'settlement', subtype: place, noun: any(t, LOCATION_KINDS.find(([k]) => k === place)[1]) };
         if (place) return { kind: place };
@@ -115,6 +127,11 @@ export function nameInBrief(text) {
 // 'apart': a name of its own is never wrong.
 const APART = ['rival', 'rivals', 'rivalling', 'rivaling', 'enemy', 'enemies', 'competitor', 'competitors', 'competing', 'compete', 'against', 'opposed', 'opposing', 'opposes', 'opposition', 'hunts', 'hunting', 'hunt', 'unlike', 'nemesis', 'foe', 'foes', 'at war', 'war with', 'feud', 'feuding', 'versus', 'vs', 'instead of', 'replacing', 'like', 'similar', 'counterpart', 'alternative', 'challenger', 'challenging', 'undermine', 'undermining', 'sabotage', 'sabotaging', 'betray', 'betrayed', 'hostile', 'targets', 'targeting', 'spying on', 'spies on'];
 const FROM = ['of', 'for', 'to', 'from', 'under', 'within', 'inside', 'in', 'at', 'serving', 'serves', 'serve', 'worshippers', 'worshipers', 'worshipping', 'followers', 'following', 'servants', 'devotees', 'disciples', 'branch', 'subsidiary', 'division', 'offshoot', 'splinter', 'arm', 'wing', 'son', 'daughter', 'child', 'heir', 'cult', 'church', 'temple', 'shrine', 'chapel', 'order', 'priests', 'priesthood', 'owned by', 'run by', 'founded by', 'loyal to', 'sworn to'];
+// Words after a name that make the new thing its own: its followers, its
+// headquarters, its club.
+const OWNED = ['worshippers', 'worshipers', 'followers', 'cult', 'church', 'temple', 'shrine', 'faithful', 'loyalists', 'branch', 'subsidiary',
+    'headquarters', 'hq', 'base', 'hideout', 'safehouse', 'bunker', 'compound', 'facility', 'lab', 'laboratory', 'offices', 'office', 'tower',
+    'hall', 'lodge', 'clubhouse', 'den', 'lair', 'stronghold', 'keep', 'embassy', 'outpost', 'garrison', 'barracks', 'warehouse', 'depot', 'territory', 'turf'];
 export function tieRelation(text, matched) {
     const t = String(text ?? '').toLowerCase();
     const at = t.indexOf(String(matched ?? '').toLowerCase());
@@ -125,7 +142,8 @@ export function tieRelation(text, matched) {
     // A rival or an enemy near the name sets it apart ("a rival corporation
     // to X", "X's main competitor").
     if (has(before, APART) || has(after.split(/\s+/).slice(0, 5).join(' '), APART)) return 'apart';
-    if (has(before, FROM) || /^['’]s\b/.test(after) || has(after.split(/\s+/).slice(0, 3).join(' '), ['worshippers', 'worshipers', 'followers', 'cult', 'church', 'temple', 'shrine', 'faithful', 'loyalists', 'branch', 'subsidiary'])) return 'from';
+    // "X's...", "X worshippers", "X headquarters": its people, its place.
+    if (has(before, FROM) || /^['’]s\b/.test(after) || has(after.split(/\s+/).slice(0, 5).join(' '), OWNED)) return 'from';
     return 'apart';
 }
 

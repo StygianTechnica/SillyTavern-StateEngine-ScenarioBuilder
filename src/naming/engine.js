@@ -268,7 +268,7 @@ function nativeFeature(culture, rand, feature) {
 
 const plural = (w) => (/(s|x|ch|sh)$/i.test(w) ? `${w}es` : /[^aeiou]y$/i.test(w) ? `${w.slice(0, -1)}ies` : `${w}s`);
 
-function fillKit(kitId, rand, { mood = {}, feature = 'forest', trade = '', person, place }) {
+function fillKit(kitId, rand, { mood = {}, feature = 'forest', trade = '', venue = 'Club', person, place }) {
     const kit = KITS[kitId];
     const [pattern] = weighted(rand, kit.patterns, ([, w]) => w);
     const used = new Set();
@@ -290,6 +290,9 @@ function fillKit(kitId, rand, { mood = {}, feature = 'forest', trade = '', perso
             case 'givenF': return person('f').split(' ')[0];
             case 'family': return person('', true);
             case 'place': return place();
+            case 'venue': return venue;
+            case 'digit': return String(1 + Math.floor(rand() * 9));
+            case 'num2': return String(10 + Math.floor(rand() * 90));
             // A company's initials: "KTM Systems".
             case 'initials': return Array.from({ length: chance(rand, 0.6) ? 3 : 2 }, () => String.fromCharCode(65 + Math.floor(rand() * 26))).join('');
             default: return POOLS[key] ? from(key) : key;
@@ -297,6 +300,11 @@ function fillKit(kitId, rand, { mood = {}, feature = 'forest', trade = '', perso
     });
     return { name: name.replace(/\s+/g, ' ').trim(), meaning: '', kit: kitId };
 }
+
+// What a venue is called on its sign: a nightclub is a Club.
+const VENUE_WORDS = { nightclub: 'Club', offices: 'Offices', office: 'Offices', cafe: 'Café', theater: 'Theatre', parlour: 'Parlour', hq: 'Headquarters' };
+const venueWord = (noun) => VENUE_WORDS[noun] ?? capitalize(noun || 'Club');
+const HOSPITALITY = new Set(['restaurant', 'cafe', 'café', 'diner', 'hotel', 'motel', 'brothel', 'teahouse', 'bathhouse', 'lounge', 'club', 'nightclub']);
 
 // ---- names built from an existing entry (section 4.1, step 3)
 
@@ -337,6 +345,16 @@ export function derivedNames(tie, kindInfo, culture, rand) {
         list = isPlace ? [X, `Pride of ${X}`, `${X} Trader`, `Spirit of ${X}`] : [`${X}'s Pride`, `${X}'s Revenge`, `Spirit of ${X}`, `${X}'s Fortune`];
     } else if (kind === 'person') {
         return [];
+    } else if (tie.type === 'faction') {
+        // A group's own place: its headquarters, its hall, its club.
+        const brand = brandOf(X);
+        if (kind === 'district') list = [`${X} ${wordOf(pick(rand, POOLS.districtWord))}`, `The ${X} ${wordOf(pick(rand, POOLS.districtWord))}`];
+        else if (kindInfo?.subtype === 'venue') list = [`${brand} ${venueWord(kindInfo.noun)}`, `The ${brand} ${venueWord(kindInfo.noun)}`];
+        else {
+            // The brief's own word first: "the Ledger Guild hall" is The Ledger Guild Hall.
+            const own = kindInfo?.noun ? `The ${X} ${venueWord(kindInfo.noun)}` : '';
+            list = [own, `${X} Headquarters`, `The ${X} Hall`, `${brand} House`, `${brand} Tower`].filter(Boolean);
+        }
     } else if (isPerson) {
         list = kindInfo?.subtype === 'temple'
             ? [`Temple of ${X}`, `Shrine of ${X}`, `The House of ${X}`, `${X}'s Sanctum`]
@@ -379,15 +397,17 @@ export function planName(req, world) {
     // A group whose kind the brief leaves open takes its tie's: a rival of a
     // corporation is a business.
     if (kindInfo?.guessed && ties.length && looksLikeBusiness(ties[0].name)) kindInfo = { kind: 'faction', subtype: 'business' };
-    if (relation === 'from' && kindInfo) {
+    // A secret base is never named for its owner: a cover name instead.
+    if (relation === 'from' && kindInfo && !kindInfo.secret) {
         const candidates = [...new Set(derivedNames(ties[0], kindInfo, culture, rand))].filter((n) => n.length <= 48 && acceptable(n, index, { kit: true }));
         if (candidates.length) return { mode: 'derived', name: '', aliases: [], meaning: '', candidates: candidates.slice(0, 4), tie: ties[0].name, counter: counter + 1, ...meta };
     }
     const apart = relation === 'apart' ? ties[0].name : '';
-    const apartWords = new Set(apart ? nameTokens(apart) : []);
+    const apartWords = new Set(apart ? nameTokens(apart) : kindInfo?.secret && ties.length ? nameTokens(ties[0].name) : []);
     if (!kindInfo) return { mode: 'none', name: '', aliases: [], meaning: '', candidates: [], counter, apart, ...meta };
 
-    const mood = moodOf(world.overview?.tone, `${req.brief ?? ''} ${req.placeText ?? ''}`);
+    const later = isLaterAge(world.overview);
+    const mood = { ...moodOf(world.overview?.tone, `${req.brief ?? ''} ${req.placeText ?? ''}`), later };
     const person = (g, familyOnly = false) => {
         const p = personName(culture, rand, { gender: g });
         if (!p) return 'Anon';
@@ -414,7 +434,28 @@ export function planName(req, world) {
                 }
                 return fillKit('wilderness', rand, { mood, feature: kindInfo.feature, person, place });
             }
+            case 'base':
+                if (kindInfo.secret) return fillKit(later ? 'base_secret' : 'hideout', rand, { mood, person, place });
+                return fillKit(later ? 'base_open' : 'hideout', rand, { mood, person, place });
+            case 'district': return fillKit('district', rand, { mood, person, place });
+            case 'street': {
+                // A real culture's own street patterns where its stock has them.
+                const st = stockOf(culture.root);
+                if (culture.real && st?.streets?.length && chance(rand, 0.6)) {
+                    const words = Object.values(st.places.words);
+                    return { name: pick(rand, st.streets).replace(/{word}/g, () => capitalize(pick(rand, words) ?? '')).replace(/{family}/g, () => person('', true)), meaning: '', kit: 'street' };
+                }
+                return fillKit('street', rand, { mood, person, place });
+            }
             case 'building':
+                // A club, a clinic, a hotel: its own words in a later age; an inn's
+                // or a shop's before.
+                if (kindInfo.subtype === 'venue') {
+                    if (later && /club/.test(kindInfo.noun ?? '') && chance(rand, 0.3)) return { name: `Club ${wordOf(pick(rand, POOLS.callWord))}`, meaning: '', kit: 'venue' };
+                    // A bar or a club has a sign; a hospital or an office has a name.
+                    if (later) return fillKit(HOSPITALITY.has(kindInfo.noun) ? 'venue' : 'institution', rand, { mood, venue: venueWord(kindInfo.noun), person, place });
+                    return HOSPITALITY.has(kindInfo.noun) ? fillKit('inn', rand, { mood, person, place }) : fillKit('shop', rand, { mood, trade: venueWord(kindInfo.noun), person, place });
+                }
                 if (oneOf('building') === 'native') return settlementName(culture, rand);
                 return fillKit(kindInfo.subtype === 'shop' ? 'shop' : 'inn', rand, { mood, trade: kindInfo.noun && kindInfo.noun !== 'shop' && kindInfo.noun !== 'store' ? kindInfo.noun : '', person, place });
             case 'house': {
