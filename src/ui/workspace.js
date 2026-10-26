@@ -6,7 +6,8 @@
 //   - Minimise folds it into a small pill so the chat can be read, and
 //     brings it back exactly where it was.
 // Tabs: Catalog (catalog.js + sheet.js), Graph (graph.js), Scene, GM Plan (gm-plan.js), Review,
-// History, Import (import-panel.js), Worlds (worlds-tab.js), Preview (panels.js).
+// History, Import (import-panel.js), Worlds (worlds-tab.js), Preview (panels.js),
+// Naming (naming-tab.js).
 
 import { getSettings, saveSettings } from '../settings.js';
 import { LOG_PREFIX } from '../constants.js';
@@ -26,6 +27,7 @@ import { renderGmPlan } from './gm-plan.js';
 import { PLANNER_EVENT } from '../planner/run.js';
 import { renderImport } from './import-panel.js';
 import { renderWorlds } from './worlds-tab.js';
+import { renderNaming } from './naming-tab.js';
 import { WORLDS_EVENT } from '../worlds/run.js';
 import { IMPORT_EVENT } from '../import/run.js';
 import { DIRECTOR_EVENT } from '../director/run.js';
@@ -39,6 +41,7 @@ const TABS = Object.freeze([
     ['scene', 'Scene', 'fa-clapperboard'],
     ['plan', 'GM Plan', 'fa-chess-knight'],
     ['calendar', 'Calendar', 'fa-calendar-days'],
+    ['naming', 'Naming', 'fa-signature'],
     ['review', 'Review', 'fa-seedling'],
     ['history', 'History', 'fa-clock-rotate-left'],
     ['import', 'Import', 'fa-file-import'],
@@ -166,7 +169,7 @@ async function render() {
     lastView = view;
     let body;
     try {
-        body = await ({ graph: renderGraph, import: renderImport, worlds: renderWorlds, scene: renderScene, plan: renderGmPlan, calendar: renderCalendar, review: renderReview, history: renderHistory, preview: renderPreview }[ws.tab] ?? renderCatalog)();
+        body = await ({ graph: renderGraph, import: renderImport, worlds: renderWorlds, scene: renderScene, plan: renderGmPlan, calendar: renderCalendar, naming: renderNaming, review: renderReview, history: renderHistory, preview: renderPreview }[ws.tab] ?? renderCatalog)();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not render the workspace', err);
         body = h('div', { class: 'sb-error' }, `Something went wrong: ${err?.message ?? err}`);

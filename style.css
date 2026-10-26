@@ -215,6 +215,13 @@
 /* A character's other names (src/library/alias-kinds.js). */
 .sb-alias-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 3px 0; }
 .sb-alias-row > select { width: auto; flex: 0 1 auto; }
+/* The Naming tab (src/ui/naming-tab.js). */
+.sb-naming-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
+.sb-naming-item { padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+.sb-naming-item:hover { background: var(--SmartThemeQuoteColor, rgba(255,255,255,0.06)); }
+.sb-naming-item.active { outline: 1px solid var(--SmartThemeQuoteColor, #888); }
+.sb-naming-samples { margin-top: 6px; }
+.sb-naming-samples .sb-chip > span:first-child { cursor: copy; }
 .sb-aka { opacity: 0.7; font-style: italic; }
 .sb-where { opacity: 0.85; display: flex; gap: 6px; align-items: center; }
 .sb-sheet-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--sb-line); overflow-x: auto; }

@@ -179,6 +179,8 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     // Names (docs/DESIGN - NAMING.md, 4.1): the one the user gave, then one
     // the brief gives, then one built from the entry it is tied to, then a
     // rolled one. The model is told the name; it does not make one up.
+    // The factions its fields already tie it to: their culture names it.
+    const factionIds = factionIdsOf(draft?.fields ?? entry?.base ?? {}, all);
     let fixedName = '';
     let nameMeaning = '';
     let nameFrom = null;
@@ -187,7 +189,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         if (naming.name) fixedName = naming.name;
         else {
             const placeText = parentForPrompt ? pathOf(parents, parentForPrompt).map((id) => allEntries.find((e) => e.id === id)).filter(Boolean).map((e) => `${e.name} ${e.description ?? e.base?.description ?? ''}`).join(' ') : '';
-            const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId: naming.cultureId, gender: naming.gender, hasParent: Boolean(parentForPrompt), placeText }, all);
+            const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId: naming.cultureId, gender: naming.gender, hasParent: Boolean(parentForPrompt), placeText, placeId: parentForPrompt, factionIds }, all);
             nameApart = plan.apart ?? '';
             if (plan.mode === 'rolled' || plan.mode === 'given') {
                 fixedName = plan.name;
@@ -195,7 +197,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
             } else if (plan.mode === 'derived') nameFrom = { tie: plan.tie, candidates: plan.candidates };
         }
     }
-    const namePool = namePoolFor(ctx.settingId, all, { cultureId: naming.cultureId });
+    const namePool = namePoolFor(ctx.settingId, all, { cultureId: naming.cultureId, placeId: parentForPrompt, factionIds });
     const base = {
         fixedName, nameMeaning, nameFrom, nameApart, namePool, avoidNames: PROMPT_CLICHES,
         type, fields, brief,
@@ -276,12 +278,18 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     return { values: result.values, dropped: result.dropped };
 }
 
+// The faction ids among an entry's field values.
+function factionIdsOf(fields, all) {
+    const ids = new Set((all.faction ?? []).map((f) => f.id));
+    return Object.values(fields ?? {}).flatMap((v) => (Array.isArray(v) ? v : [v])).filter((v) => typeof v === 'string' && ids.has(v));
+}
+
 // A name for a new entry from the name generator, without the model: the
 // one the brief gives, one built from the entry it is tied to, or a rolled
 // one. '' when none fits (a room, a quest). The Name dice and the Name
 // field's generation use it.
-export function rollEntryName({ ctx, type, brief = '', all, parentId = null, naming = {} }) {
-    const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId: naming.cultureId, gender: naming.gender, hasParent: Boolean(parentId) }, all);
+export function rollEntryName({ ctx, type, brief = '', all, parentId = null, naming = {}, fields = {} }) {
+    const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId: naming.cultureId, gender: naming.gender, hasParent: Boolean(parentId), placeId: parentId || (typeof fields.location === 'string' ? fields.location : null), factionIds: factionIdsOf(fields, all) }, all);
     if (plan.mode === 'rolled' || plan.mode === 'given') return plan.name;
     return plan.mode === 'derived' ? plan.candidates[0] : '';
 }
@@ -296,7 +304,8 @@ export async function generateAlias({ ctx, type, entry = null, draft, kind, all 
     const existing = draft?.aliases ?? entry?.aliases ?? [];
     if (kind === 'codename' || kind === 'stage') {
         const text = [draft?.description, draft?.fields?.background].filter((t) => typeof t === 'string').join(' ');
-        const plan = rollNameFor(ctx.settingId, { typeId: type.id, kindInfo: kind === 'codename' ? { kind: 'codename' } : { kind: 'person', gender: genderFrom(text) } }, all);
+        const fields = draft?.fields ?? {};
+        const plan = rollNameFor(ctx.settingId, { typeId: type.id, kindInfo: kind === 'codename' ? { kind: 'codename' } : { kind: 'person', gender: genderFrom(text) }, placeId: typeof fields.location === 'string' ? fields.location : null, factionIds: factionIdsOf(fields, all) }, all);
         return plan.mode === 'rolled' ? plan.name : '';
     }
     const gate = canGenerateFor(ctx.settingId, entry?.id);

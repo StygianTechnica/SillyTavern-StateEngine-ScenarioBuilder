@@ -99,6 +99,7 @@ import { normalizeEvent, normalizeEventsDone, normalizeEventsComing } from '../e
 import { normalizeTemplates } from '../events/setup.js';
 import { emptyChanges, normalizeChanges } from '../state/changes-model.js';
 import { normalizeAliasInfo } from '../library/alias-kinds.js';
+import { normalizeCultureDef } from '../naming/cultures.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
 export const CHAT_SCHEMA_VERSION = 1;
@@ -183,6 +184,9 @@ export function normalizeEntryMeta(meta) {
         patrons: strList(m.patrons),
         // What kind each alias is and who uses it (src/library/alias-kinds.js).
         aliasInfo: normalizeAliasInfo(m.aliasInfo),
+        // Places and factions: whose names they use (src/naming/; '' = inherit
+        // from the place it is in, or the world default).
+        culture: str(m.culture),
         // What they can do beyond their weapons (a chaos-warped blade).
         gifts: fitText(str(m.gifts), GIFTS_MAX),
         // How they fare in a fight: a power rating and a fate (plot device,
@@ -292,7 +296,7 @@ const REGISTRY_STATES = new Set(['o', 'u', 'd']);
 function normalizeNaming(value) {
     const n = isObject(value) ? value : {};
     const cultures = {};
-    if (isObject(n.cultures)) for (const [id, c] of Object.entries(n.cultures)) if (isObject(c) && id) cultures[id] = { ...structuredClone(c), id };
+    if (isObject(n.cultures)) for (const [id, c] of Object.entries(n.cultures)) if (isObject(c) && id) cultures[id] = normalizeCultureDef(c, id);
     return {
         seed: str(n.seed),
         defaultCulture: str(n.defaultCulture),

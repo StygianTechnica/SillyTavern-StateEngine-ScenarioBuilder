@@ -7,8 +7,8 @@ names in code, from rules that belong to the world and to its cultures, and
 hands them to the model. The model is told a thing's name; it is never asked
 to make one up.
 
-Status: phase 1 built (2026-10-26) - see "Phase 1 as built" at the end.
-Phases 2-5 are proposals.
+Status: phases 1 and 2 built (2026-10-26) - see "Phase 1 as built" and
+"Phase 2 as built" at the end. Phases 3-5 are proposals.
 
 ## 1. Where the model names things today
 
@@ -568,3 +568,33 @@ Not yet: the Naming tab (cultures of a world's own, cultures on places and
 factions, population mixes - so phase 1 uses the world default or the
 culture picked in the Generate panel), rules from the premise, and the
 director / planner / events / missions pools.
+
+## Phase 2 as built (2026-10-26)
+
+- **The Naming tab** (`src/ui/naming-tab.js`, after Calendar): the world
+  default with why it was chosen ("\"tokyo\" on the front page") and what
+  Automatic would pick when the user chose another; the world's own
+  cultures, made from a preset, a real culture, from scratch or as an alien
+  tongue; who uses which (places and factions); sample names per kind
+  (click to copy, the cross bans), rolled from a sample stream so nothing is
+  used up; and a test bench ("a rival corporation" in this culture).
+- **The editor**: name and notes; seed languages and weights; how far from
+  the real names (mutation 0-3) with its sound shifts shown in words and a
+  reroll; family names from the same languages, others, or made like place
+  names, with their own mutation and older forms; the user's own example
+  names and their weight; for a real culture, which one; for an alien
+  tongue, its consonants, vowels, syllable shapes and length; how it names
+  each kind of thing (its own tongue, descriptive English, either); banned
+  names; delete.
+- **Cultures on places and factions**: entry meta `culture`, set on the
+  Naming tab or a sheet's "Names (culture)" field. A new thing takes the
+  culture picked in the Generate panel, else a faction it belongs to (its
+  fields, or one the brief names it as coming from - not a rival), else the
+  place it is in or the nearest above with one, else the world default
+  (`inheritedCulture`, `cultureIdFor`).
+- Stored as `naming.cultures[id]` (`normalizeCultureDef`): a culture's
+  shifts are kept once rolled, so editing it does not change its names.
+
+Not yet: population mixes and meanings on sheets (phase 5); editing a
+culture's word stock (place words come from its stocks); "keep" on a
+sample (copy it instead).

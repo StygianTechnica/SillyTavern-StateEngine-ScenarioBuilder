@@ -42,6 +42,8 @@ import { removeLink, addLink, listRelations, addRelation, removeRelation, relati
 import { sparkButton, fieldWithTools, diceButton } from './controls.js';
 import { generateEntry, canGenerateFor, rollEntryName, generateAlias } from '../generate/run.js';
 import { ALIAS_KINDS, kindLabel, aliasInfoFor, aliasLabel } from '../library/alias-kinds.js';
+import { cultureChoices, resolveCulture, inheritedCulture } from '../naming/cultures.js';
+import { worldDefault } from '../naming/run.js';
 import { markNameUsed, markNameDeclined } from '../naming/run.js';
 import { splitAliases, mergeAliases } from '../generate/prompt.js';
 import { WORLD_TYPES, MAGIC_PRESENCE, TECH_LEVELS, inheritedRealm } from '../library/world-options.js';
@@ -90,6 +92,7 @@ function startDraft(entry, defs) {
             gmNotes: entry.meta?.gmNotes ?? '',
             nsfw: entry.meta?.nsfw ?? '',
             aliasInfo: structuredClone(entry.meta?.aliasInfo ?? {}),
+            culture: entry.meta?.culture ?? '',
             parentId: entry.meta?.parentId ?? ws.newParent ?? '',
             environment: { climate: '', lighting: '', rules: '', ...(entry.meta?.environment ?? {}) },
             climate: entry.meta?.climate ?? '',
@@ -488,7 +491,7 @@ function nameDice(type, all) {
     return diceButton(() => {
         const d = ws.draft;
         if (ws.rolledName && d.name === ws.rolledName) markNameDeclined(ws.ctx.settingId, ws.rolledName);
-        const name = rollEntryName({ ctx: ws.ctx, type, brief: [d.name === ws.rolledName ? '' : d.name, d.description].filter(Boolean).join(' '), all, parentId: d.meta.parentId || null });
+        const name = rollEntryName({ ctx: ws.ctx, type, brief: [d.name === ws.rolledName ? '' : d.name, d.description].filter(Boolean).join(' '), all, parentId: d.meta.parentId || null, fields: d.fields });
         if (!name) return toast('info', `Nothing to roll for this ${type.noun} - name it in plain words.`);
         ws.rolledName = name;
         set('name', name);
@@ -771,6 +774,7 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
         }
         return h('div', { class: 'sb-tabpane' },
             parentField,
+            type.id === 'location' || type.id === 'faction' ? cultureField(type, parents, names) : null,
             type.id === 'character' ? otherNamesCard({ type, entry, isNew, all, names }) : null,
             defs.length ? h('div', { class: 'sb-fieldgrid' }, defs.map((d) => h('div', { dataset: { field: d.name } }, fieldWithTools(d.label, fieldControl(d, all), [d.kind === 'boolean' ? null : spark(d.name, ws.draft.fields[d.name])], null, genClass(d.name))))) : h('small', { class: 'sb-hint' }, 'This type has no extra fields in the setting.'),
             envCard,
@@ -817,6 +821,20 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
         env,
         realm,
         type.id === 'location' && !isNew ? routesCard(entry, names) : null);
+}
+
+// Whose names a place or faction uses (src/naming/): its own, or what it
+// inherits from the place it is in - else the world default.
+function cultureField(type, parents, names) {
+    const { settingId } = ws.ctx;
+    const doc = getSettingDoc(settingId);
+    const seed = doc.naming.seed || 'world';
+    const label = (id) => resolveCulture(id, { naming: doc.naming, seed })?.label ?? id;
+    const above = type.id === 'location' ? inheritedCulture(doc.entries, parents, { placeId: ws.draft.meta.parentId || null }) : { id: '' };
+    const inherited = above.id ? `${label(above.id)}, from ${names.get(above.from)?.name ?? 'a place it is in'}` : `the world default: ${worldDefault(settingId).label}`;
+    return field('Names (culture)', select([{ value: '', label: `(inherited - ${inherited})` }, ...cultureChoices(doc.naming).map((c) => ({ value: c.value, label: `${c.group}: ${c.label}` }))], ws.draft.meta.culture ?? '', {
+        onchange: (e) => set('meta.culture', e.target.value),
+    }), type.id === 'location' ? 'Whose names new people and places here take - the places inside inherit it. Set the cultures on the Naming tab.' : 'Its people, houses and holdings take these names.');
 }
 
 // A character's other names (src/library/alias-kinds.js): each alias with
@@ -1251,6 +1269,8 @@ async function saveSheet(type, entry, defs, isNew) {
     const meta = { tags: d.meta.tags, pinned: d.meta.pinned, canonLocked: d.meta.canonLocked, gmNotes: d.meta.gmNotes };
     // The kinds of the aliases it still has (src/library/alias-kinds.js).
     if (type.id === 'character') meta.aliasInfo = aliasInfoFor(patch.aliases, d.meta.aliasInfo);
+    // Whose names a place (and the places inside) or a faction uses.
+    if (type.id === 'location' || type.id === 'faction') meta.culture = d.meta.culture ?? '';
     if (type.id === 'character') meta.nsfw = d.meta.nsfw ?? '';
     // Which fields came from generation (SB-136), shown on the GM tab.
     if (ws.generatedFields?.size) meta.generated = [...new Set([...(entry.meta?.generated ?? []), ...ws.generatedFields])].filter((f) => f !== 'name');

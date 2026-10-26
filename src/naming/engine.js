@@ -68,7 +68,23 @@ const stockForRoll = (culture, rand) => stockOf(culture.real ? culture.root : we
 const gendered = (rand, gender) => (gender === 'm' || gender === 'f' ? gender : chance(rand, 0.5) ? 'm' : 'f');
 
 // One part of a person's name: 'm' | 'f' (given names) or 'family'.
+// A name built from a culture's sounds (an alien tongue): syllables of its
+// shapes, filled from its consonants and vowels by weight.
+function soundName(sound, rand, { min = sound.syllables[0], max = sound.syllables[1] } = {}) {
+    for (let tries = 0; tries < 30; tries++) {
+        const count = min + Math.floor(rand() * (max - min + 1));
+        let out = '';
+        for (let i = 0; i < count; i++) {
+            const [shape] = weighted(rand, sound.shapes, ([, w]) => w) ?? ['CV'];
+            for (const slot of shape) out += (weighted(rand, slot === 'C' ? sound.consonants : sound.vowels, ([, w]) => w) ?? [''])[0];
+        }
+        if (out.length >= 2 && out.length <= 14 && !/(.)/.test(out)) return capitalize(out);
+    }
+    return '';
+}
+
 function namePart(culture, part, rand, other = '') {
+    if (culture.sound) return soundName(culture.sound, rand, part === 'family' ? { min: 2, max: 3 } : {});
     if (culture.real) {
         const st = stockOf(culture.root);
         return realPick(rand, listOf(culture, st.id, part));
@@ -135,7 +151,8 @@ function personName(culture, rand, { gender = '', father = '', family = '' } = {
             else if (chance(rand, 0.5)) parts.byname = pickByname(culture, rand);
             break;
         case 'single':
-            if (chance(rand, 0.3)) parts.byname = pickByname(culture, rand);
+            // An alien tongue takes no English epithet.
+            if (!culture.sound && chance(rand, 0.3)) parts.byname = pickByname(culture, rand);
             break;
         case 'vietnamese':
             parts.family = fam();
@@ -175,6 +192,7 @@ function founderStem(culture, rand) {
 // A settlement: { name, meaning }. prefer: a test on an ending's meaning
 // (a fort's "castle", a region's "land").
 function settlementName(culture, rand, { prefer = null } = {}) {
+    if (culture.sound) return { name: soundName(culture.sound, rand, { min: 2, max: 3 }), meaning: '' };
     const st = stockForRoll(culture, rand);
     const { words, endings, starts } = st.places;
     const wordKeys = Object.keys(words);
@@ -221,6 +239,7 @@ function houseFromPlace(culture, rand) {
 
 const REGION_ENDINGS = [['ia', 'land'], ['a', 'land'], ['and', 'land'], ['mark', 'march'], ['or', 'realm'], ['eth', 'realm']];
 function regionName(culture, rand) {
+    if (culture.sound) return { name: soundName(culture.sound, rand, { min: 2, max: 4 }), meaning: '' };
     if (chance(rand, 0.55)) {
         const s = settlementName(culture, rand, { prefer: /land|realm|country|kingdom|province|people/ });
         return s;
@@ -232,6 +251,7 @@ function regionName(culture, rand) {
 
 // A landscape feature in the culture's tongue: "Afon Du", "Schwarzwald".
 function nativeFeature(culture, rand, feature) {
+    if (culture.sound) return { name: soundName(culture.sound, rand), meaning: '' };
     const st = stockForRoll(culture, rand);
     const { words } = st.places;
     const headKey = (FEATURE_WORDS[feature] ?? ['wood']).find((k) => words[k]);
@@ -349,7 +369,7 @@ export function planName(req, world) {
     const culture = resolveCulture(cultureId, { naming, seed: naming.seed ?? 'world' }) ?? resolveCulture('preset:old_kingdom', { seed: naming.seed });
     const meta = { kind: kindInfo?.kind ?? '', culture: { id: culture.id, label: culture.label } };
     const rand = makeRng(naming.seed ?? 'world', 'name', counter, culture.id);
-    const index = buildIndex({ names: world.names, registry: naming.registry, shared: world.shared, counter, real: culture.real, cliches: naming.cliches !== false, banned: naming.banned });
+    const index = buildIndex({ names: world.names, registry: naming.registry, shared: world.shared, counter, real: culture.real, cliches: naming.cliches !== false, banned: [...(naming.banned ?? []), ...(culture.banned ?? [])] });
 
     // Tied to an existing entry the brief names: built from its name.
     const ties = req.typeId === 'character' ? [] : tiesInBrief(req.brief, world.entries ?? []);
