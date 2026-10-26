@@ -61,6 +61,10 @@ const DEFAULTS = {
     // Quests (src/quests/): make quest objects from Archivist's quest seeds,
     // goals and plans automatically; how many active quests are tracked.
     quests: { autoCreate: true, tracked: 5 },
+    // The name generator (src/naming/): avoidOtherWorlds keeps names used in
+    // the user's other worlds out of this one; shared is that list (folded
+    // names, newest last, capped).
+    naming: { avoidOtherWorlds: true, shared: [] },
     // Lore (src/library/lore-sync.js): make Lore entries from Archivist's
     // compiled world lore automatically.
     lore: { autoCreate: true },
@@ -164,6 +168,9 @@ export function getSettings() {
     settings.quests.tracked ??= 5;
     settings.lore ??= { autoCreate: true };
     settings.lore.autoCreate ??= true;
+    settings.naming ??= structuredClone(DEFAULTS.naming);
+    settings.naming.avoidOtherWorlds ??= true;
+    if (!Array.isArray(settings.naming.shared)) settings.naming.shared = [];
     return settings;
 }
 

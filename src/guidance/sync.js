@@ -43,6 +43,7 @@ import { routesFrom, placesFurtherOn } from '../library/routes.js';
 import { splitNote } from '../director/prompt.js';
 import { weatherText } from '../calendar/weather.js';
 import { fightValues } from '../director/fight.js';
+import { protectedText, stanceFor } from '../director/combat.js';
 import { eventValues } from '../events/model.js';
 
 export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
@@ -390,6 +391,13 @@ export async function gatherInputs(chatId, chatKey) {
             // Who has died in this story (src/state/death.js).
             // Only the dead the latest messages speak of.
             dead: deadText(doc, { about: whoTheyWere, recentText: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-6).map((m) => String(m.mes ?? '')).join('\n') }),
+            // Who here cannot be killed - a fate on their sheet, or the
+            // chat's stance (src/director/combat.js) - so an execution or a
+            // fall outside a fight spares them too.
+            protected: protectedText([
+                ...cast.filter((x) => !x.player).map((x) => ({ name: x.name, meta: library.entries?.[x.id] ?? {} })),
+                ...(location?.creatures ?? []).filter((x) => x.active && x.form !== 'kind').map((x) => ({ name: x.name, meta: library.entries?.[x.id] ?? {} })),
+            ], { stance: stanceFor(doc, settings) }),
             // Going in circles, or the player asking whether it is over
             // (src/director/loops.js) - read from the chat itself.
             loop: circling((SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-8).map((m) => ({ text: String(m.mes ?? ''), isUser: !!m.is_user }))).line,

@@ -20,7 +20,8 @@ import {
     WORLD_TYPES, TONES, THEMES, MAGIC_KINDS, MAGIC_PRESENCE, MAGIC_POWER, MAGIC_RESTRICTIONS, TECH_LEVELS, TECH_FLAVORS, TECH_SPREAD, TECH_ABSENT_SUGGESTIONS,
     eraGroups, randomFor, techForEra, splitList, joinList,
 } from '../library/world-options.js';
-import { generateOverview, generateEntry } from '../generate/run.js';
+import { generateOverview, generateEntry, rollEntryName } from '../generate/run.js';
+import { cultureOptions, markNameDeclined } from '../naming/run.js';
 import { fieldDefs } from './sheet.js';
 import { renderQuestBoard } from './quest-board.js';
 import { locationMap } from './map.js';
@@ -426,16 +427,30 @@ function chapterPage(type, all, doc, board = null) {
 function generatePanel(type, all, pathLabel) {
     const busy = ws.generating?.scope === 'create';
     const placed = type.id === 'location' || PLACED.has(type.id);
-    const g = ws.genInput ?? (ws.genInput = { brief: '', parentId: '' });
+    const g = ws.genInput ?? (ws.genInput = { brief: '', parentId: '', name: '', rolled: '', culture: '', gender: '' });
     const brief = h('textarea', { class: 'text_pole', rows: 2, placeholder: `What do you want? e.g. "${EXAMPLES[type.id] ?? 'something unexpected'}" - or leave empty for a surprise`, oninput: (e) => { g.brief = e.target.value; } });
     brief.value = g.brief;
     const locations = (all.location ?? []).map((l) => ({ value: l.id, label: pathLabel(l.id) || l.name })).sort((a, b) => a.label.localeCompare(b.label));
+    // The name: typed, rolled with the dice, or (left empty) rolled when it
+    // is generated - in the chosen culture (src/naming/).
+    const nameBox = h('input', { class: 'text_pole', value: g.name ?? '', placeholder: 'Leave empty to roll one when it is generated', oninput: (e) => { g.name = e.target.value; } });
+    const reroll = () => {
+        if (g.rolled && g.name === g.rolled) markNameDeclined(ws.ctx.settingId, g.rolled);
+        const name = rollEntryName({ ctx: ws.ctx, type, brief: g.brief, all, parentId: g.parentId || null, naming: { cultureId: g.culture, gender: g.gender } });
+        if (!name) return toast('info', `Nothing to roll for this ${type.noun} - the model will name it in plain words.`);
+        g.name = name;
+        g.rolled = name;
+        nameBox.value = name;
+    };
     const run = async (useBrief) => {
         ws.generating = { scope: 'create' };
         rerender();
         try {
             const fields = await fieldDefs(type);
-            const { values, dropped } = await generateEntry({ task: 'create', type, ctx: ws.ctx, fields, all, brief: useBrief ? g.brief : '', parentId: g.parentId || null });
+            const naming = { name: (g.name ?? '').trim(), cultureId: g.culture, gender: g.gender };
+            const { values, dropped } = await generateEntry({ task: 'create', type, ctx: ws.ctx, fields, all, brief: useBrief ? g.brief : '', parentId: g.parentId || null, naming });
+            g.name = '';
+            g.rolled = '';
             ws.prefill = { values, parentId: g.parentId || null };
             ws.genPanel = null;
             if (dropped.length) toast('info', `Left out what did not fit: ${dropped.slice(0, 4).join('; ')}`);
@@ -451,6 +466,10 @@ function generatePanel(type, all, pathLabel) {
         h('div', { class: 'sb-card-title' }, icon('fa-wand-magic-sparkles'), ` Generate a ${type.noun}`,
             h('small', { class: 'sb-hint' }, ' - written to fit this setting; you review it before anything is saved')),
         brief,
+        h('div', { class: 'sb-row' },
+            field('Name', h('div', { class: 'sb-row sb-gen-name' }, nameBox, diceButton(reroll, 'Roll a name in this culture - never one already used'))),
+            field('Culture', select(cultureOptions(ws.ctx.settingId), g.culture, { onchange: (e) => { g.culture = e.target.value; } }), 'Whose names it takes'),
+            type.id === 'character' ? field('Gender', select([{ value: '', label: 'From the idea, or either' }, { value: 'f', label: 'Female' }, { value: 'm', label: 'Male' }], g.gender, { onchange: (e) => { g.gender = e.target.value; } })) : null),
         h('div', { class: 'sb-row' },
             placed && locations.length ? field(type.id === 'location' ? 'Inside' : 'Located in', select([{ value: '', label: type.id === 'location' ? '(a new region)' : '(anywhere)' }, ...locations], g.parentId, { onchange: (e) => { g.parentId = e.target.value; } })) : null,
             h('div', { class: 'sb-actions sb-push' },

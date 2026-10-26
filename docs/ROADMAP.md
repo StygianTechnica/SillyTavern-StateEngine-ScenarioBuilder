@@ -324,6 +324,39 @@ API (docs/api.md, SB-640..642); Pretty Panels owns where they appear.
   inside inherit what they do not set. The guidance, the director,
   generation, image prompts and route times all work from the world as it
   holds where the scene (or the entry) is.
+- [ ] **Realms: nested worlds inside one setting (added 2026-10-26).**
+  One setting can hold several worlds with different paradigms: planets in
+  a science-fiction setting, each with its own naming, tech level and
+  magic; or a multiverse / time-travel story (Doctor Who: Victorian London
+  one week, a far-future colony the next) where each place and time works
+  differently. Builds on the per-place world above:
+  - **Superlocations and sublocations.** A *realm* (superlocation) is a
+    location marked as defining a world of its own: kind of world, era,
+    tech level, magic level, how it differs, and now also its **naming
+    culture(s) and population mix** (docs/DESIGN - NAMING.md: a planet of
+    Vaskari, Victorian London as `real:english:victorian`). Its
+    sublocations inherit all of it unless they set their own. A realm can
+    sit inside another (a city-state with its own customs inside an empire).
+  - **Being somewhere is living there.** In a sublocation, everything works
+    from that realm: the guidance and the director describe its culture and
+    what people there understand (a medieval villager does not know what a
+    phone is), generation and the name generator use its tech, magic and
+    culture, image prompts use its look.
+  - **Travel between realms** is a change of paradigm, not just of place:
+    when the scene moves into another realm the guidance says so once
+    ("you have arrived in a world where...") and the director picks up the
+    new rules; the old realm's people and things keep their own (a
+    visitor's phone still works, or does not, by the setting's rules).
+  - **Time as part of a realm.** For time travel, a realm can be a place *at
+    a time* - the same London in 1888 and 2150 as two realms with different
+    eras, cultures and tech, sharing the map.
+  - Not in the naming phase-1 iteration; naming phase 2 (cultures on
+    places, inherited down the tree) is the first piece of it.
+- [ ] **Demographics (added 2026-10-25):** a way to define who lives in a
+  world - only humans, fantasy races (elves, dwarves, orcs...), aliens, or
+  all of the above - and, like magic and technology, which kinds do NOT
+  exist (a hard limit in every generation prompt). Perhaps per place too,
+  as "The world here" does for magic (an alien colony on a human world).
 - [ ] Per-faction magic and technology (a technologically advanced empire
   next to a backward one, carried by its people wherever they go).
 - [x] Image prompts that respect world limits (e.g. Midjourney `--no` with

@@ -235,7 +235,7 @@ export function normalizeCalendar(value) {
 export function emptySettingDoc() {
     // playerId: the character the user plays ('' = the one named like the
     // SillyTavern persona, if any) - the guidance never writes for them.
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {}, map: {} }, calendar: emptyCalendar(), playerId: '', routes: [], knowledge: [], gm: { creation: 'proposals' }, eventTemplates: [] };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {}, map: {} }, calendar: emptyCalendar(), playerId: '', routes: [], knowledge: [], gm: { creation: 'proposals' }, eventTemplates: [], naming: emptyNaming() };
 }
 
 // Brings any stored setting document (or nothing) to the current shape.
@@ -273,7 +273,32 @@ export function normalizeSettingDoc(doc) {
         // Structured events set up once, to run in any chat on the world (src/events/setup.js).
         eventTemplates: normalizeTemplates(d.eventTemplates),
         // Routes between places: { id, from, to, travel, note, guessed? } (src/library/routes.js).
-        routes: Array.isArray(d.routes) ? d.routes.filter((r) => isObject(r) && str(r.id) && str(r.from) && str(r.to) && r.from !== r.to).map((r) => ({ id: r.id, from: r.from, to: r.to, travel: str(r.travel), note: str(r.note), ...(r.guessed === true ? { guessed: true } : {}) })) : [] };
+        routes: Array.isArray(d.routes) ? d.routes.filter((r) => isObject(r) && str(r.id) && str(r.from) && str(r.to) && r.from !== r.to).map((r) => ({ id: r.id, from: r.from, to: r.to, travel: str(r.travel), note: str(r.note), ...(r.guessed === true ? { guessed: true } : {}) })) : [],
+        // The name generator's rules and registry (src/naming/).
+        naming: normalizeNaming(d.naming) };
+}
+
+// The world's naming (docs/DESIGN - NAMING.md, section 7): its seed, the
+// default culture ('' = chosen from the front page), its own cultures, the
+// cliché switch, banned names, and the registry of names handed out.
+export function emptyNaming() {
+    return { seed: '', defaultCulture: '', cultures: {}, cliches: true, banned: [], registry: [], counter: 0 };
+}
+
+const REGISTRY_STATES = new Set(['o', 'u', 'd']);
+function normalizeNaming(value) {
+    const n = isObject(value) ? value : {};
+    const cultures = {};
+    if (isObject(n.cultures)) for (const [id, c] of Object.entries(n.cultures)) if (isObject(c) && id) cultures[id] = { ...structuredClone(c), id };
+    return {
+        seed: str(n.seed),
+        defaultCulture: str(n.defaultCulture),
+        cultures,
+        cliches: n.cliches !== false,
+        banned: strList(n.banned),
+        registry: Array.isArray(n.registry) ? n.registry.filter((r) => isObject(r) && str(r.n)).map((r) => ({ n: r.n, k: str(r.k), c: str(r.c), s: REGISTRY_STATES.has(r.s) ? r.s : 'o', i: Number.isInteger(r.i) ? r.i : 0 })) : [],
+        counter: Number.isInteger(n.counter) && n.counter > 0 ? n.counter : 0,
+    };
 }
 
 // Map images per level (src/ui/map-model.js): { [levelKey]: { src, x, y,

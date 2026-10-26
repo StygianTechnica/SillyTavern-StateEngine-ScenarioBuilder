@@ -32,6 +32,9 @@ src/
                              catalog.js (front page, chapters), sheet.js (entity sheet), image-panel.js,
                              panels.js (Scene, Review, History, Preview), graph.js (relationship graph);
                              catalog-model.js, graph-layout.js, status-model.js (pure)
+  naming/                    the name generator (docs/DESIGN - NAMING.md): stocks/ (real-world
+                             names by language), engine.js (pure: planName, namePool),
+                             run.js (reads the world, records the registry)
   public-api.js              window.StateEngineScenarioBuilder
 ```
 

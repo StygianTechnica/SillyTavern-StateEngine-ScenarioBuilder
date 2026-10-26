@@ -39,6 +39,7 @@ export const SECTIONS = Object.freeze([
     { key: 'lore', title: 'Lore', priority: 2, keep: false },
     { key: 'corrections', title: 'Corrections', priority: 6, keep: true },
     { key: 'dead', title: 'The dead', priority: 7, keep: true },
+    { key: 'protected', title: 'Never killed', priority: 7, keep: true },
     { key: 'secrets', title: 'Secrets and oaths', priority: 7, keep: true },
     { key: 'summary', title: 'Where things stand', priority: 7, keep: true },
     { key: 'style', title: 'How the story is run', priority: 8, keep: true },
@@ -392,6 +393,8 @@ const BUILDERS = {
     triggered: (input) => triggeredSection(input.triggered),
     // Who has died in this story (src/state/death.js).
     dead: (input) => (clean(input.dead) ? { full: `Dead and gone in this story - they can be mourned, remembered or spoken of, but never written alive, speaking or acting: ${clean(input.dead)}`, compact: '' } : null),
+    // Who here cannot be killed (src/director/combat.js).
+    protected: (input) => (clean(input.protected) ? { full: `Never killed in this story: ${clean(input.protected)}`, compact: '' } : null),
     // Each fighter's condition, kept from reply to reply (src/director/fight.js).
     fight: (input) => (fightGuidance(input.fight) ? { full: fightGuidance(input.fight), compact: '' } : null),
     // The story going in circles, or the player asking whether it is over.
@@ -457,6 +460,7 @@ export function buildGuidance(input) {
         style: 'Your own instructions for running the story (the front page: How the game master runs this story).',
         absent: 'People you took out of the scene by hand, for the next few replies.',
         dead: 'Who has died in this story (marked by the director or by you on their sheet); they never come back.',
+        protected: 'Who here cannot be killed - a plot device or unkillable on their sheet, or spared by the chat\'s "Who can die" - outside a fight as well as in one.',
         loop: 'The story going in circles (replies repeating themselves), or the player asking whether a task is over: end it or turn it.',
         powers: 'A power (a god, a spirit) called on by its champion, or over its dead champion: the narrator is told it answers.',
         fight: 'The fight the director keeps: each fighter but the player character, their condition from reply to reply, and when it ends.',
@@ -489,7 +493,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_setting', 'THE SETTING', ['overview']],
     ['guidance_rules', 'WORLD RULES', ['limits']],
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
-    ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'secrets', 'corrections', 'dead']],
+    ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'secrets', 'corrections', 'dead', 'protected']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
     ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'loop', 'triggered', 'fight', 'powers', 'event', 'intimacy', 'absent', 'alone']],
 ]);

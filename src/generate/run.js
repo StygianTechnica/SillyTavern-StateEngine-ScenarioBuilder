@@ -22,6 +22,8 @@ import { relationsFor, pairCovered, authoredLine } from '../library/relations-ed
 import { getSettingDoc } from '../store/setting-store.js';
 import { useStateEngineJsonParser } from './json.js';
 import { LOG_PREFIX } from '../constants.js';
+import { rollNameFor, namePoolFor } from '../naming/run.js';
+import { PROMPT_CLICHES } from '../naming/registry.js';
 
 const lower = (s) => String(s ?? '').trim().toLowerCase();
 
@@ -125,11 +127,20 @@ export function placeContext(placeId, all, parents, relations = []) {
 //   fields: the type's field defs (editor kinds: { name, label, kind, values, refType })
 //   entry: the saved entry or null (new); draft: { name, aliases, description, fields }
 //   all: { typeId: entries[] }; targetField; brief; parentId
+//   naming: { name, cultureId, gender } - a name the user gave, and the
+//     culture and gender to roll one in (src/naming/)
 // -> { values, dropped } (values: name?, description?, aliases?, and type fields)
 // Throws with a readable reason.
-export async function generateEntry({ task, type, ctx, fields, entry = null, draft = null, all, targetField = null, brief = '', parentId = null }) {
+export async function generateEntry({ task, type, ctx, fields, entry = null, draft = null, all, targetField = null, brief = '', parentId = null, naming = {} }) {
     const gate = canGenerateFor(ctx.settingId, entry?.id);
     if (!gate.ok) throw new Error(gate.reason);
+
+    // A name field is rolled by the name generator, not written by the
+    // model - unless nothing it makes fits (a quest's title).
+    if (task === 'field' && targetField === 'name') {
+        const rolled = rollEntryName({ ctx, type, brief: [brief, draft?.description].filter(Boolean).join(' '), all, parentId, naming });
+        if (rolled) return { values: { name: rolled }, dropped: [] };
+    }
 
     const settings = getSettings();
     const parents = getParents(ctx.settingId);
@@ -163,7 +174,27 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     // (enriching an existing room keeps its fortress in view); another
     // entry's location field.
     const parentForPrompt = parentId || (type.id === 'location' ? (entry?.id ? parents[entry.id] ?? null : null) : (draft?.fields?.location ?? entry?.base?.location ?? entry?.location ?? null));
+
+    // Names (docs/DESIGN - NAMING.md, 4.1): the one the user gave, then one
+    // the brief gives, then one built from the entry it is tied to, then a
+    // rolled one. The model is told the name; it does not make one up.
+    let fixedName = '';
+    let nameMeaning = '';
+    let nameFrom = null;
+    if (task === 'create' && !(draft?.name ?? entry?.name)) {
+        if (naming.name) fixedName = naming.name;
+        else {
+            const placeText = parentForPrompt ? pathOf(parents, parentForPrompt).map((id) => allEntries.find((e) => e.id === id)).filter(Boolean).map((e) => `${e.name} ${e.description ?? e.base?.description ?? ''}`).join(' ') : '';
+            const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId: naming.cultureId, gender: naming.gender, hasParent: Boolean(parentForPrompt), placeText }, all);
+            if (plan.mode === 'rolled' || plan.mode === 'given') {
+                fixedName = plan.name;
+                nameMeaning = plan.meaning;
+            } else if (plan.mode === 'derived') nameFrom = { tie: plan.tie, candidates: plan.candidates };
+        }
+    }
+    const namePool = namePoolFor(ctx.settingId, all, { cultureId: naming.cultureId });
     const base = {
+        fixedName, nameMeaning, nameFrom, namePool, avoidNames: PROMPT_CLICHES,
         type, fields, brief,
         // The world as it holds where the entry is: a place's own realm, or
         // the place an entry lies in (a planet at TL12, a dead-magic zone).
@@ -201,7 +232,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     // field sees the ones written before it.
     if (result.error && !prompt.plain && prompt.keys.length > 1) {
         console.info(LOG_PREFIX, 'the JSON answer could not be read - writing the fields one at a time');
-        let name = draft?.name ?? entry?.name ?? '';
+        let name = draft?.name ?? entry?.name ?? fixedName;
         const vals = { ...values };
         const got = {};
         const dropped = [];
@@ -229,6 +260,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     });
     result.values = grounded.values;
     result.dropped = [...(result.dropped ?? []), ...grounded.dropped];
+    if (fixedName) result.values.name = fixedName;
     // Relationships to existing entries, by name (at most three).
     if (result.values.relations !== undefined) {
         const list = Array.isArray(result.values.relations) ? result.values.relations : [];
@@ -239,6 +271,16 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         }).filter(Boolean).slice(0, 3);
     }
     return { values: result.values, dropped: result.dropped };
+}
+
+// A name for a new entry from the name generator, without the model: the
+// one the brief gives, one built from the entry it is tied to, or a rolled
+// one. '' when none fits (a room, a quest). The Name dice and the Name
+// field's generation use it.
+export function rollEntryName({ ctx, type, brief = '', all, parentId = null, naming = {} }) {
+    const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId: naming.cultureId, gender: naming.gender, hasParent: Boolean(parentId) }, all);
+    if (plan.mode === 'rolled' || plan.mode === 'given') return plan.name;
+    return plan.mode === 'derived' ? plan.candidates[0] : '';
 }
 
 // One prompt, read; if unreadable, asked once more with the reason. ->

@@ -111,12 +111,32 @@ function jsonTemplate(entries) {
 
 const REPLY_PLAIN = '# Reply\nReply with ONLY the text for this field. No title, no field name, no quotation marks, no JSON, nothing before or after it.';
 
+// The rule for names the text mentions (docs/DESIGN - NAMING.md, 4.1): the
+// model writes plain words and names already in the setting; any new
+// person or place it brings up takes a name from the pool, never one of
+// its own - its own are the same in every world.
+function namingRule(input) {
+    const pool = input.namePool ?? {};
+    const lists = [
+        pool.people?.length ? `people - ${pool.people.join(', ')}` : '',
+        pool.places?.length ? `places - ${pool.places.join(', ')}` : '',
+    ].filter(Boolean);
+    const avoid = input.avoidNames?.length ? ` Never use these overused names: ${input.avoidNames.join(', ')}.` : '';
+    if (!lists.length) return avoid.trim();
+    return `If the text names a person or place that is not in the setting yet, use these names for them: ${lists.join('; ')}. Do not make up other names.${avoid}`;
+}
+
 // input: { task, type: { id, label, noun }, fields: [def] (type fields),
 //   targetField (name, for 'field'), entry: { name, values: { field: value },
 //   narrative }, brief, overview, neighbours: [{ relation, type, name,
 //   description }], similarNames: [string], memories: [string], gmNotes,
 //   refNames: { typeId: [names] }, nameOf (id -> name, for showing refs),
-//   detail: 'brief' | 'standard' | 'rich', parentName }
+//   detail: 'brief' | 'standard' | 'rich', parentName,
+//   naming (src/naming/, docs/DESIGN - NAMING.md section 4):
+//     fixedName, nameMeaning   a new entry's name, decided already
+//     nameFrom: { tie, candidates }   a new entry named from an existing one
+//     namePool: { people, places }    names for anyone or anywhere else
+//     avoidNames                       overused names never to write }
 // -> { system, user, keys, plain } (plain: one field, answered as text)
 export function buildGenerationPrompt(input) {
     const { task, type, entry = { values: {} } } = input;
@@ -135,8 +155,12 @@ export function buildGenerationPrompt(input) {
     else if (task === 'fill') targets = allFields.filter((f) => isEmpty(entry.values?.[f.name]));
     else targets = allFields;
     const plain = task === 'field' && targets.length === 1;
-    const keys = [...(task === 'create' ? ['name'] : []), ...targets.map((f) => f.name)];
-    const subject = entry.name ? `${type.noun} "${entry.name}"` : `new ${type.noun}`;
+    // A name decided before the model is asked: it writes everything else.
+    const askName = task === 'create' && !input.fixedName;
+    const keys = [...(askName ? ['name'] : []), ...targets.map((f) => f.name)];
+    const shownName = entry.name || (task === 'create' ? input.fixedName : '') || '';
+    const subject = shownName ? `${type.noun} "${shownName}"` : `new ${type.noun}`;
+    const namesRule = namingRule(input);
 
     const parts = [...worldBlocks(input.overview ?? {})];
     const place = input.place;
@@ -175,9 +199,10 @@ export function buildGenerationPrompt(input) {
                 ? 'It is empty now: write it from scratch, consistent with everything above.'
                 : `It currently says:\n"""\n${cut(show(current, f, nameOf), 1500)}\n"""\nRewrite it: keep every fact it already contains, and add new, specific detail that fits everything above.`,
             f.name === 'name'
-                ? `Reply with just the name.${input.similarNames?.length ? ` Do not reuse any of these existing names: ${input.similarNames.slice(0, 40).join(', ')}.` : ''}`
+                ? `Reply with just the name.${input.nameFrom?.candidates?.length ? ` Name it from ${input.nameFrom.tie}, which it belongs to (for example ${input.nameFrom.candidates.map((c) => `"${c}"`).join(', ')}), or in plain words - not a new made-up word.` : ''}${input.similarNames?.length ? ` Do not reuse any of these existing names: ${input.similarNames.slice(0, 40).join(', ')}.` : ''}`
                 : (isText(f) ? `Length: ${length}.` : form.prose),
             input.creating && !entry.name && f.name !== 'name' ? 'This is a brand-new entry being created now.' : '',
+            f.name !== 'name' && isText(f) ? namesRule : '',
             placeRule,
             input.brief ? `${input.creating ? 'What the user wants' : "The user's direction"}: ${cut(input.brief, 400)}` : '',
         ].filter(Boolean).join('\n');
@@ -190,8 +215,12 @@ export function buildGenerationPrompt(input) {
         job = [
             `Create a new ${type.noun} for this setting${input.parentName ? `, located inside ${input.parentName}` : ''}.`,
             input.brief ? `What the user wants: ${cut(input.brief, 600)}` : 'Surprise the user: something fresh that fits the setting and gives a storyteller something to play with.',
-            input.similarNames?.length ? `These already exist - make something different, and do not reuse their names: ${input.similarNames.slice(0, 40).join(', ')}.` : '',
-            'Give it a memorable, setting-appropriate name.',
+            input.similarNames?.length ? `These already exist - make something different${askName ? ', and do not reuse their names' : ''}: ${input.similarNames.slice(0, 40).join(', ')}.` : '',
+            input.fixedName
+                ? `Its name is "${input.fixedName}"${input.nameMeaning ? ` (in its own tongue: "${input.nameMeaning}")` : ''}. Keep that name exactly; write everything else to fit it.`
+                : input.nameFrom?.candidates?.length
+                    ? `Name it from ${input.nameFrom.tie}, which it belongs to - for example ${input.nameFrom.candidates.map((c) => `"${c}"`).join(', ')} - or build your own name from "${input.nameFrom.tie}" and plain words. Do not invent a new made-up word for its name.`
+                    : 'Give it a name in plain words that says what it is; any made-up proper noun in it must come from the names below.',
         ].filter(Boolean).join('\n');
     } else if (task === 'fill') {
         job = `Write the empty fields of the ${subject}, consistent with everything written above.`;
@@ -200,11 +229,12 @@ export function buildGenerationPrompt(input) {
     }
     if (input.brief && task !== 'create') job += `\nThe user's direction: ${cut(input.brief, 400)}`;
     if (placeRule) job += `\n${placeRule}`;
+    if (namesRule) job += `\n${namesRule}`;
     job += `\nEach text field: ${length}.`;
 
-    const template = [...(task === 'create' ? [['name', '"..."']] : []), ...targets.map((f) => [f.name, formOf(f, refNames).json])];
+    const template = [...(askName ? [['name', '"..."']] : []), ...targets.map((f) => [f.name, formOf(f, refNames).json])];
     const needs = [
-        ...(task === 'create' ? ['- "name": its name'] : []),
+        ...(askName ? ['- "name": its name'] : []),
         ...targets.map((f) => `- "${f.name}" (${f.label})${f.about ? `: ${f.about}` : ''}${isText(f) ? '' : ` - ${formOf(f, refNames).prose}`}`),
     ];
     // A new entry may be tied into the setting: up to three relationships

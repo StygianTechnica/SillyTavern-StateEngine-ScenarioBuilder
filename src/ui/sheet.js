@@ -39,8 +39,9 @@ import { suggestRoutes, suggestEnvironment, randomClimate } from '../generate/pl
 import { suggestGifts, suggestActs } from '../generate/gifts.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
-import { sparkButton, fieldWithTools } from './controls.js';
-import { generateEntry, canGenerateFor } from '../generate/run.js';
+import { sparkButton, fieldWithTools, diceButton } from './controls.js';
+import { generateEntry, canGenerateFor, rollEntryName } from '../generate/run.js';
+import { markNameUsed, markNameDeclined } from '../naming/run.js';
 import { splitAliases, mergeAliases } from '../generate/prompt.js';
 import { WORLD_TYPES, MAGIC_PRESENCE, TECH_LEVELS, inheritedRealm } from '../library/world-options.js';
 import { duplicateScore } from '../library/merge.js';
@@ -341,7 +342,7 @@ export async function renderSheet(type, all) {
             src ? h('img', { src, alt: '' }) : h('i', { class: `fa-solid ${type.icon}` })),
         h('div', { class: 'sb-sheet-title' },
             h('div', { class: 'sb-type-chip' }, h('i', { class: `fa-solid ${type.icon}` }), type.label, type.scope === 'story' ? h('small', {}, ' · this chat') : null),
-            ws.editing ? textInput('name', draft.name, { class: 'text_pole sb-name-input', placeholder: `Name this ${type.noun}` }) : h('h2', {}, entry.name),
+            ws.editing ? h('div', { class: 'sb-row sb-name-row' }, textInput('name', draft.name, { class: 'text_pole sb-name-input', placeholder: `Name this ${type.noun}` }), nameDice(type, all)) : h('h2', {}, entry.name),
             ws.editing ? textInput('aliases', csv(draft.aliases), { placeholder: 'Also known as… (comma-separated)', oninput: (e) => set('aliases', fromCsv(e.target.value)) })
                 : (entry.aliases?.length ? h('small', { class: 'sb-aka' }, `also ${entry.aliases.join(', ')}`) : null),
             where.length ? h('div', { class: 'sb-where' }, icon('fa-location-dot'), where.map((n, i) => [i ? ' › ' : '', n])) : null,
@@ -457,6 +458,21 @@ function nsfwSpark() {
         busy: ws.generating?.field === 'meta.nsfw',
         disabledReason: gate.ok ? (ws.generating ? 'Writing…' : '') : gate.reason,
     });
+}
+
+// The dice beside the Name: a name from the name generator, never the
+// model, in the world's culture - built from what the description ties it
+// to where it names an entry. Rerolling turns the last roll down for good.
+function nameDice(type, all) {
+    return diceButton(() => {
+        const d = ws.draft;
+        if (ws.rolledName && d.name === ws.rolledName) markNameDeclined(ws.ctx.settingId, ws.rolledName);
+        const name = rollEntryName({ ctx: ws.ctx, type, brief: [d.name === ws.rolledName ? '' : d.name, d.description].filter(Boolean).join(' '), all, parentId: d.meta.parentId || null });
+        if (!name) return toast('info', `Nothing to roll for this ${type.noun} - name it in plain words.`);
+        ws.rolledName = name;
+        set('name', name);
+        rerender({ force: true });
+    }, 'Roll a name - in this world\'s culture, never one already used');
 }
 
 // The sparkle for one field: write it if empty, enrich it otherwise.
@@ -1151,6 +1167,8 @@ async function saveSheet(type, entry, defs, isNew) {
             const created = await createEntry(chatId, settingId, type.id, patch, meta);
             if (!created) return toast('error', 'State Engine refused to create it - see the console.');
             if (type.id === 'location' && d.meta.parentId) setParent(settingId, created.id, d.meta.parentId);
+            // A generated name now taken: kept out of this world and others.
+            markNameUsed(settingId, patch.name);
             for (const r of d.pendingRelations ?? []) addRelation(settingId, { from: created.id, to: r.otherId, kind: r.kind });
             ws.entryId = created.id;
         } else {
