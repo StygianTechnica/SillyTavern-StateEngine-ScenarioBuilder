@@ -130,6 +130,19 @@ const DISTRICT_WORDS = pool(`Ward, Quarter, District, Heights, Flats, Docks/s, R
 Stacks/m, Arcology/m, Strip/m, Terrace, Narrows, Bottoms, Reach, Side, Town, Shambles/o, Liberty/o`);
 const DISTRICT_NOUNS = pool(`Shambles/o, Narrows, Rookery, Warrens, Stacks/m, Sprawl/m, Gutters, Pits, Tangle, Maze, Sinks, Bottoms, Hive/m,
 Ditch, Steeps, Spires, Undercity/m, Mire, Rag Fair/o, Sumps, Kennels, Grid/m, Cages/m, Scrapyard/m, Tanneries/o, Tenements`);
+// A district by what it is for (src/naming/classify.js purposeOf).
+const PURPOSE_WORDS = {
+    business: pool('Financial District, Exchange, Commerce, Midtown, Gold Mile, Towers/m, Plaza/m, Corporate Row/m, Bourse/o, Counting Houses/o, Spires, Heights, Square, Crossing'),
+    industrial: pool('Works, Foundries, Yards, Mills/o, Smokestacks/m, Refineries/m, Docklands, Furnaces, Forges/o, Sprawl/m, Flats, Ironside'),
+    pleasure: pool('Strip/m, Neon Mile/m, Lantern Quarter, Pleasure Gardens/o, Revels, Carnival, Lights, Playhouse Row, Night Market, Velvet Row'),
+    residential: pool('Heights, Gardens, Terraces, Commons, Rise, Green, Park, Hill, Crescent, Villas, Estates, Meadows'),
+    civic: pool('Capitol, Civic Centre, Assembly, Crown Quarter/o, Palace District, Chancery, Forum, Courts, Ministries'),
+    market: pool('Market, Bazaar, Exchange, Arcades, Hawkers Row, Souk, Market Cross/o, Shambles/o, Mercantile Row'),
+    harbour: pool('Docks, Wharves, Quays, Harbourside, Waterfront, Landing, Basin, Ropewalk/o, Container Yards/m'),
+    temple: pool('Temple Quarter, Sanctum, Close, Precincts, Cathedral Quarter, Pilgrims Row, Shrine Steps'),
+    academic: pool('Collegium, University Quarter, Scholars Row, Athenaeum, Library Hill, Lyceum'),
+    slum: pool('Narrows, Warrens, Sinks, Rookery, Stacks/m, Pits, Gutters, Tenements, Bottoms, Kennels'),
+};
 const STREET_WORDS = pool('Street, Avenue, Road, Lane, Row, Alley, Way, Walk, Square, Close, Court, Terrace, Boulevard/m, Plaza/m, Hill, Gate, Steps, Passage');
 const SECRET_SITES = pool('Site, Station, Facility, Outpost, Annex, Depot, Room, Camp, Point, Building');
 
@@ -149,6 +162,12 @@ export const KITS = Object.freeze({
     district: {
         label: 'Districts and neighbourhoods',
         patterns: [['{place} {districtWord}', 4], ['The {districtNoun}', 3], ['{brand} {districtWord}', 2], ['The {ordinal} Ward', 1], ['Little {place}', 1], ['{adj} {districtWord}', 2], ['{owner} {districtWord}', 1]],
+    },
+    // A district whose purpose the brief gives: "Meridian Exchange",
+    // "Halloran Gardens", "The Neon Mile".
+    district_purpose: {
+        label: 'Districts by what they are for',
+        patterns: [['{place} {purpose}', 3], ['{brand} {purpose}', 3], ['{family} {purpose}', 2], ['The {purpose}', 1]],
     },
     venue: {
         label: 'Clubs, clinics, hotels and the like',
@@ -231,6 +250,7 @@ export const POOLS = Object.freeze({
     merchantVirtue: VIRTUES_MERCHANT, cargo: CARGO, merchantNoun: pool('Trader, Lass, Belle, Merchant, Packet, Pride, Venture, Star, Rose'),
     companyNoun: COMPANY_NOUNS, gangNoun: GANG_NOUNS, gangAdj: GANG_ADJ, orderHead: ORDER_HEADS, orderNoun: ORDER_NOUNS, trade: TRADES,
     callWord: CALL_WORDS, callNumber: CALL_NUMBERS,
+    ...Object.fromEntries(Object.entries(PURPOSE_WORDS).map(([k, v]) => [`purpose_${k}`, v])),
     lair: LAIRS, districtWord: DISTRICT_WORDS, districtNoun: DISTRICT_NOUNS, streetWord: STREET_WORDS, secretSite: SECRET_SITES,
     corpSuffix: CORP_SUFFIXES, sector: SECTORS, brand: BRANDS, groupWord: GROUP_WORDS, greek: GREEK, tradeHouse: TRADE_HOUSES,
     part: pool('Whisker, Beard, Tail, Ear, Nose, Paw, Hoof, Horn, Tooth, Eye, Head, Knees/j, Bollocks/j, Breakfast/j, Supper, Wedding/j, Funeral/g, Revenge, Folly, Rest, Delight/j, Lament/g'),

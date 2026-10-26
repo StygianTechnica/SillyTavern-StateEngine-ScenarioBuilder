@@ -58,6 +58,35 @@ const NAVAL = ['navy', 'naval', 'warship', 'man-of-war', 'frigate', 'ship of the
 const FEMALE = ['woman', 'women', 'girl', 'she', 'her', 'hers', 'lady', 'queen', 'princess', 'priestess', 'mother', 'daughter', 'sister', 'wife', 'widow', 'witch', 'matron', 'duchess', 'countess', 'empress', 'baroness', 'maiden', 'heroine', 'actress', 'waitress', 'goddess', 'matriarch', 'nun', 'abbess', 'aunt', 'grandmother', 'niece', 'female', 'sorceress', 'huntress', 'mistress', 'madam', 'crone', 'hag'];
 const MALE = ['man', 'men', 'boy', 'he', 'him', 'his', 'lord', 'king', 'prince', 'priest', 'father', 'son', 'brother', 'husband', 'widower', 'wizard', 'duke', 'count', 'emperor', 'baron', 'hero', 'actor', 'waiter', 'god', 'patriarch', 'monk', 'abbot', 'uncle', 'grandfather', 'nephew', 'male', 'sorcerer', 'huntsman', 'master', 'sir', 'squire', 'knight'];
 
+// The part of a brief that says what a thing is, before what it says about
+// it: "a business district | where many corporations keep their
+// headquarters", "a tavern | by the river".
+const ASIDES = ['where', 'which', 'that', 'who', 'whose', 'with', 'full of', 'filled with', 'home to', 'known for', 'famous for', 'run by', 'owned by', 'used by', 'for', 'near', 'beside', 'next to', 'by the', 'on the', 'under', 'behind', 'above', 'below', 'outside', 'inside', 'within'];
+export function mainClause(text) {
+    const t = String(text ?? '');
+    let cut = t.length;
+    for (const a of ASIDES) {
+        const m = new RegExp(`\\s${a}\\s`, 'i').exec(t);
+        if (m && m.index > 0 && m.index < cut) cut = m.index;
+    }
+    return t.slice(0, cut);
+}
+
+// What a district is for, from the brief: its kind of name follows.
+const PURPOSES = [
+    ['business', ['business', 'financial', 'finance', 'commercial', 'corporate', 'corporations', 'banking', 'banks', 'office', 'offices', 'downtown', 'stock exchange']],
+    ['industrial', ['industrial', 'industry', 'factory', 'factories', 'manufacturing', 'foundries', 'refinery', 'refineries', 'mills', 'smelting']],
+    ['pleasure', ['entertainment', 'nightlife', 'pleasure', 'red-light', 'red light', 'nightclubs', 'casinos', 'theatres', 'theaters', 'brothels', 'neon']],
+    ['residential', ['residential', 'housing', 'homes', 'suburb', 'suburbs', 'suburban', 'apartments', 'tenements', 'townhouses', 'villas']],
+    ['civic', ['government', 'civic', 'administrative', 'parliament', 'senate', 'council', 'courts', 'ministries', 'palace', 'royal']],
+    ['market', ['market', 'markets', 'merchant', 'merchants', 'trade', 'trading', 'bazaar', 'shops', 'shopping']],
+    ['harbour', ['harbour', 'harbor', 'port', 'docks', 'dock', 'waterfront', 'wharf', 'wharves', 'shipping']],
+    ['temple', ['temple', 'temples', 'holy', 'religious', 'cathedral', 'shrines', 'pilgrims', 'monastic']],
+    ['academic', ['university', 'academic', 'scholars', 'college', 'colleges', 'academy', 'libraries', 'students']],
+    ['slum', ['slum', 'slums', 'poor', 'poorest', 'ghetto', 'squalid', 'shanty', 'shantytown', 'rookery', 'tenements']],
+];
+export const purposeOf = (text) => PURPOSES.find(([, words]) => any(String(text ?? '').toLowerCase(), words))?.[0] ?? '';
+
 const kindIn = (text, table) => table.find(([, words]) => any(text, words))?.[0] ?? null;
 
 // The gender a brief gives a person: 'f', 'm' or '' (either).
@@ -76,8 +105,14 @@ export function nameKindFor(typeId, text = '', { hasParent = false } = {}) {
     const t = String(text ?? '').toLowerCase();
     if (typeId === 'character') return { kind: 'person', gender: genderFrom(t) };
     if (typeId === 'location') {
-        const feature = kindIn(t, FEATURES);
-        const place = kindIn(t, LOCATION_KINDS);
+        // What it is, from what the brief says it is - not from what it says
+        // about it: "a business district where corporations keep their
+        // headquarters" is a district.
+        const head = mainClause(t);
+        const s = kindIn(head, LOCATION_KINDS) || kindIn(head, FEATURES) ? head : t;
+        const feature = kindIn(s, FEATURES);
+        const place = kindIn(s, LOCATION_KINDS);
+        if (place === 'district' && !feature) return { kind: 'district', purpose: purposeOf(t) };
         // "A tavern by the river" is a tavern: a building wins over the
         // landscape around it; between a town and a landscape, whichever
         // the brief says first ("a forest near the town" is a forest).

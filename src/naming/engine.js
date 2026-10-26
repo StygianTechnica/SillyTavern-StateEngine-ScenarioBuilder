@@ -268,7 +268,7 @@ function nativeFeature(culture, rand, feature) {
 
 const plural = (w) => (/(s|x|ch|sh)$/i.test(w) ? `${w}es` : /[^aeiou]y$/i.test(w) ? `${w.slice(0, -1)}ies` : `${w}s`);
 
-function fillKit(kitId, rand, { mood = {}, feature = 'forest', trade = '', venue = 'Club', person, place }) {
+function fillKit(kitId, rand, { mood = {}, feature = 'forest', trade = '', venue = 'Club', purpose = '', person, place }) {
     const kit = KITS[kitId];
     const [pattern] = weighted(rand, kit.patterns, ([, w]) => w);
     const used = new Set();
@@ -291,6 +291,7 @@ function fillKit(kitId, rand, { mood = {}, feature = 'forest', trade = '', venue
             case 'family': return person('', true);
             case 'place': return place();
             case 'venue': return venue;
+            case 'purpose': return from(`purpose_${purpose}`);
             case 'digit': return String(1 + Math.floor(rand() * 9));
             case 'num2': return String(10 + Math.floor(rand() * 90));
             // A company's initials: "KTM Systems".
@@ -361,9 +362,14 @@ export function derivedNames(tie, kindInfo, culture, rand) {
             : kindInfo?.subtype === 'inn' ? [`The ${X}'s Head`, `The ${X} Arms`, `${X}'s Rest`]
                 : [`${X}'s Rest`, `${X}'s Hall`, `${X}'s Hold`, `${X}'s Reach`, `The House of ${X}`, `Temple of ${X}`];
     } else if (isPlace) {
-        list = kindInfo?.subtype === 'inn' ? [`The ${X} Arms`, `The ${X} ${wordOf(pick(rand, POOLS.beast))}`]
+        // An inn takes the town's name without its "City": The Arcadia Arms.
+        const town = X.replace(/\s+(?:city|town|village|township|borough)$/i, '') || X;
+        list = kindInfo?.subtype === 'inn' ? [`The ${town} Arms`, `The ${town} ${wordOf(pick(rand, POOLS.beast))}`]
             : kind === 'feature' ? [`${X} ${pick(rand, headsFor(kindInfo.feature))}`, `The ${X} ${pick(rand, headsFor(kindInfo.feature))}`]
-                : [`New ${X}`, `${X}'s ${pick(rand, ['Landing', 'Crossing', 'Reach', 'End', 'Gate', 'Rest'])}`, `Upper ${X}`, `Lower ${X}`, `Little ${X}`];
+                // A new town near it may be New X; a district, a club or a base
+                // inside a city has a name of its own.
+                : kind === 'settlement' && !kindInfo.subtype ? [`New ${X}`, `${X}'s ${pick(rand, ['Landing', 'Crossing', 'Reach', 'End', 'Gate', 'Rest'])}`, `Upper ${X}`, `Lower ${X}`, `Little ${X}`]
+                    : [];
     }
     return list;
 }
@@ -437,7 +443,7 @@ export function planName(req, world) {
             case 'base':
                 if (kindInfo.secret) return fillKit(later ? 'base_secret' : 'hideout', rand, { mood, person, place });
                 return fillKit(later ? 'base_open' : 'hideout', rand, { mood, person, place });
-            case 'district': return fillKit('district', rand, { mood, person, place });
+            case 'district': return kindInfo.purpose ? fillKit('district_purpose', rand, { mood, purpose: kindInfo.purpose, person, place }) : fillKit('district', rand, { mood, person, place });
             case 'street': {
                 // A real culture's own street patterns where its stock has them.
                 const st = stockOf(culture.root);

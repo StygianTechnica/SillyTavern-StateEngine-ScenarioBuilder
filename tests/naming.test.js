@@ -2,7 +2,7 @@ import { STOCKS, REAL_CULTURES, listsFor } from '../src/naming/stocks/index.js';
 import { icelandicPatronym, russianPatronymic, feminineSurname, composePerson } from '../src/naming/conventions.js';
 import { resolveCulture, defaultCultureId, PRESETS } from '../src/naming/cultures.js';
 import { planName, namePool } from '../src/naming/engine.js';
-import { nameKindFor, nameInBrief, tiesInBrief, genderFrom, tieRelation } from '../src/naming/classify.js';
+import { nameKindFor, nameInBrief, tiesInBrief, genderFrom, tieRelation, mainClause } from '../src/naming/classify.js';
 import { buildIndex, acceptable, recordName, spreadScore, CLICHE_NAMES, OFFER_RETURNS_AFTER } from '../src/naming/registry.js';
 import { tooClose, fold } from '../src/naming/text.js';
 import { applyShifts, rollShifts } from '../src/naming/mutate.js';
@@ -363,5 +363,36 @@ describe('places that are not towns', () => {
         // A later age's district words stay out of an earlier world.
         const old = Array.from({ length: 12 }, (_, i) => plan('a district', fantasy, `o${i}`).name).join(' ');
         expect(old).not.toMatch(/\b(Sector|Arcology|Stacks|Sprawl|Grid|Hive)\b/);
+    });
+});
+
+describe('districts and the main clause of a brief', () => {
+    const entries = [{ name: 'Arcadia City', aliases: [], type: 'location' }];
+    const plan = (brief, overview, seed = 'a') => planName({ typeId: 'location', brief }, { naming: { seed }, overview, names: ['Arcadia City'], entries });
+    const cyber = { worldType: 'science_fiction', tone: 'noir' };
+
+    it('reads what a thing is from what the brief says it is, not what it says about it', () => {
+        expect(mainClause("Arcadia City's business district where many corporations keep their headquarters")).toBe("Arcadia City's business district");
+        expect(nameKindFor('location', "arcadia city's business district where many corporations keep their headquarters")).toEqual({ kind: 'district', purpose: 'business' });
+        expect(nameKindFor('location', 'a secret base under the industrial district')).toMatchObject({ kind: 'base', secret: true });
+        expect(nameKindFor('location', 'a tavern by the river')).toMatchObject({ kind: 'building', subtype: 'inn' });
+        expect(nameKindFor('location', 'a district')).toEqual({ kind: 'district', purpose: '' });
+    });
+
+    it('names a district by what it is for', () => {
+        const business = /(Financial District|Exchange|Commerce|Midtown|Gold Mile|Towers|Plaza|Corporate Row|Bourse|Counting Houses|Spires|Heights|Square|Crossing)$/;
+        for (const seed of ['b1', 'b2', 'b3', 'b4']) {
+            const r = plan("Arcadia City's business district where many corporations keep their headquarters", cyber, seed);
+            expect(r.mode).toBe('rolled');
+            expect(r.name, r.name).toMatch(business);
+            expect(r.name).not.toMatch(/Arcadia/);
+        }
+        expect(plan('an industrial district', cyber).name).toMatch(/(Works|Foundries|Yards|Mills|Smokestacks|Refineries|Docklands|Furnaces|Forges|Sprawl|Flats|Ironside)$/);
+    });
+
+    it('names a place inside a city on its own, but an inn may take the town\'s name', () => {
+        expect(plan('a nightclub in Arcadia City', cyber).mode).toBe('rolled');
+        expect(plan('the market district of Arcadia City', cyber).mode).toBe('rolled');
+        expect(plan('a tavern in Arcadia City', { worldType: 'fantasy' }).candidates[0]).toBe('The Arcadia Arms');
     });
 });
