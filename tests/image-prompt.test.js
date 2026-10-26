@@ -98,3 +98,14 @@ describe('the look of the world', () => {
         expect(kindWord('Liston')).toBe('');
     });
 });
+
+describe('faction image prompts', () => {
+    const guild = { type: 'faction', name: 'The Ledger Guild', aliases: [], description: 'A guild of moneylenders.' };
+    it('asks for heraldry in the castle age and branding in a later one', () => {
+        expect(buildImagePrompt({ entry: guild, overview: { worldType: 'fantasy' } }).prompt).toContain('heraldic emblem and banner');
+        const scifi = buildImagePrompt({ entry: guild, overview: { worldType: 'science_fiction' } }).prompt;
+        expect(scifi).toContain('logo and branding');
+        expect(scifi).not.toContain('heraldic');
+        expect(buildImagePrompt({ entry: guild, overview: { worldType: 'fantasy', tech: { level: 'tl8' } } }).prompt).toContain('logo and branding');
+    });
+});

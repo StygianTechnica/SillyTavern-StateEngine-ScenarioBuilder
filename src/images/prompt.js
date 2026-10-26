@@ -235,12 +235,13 @@ const field = (entry, name) => {
 // The subject phrase for each type: what the picture is of.
 const article = (noun) => (/^[aeiou]/i.test(noun) ? `an ${noun}` : `a ${noun}`);
 
-function subjectOf(entry, description, names = []) {
+function subjectOf(entry, description, names = [], overview = {}) {
     const role = roleArchetype(field(entry, 'role'), [entry.name, ...(entry.aliases ?? []), ...names]);
     switch (entry.type) {
         case 'character': return [role ? `portrait of ${article(role)}` : 'character portrait', description];
         case 'location': return [description || 'a place', 'establishing shot'];
-        case 'faction': return [`heraldic emblem and banner of ${description ? `a faction: ${description}` : 'a faction'}`];
+        // Heraldry belongs to the castle age; a later world brands its factions.
+        case 'faction': return [`${isLaterAge(overview) ? 'logo and branding' : 'heraldic emblem and banner'} of ${description ? `a faction: ${description}` : 'a faction'}`];
         case 'item': return [`${description || 'an object'}`, 'single object, detailed, isolated'];
         case 'creature': return [`${description || 'a creature'}`, clean(field(entry, 'traits')), 'creature design'];
         case 'lore': return [`illustration of ${description || 'a legend'}`];
@@ -294,7 +295,7 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
     const env = [clean(environment.climate), clean(environment.lighting)].filter(Boolean).join(', ');
     const parts = [
         opts.includeNames && entry.type === 'character' ? clean(entry.name) : '',
-        ...subjectOf(entry, description, others),
+        ...subjectOf(entry, description, others, overview),
         entry.type === 'location' || entry.type === 'scene' ? env : '',
         flavourOf(overview),
         styleOf(opts, overview),
