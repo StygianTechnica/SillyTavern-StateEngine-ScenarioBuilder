@@ -134,3 +134,29 @@ describe('the anime style', () => {
         expect(buildImagePrompt({ entry: wood, options: { provider: 'natural', style: 'anime' } }).prompt.startsWith('An anime key visual in Japanese animation style')).toBe(true);
     });
 });
+
+describe('anime looks', () => {
+    const mira = { type: 'character', name: 'Mira', aliases: [], description: 'A tired innkeeper with ink-stained fingers.', role: 'innkeeper' };
+    const mj = (animeLook) => buildImagePrompt({ entry: mira, options: { provider: 'midjourney', style: 'anime', animeLook } }).prompt;
+    const sd = (animeLook) => buildImagePrompt({ entry: mira, options: { provider: 'stable_diffusion', style: 'anime', animeLook } });
+    it('goes from cartoony to semi-realistic', () => {
+        expect(mj('cartoony')).toMatch(/^cartoony anime style, simple rounded shapes, bold clean outlines/);
+        expect(mj('cartoony')).toContain('big sparkling anime eyes');
+        expect(mj('detailed')).toMatch(/^highly detailed anime illustration, intricate linework/);
+        expect(mj('semireal')).toMatch(/^semi-realistic anime style, realistic proportions/);
+        expect(mj('classic')).toMatch(/^anime key visual/);
+        expect(mj(undefined)).toMatch(/^anime key visual/);
+        for (const look of ['cartoony', 'classic', 'detailed', 'semireal']) expect(mj(look)).toContain('--niji 6');
+    });
+    it('lets a semi-realistic look keep its realism, but not a photograph', () => {
+        expect(sd('semireal').negative).not.toMatch(/\brealistic\b/);
+        expect(sd('semireal').negative).toContain('photograph');
+        expect(mj('semireal')).not.toMatch(/--no [^-]*photorealistic/);
+        expect(sd('classic').negative).toContain('photorealistic');
+        expect(sd('detailed').prompt).toContain('intricate details');
+        expect(sd('cartoony').prompt).toContain('chibi proportions');
+    });
+    it('only changes the anime style', () => {
+        expect(buildImagePrompt({ entry: mira, options: { style: 'painterly', animeLook: 'cartoony' } }).prompt).not.toContain('cartoony');
+    });
+});

@@ -37,6 +37,31 @@ export const STYLES = Object.freeze([
         mjNo: 'photorealistic, 3d render',
         natural: 'An anime key visual in Japanese animation style - crisp clean lineart, cel-shaded flat vibrant colours, a detailed painted background -',
         niji: true,
+        // How far from a cartoon: each look replaces the words above that it
+        // names (options.animeLook; 'classic' is the style as written).
+        looks: {
+            cartoony: {
+                text: 'cartoony anime style, simple rounded shapes, bold clean outlines, flat bright colours, minimal shading, cute stylised proportions, simple anime background',
+                portrait: 'big sparkling anime eyes, small nose and mouth',
+                sd: 'anime, cartoon, cute, simple shading, flat color, bold outlines, bright colors, simple background, chibi proportions, best quality',
+                natural: 'A cartoony anime illustration - simple rounded shapes, bold clean outlines, flat bright colours, cute stylised proportions -',
+            },
+            detailed: {
+                text: 'highly detailed anime illustration, intricate linework, rich cel shading with soft gradients, dramatic lighting, finely rendered hair and clothing folds, detailed painted anime background',
+                portrait: 'detailed expressive anime eyes with reflections',
+                sd: 'anime, highly detailed, intricate details, detailed eyes, detailed hair, detailed clothes, cel shading, dramatic lighting, detailed background, masterpiece, best quality, absurdres',
+                natural: 'A highly detailed anime illustration - intricate linework, rich cel shading, dramatic lighting, finely rendered hair and clothing -',
+            },
+            semireal: {
+                text: 'semi-realistic anime style, realistic proportions and anatomy, detailed painterly rendering, subtle cel shading, soft volumetric lighting, intricate detail, cinematic composition',
+                portrait: 'detailed anime eyes, realistic facial structure',
+                sd: 'semi-realistic, anime, realistic proportions, detailed painterly shading, soft lighting, intricate details, detailed eyes, detailed face, cinematic, masterpiece, best quality, absurdres',
+                // Realism is wanted here: only a photograph and 3D are kept out.
+                sdNegative: 'photo, photograph, 3d render, cgi, western cartoon, chibi, sketch',
+                mjNo: 'photograph, 3d render',
+                natural: 'A semi-realistic anime illustration - realistic proportions, detailed painterly rendering, subtle cel shading, soft volumetric light -',
+            },
+        },
     },
     { id: 'photo', label: 'Photographic', text: 'photorealistic photograph, 35mm, natural light, high detail' },
     { id: 'engraving', label: 'Woodcut / engraving', text: 'antique woodcut engraving, crosshatching, monochrome, old book plate' },
@@ -50,6 +75,21 @@ export const DEFAULT_ASPECT = Object.freeze({
     lore: '3:2', quest: '16:9', scene: '16:9', event: '16:9',
 });
 
+// The anime style's looks, cartoon to near-real, for the image panel.
+export const ANIME_LOOKS = Object.freeze([
+    ['cartoony', 'Cartoony - simple shapes, bold outlines'],
+    ['classic', 'Classic key visual'],
+    ['detailed', 'Detailed - intricate linework and shading'],
+    ['semireal', 'Semi-realistic - realistic proportions'],
+]);
+
+// A style with its look applied (only the anime style has looks).
+export function styleFor(options = {}) {
+    const preset = STYLES.find((s) => s.id === options.style);
+    const look = preset?.looks?.[options.animeLook];
+    return look ? { ...preset, ...look } : preset;
+}
+
 export const MJ_VERSIONS = Object.freeze(['7', '6.1', 'niji 6']);
 // The niji model an anime style uses when another version is chosen.
 const NIJI = 'niji 6';
@@ -58,6 +98,8 @@ export const DEFAULT_IMAGE_OPTIONS = Object.freeze({
     provider: 'midjourney',
     style: 'painterly',
     customStyle: '',
+    // The anime style's look (ANIME_LOOKS).
+    animeLook: 'classic',
     includeNames: false,
     // Leave out of the picture what the world's limits rule out.
     respectLimits: true,
@@ -283,7 +325,7 @@ export function flavourOf(overview) {
 // The style's words - its "fantasy" made this world's genre ("dark fantasy
 // oil painting" is "dark post-apocalyptic oil painting" in a wasteland).
 export function styleOf(options, overview = {}, { provider = '' } = {}) {
-    const preset = STYLES.find((s) => s.id === options.style);
+    const preset = styleFor(options);
     const genre = GENRES[overview?.worldType];
     const own = provider === 'stable_diffusion' && preset?.sd ? preset.sd : (preset?.text ?? '');
     const text = genre ? own.replace(/\bfantasy\b/gi, genre) : own;
@@ -311,7 +353,7 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
     const source = isVisualEnough(narrative) ? narrative : (entry.description || narrative || '');
     const description = visualDescription(source, { own: names, others, kind: entry.type === 'character' ? '' : kindWord(entry.name) });
     const env = [clean(environment.climate), clean(environment.lighting)].filter(Boolean).join(', ');
-    const preset = STYLES.find((s) => s.id === opts.style);
+    const preset = styleFor(opts);
     const styleText = styleOf(opts, overview, { provider: opts.provider });
     // A style that leads (anime) goes first, where the models weigh it most.
     const leads = preset?.first && opts.provider !== 'natural';

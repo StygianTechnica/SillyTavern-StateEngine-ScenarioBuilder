@@ -8,7 +8,7 @@
 import { LOG_PREFIX } from '../constants.js';
 import { getSettings, saveSettings } from '../settings.js';
 import { updateEntry } from '../library/library.js';
-import { buildImagePrompt, PROVIDERS, STYLES, MJ_VERSIONS } from '../images/prompt.js';
+import { buildImagePrompt, PROVIDERS, STYLES, MJ_VERSIONS, ANIME_LOOKS } from '../images/prompt.js';
 import { importImage, safeImageSrc, readClipboardImage, hasImageGenerator, generateWithImageGenerator } from '../images/attach.js';
 import { ws, rerender } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
@@ -114,8 +114,11 @@ export function renderImagePanel({ type, entry, narrative, environment, overview
         negativeBox.value = result.negative;
         negativeWrap.hidden = opts.provider !== 'stable_diffusion';
         mjWrap.hidden = opts.provider !== 'midjourney';
+        lookWrap.hidden = opts.style !== 'anime';
     };
     const save = () => { saveSettings(); refresh(); };
+    // How cartoony or realistic the anime is - shown with the anime style.
+    const lookWrap = field('Anime look', select(ANIME_LOOKS.map(([value, label]) => ({ value, label })), opts.animeLook || 'classic', { onchange: (e) => { opts.animeLook = e.target.value; save(); } }));
     const mj = opts.midjourney;
     const num = (key, min, max) => h('input', {
         class: 'text_pole', type: 'number', min, max, value: mj[key],
@@ -141,7 +144,9 @@ export function renderImagePanel({ type, entry, narrative, environment, overview
         h('small', { class: 'sb-hint' }, `Written from ${narrative ? 'the current description' : 'the description'}, the setting's era and tone, and your style. Names are left out unless you include them.`),
         h('div', { class: 'sb-row' },
             field('For', select(PROVIDERS.map((p) => ({ value: p.id, label: p.label })), opts.provider, { onchange: (e) => { opts.provider = e.target.value; save(); } })),
-            field('Style', select(STYLES.map((s) => ({ value: s.id, label: s.label })), opts.style, { onchange: (e) => { opts.style = e.target.value; save(); } }))),
+            field('Style', select(STYLES.map((s) => ({ value: s.id, label: s.label })), opts.style, { onchange: (e) => { opts.style = e.target.value; save(); } })),
+            // How cartoony or realistic the anime is.
+            lookWrap),
         field('Your style words', text(opts, 'customStyle', 'e.g. muted autumn palette, by candlelight')),
         h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: opts.includeNames, onchange: (e) => { opts.includeNames = e.target.checked; save(); } }), h('span', {}, 'Include the name')),
         h('label', { class: 'checkbox_label', title: 'Adds what the world\'s magic and technology limits rule out (arcane magic, firearms, cars...) to --no or the negative prompt.' },
