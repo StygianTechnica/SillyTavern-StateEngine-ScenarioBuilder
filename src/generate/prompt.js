@@ -250,6 +250,48 @@ export function buildGenerationPrompt(input) {
     return { system: SYSTEM_BASE.join('\n'), user: parts.join('\n\n'), keys, plain: false };
 }
 
+// ---- other names (src/library/alias-kinds.js)
+
+const ALIAS_TASKS = {
+    nickname: (name) => `Give ${name} a nickname: what friends, rivals or the street call them, drawn from something about them - their looks, a habit, a deed, their trade. One to three plain words, the way people really nickname each other ("Stitches", "Red", "the Professor"). Not a made-up word, not a formal title.`,
+    title: (name) => `Give ${name} a title or epithet: how they are spoken of, earned by their deeds, rank or reputation ("the Butcher of Vell", "Lady Commander", "Ironhand"). Two to six words. Use only places, factions and names given above; invent no new proper nouns.`,
+};
+
+// input: { kind: 'nickname' | 'title', name, values: { field: text },
+//   overview, memories, existing: [alias], taken: [names in the setting],
+//   avoidNames } -> { system, user, keys: ['alias'], plain: true }
+export function buildAliasPrompt(input) {
+    const name = clean(input.name) || 'this character';
+    const facts = Object.entries(input.values ?? {}).filter(([, v]) => !isEmpty(v)).map(([k, v]) => `${k}: ${cut(Array.isArray(v) ? v.join(', ') : v, 600)}`);
+    const parts = [
+        ...worldBlocks(input.overview ?? {}),
+        `# ${name}\n${facts.length ? facts.join('\n') : '(Little is written about them yet.)'}`,
+    ];
+    if (input.memories?.length) parts.push(`# What the story so far says about them\n${input.memories.slice(0, 10).map((m) => `- ${cut(m, 220)}`).join('\n')}`);
+    const job = [
+        (ALIAS_TASKS[input.kind] ?? ALIAS_TASKS.nickname)(name),
+        input.existing?.length ? `They are already known as: ${input.existing.join(', ')} - give a different one.` : '',
+        input.taken?.length ? `Not one of these, which other people and places already use: ${input.taken.slice(0, 40).join(', ')}.` : '',
+        input.avoidNames?.length ? `Never use these overused names: ${input.avoidNames.join(', ')}.` : '',
+    ].filter(Boolean).join('\n');
+    parts.push(`# Your task\n${job}`, '# Reply\nReply with ONLY the name, nothing before or after it.');
+    return { system: SYSTEM_BASE.join('\n'), user: parts.join('\n\n'), keys: ['alias'], plain: true };
+}
+
+// The model's answer as one short alias: the first line, without quotes,
+// labels or a closing stop. '' when it is not a name (a sentence).
+export function readAlias(text, { maxWords = 7 } = {}) {
+    const line = String(text ?? '').split('\n').map((l) => l.trim()).find(Boolean) ?? '';
+    const name = line
+        .replace(/^(?:nickname|title|epithet|alias|name|answer)\s*[:\-]\s*/i, '')
+        .replace(/[.!]+$/, '')
+        .replace(/^[*_"“'‘\s]+|[*_"”'’\s]+$/g, '')
+        .replace(/[.!]+$/, '')
+        .trim();
+    if (!name || name.split(/\s+/).length > maxWords || /[:;]/.test(name)) return '';
+    return name;
+}
+
 // ---- the front page
 
 export const OVERVIEW_TEXT = Object.freeze({

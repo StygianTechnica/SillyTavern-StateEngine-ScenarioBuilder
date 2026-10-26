@@ -44,8 +44,9 @@ import { stillWaiting } from '../director/suspended.js';
 import {
     buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline,
     buildBeatPrompt, readBeat, buildRecapPrompt, readRecap, readRecapText, closeCutJson, buildIdeasPrompt, readIdeas,
-    buildSteerObjectsPrompt, readSteerObjects,
+    buildSteerObjectsPrompt, readSteerObjects, buildStarterPrompt, readStarter,
 } from './prompts.js';
+import { povRule } from '../director/perspective.js';
 
 export const PLANNER_EVENT = 'scenario_builder_planner';
 
@@ -899,4 +900,81 @@ export function removeAgendaItem(chatKey, id) {
 // Where a setting's ideas land: 'proposals' or 'silent'.
 export function setCreationMode(settingId, mode) {
     updateSettingDoc(settingId, (doc) => { doc.gm = { ...doc.gm, creation: mode === 'silent' ? 'silent' : 'proposals' }; });
+}
+
+// ---------------------------------------------------------------- the starter post
+
+const STARTER_TOKENS = 900;
+
+// An opening post for the current scene: where it is, who is here, the
+// outline's beat now - never the player character's actions. Asked for on
+// the GM Plan tab; not posted until the user says so. wish: the user's
+// steer, or ''. -> the post. Throws with a readable reason.
+export async function writeStarter(chatId, chatKey, { wish = '' } = {}) {
+    const doc = getChatDoc(chatKey);
+    const settingId = await getBoundSettingId(chatId);
+    const inputs = await gatherInputs(chatId, chatKey);
+    const guidance = inputs.guidance;
+    const { sceneContext } = await import('../director/run.js');
+    const ctx = await sceneContext(chatId, chatKey, settingId, guidance);
+    const player = (guidance.cast ?? []).find((c) => c.player)?.name || userName();
+    const prompt = buildStarterPrompt({
+        dossier: dossierText({ ...guidance, ...ctx }),
+        userName: player,
+        story: storyWords(doc.gm),
+        premise: doc.gm.outline?.premise ?? '',
+        gmStyle: guidance.overview?.gmStyle ?? '',
+        pov: povRule(getSettings().director?.pov, player),
+        messages: chatMessages(4),
+        wish,
+    });
+    const raw = await callModel([{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.prompt }], Math.max(plannerSettings().maxTokens || 0, STARTER_TOKENS));
+    const text = readStarter(raw);
+    if (!text) throw new Error('The model wrote nothing usable - try again, or a larger model.');
+    return text;
+}
+
+// Who a post can be posted as: the open chat's character, or each member
+// of the group. -> [{ name, avatar }]
+export function starterSpeakers() {
+    const c = SillyTavern.getContext();
+    if (c.groupId) {
+        const group = (c.groups ?? []).find((g) => g.id === c.groupId);
+        return (group?.members ?? []).map((avatar) => c.characters.find((ch) => ch.avatar === avatar)).filter(Boolean).map((ch) => ({ name: ch.name, avatar: ch.avatar }));
+    }
+    const ch = c.characters?.[c.characterId];
+    return ch ? [{ name: ch.name, avatar: ch.avatar }] : (c.name2 ? [{ name: c.name2, avatar: '' }] : []);
+}
+
+// Posts the text into the chat as a character's message, the way
+// SillyTavern's /sendas does: received and rendered events (so State Engine
+// and the extensions read it like any reply), then saved.
+export async function postStarter(text, { as = '' } = {}) {
+    const c = SillyTavern.getContext();
+    const speakers = starterSpeakers();
+    const who = speakers.find((s) => s.name === as) ?? speakers[0];
+    if (!who) throw new Error('No chat is open.');
+    const mes = String(text ?? '').trim();
+    if (!mes) throw new Error('There is nothing to post.');
+    const sendDate = typeof c.humanizedDateTime === 'function' ? c.humanizedDateTime() : new Date().toLocaleString();
+    const extra = { gen_id: Date.now(), api: 'manual', model: 'Scenario Builder starter' };
+    const message = {
+        name: who.name,
+        is_user: false,
+        is_system: false,
+        send_date: sendDate,
+        mes,
+        ...(c.groupId && who.avatar ? { original_avatar: who.avatar, force_avatar: typeof c.getThumbnailUrl === 'function' ? c.getThumbnailUrl('avatar', who.avatar) : undefined } : {}),
+        extra,
+        swipe_id: 0,
+        swipes: [mes],
+        swipe_info: [{ send_date: sendDate, gen_started: null, gen_finished: null, extra: { ...extra } }],
+    };
+    c.chat.push(message);
+    const index = c.chat.length - 1;
+    await c.eventSource.emit(c.eventTypes.MESSAGE_RECEIVED, index, 'command');
+    c.addOneMessage(message);
+    await c.eventSource.emit(c.eventTypes.CHARACTER_MESSAGE_RENDERED, index, 'command');
+    await c.saveChat();
+    return index;
 }

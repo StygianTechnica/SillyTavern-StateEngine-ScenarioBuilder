@@ -15,7 +15,8 @@ import { getObjectTypes, getParents, getOverview, getPlaceOverview, isCanonOnly,
 import { getEntryMeta } from '../store/setting-store.js';
 import { pathOf, childrenOf } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
-import { buildGenerationPrompt, parseGenerationResponse, buildOverviewPrompt, parseOverviewResponse, groundRefs } from './prompt.js';
+import { buildGenerationPrompt, parseGenerationResponse, buildOverviewPrompt, parseOverviewResponse, groundRefs, buildAliasPrompt, readAlias } from './prompt.js';
+import { genderFrom } from '../naming/classify.js';
 import { callModel } from './llm.js';
 import { storyRelationships, relationshipLine } from '../library/story-relations.js';
 import { relationsFor, pairCovered, authoredLine } from '../library/relations-edit.js';
@@ -281,6 +282,41 @@ export function rollEntryName({ ctx, type, brief = '', all, parentId = null, nam
     const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId: naming.cultureId, gender: naming.gender, hasParent: Boolean(parentId) }, all);
     if (plan.mode === 'rolled' || plan.mode === 'given') return plan.name;
     return plan.mode === 'derived' ? plan.candidates[0] : '';
+}
+
+// A new other name for a character (src/library/alias-kinds.js): a
+// codename or stage name rolled by the name generator; a nickname or title
+// written by the model from who they are. draft: the sheet's draft.
+// -> the alias, or '' when nothing fitting came out. Throws (model) with a
+// readable reason.
+export async function generateAlias({ ctx, type, entry = null, draft, kind, all }) {
+    const name = draft?.name || entry?.name || '';
+    const existing = draft?.aliases ?? entry?.aliases ?? [];
+    if (kind === 'codename' || kind === 'stage') {
+        const text = [draft?.description, draft?.fields?.background].filter((t) => typeof t === 'string').join(' ');
+        const plan = rollNameFor(ctx.settingId, { typeId: type.id, kindInfo: kind === 'codename' ? { kind: 'codename' } : { kind: 'person', gender: genderFrom(text) } }, all);
+        return plan.mode === 'rolled' ? plan.name : '';
+    }
+    const gate = canGenerateFor(ctx.settingId, entry?.id);
+    if (!gate.ok) throw new Error(gate.reason);
+    let memories = [];
+    if (entry?.id && window.StateEngineArchivist?.getMemoriesForEntity) {
+        try {
+            memories = (window.StateEngineArchivist.getMemoriesForEntity(entry.id) ?? []).map((m) => m.text).filter(Boolean);
+        } catch {
+            memories = [];
+        }
+    }
+    const fieldText = Object.fromEntries(Object.entries(draft?.fields ?? {}).filter(([, v]) => typeof v === 'string' || (Array.isArray(v) && v.every((x) => typeof x === 'string'))));
+    const taken = Object.values(all).flat().filter((e) => e.id !== entry?.id).flatMap((e) => [e.name, ...(e.aliases ?? [])]).filter(Boolean);
+    const prompt = buildAliasPrompt({ kind, name, values: { description: draft?.description ?? '', ...fieldText }, overview: getOverview(ctx.settingId), memories, existing, taken, avoidNames: PROMPT_CLICHES });
+    const read = (p, text) => {
+        const alias = readAlias(text);
+        return alias ? { values: { alias }, dropped: [], error: null } : { values: {}, dropped: [], error: 'the answer was not a short name' };
+    };
+    const result = await askReliably(prompt, read, 200);
+    if (result.error) throw new Error(result.error);
+    return result.values.alias;
 }
 
 // One prompt, read; if unreadable, asked once more with the reason. ->

@@ -424,6 +424,22 @@ newly confirmed objects, a separate generation connection profile.
   for what the story did, to edit and use as the current description (the
   setting's own stays). Settings: offer them (on), write them at once (off,
   one call each).
+- [x] **Names from the name generator (2026-10-26):** docs/DESIGN - NAMING.md
+  phase 1 - real-world name stocks, cultures, the registry; Generate is told
+  a name instead of making one up.
+- [x] **Kinds of alias (2026-10-26):** a character's other names each have a
+  kind - nickname, codename / callsign, title / epithet, pen / stage name -
+  and who uses them (people or factions). The sheet's "Other names" card
+  adds them: a nickname or title written by the model from who they are, a
+  codename (a callsign kit) or stage name rolled by the name generator. The
+  cast guidance says how each is known and that no one else uses a name kept
+  to a few (src/library/alias-kinds.js). Not yet: the director keeping a
+  codename out of the mouths of people who do not know it beyond that line.
+- [x] **Starter post (2026-10-26):** the GM Plan tab's "Opening post" card
+  writes an opening for the current scene - the place, time and weather, who
+  is here, the outline's beat now, the point of view - never the player
+  character's actions. Steer it, edit it, write it again, then post it to
+  the chat as the character (in a group, as the member you pick).
 
 ## Lorebooks (spec 6.6, 6.7 - phase 0.4)
 

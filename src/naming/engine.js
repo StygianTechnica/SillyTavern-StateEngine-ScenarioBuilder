@@ -379,6 +379,8 @@ export function planName(req, world) {
             case 'faction':
                 if (oneOf('faction') === 'native' && kindInfo.subtype === 'order') return { name: `The ${pick(rand, POOLS.orderHead).replace(/s$/, '')} of ${place()}`, meaning: '', kit: 'order' };
                 return fillKit(kindInfo.subtype, rand, { mood, person, place });
+            // An alias: a callsign from the kit (src/library/alias-kinds.js).
+            case 'codename': return fillKit('codename', rand, { mood, person, place });
             case 'ship':
                 if (kindInfo.subtype === 'native' || oneOf('ship') === 'native') return { name: person('f').split(' ')[0], meaning: '' };
                 return fillKit(`ship_${kindInfo.subtype}`, rand, { mood, person, place });

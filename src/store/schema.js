@@ -98,6 +98,7 @@ import { normalizeSuspended } from '../director/suspended.js';
 import { normalizeEvent, normalizeEventsDone, normalizeEventsComing } from '../events/model.js';
 import { normalizeTemplates } from '../events/setup.js';
 import { emptyChanges, normalizeChanges } from '../state/changes-model.js';
+import { normalizeAliasInfo } from '../library/alias-kinds.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
 export const CHAT_SCHEMA_VERSION = 1;
@@ -180,6 +181,8 @@ export function normalizeEntryMeta(meta) {
         power: normalizePowerMeta(m.power),
         // The powers a character is a champion or devotee of.
         patrons: strList(m.patrons),
+        // What kind each alias is and who uses it (src/library/alias-kinds.js).
+        aliasInfo: normalizeAliasInfo(m.aliasInfo),
         // What they can do beyond their weapons (a chaos-warped blade).
         gifts: fitText(str(m.gifts), GIFTS_MAX),
         // How they fare in a fight: a power rating and a fate (plot device,

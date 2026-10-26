@@ -14,6 +14,7 @@ import {
     setMotifs, peek, setHold, storyState, setShape, editOutlineBeat, lockOutlineBeat, removeOutlineBeat, addOutlineBeat,
     finishOutlineBeat, restoreOutlineBeat, setOutlineText, setJoin, finishVolume, editFinishedVolume, steerObjects,
     runIdeas, acceptIdea, dismissIdea, editProposal, addAgendaItem, removeAgendaItem, setCreationMode,
+    writeStarter, postStarter, starterSpeakers,
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
 import { armTrigger, retireTrigger, clearFinishedTriggers } from '../triggers/run.js';
@@ -693,6 +694,52 @@ function settingsCard(gm) {
             h('small', { class: 'sb-hint' }, `${new Date(l.at).toLocaleTimeString()}${l.ms ? ` · ${(l.ms / 1000).toFixed(1)}s` : ''}`))));
 }
 
+// The starter post: an opening for the current scene, written from the
+// scene, the people here and the outline's beat now. Shown to edit or
+// write again; posted to the chat only when the user says so.
+function starterCard() {
+    const { chatId, chatKey } = ws.ctx;
+    const st = ws.starter?.chatKey === chatKey ? ws.starter : (ws.starter = { chatKey, text: '', wish: '', busy: false, as: '' });
+    const speakers = starterSpeakers();
+    const write = async () => {
+        st.busy = true;
+        rerender();
+        try {
+            st.text = await writeStarter(chatId, chatKey, { wish: st.wish });
+        } catch (err) {
+            toast('error', `Could not write the opening: ${err?.message ?? err}`);
+        } finally {
+            st.busy = false;
+            rerender();
+        }
+    };
+    const post = async () => {
+        const as = st.as || speakers[0]?.name || '';
+        if (!await confirmAction(`Post this opening to the chat as ${as}?`)) return;
+        try {
+            await postStarter(st.text, { as });
+            toast('success', `Posted as ${as}.`);
+            st.text = '';
+            rerender();
+        } catch (err) {
+            toast('error', `Could not post it: ${err?.message ?? err}`);
+        }
+    };
+    const box = h('textarea', { class: 'text_pole', rows: 10, oninput: (e) => { st.text = e.target.value; } });
+    box.value = st.text;
+    const wish = h('input', { class: 'text_pole', value: st.wish, placeholder: 'Steer it (optional) - e.g. "start mid-argument", "open on the storm"', oninput: (e) => { st.wish = e.target.value; } });
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-feather-pointed'), ' Opening post',
+            h('small', { class: 'sb-hint' }, ' - a starter for the current scene, from where it is, who is here and the beat now; never your character\'s actions')),
+        wish,
+        st.text ? box : null,
+        h('div', { class: 'sb-actions' },
+            button(st.busy ? 'Writing…' : st.text ? 'Write again' : 'Write the opening', () => void write(), { iconName: st.busy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles', cls: st.text ? '' : 'sb-primary', disabled: st.busy }),
+            st.text && speakers.length > 1 ? select(speakers.map((s) => ({ value: s.name, label: `as ${s.name}` })), st.as || speakers[0].name, { onchange: (e) => { st.as = e.target.value; } }) : null,
+            st.text ? button('Post to chat', () => void post(), { iconName: 'fa-paper-plane', cls: 'sb-primary', disabled: st.busy || !speakers.length, title: speakers.length ? `Posted as ${st.as || speakers[0].name}'s message` : 'No chat is open' }) : null,
+            st.text ? button('', () => { st.text = ''; rerender(); }, { iconName: 'fa-xmark', title: 'Discard it' }) : null));
+}
+
 export async function renderGmPlan() {
     const { chatKey, settingId } = ws.ctx;
     if (!settingId) return h('div', { class: 'sb-muted' }, 'This chat has no setting yet.');
@@ -703,6 +750,6 @@ export async function renderGmPlan() {
     const creatures = await listEntries(ws.ctx.chatId, settingId, 'creature').catch(() => []);
     return h('div', { class: 'sb-gm-plan' },
         h('div', { class: 'sb-scene-cols' },
-            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), volumesCard(gm), ideasCard(gm), todayCard(gm, show), agendaCard(gm, show), eventCard(places, [...people, ...creatures]), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
+            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), starterCard(), volumesCard(gm), ideasCard(gm), todayCard(gm, show), agendaCard(gm, show), eventCard(places, [...people, ...creatures]), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
             h('div', { class: 'sb-gm-col' }, paceCard(gm), settingsCard(gm))));
 }

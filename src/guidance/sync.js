@@ -45,6 +45,7 @@ import { weatherText } from '../calendar/weather.js';
 import { fightValues } from '../director/fight.js';
 import { protectedText, stanceFor } from '../director/combat.js';
 import { eventValues } from '../events/model.js';
+import { knownAsText } from '../library/alias-kinds.js';
 
 export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
 
@@ -176,6 +177,11 @@ export async function gatherInputs(chatId, chatKey) {
     // A power (a god, a spirit) is never one of those present.
     const powerIds = new Set(Object.entries(library.entries ?? {}).filter(([, m]) => m?.power?.on === true).map(([id]) => id));
     const nameById0 = new Map(allCharacters.map((ch) => [ch.id, ch.name]));
+    // Who uses an alias may be a faction (a crew's codename for one of its own).
+    const aliasUsers = new Map(nameById0);
+    if (settingId && Object.values(library.entries ?? {}).some((m) => Object.values(m?.aliasInfo ?? {}).some((i) => i.knownBy?.length))) {
+        for (const f of await listEntries(chatId, settingId, 'faction')) aliasUsers.set(f.id, f.name);
+    }
     // Who the dead were (role, patron), and the names that may never be
     // placed in the scene: powers' and the dead's.
     const whoTheyWere = (id) => {
@@ -196,6 +202,8 @@ export async function gatherInputs(chatId, chatKey) {
         cast.push({
             name: obj.name,
             aliases: obj.aliases ?? base.aliases ?? [],
+            // How they are known, and by whom (src/library/alias-kinds.js).
+            knownAs: settingId ? knownAsText(obj.name, obj.aliases ?? base.aliases ?? [], library.entries?.[id]?.aliasInfo ?? {}, (x) => aliasUsers.get(x) ?? '') : '',
             role: await readField(chatId, id, 'se__character.role', 'role'),
             description: doc.narrative[id]?.text || obj.description || '',
             personality: text(base.personality),

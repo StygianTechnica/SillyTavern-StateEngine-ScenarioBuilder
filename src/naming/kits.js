@@ -91,9 +91,21 @@ const ORDER_NOUNS = pool(`Ashes/c, Thorn, Iron, Salt, Lantern, Bell, Key, Coin, 
 Crow, Moth, Wolf, Hound, Serpent, Hand, Eye, Tongue, Bone, Rose, Lily, Star, Moon, Dawn, Dusk, Tide, Ember/c, Veil, Mirror,
 Scale, Compass, Anvil, Lamp, Scroll, Seal, Thread, Needle, Spindle, Loom, Sickle, Plough, Cup, Chalice, Ring, Crown, Feather,
 Owl, Raven, Stag, Bee, Hive, Ash Tree, Yew, Silence, Hour, Spiral, Knot, Wheel, Nail, Last Light, Open Door, Broken Wheel, Ninth Hour`);
+const CALL_WORDS = pool(`Nightjar, Kestrel, Merlin, Shrike, Wren, Heron, Osprey, Harrier, Swift, Rook, Jackdaw, Magpie, Lark, Plover,
+Curlew, Bittern, Goshawk, Kite, Petrel, Tern, Cobalt, Flint, Onyx, Garnet, Basalt, Quartz, Jasper, Mica, Pyrite, Cinnabar, Tungsten,
+Bismuth, Argent, Slate, Squall, Sleet, Drift, Gale, Thistle, Bramble, Larch, Hemlock, Sorrel, Juniper, Lantern, Anvil, Compass, Needle,
+Bellows, Chisel, Keystone, Lockpick, Tinderbox, Sextant, Ferret, Stoat, Badger, Lynx, Marten, Jackal, Mongoose, Viper, Adder, Pike,
+Barracuda, Ghost/c, Wraith, Echo, Cipher, Sphinx, Magpie, Moth, Hornet, Mantis, Cricket, Gannet, Cormorant, Albatross, Pelican, Ibis,
+Coyote, Wolverine, Jaguar, Ocelot, Caracal, Saluki, Lurcher, Mastiff, Gambit, Ledger, Tally, Bishop, Rook, Pawn, Jester, Tinker, Tailor,
+Sexton, Verger, Ferryman, Lamplighter, Chimney, Gutter, Steeple, Vesper/c, Matins, Compline, Solstice, Equinox, Meridian, Zenith, Nadir`);
+const CALL_NUMBERS = pool('One, Two, Three, Four, Five, Six, Seven, Eight, Nine, Actual, Lead, Prime, Zero');
 const TRADES = pool('Smithy, Forge, Bakery, Apothecary, Emporium, Workshop, Tailors, Cobblers, Chandlery, Mercantile, Provisions, Curios, Pawnshop, Bindery, Cartographers, Tannery, Cooperage, Brewery, Herbalist, Bookshop');
 
 export const KITS = Object.freeze({
+    codename: {
+        label: 'Codenames and callsigns',
+        patterns: [['{callWord}', 6], ['{callWord} {callNumber}', 3], ['{colour} {callWord}', 2], ['{callWord}-{callNumber}', 1]],
+    },
     wilderness: {
         label: 'Wilderness features',
         patterns: [
@@ -144,6 +156,7 @@ export const POOLS = Object.freeze({
     pirateAdj: PIRATE_ADJ, pirateNoun: PIRATE_NOUNS, virtue: NAVAL, hero: HEROES, shipBeast: SHIP_BEASTS,
     merchantVirtue: VIRTUES_MERCHANT, cargo: CARGO, merchantNoun: pool('Trader, Lass, Belle, Merchant, Packet, Pride, Venture, Star, Rose'),
     companyNoun: COMPANY_NOUNS, gangNoun: GANG_NOUNS, gangAdj: GANG_ADJ, orderHead: ORDER_HEADS, orderNoun: ORDER_NOUNS, trade: TRADES,
+    callWord: CALL_WORDS, callNumber: CALL_NUMBERS,
     part: pool('Whisker, Beard, Tail, Ear, Nose, Paw, Hoof, Horn, Tooth, Eye, Head, Knees/j, Bollocks/j, Breakfast/j, Supper, Wedding/j, Funeral/g, Revenge, Folly, Rest, Delight/j, Lament/g'),
 });
 

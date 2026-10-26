@@ -602,3 +602,50 @@ export function readSteerObjects(json, { steer = '', userName = '', isKnown = ()
     for (const g of list(json.groups).slice(0, 8)) take('faction', g);
     return out;
 }
+
+// ---- the starter post (an opening for the current scene)
+
+// input: { dossier, userName (the player character), story (storyWords),
+//   premise (the outline's), gmStyle, pov (a point-of-view rule, or ''),
+//   messages (the chat so far: [{ name, text, isUser }]), wish }
+// -> { system, prompt }. The answer is the post itself, in prose.
+export function buildStarterPrompt(input) {
+    const userName = clean(input.userName) || 'the player character';
+    const underWay = list(input.messages).length > 0;
+    const system = [
+        'You are the narrator of an ongoing roleplay. Write the post that opens the current scene - the first thing the player reads before they act.',
+        `${userName} is the player character, played by a human: never write what ${userName} says, does, thinks, feels or decides. Write the world and the other characters; leave ${userName} free to act.`,
+        'Use only the people, places and things given; invent no new named ones. People act as they have been shown and know only what they have learned.',
+    ].join(' ');
+    const parts = [clean(input.dossier)];
+    const story = storyText(input.story);
+    if (clean(input.premise)) parts.push('', 'WHAT THE STORY IS ABOUT', clean(input.premise));
+    if (story) parts.push('', 'WHERE THE STORY STANDS', story);
+    if (underWay) parts.push('', 'THE LATEST CHAT (the new scene follows on from it)', recentText(list(input.messages).slice(-4), userName));
+    parts.push(
+        '',
+        'WRITE THE OPENING POST',
+        '- Set the scene through the senses: where this is, the time of day and the weather, what it looks, sounds and smells like.',
+        '- Show who is here and what they are doing right now, each acting on their own aims.',
+        story ? '- Set up the beat now: put its tension in motion, but do not resolve it.' : '- Put something in motion: a tension, a need or a question the scene is about.',
+        `- End on an open moment that calls for ${userName} to act - someone turns to them, something happens, a choice is in front of them. Do not answer it for them.`,
+        '- Three to five paragraphs of prose. No title, no headings, no notes, nothing out of character.',
+        ...(clean(input.pov) ? [`- ${clean(input.pov)}`] : []),
+        ...(clean(input.gmStyle) ? [`- The game master's style: ${cut(input.gmStyle, 400)}`] : []),
+        ...(clean(input.wish) ? [`- The user wants: ${cut(input.wish, 400)}`] : []),
+        '',
+        'Reply with the post only.',
+    );
+    return { system, prompt: parts.join('\n') };
+}
+
+// The model's post without what it wraps it in: a "Here is..." line, code
+// fences, a heading, quotes around the whole. '' when nothing is left.
+export function readStarter(raw) {
+    let t = String(raw ?? '').replace(/\r\n/g, '\n').trim();
+    t = t.replace(/^```[a-z]*\n?|\n?```$/gi, '').trim();
+    t = t.replace(/^(?:here(?:'s| is)[^\n]*|sure[^\n]*|opening post[^\n]*|#+[^\n]*)\n+/i, '').trim();
+    t = t.replace(/^\*\*[^*\n]{1,60}\*\*\n+/, '').trim();
+    if (/^["“][\s\S]*["”]$/.test(t) && !/["“”]/.test(t.slice(1, -1))) t = t.slice(1, -1).trim();
+    return t;
+}

@@ -40,7 +40,8 @@ import { suggestGifts, suggestActs } from '../generate/gifts.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
 import { sparkButton, fieldWithTools, diceButton } from './controls.js';
-import { generateEntry, canGenerateFor, rollEntryName } from '../generate/run.js';
+import { generateEntry, canGenerateFor, rollEntryName, generateAlias } from '../generate/run.js';
+import { ALIAS_KINDS, kindLabel, aliasInfoFor, aliasLabel } from '../library/alias-kinds.js';
 import { markNameUsed, markNameDeclined } from '../naming/run.js';
 import { splitAliases, mergeAliases } from '../generate/prompt.js';
 import { WORLD_TYPES, MAGIC_PRESENCE, TECH_LEVELS, inheritedRealm } from '../library/world-options.js';
@@ -88,6 +89,7 @@ function startDraft(entry, defs) {
             canonLocked: entry.meta?.canonLocked === true,
             gmNotes: entry.meta?.gmNotes ?? '',
             nsfw: entry.meta?.nsfw ?? '',
+            aliasInfo: structuredClone(entry.meta?.aliasInfo ?? {}),
             parentId: entry.meta?.parentId ?? ws.newParent ?? '',
             environment: { climate: '', lighting: '', rules: '', ...(entry.meta?.environment ?? {}) },
             climate: entry.meta?.climate ?? '',
@@ -344,7 +346,7 @@ export async function renderSheet(type, all) {
             h('div', { class: 'sb-type-chip' }, h('i', { class: `fa-solid ${type.icon}` }), type.label, type.scope === 'story' ? h('small', {}, ' · this chat') : null),
             ws.editing ? h('div', { class: 'sb-row sb-name-row' }, textInput('name', draft.name, { class: 'text_pole sb-name-input', placeholder: `Name this ${type.noun}` }), nameDice(type, all)) : h('h2', {}, entry.name),
             ws.editing ? textInput('aliases', csv(draft.aliases), { placeholder: 'Also known as… (comma-separated)', oninput: (e) => set('aliases', fromCsv(e.target.value)) })
-                : (entry.aliases?.length ? h('small', { class: 'sb-aka' }, `also ${entry.aliases.join(', ')}`) : null),
+                : (entry.aliases?.length ? h('small', { class: 'sb-aka' }, `also ${entry.aliases.map((a) => aliasLabel(a, entry.meta?.aliasInfo)).join(', ')}`) : null),
             where.length ? h('div', { class: 'sb-where' }, icon('fa-location-dot'), where.map((n, i) => [i ? ' › ' : '', n])) : null,
             parentHints.length ? h('div', { class: 'sb-where sb-parent-hints' }, icon('fa-sitemap'), h('small', { class: 'sb-hint' }, ' Inside…? '),
                 parentHints.map((s) => button(names.get(s.id)?.name ?? s.id, () => {
@@ -750,6 +752,7 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
         }
         return h('div', { class: 'sb-tabpane' },
             parentField,
+            type.id === 'character' ? otherNamesCard({ type, entry, isNew, all, names }) : null,
             defs.length ? h('div', { class: 'sb-fieldgrid' }, defs.map((d) => h('div', { dataset: { field: d.name } }, fieldWithTools(d.label, fieldControl(d, all), [d.kind === 'boolean' ? null : spark(d.name, ws.draft.fields[d.name])], null, genClass(d.name))))) : h('small', { class: 'sb-hint' }, 'This type has no extra fields in the setting.'),
             envCard,
             realmCard);
@@ -791,9 +794,81 @@ function detailsTab({ type, entry, isNew, defs, all, names, parents }) {
             h('div', { class: 'sb-dd-value sb-editable', title: 'Click to edit', onclick: () => editField(d.name) }, v),
             h('span', { class: 'sb-iconbtn sb-pencil', title: 'Edit', onclick: () => editField(d.name) }, icon('fa-pen')),
             d.kind === 'boolean' ? null : readSpark(d.name, raw))])) : h('div', { class: 'sb-muted' }, 'This type has no extra fields in the setting.'),
+        type.id === 'character' && !isNew ? otherNamesCard({ type, entry, isNew, all, names }) : null,
         env,
         realm,
         type.id === 'location' && !isNew ? routesCard(entry, names) : null);
+}
+
+// A character's other names (src/library/alias-kinds.js): each alias with
+// its kind and who uses it; in edit mode, buttons that add a nickname or
+// title (written by the model) or a codename or stage name (rolled by the
+// name generator).
+function otherNamesCard({ type, entry, isNew, all, names }) {
+    const editing = ws.editing;
+    const aliases = editing ? ws.draft.aliases : (entry.aliases ?? []);
+    const info = editing ? ws.draft.meta.aliasInfo : (entry.meta?.aliasInfo ?? {});
+    if (!editing && !aliases.length) return null;
+    const selfId = entry?.id;
+    const people = [...(all.character ?? []), ...(all.faction ?? [])].filter((e) => e.id !== selfId).sort((a, b) => a.name.localeCompare(b.name));
+    const nameOf = (id) => names.get(id)?.name ?? people.find((p) => p.id === id)?.name ?? '';
+    const setInfo = (alias, patch) => {
+        const cur = ws.draft.meta.aliasInfo[alias] ?? { kind: '', knownBy: [] };
+        ws.draft.meta.aliasInfo = { ...ws.draft.meta.aliasInfo, [alias]: { ...cur, ...patch } };
+        markDirty();
+        rerender({ force: true });
+    };
+    const row = (alias) => {
+        const i = info[alias] ?? { kind: '', knownBy: [] };
+        if (!editing) {
+            const who = (i.knownBy ?? []).map(nameOf).filter(Boolean);
+            return h('div', { class: 'sb-alias-row' }, h('strong', {}, alias), h('small', { class: 'sb-hint' }, ` ${kindLabel(i.kind)}${who.length ? ` - used only by ${who.join(', ')}` : ''}`));
+        }
+        return h('div', { class: 'sb-alias-row' },
+            h('strong', {}, alias),
+            select(ALIAS_KINDS.map(([value, label]) => ({ value, label })), i.kind, { onchange: (e) => setInfo(alias, { kind: e.target.value }) }),
+            h('span', { class: 'sb-chips' }, (i.knownBy ?? []).map((id) => h('span', { class: 'sb-chip' }, nameOf(id) || id,
+                h('span', { class: 'sb-iconbtn', title: 'Remove', onclick: () => setInfo(alias, { knownBy: i.knownBy.filter((x) => x !== id) }) }, icon('fa-xmark'))))),
+            select([{ value: '', label: i.knownBy?.length ? 'Also used by…' : 'Everyone uses it - or only…' }, ...people.filter((p) => !i.knownBy?.includes(p.id)).map((p) => ({ value: p.id, label: p.name }))], '', {
+                onchange: (e) => { if (e.target.value) setInfo(alias, { knownBy: [...(i.knownBy ?? []), e.target.value] }); },
+            }),
+            h('span', { class: 'sb-iconbtn', title: 'Remove this name', onclick: () => {
+                set('aliases', ws.draft.aliases.filter((a) => a !== alias));
+                const { [alias]: _, ...rest } = ws.draft.meta.aliasInfo;
+                ws.draft.meta.aliasInfo = rest;
+                rerender({ force: true });
+            } }, icon('fa-trash')));
+    };
+    const gate = canGenerateFor(ws.ctx.settingId, isNew ? null : entry.id);
+    const add = async (kind) => {
+        if (ws.aliasBusy) return;
+        ws.aliasBusy = kind;
+        rerender({ force: true });
+        try {
+            const alias = await generateAlias({ ctx: ws.ctx, type, entry: isNew ? null : entry, draft: ws.draft, kind, all });
+            if (!alias) toast('info', 'Nothing fitting came out - try again.');
+            else if (ws.draft.aliases.some((a) => a.toLowerCase() === alias.toLowerCase())) toast('info', `"${alias}" is already one of their names.`);
+            else {
+                set('aliases', [...ws.draft.aliases, alias]);
+                ws.draft.meta.aliasInfo = { ...ws.draft.meta.aliasInfo, [alias]: { kind, knownBy: [] } };
+            }
+        } catch (err) {
+            toast('error', `Could not write it: ${err?.message ?? err}`);
+        } finally {
+            ws.aliasBusy = null;
+            rerender({ force: true });
+        }
+    };
+    const adder = (kind, label, byModel) => button(label, () => void add(kind), {
+        iconName: ws.aliasBusy === kind ? 'fa-spinner fa-spin' : byModel ? 'fa-wand-magic-sparkles' : 'fa-dice',
+        disabled: Boolean(ws.aliasBusy) || (byModel && !gate.ok),
+        title: byModel ? (gate.ok ? 'Written from who they are - their looks, habits, deeds' : gate.reason) : 'Rolled by the name generator - never one already used',
+    });
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-id-badge'), ' Other names', h('small', { class: 'sb-hint' }, ' - nicknames, codenames, titles; who uses each one')),
+        aliases.length ? aliases.map(row) : h('small', { class: 'sb-hint' }, 'None yet - add them in "Also known as" above, or here.'),
+        editing ? h('div', { class: 'sb-actions' },
+            adder('nickname', 'Nickname', true), adder('title', 'Title', true), adder('codename', 'Codename', false), adder('stage', 'Stage name', false)) : null);
 }
 
 // Routes from this place to others, with how long the journey takes - the
@@ -1155,6 +1230,8 @@ async function saveSheet(type, entry, defs, isNew) {
     for (const def of defs) if (d.fields[def.name] !== undefined) patch[def.name] = d.fields[def.name] ?? (def.kind === 'refs' || def.kind === 'list' ? [] : '');
     if (!patch.name) return toast('warning', 'Give it a name first.');
     const meta = { tags: d.meta.tags, pinned: d.meta.pinned, canonLocked: d.meta.canonLocked, gmNotes: d.meta.gmNotes };
+    // The kinds of the aliases it still has (src/library/alias-kinds.js).
+    if (type.id === 'character') meta.aliasInfo = aliasInfoFor(patch.aliases, d.meta.aliasInfo);
     if (type.id === 'character') meta.nsfw = d.meta.nsfw ?? '';
     // Which fields came from generation (SB-136), shown on the GM tab.
     if (ws.generatedFields?.size) meta.generated = [...new Set([...(entry.meta?.generated ?? []), ...ws.generatedFields])].filter((f) => f !== 'name');

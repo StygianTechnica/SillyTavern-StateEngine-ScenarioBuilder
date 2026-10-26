@@ -281,10 +281,13 @@ function sceneSection(scene) {
 // would take as a cue to write for them.
 function castLine(c) {
     const name = clean(c.name);
-    if (c.player) return `- ${name}${clean(c.role) ? ` (${clean(c.role)})` : ''}: the player character, played by the user.`;
+    // Nicknames, codenames, titles - and who uses them (sync: knownAsText).
+    const knownAs = clean(c.knownAs) ? unstop(truncate(c.knownAs, 300)) : '';
+    if (c.player) return `- ${name}${clean(c.role) ? ` (${clean(c.role)})` : ''}: the player character, played by the user.${knownAs ? ` ${knownAs}.` : ''}`;
     const bits = [];
     if (clean(c.role)) bits.push(firstUpper(unstop(c.role)));
     if (clean(c.description)) bits.push(unstop(truncate(c.description, 160)));
+    if (knownAs) bits.push(knownAs);
     if (clean(c.personality)) bits.push(unstop(truncate(c.personality, 90)));
     if (clean(c.voice)) bits.push(`Voice: ${unstop(firstLower(truncate(c.voice, 120)))}`);
     if (clean(c.goals)) bits.push(`Wants: ${unstop(firstLower(truncate(c.goals, 110)))}`);

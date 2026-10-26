@@ -212,6 +212,9 @@
 /* The Name and its dice (src/naming/): the box takes the room. */
 .sb-name-row, .sb-gen-name { flex-wrap: nowrap; align-items: center; }
 .sb-name-row > input, .sb-gen-name > input { flex: 1 1 auto; min-width: 0; }
+/* A character's other names (src/library/alias-kinds.js). */
+.sb-alias-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 3px 0; }
+.sb-alias-row > select { width: auto; flex: 0 1 auto; }
 .sb-aka { opacity: 0.7; font-style: italic; }
 .sb-where { opacity: 0.85; display: flex; gap: 6px; align-items: center; }
 .sb-sheet-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--sb-line); overflow-x: auto; }
