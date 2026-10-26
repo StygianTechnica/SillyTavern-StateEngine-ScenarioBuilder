@@ -314,3 +314,54 @@ describe('ties that are rivals, and businesses', () => {
         expect(asked).toContain('its name shares no word with "Omicron Innovations"');
     });
 });
+
+describe('places that are not towns', () => {
+    const entries = [{ name: 'White Cerberus', aliases: [], type: 'faction' }, { name: 'Ledger Guild', aliases: [], type: 'faction' }];
+    const cyber = { worldType: 'science_fiction', tone: 'noir' };
+    const fantasy = { worldType: 'fantasy' };
+    const plan = (brief, overview, seed = 'p') => planName({ typeId: 'location', brief }, { naming: { seed }, overview, names: entries.map((e) => e.name), entries });
+
+    it('reads bases, districts, venues and streets', () => {
+        expect(nameKindFor('location', 'White Cerberus secret underground squad headquarters')).toMatchObject({ kind: 'base', secret: true, noun: 'headquarters' });
+        expect(nameKindFor('location', 'the police headquarters')).toMatchObject({ kind: 'base', secret: false });
+        expect(nameKindFor('location', 'a nightclub in the dockside district')).toMatchObject({ kind: 'building', subtype: 'venue', noun: 'nightclub' });
+        expect(nameKindFor('location', 'a slum neighbourhood')).toMatchObject({ kind: 'district' });
+        expect(nameKindFor('location', 'a market square')).toMatchObject({ kind: 'street' });
+        expect(nameKindFor('location', 'the back office')).toMatchObject({ kind: 'building', subtype: 'venue' });
+        expect(tieRelation('White Cerberus headquarters', 'White Cerberus')).toBe('from');
+        expect(tieRelation('White Cerberus secret underground squad headquarters', 'White Cerberus')).toBe('from');
+    });
+
+    it('gives a secret base a cover name, never its owner\'s', () => {
+        for (const seed of ['s1', 's2', 's3', 's4']) {
+            for (const overview of [cyber, fantasy]) {
+                const r = plan('White Cerberus secret underground squad headquarters', overview, seed);
+                expect(r.mode).toBe('rolled');
+                expect(r.kind).toBe('base');
+                expect(r.name).not.toMatch(/cerberus|white/i);
+            }
+        }
+        expect(plan('White Cerberus secret base', fantasy, 'x').name).toMatch(/^The /);
+    });
+
+    it('names an open base or hall from its owner, with the brief\'s own word first', () => {
+        expect(plan('White Cerberus headquarters', cyber).candidates[0]).toBe('The White Cerberus Headquarters');
+        expect(plan('the Ledger Guild hall', fantasy).candidates[0]).toBe('The Ledger Guild Hall');
+    });
+
+    it('names districts, venues and streets as such - not as towns', () => {
+        for (const seed of ['d1', 'd2', 'd3']) {
+            const d = plan('a slum district', cyber, seed);
+            expect(d.kind).toBe('district');
+            expect(d.name, d.name).toMatch(/\s|^The /);
+            const club = plan('a nightclub', cyber, seed);
+            expect(club.name, club.name).toMatch(/Club|^The /);
+            const hospital = plan('a hospital', cyber, seed);
+            expect(hospital.name, hospital.name).toContain('Hospital');
+            expect(plan('a market square', fantasy, seed).kind).toBe('street');
+        }
+        // A later age's district words stay out of an earlier world.
+        const old = Array.from({ length: 12 }, (_, i) => plan('a district', fantasy, `o${i}`).name).join(' ');
+        expect(old).not.toMatch(/\b(Sector|Arcology|Stacks|Sprawl|Grid|Hive)\b/);
+    });
+});
