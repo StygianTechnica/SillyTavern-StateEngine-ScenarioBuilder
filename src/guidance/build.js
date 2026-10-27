@@ -250,6 +250,9 @@ function locationSection(input) {
     const out = loc?.partOf ? `back out to ${clean(loc.partOf.name)}` : '';
     if (ways.length) around.push(`From here one can go to ${orList(ways)}${out ? `, or ${out}` : ''}.`);
     else if (out) around.push(`From here one can go ${out}.`);
+    // The way the party gets about now (horses, a car), when the story gave
+    // it one - the journey times above lead with it.
+    if (clean(loc?.travelMode) && roads.length) around.push(`The party gets about ${clean(loc.travelMode)}.`);
     if (around.length) lines.push(around.join(' '));
     if (loc?.path?.length) lines.push('Let what the characters see, hear and smell here colour the reply, and keep them in this place unless the story moves them.');
     return { full: lines.join('\n'), compact: [head.join(' '), loc?.description ? sentence(truncate(loc.description, 200)) : ''].filter(Boolean).join(' ') };

@@ -46,7 +46,8 @@ import { cultureChoices, resolveCulture, inheritedCulture } from '../naming/cult
 import { worldDefault } from '../naming/run.js';
 import { markNameUsed, markNameDeclined } from '../naming/run.js';
 import { splitAliases, mergeAliases } from '../generate/prompt.js';
-import { WORLD_TYPES, MAGIC_PRESENCE, TECH_LEVELS, inheritedRealm } from '../library/world-options.js';
+import { WORLD_TYPES, MAGIC_PRESENCE, TECH_LEVELS, inheritedRealm, isLaterAge } from '../library/world-options.js';
+import { MODES, routeTimes, readBasis, asWalkRoute, walkFromMode, techOf, formatWalk } from '../library/travel.js';
 import { duplicateScore } from '../library/merge.js';
 import { confirmAction } from './confirm.js';
 import { openCopyPanel, copyPanel } from './copy-panel.js';
@@ -908,11 +909,68 @@ function otherNamesCard({ type, entry, isNew, all, names }) {
             adder('nickname', 'Nickname', true), adder('title', 'Title', true), adder('codename', 'Codename', false), adder('stage', 'Stage name', false)) : null);
 }
 
+// The walking time a route shows: its own, or '' for one that cannot be
+// walked (or an older route's time that is not yet known to be walking).
+function walkingText(route, tech) {
+    return routeTimes(route, tech).find((t) => t.mode === 'walk')?.text ?? (readBasis(route, tech).unsure ? String(route.travel ?? '') : '');
+}
+
+// The other ways in a line: worked out greyed, a route's own in full.
+function waysLine(route, tech) {
+    const others = routeTimes(route, tech).filter((t) => t.mode && t.mode !== 'walk');
+    if (!others.length) return null;
+    return h('small', { class: 'sb-route-ways' }, others.map((t, i) => h('span', { class: t.own ? 'sb-route-own' : 'sb-hint', title: t.own ? 'Set on this route' : 'Worked out from the walking time' }, `${i ? ', ' : ''}${t.own ? '' : '~'}${t.text} ${t.label}`)));
+}
+
+// An older route in a world with engines: is its time walking, or the
+// usual way? Asked once.
+function unsureRow(settingId, route) {
+    const as = (mode) => {
+        if (mode === 'walk') updateRoute(settingId, route.id, { basis: 'walk' });
+        else {
+            const walk = walkFromMode(route.travel, mode);
+            updateRoute(settingId, route.id, { basis: 'walk', travel: formatWalk(walk), times: { ...(route.times ?? {}), [mode]: route.travel } });
+        }
+        void syncNow().then(() => rerender());
+    };
+    return h('div', { class: 'sb-route-ask' },
+        h('small', { class: 'sb-hint' }, `Is ${route.travel} on foot, or the usual way there?`),
+        button('On foot', () => as('walk'), { iconName: 'fa-person-walking' }),
+        button('By car', () => as('car'), { iconName: 'fa-car' }),
+        button('By transit', () => as('transit'), { iconName: 'fa-train-subway' }));
+}
+
+// A route's own time for each way: empty to work it out from the walk,
+// "none" (the box) where the way does not go.
+function waysEditor(settingId, route, tech) {
+    const times = routeTimes(route, tech);
+    const set = (mode, value) => {
+        const base = route.basis === 'walk' ? route : asWalkRoute(route);
+        const next = { ...(base.times ?? {}) };
+        if (value) next[mode] = value; else delete next[mode];
+        updateRoute(settingId, route.id, { basis: 'walk', travel: base.travel, times: next });
+        void syncNow().then(() => rerender());
+    };
+    const modes = MODES.filter((m) => m.id !== 'walk' && (!m.auto || (tech >= m.from && (m.until == null || tech <= m.until)) || route.times?.[m.id]));
+    return h('div', { class: 'sb-route-ways-edit' },
+        h('small', { class: 'sb-hint' }, 'Leave a way empty to work it out from the walking time; give one a time of its own when the route breaks the pattern.'),
+        modes.map((m) => {
+            const own = route.times?.[m.id] ?? '';
+            const worked = times.find((t) => t.mode === m.id && !t.own)?.text ?? '';
+            const box = h('input', { class: 'text_pole sb-route-time', value: own === 'none' ? '' : own, placeholder: own === 'none' ? 'does not go' : worked ? `~${worked}` : (m.auto ? 'too short for it' : 'only if it goes'), disabled: own === 'none', onchange: (e) => set(m.id, e.target.value.trim()) });
+            return h('div', { class: 'sb-route' },
+                h('span', { class: 'sb-route-mode' }, m.label), box,
+                h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: own === 'none', onchange: (e) => set(m.id, e.target.checked ? 'none' : '') }), h('span', {}, 'not this way')));
+        }));
+}
+
 // Routes from this place to others, with how long the journey takes - the
 // clock skips ahead by it when the scene moves along a route.
 function routesCard(entry, names) {
     const { settingId } = ws.ctx;
     const routes = routesFrom(entry.id, listRoutes(settingId));
+    const here = getPlaceOverview(settingId, entry.id);
+    const tech = techOf({ techLevel: here?.tech?.level, laterAge: isLaterAge(here) });
     const draft = ws.routeDraft?.for === entry.id ? ws.routeDraft : (ws.routeDraft = { for: entry.id, to: '', travel: '', note: '' });
     const places = [...names.entries()].filter(([id, n]) => n.type === 'location' && id !== entry.id).map(([id, n]) => ({ value: id, label: n.name })).sort((a, b) => a.label.localeCompare(b.label));
     const add = () => {
@@ -966,33 +1024,41 @@ function routesCard(entry, names) {
         suggestions,
         routes.length ? h('div', { class: 'sb-routes' }, routes.map(({ route, otherId }) => h('div', { class: 'sb-route' },
             h('span', { class: 'sb-linkchip', onclick: () => openSheet(otherId) }, icon('fa-location-dot'), ` ${names.get(otherId)?.name ?? 'a place no longer in the library'}`),
-            // The time is edited in place; a guess stops being one once changed.
-            h('input', { class: 'text_pole sb-route-time', value: route.travel, title: 'Travel time - change it here', onchange: (e) => {
+            // The walking time is edited in place; a guess stops being one
+            // once changed. An older route's "half a day by cart" becomes the
+            // cart's time, and the walk is what the user types.
+            h('span', { class: 'sb-hint' }, icon('fa-person-walking')),
+            h('input', { class: 'text_pole sb-route-time', value: walkingText(route, tech), placeholder: 'no walking', title: 'On foot - riding, cars, trains and flights are worked out from it', onchange: (e) => {
                 const travel = e.target.value.trim();
-                if (!travel || travel === route.travel) return;
-                updateRoute(settingId, route.id, { travel, ...(route.guessed ? { guessed: false, note: route.note === 'guessed - edit if wrong' ? '' : route.note } : {}) });
+                if (travel === walkingText(route, tech)) return;
+                const kept = route.basis === 'walk' ? route.times : asWalkRoute(route).times;
+                updateRoute(settingId, route.id, { travel, basis: 'walk', times: kept, ...(route.guessed ? { guessed: false, note: route.note === 'guessed - edit if wrong' ? '' : route.note } : {}) });
                 void syncNow().then(() => rerender());
             } }),
+            waysLine(route, tech),
             // A right guess is kept as it is: one click makes it yours.
             route.guessed ? h('span', {
                 class: 'sb-badge sb-badge-click', role: 'button', tabindex: 0,
-                title: 'Guessed from the places\' size and the world\'s technology. Click to keep this time as yours - or change the time.',
+                title: 'Guessed on foot from the places\' size. Click to keep this time as yours - or change the time.',
                 onclick: () => { updateRoute(settingId, route.id, { guessed: false, note: route.note === 'guessed - edit if wrong' ? '' : route.note }); void syncNow().then(() => rerender()); },
             }, icon('fa-check'), ' guess - keep it') : null,
             route.note && !route.guessed ? h('small', { class: 'sb-hint' }, ` - ${route.note}`) : null,
-            h('span', { class: 'sb-iconbtn', title: 'Remove this route', onclick: () => { removeRoute(settingId, route.id); void syncNow().then(() => rerender()); } }, icon('fa-xmark'))))) : h('small', { class: 'sb-muted' }, 'No routes yet.'),
+            h('span', { class: 'sb-iconbtn', title: 'Other ways - set a time of its own for one (the maglev, a ferry, a portal), or say it does not go here', onclick: () => { ws.routeWays = ws.routeWays === route.id ? null : route.id; rerender(); } }, icon('fa-sliders')),
+            h('span', { class: 'sb-iconbtn', title: 'Remove this route', onclick: () => { removeRoute(settingId, route.id); void syncNow().then(() => rerender()); } }, icon('fa-xmark')),
+            readBasis(route, tech).unsure ? unsureRow(settingId, route) : null,
+            ws.routeWays === route.id ? waysEditor(settingId, route, tech) : null))) : h('small', { class: 'sb-muted' }, 'No routes yet.'),
         h('div', { class: 'sb-row' },
             select([{ value: '', label: 'To…' }, ...places], draft.to, { onchange: (e) => {
                 draft.to = e.target.value;
                 // Start from a guess, to change or keep.
                 if (draft.to && !draft.travel.trim()) {
-                    const guess = guessRoute(entry.id, draft.to, { up: (id) => [...pathOf(parents, id)].reverse(), places: new Map([...names.entries()].map(([id, n]) => [id, { name: n.name }])), techLevel: getPlaceOverview(settingId, entry.id)?.tech?.level ?? '' })
-                        ?? guessRoute(entry.id, draft.to, { up: (id) => [id], places: new Map([...names.entries()].map(([id, n]) => [id, { name: n.name }])), techLevel: getPlaceOverview(settingId, entry.id)?.tech?.level ?? '' });
+                    const guess = guessRoute(entry.id, draft.to, { up: (id) => [...pathOf(parents, id)].reverse(), places: new Map([...names.entries()].map(([id, n]) => [id, { name: n.name }])) })
+                        ?? guessRoute(entry.id, draft.to, { up: (id) => [id], places: new Map([...names.entries()].map(([id, n]) => [id, { name: n.name }])) });
                     if (guess) draft.travel = guess.travel;
                 }
                 rerender();
             } }),
-            h('input', { class: 'text_pole', placeholder: 'Travel time - "2 hours", "half a day"', value: draft.travel, oninput: (e) => { draft.travel = e.target.value; } }),
+            h('input', { class: 'text_pole', placeholder: 'On foot - "2 hours", "3 days" (or "2 hours by ferry")', title: 'How long it takes on foot - riding, cars, trains and flights are worked out from it. A way that cannot be walked: say how ("3 days by ship").', value: draft.travel, oninput: (e) => { draft.travel = e.target.value; } }),
             h('input', { class: 'text_pole', placeholder: 'Note - the coast road, a hidden passage', value: draft.note, oninput: (e) => { draft.note = e.target.value; } }),
             button('Add route', add, { iconName: 'fa-plus' })));
 }

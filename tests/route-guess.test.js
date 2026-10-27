@@ -22,9 +22,9 @@ describe('guessed routes', () => {
         expect(scaleOf({ name: 'Elsewhere' })).toBe('');
     });
 
-    it('take longer before engines than with them', () => {
-        expect(guessTravel('settlement', 'tl3')).toBe('half a day');
-        expect(guessTravel('settlement', 'tl8')).toBe('1 hour');
+    it('are walking times, whatever the world drives (faster ways follow from them)', () => {
+        expect(guessTravel('settlement')).toBe('half a day');
+        expect(guessTravel('region')).toBe('2 days');
         expect(guessTravel('room')).toBe('1 minute');
     });
 
@@ -36,7 +36,7 @@ describe('guessed routes', () => {
     });
 
     it('guess the time from the larger place, marked as a guess', () => {
-        expect(guessRoute('hall', 'square', { up, places, techLevel: 'tl3' })).toEqual({ from: 'fortress', to: 'redhaven', travel: 'half a day', note: 'guessed - edit if wrong', guessed: true });
+        expect(guessRoute('hall', 'square', { up, places })).toEqual({ from: 'fortress', to: 'redhaven', travel: 'half a day', basis: 'walk', note: 'guessed - edit if wrong', guessed: true });
         expect(guessRoute('hall', 'wall', { up, places }).travel).toBe('1 minute');
     });
 });

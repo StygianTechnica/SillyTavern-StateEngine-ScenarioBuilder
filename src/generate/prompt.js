@@ -187,9 +187,10 @@ export function buildGenerationPrompt(input) {
         parts.push(`# The ${subject} - what is written so far\n${known.length ? known.join('\n') : '(Nothing else written yet.)'}${entry.narrative ? `\nWhat has happened to it in the story: ${cut(entry.narrative, 400)}` : ''}${input.parentName ? `\nIt is located inside: ${input.parentName}` : ''}`);
     }
 
-    const placeRule = place?.path?.length
+    // A place inside another says what that one is for (src/generate/fit-place.js).
+    const placeRule = input.placeRule || (place?.path?.length
         ? `It is part of ${place.path[0].name}: keep it true to that place and the people tied to it - their side, their enemies, their mood - unless the user says otherwise. Never make it serve a side the place it is in stands against.`
-        : '';
+        : '');
     if (plain) {
         const f = targets[0];
         const current = entry.values?.[f.name];
@@ -215,7 +216,9 @@ export function buildGenerationPrompt(input) {
     if (task === 'create') {
         job = [
             `Create a new ${type.noun} for this setting${input.parentName ? `, located inside ${input.parentName}` : ''}.`,
-            input.brief ? `What the user wants: ${cut(input.brief, 600)}` : 'Surprise the user: something fresh that fits the setting and gives a storyteller something to play with.',
+            input.brief ? `What the user wants: ${cut(input.brief, 600)}`
+                : input.surpriseKind ? `Surprise the user: make it ${input.surpriseKind} - a fresh take on one, that fits the setting and gives a storyteller something to play with.`
+                    : 'Surprise the user: something fresh that fits the setting and gives a storyteller something to play with.',
             input.similarNames?.length ? `These already exist - make something different${askName ? ', and do not reuse their names' : ''}: ${input.similarNames.slice(0, 40).join(', ')}.` : '',
             input.fixedName
                 ? `Its name is "${input.fixedName}"${input.nameMeaning ? ` (in its own tongue: "${input.nameMeaning}")` : ''}. Keep that name exactly; write everything else to fit it.`

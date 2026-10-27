@@ -35,7 +35,8 @@ import { buildGuidance, buildStateBlock, buildCast, guidanceParts, GUIDANCE_PART
 import { isIntimate } from './intimacy.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { relevantLore } from '../library/lore.js';
-import { placeOverview } from '../library/world-options.js';
+import { placeOverview, isLaterAge } from '../library/world-options.js';
+import { timesLine, techOf, modeLabel } from '../library/travel.js';
 import { relationsFor, pairCovered } from '../library/relations-edit.js';
 import { activeQuests } from '../quests/sync.js';
 import { momentAt } from '../calendar/clock.js';
@@ -122,6 +123,8 @@ export async function gatherInputs(chatId, chatKey) {
             // What is here: places off it (rooms, streets), the place it is
             // part of, and the items and creatures the library puts here.
             const allLocations = await listEntries(chatId, settingId, 'location');
+            const here = placeOverview(library.overview, parents, library.entries, obj.id);
+            const tech = techOf({ techLevel: here?.tech?.level, laterAge: isLaterAge(here) });
             const short = (o) => ({ name: o.name, description: doc.narrative[o.id]?.text || o.description || '' });
             const places = allLocations.filter((l) => parents[l.id] === obj.id).map(short);
             const partOf = parents[obj.id] ? allLocations.find((l) => l.id === parents[obj.id]) : null;
@@ -134,8 +137,10 @@ export async function gatherInputs(chatId, chatKey) {
                 indoor: c.indoor,
                 places,
                 partOf: partOf ? short(partOf) : null,
-                // Routes to other places, with their travel time.
-                routes: routesFrom(obj.id, library.routes).map(({ route, otherId }) => ({ name: allLocations.find((l) => l.id === otherId)?.name ?? '', travel: route.travel, note: route.note })).filter((r) => r.name),
+                // Routes to other places, with their travel time each way
+                // there is to go - the party's own way first.
+                routes: routesFrom(obj.id, library.routes).map(({ route, otherId }) => ({ name: allLocations.find((l) => l.id === otherId)?.name ?? '', travel: timesLine(route, tech, { first: c.travelMode }), note: route.note })).filter((r) => r.name),
+                travelMode: c.travelMode ? modeLabel(c.travelMode) : '',
                 // Places a few routes further on, with the way on they are
                 // reached through - a journey there goes straight there.
                 further: placesFurtherOn(obj.id, library.routes).map(({ id, via }) => ({ name: allLocations.find((l) => l.id === id)?.name ?? '', via: allLocations.find((l) => l.id === via)?.name ?? '' })).filter((r) => r.name && r.via).slice(0, 8),

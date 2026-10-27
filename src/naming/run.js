@@ -13,6 +13,8 @@ import { rollShifts } from './mutate.js';
 import { tiesInBrief, tieRelation } from './classify.js';
 import { getParents } from '../library/library.js';
 import { fold } from './text.js';
+import { buildNamingRulesPrompt, readNamingRules, proposalToDef, learnedNames, learnInto } from './premise.js';
+import { callModel } from '../generate/llm.js';
 
 const SHARED_MAX = 3000;
 
@@ -186,8 +188,10 @@ export function banName(settingId, cultureId, name) {
 // Sample names for the tab: rows of `count` names per kind, rolled from a
 // sample stream (round) so nothing is recorded or used up.
 // kinds: [{ key, typeId, brief }]. -> { [key]: [{ name, meaning }] }
-export function sampleNames(settingId, cultureId, kinds, all, { round = 0, count = 6 } = {}) {
-    const world = worldOf(settingId, all);
+// extra: { id: culture def } not stored yet (a proposal being looked at).
+export function sampleNames(settingId, cultureId, kinds, all, { round = 0, count = 6, extra = null } = {}) {
+    const base = worldOf(settingId, all);
+    const world = extra ? { ...base, naming: { ...base.naming, cultures: { ...base.naming.cultures, ...extra } } } : base;
     const out = {};
     let counter = 0;
     for (const k of kinds) {
@@ -200,5 +204,110 @@ export function sampleNames(settingId, cultureId, kinds, all, { round = 0, count
             out[k.key].push({ name: plan.name, meaning: plan.meaning });
         }
     }
+    return out;
+}
+
+// ---- rules from the premise (src/naming/premise.js)
+
+const ofType = (all, type) => (all[type] ?? []).map((e) => ({ id: e.id, type, name: e.name, aliases: e.aliases ?? e.base?.aliases ?? [], description: e.description ?? e.base?.description ?? '', fields: e.base ?? e.fields ?? {} }));
+
+// The entry a proposal's "used by" name means: a place or faction by its
+// name or an alias, "the" or not.
+function entryNamed(name, entries) {
+    const f = fold(String(name).replace(/^the\s+/i, ''));
+    return entries.find((e) => [e.name, ...e.aliases].some((n) => fold(String(n).replace(/^the\s+/i, '')) === f)) ?? null;
+}
+
+// One model call: the cultures the premise suggests. Nothing is stored.
+// -> [proposal + { def (to preview and add), users: [{ id, name }],
+// unknown: [name] }]. Throws (model) with a message for the user.
+export async function proposeCultures(settingId, all, { wish = '' } = {}) {
+    const seed = seedOf(settingId);
+    const doc = getSettingDoc(settingId);
+    const parents = getParents(settingId);
+    const places = ofType(all, 'location');
+    const factions = ofType(all, 'faction');
+    const people = ofType(all, 'character');
+    // The main places: the top of the tree and the level below it.
+    const depth = (id) => { let n = 0; for (let at = parents[id]; at && n < 20; at = parents[at]) n++; return n; };
+    const prompt = buildNamingRulesPrompt({
+        overview: doc.overview,
+        places: places.filter((p) => depth(p.id) <= 1),
+        factions,
+        names: people.map((p) => p.name),
+        cultures: Object.values(doc.naming.cultures).map((c) => c.name),
+        canonOnly: doc.canonOnly,
+        wish,
+    });
+    const raw = await callModel([{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.prompt }], Math.max(getSettings().generation?.maxTokens || 0, 900));
+    const proposals = readNamingRules(raw, { existing: Object.values(doc.naming.cultures).map((c) => c.name) });
+    if (!proposals.length) throw new Error('The model proposed no cultures in the expected format - try again, or a larger model.');
+    const holders = [...places, ...factions];
+    const ids = Object.keys(doc.naming.cultures);
+    return proposals.map((p) => {
+        const users = [];
+        const unknown = [];
+        for (const n of p.users) {
+            const e = entryNamed(n, holders);
+            if (e && !users.some((u) => u.id === e.id)) users.push({ id: e.id, name: e.name });
+            else if (!e) unknown.push(n);
+        }
+        let def = proposalToDef(p, { seed, ids });
+        ids.push(def.id);
+        // A canon-only world's cultures sound like the names it already has.
+        if (doc.canonOnly) def = learnInto(def, learnedNames(users.map((u) => u.id), [...places, ...factions, ...people], parents));
+        return { ...p, def, users, unknown };
+    });
+}
+
+// Adds the chosen proposals as the world's own cultures: each one's places
+// and factions use it (not one that already has a culture, unless `retake`),
+// and the default becomes the world default when the user has not chosen
+// one. -> { added: [id], assigned, kept: [name] (had a culture already) }
+export function acceptProposals(settingId, proposals, { retake = false } = {}) {
+    const added = [];
+    const kept = [];
+    let assigned = 0;
+    updateSettingDoc(settingId, (d) => {
+        for (const p of proposals) {
+            let id = p.def.id;
+            for (let n = 1; d.naming.cultures[id]; n++) id = `c${Object.keys(d.naming.cultures).length + n}`;
+            d.naming.cultures[id] = { ...p.def, id };
+            added.push(id);
+            for (const u of p.users ?? []) {
+                const meta = d.entries[u.id] ?? {};
+                if (meta.culture && !retake) { kept.push(u.name); continue; }
+                d.entries[u.id] = { ...meta, culture: id };
+                assigned++;
+            }
+            if (p.isDefault && !d.naming.defaultCulture) d.naming.defaultCulture = id;
+        }
+    });
+    return { added, assigned, kept };
+}
+
+// Each of the world's own grown cultures learns from the names its places,
+// factions and their people already have - the default culture from every
+// name not under another. -> [{ id, name, count }] (the names it learned).
+export function learnFromWorld(settingId, all) {
+    const parents = getParents(settingId);
+    const entries = [...ofType(all, 'location'), ...ofType(all, 'faction'), ...ofType(all, 'character')];
+    const holders = cultureHolders(settingId);
+    const out = [];
+    updateSettingDoc(settingId, (d) => {
+        for (const def of Object.values(d.naming.cultures)) {
+            if (def.kind !== 'invented') continue;
+            const users = holders.filter((x) => x.culture === def.id).map((x) => x.id);
+            let names = learnedNames(users, entries, parents);
+            if (d.naming.defaultCulture === def.id) {
+                const others = new Set(learnedNames(holders.filter((x) => x.culture !== def.id).map((x) => x.id), entries, parents));
+                const everyone = learnedNames(entries.filter((e) => e.type !== 'character').map((e) => e.id), entries, parents);
+                names = [...new Set([...names, ...everyone.filter((n) => !others.has(n))])];
+            }
+            const before = def.learned?.length ?? 0;
+            Object.assign(def, learnInto(def, names));
+            out.push({ id: def.id, name: def.name, count: (def.learned?.length ?? 0) - before });
+        }
+    });
     return out;
 }

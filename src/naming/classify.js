@@ -23,6 +23,16 @@ const LOCATION_KINDS = [
     ['region', ['kingdom', 'realm', 'empire', 'province', 'region', 'land', 'lands', 'country', 'duchy', 'barony', 'county', 'march', 'principality', 'territory', 'dominion', 'republic', 'nation', 'shire', 'canton']],
 ];
 
+// Buildings with a public name that a word above would misread - a music
+// hall is not a lord's hall, a police station not a base, a bank not a
+// corporation: named like a venue or an institution.
+const PUBLIC_BUILDINGS = ['music hall', 'dance hall', 'town hall', 'city hall', 'market hall', 'lecture hall', 'guildhall', 'hall of records', 'concert hall', 'beer hall',
+    'police station', 'fire station', 'train station', 'railway station', 'power plant', 'power station', 'data centre', 'data center', 'research institute',
+    'bank', 'exchange', 'stock exchange', 'counting house', 'coffee house', 'chophouse', 'courthouse', 'customs house', 'ministry', 'archive', 'jail', 'prison',
+    'factory', 'foundry', 'mill', 'refinery', 'plant', 'cabaret', 'music venue', 'food court', 'ferry terminal', 'terminal', 'observatory', 'soup kitchen',
+    'flophouse', 'boarding house', 'tenement', 'apartment block', 'apartments', 'tower block', 'office tower', 'skyscraper', 'laundromat', 'community centre', 'community center',
+    'wine house', 'gambling den', 'opium den', 'pleasure garden', 'trading floor', 'law office', 'boatyard', 'shipwright', 'fish market', 'scriptorium', 'almshouse', 'charity kitchen', 'meditation centre', 'college', 'university'];
+
 // What makes a base secret: it gets a cover name, not its owner's.
 const SECRET = ['secret', 'hidden', 'covert', 'clandestine', 'undercover', 'underground', 'black site', 'off the books', 'concealed', 'unmarked', 'classified'];
 
@@ -113,6 +123,8 @@ export function nameKindFor(typeId, text = '', { hasParent = false } = {}) {
         const feature = kindIn(s, FEATURES);
         const place = kindIn(s, LOCATION_KINDS);
         if (place === 'district' && !feature) return { kind: 'district', purpose: purposeOf(t) };
+        const civic = any(head, PUBLIC_BUILDINGS);
+        if (civic && !any(head, SECRET)) return { kind: 'building', subtype: 'venue', noun: civic };
         // "A tavern by the river" is a tavern: a building wins over the
         // landscape around it; between a town and a landscape, whichever
         // the brief says first ("a forest near the town" is a forest).
@@ -120,7 +132,7 @@ export function nameKindFor(typeId, text = '', { hasParent = false } = {}) {
         const settled = place === 'settlement' || place === 'region';
         if (feature && (!place || (settled && at(FEATURES, feature) < at(LOCATION_KINDS, place)))) return { kind: 'feature', feature };
         if (place === 'room') return null;
-        if (place === 'inn') return { kind: 'building', subtype: 'inn' };
+        if (place === 'inn') return { kind: 'building', subtype: 'inn', noun: any(t, LOCATION_KINDS.find(([k]) => k === 'inn')[1]) };
         if (place === 'shop') return { kind: 'building', subtype: 'shop', noun: any(t, LOCATION_KINDS.find(([k]) => k === 'shop')[1]) };
         if (place === 'venue') return { kind: 'building', subtype: 'venue', noun: any(t, LOCATION_KINDS.find(([k]) => k === 'venue')[1]) };
         // Secret: a cover name, never its owner's.

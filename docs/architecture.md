@@ -25,6 +25,7 @@ src/
   generate/json.js           plugs in State Engine's parseModelJson when available
   library/story-relations.js relationships from Archivist dossiers
   library/intake.js          takes newly confirmed objects into the library; library/fields.js, world-options.js
+  library/travel.js          (pure) ways of travel: each route's times on foot, riding, by car, transit, air, worked out from its walking time
   images/                    prompt.js (pure: Midjourney / SD / natural prompts), attach.js (upload, paste, Image Generation hand-off)
   state/narrative.js         the per-chat "current description" of an object
   library/relations.js       (pure) relationships from reference fields and the tree

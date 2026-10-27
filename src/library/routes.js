@@ -1,12 +1,15 @@
 // Routes between places (SB-111): which places connect, how long the
-// journey takes ("2 hours", "half a day by cart"), and a note (the coast
-// road, a hidden passage). Kept in the setting document; both ends see a
+// journey takes on foot - the other ways (riding, car, transit, air) are
+// worked out from it, and a route can set its own for a way that breaks the
+// pattern (src/library/travel.js) - and a note (the coast road, a hidden
+// passage). Kept in the setting document; both ends see a
 // route. When the scene moves along one, the clock skips ahead by its
 // travel time (src/calendar/clock.js), and the guidance and the director
 // mention the ways on from where the scene is.
 
 import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { newLocalId } from '../store/schema.js';
+import { asWalkRoute } from './travel.js';
 
 // ---- pure
 
@@ -126,9 +129,11 @@ export function listRoutes(settingId) {
     return getSettingDoc(settingId).routes ?? [];
 }
 
-// route: { from, to, travel, note, guessed? }. One route per pair: a new one replaces it.
+// route: { from, to, travel (on foot, or naming its way: "3 days by ship"),
+// times?, note, guessed? }. One route per pair: a new one replaces it.
 export function addRoute(settingId, route) {
-    const stored = { id: newLocalId('rt'), from: route.from, to: route.to, travel: String(route.travel ?? '').trim(), note: String(route.note ?? '').trim(), ...(route.guessed ? { guessed: true } : {}) };
+    const walk = asWalkRoute({ travel: String(route.travel ?? '').trim(), basis: route.basis, times: route.times });
+    const stored = { id: newLocalId('rt'), from: route.from, to: route.to, travel: walk.travel, basis: walk.basis, times: walk.times, note: String(route.note ?? '').trim(), ...(route.guessed ? { guessed: true } : {}) };
     if (!stored.from || !stored.to || stored.from === stored.to) return null;
     updateSettingDoc(settingId, (d) => {
         d.routes = [...(d.routes ?? []).filter((r) => !((r.from === stored.from && r.to === stored.to) || (r.from === stored.to && r.to === stored.from))), stored];
@@ -150,7 +155,7 @@ export function removeRoute(settingId, id) {
 // is GUESSED rather than skipped: a route is added between the two places
 // that sit side by side under their nearest shared place (an inn in one
 // town to a tavern in the next: the towns), with a travel time from the
-// places' scale and the world's technology. It is marked guessed, shown so
+// places' scale, on foot (faster ways follow from it). It is marked guessed, shown so
 // on the sheet, and the user edits it when it is wrong - no need to work
 // routes out before playing.
 
@@ -178,24 +183,20 @@ export function scaleOf(place) {
     return '';
 }
 
-// Travel times by scale: before engines, and with them (TL6 and up: cars,
-// trains, aircraft).
+// Walking times by scale. Cars, trains and aircraft are worked out from
+// them where the world has them (src/library/travel.js).
 const TRAVEL = {
-    room: ['1 minute', '1 minute'],
-    building: ['10 minutes', '10 minutes'],
-    settlement: ['half a day', '1 hour'],
-    region: ['2 days', '4 hours'],
-    country: ['2 weeks', '1 day'],
-    world: ['3 months', '3 days'],
+    room: '1 minute',
+    building: '10 minutes',
+    settlement: 'half a day',
+    region: '2 days',
+    country: '2 weeks',
+    world: '3 months',
 };
 
-const techNumber = (level) => Number(/^tl(\d+)$/.exec(String(level ?? ''))?.[1] ?? NaN);
-
-// A guessed travel time between places of `scale`, for a world at tech
-// level `techLevel` ('tl3'...).
-export function guessTravel(scale, techLevel = '') {
-    const row = TRAVEL[scale] ?? TRAVEL.building;
-    return techNumber(techLevel) >= 6 ? row[1] : row[0];
+// A guessed walking time between places of `scale`.
+export function guessTravel(scale) {
+    return TRAVEL[scale] ?? TRAVEL.building;
 }
 
 // The pair a guessed route joins for a move: the two places side by side
@@ -215,12 +216,12 @@ export function routePairFor(fromId, toId, up) {
 
 // The guessed route for a move, or null. places: Map id -> { name,
 // description }; the larger of the two places' scales sets the time.
-export function guessRoute(fromId, toId, { up, places, techLevel = '' }) {
+export function guessRoute(fromId, toId, { up, places }) {
     const pair = routePairFor(fromId, toId, up);
     if (!pair) return null;
     const scales = pair.map((id) => scaleOf(places.get(id))).filter(Boolean);
     // With nothing to go on, the depth says: the deeper, the closer.
     const fallback = ['country', 'region', 'settlement', 'building', 'room'][Math.min(4, up(pair[0]).length - 1)];
     const scale = scales.length ? scales.reduce((x, y) => (SCALE_ORDER.indexOf(y) > SCALE_ORDER.indexOf(x) ? y : x)) : fallback;
-    return { from: pair[0], to: pair[1], travel: guessTravel(scale, techLevel), note: 'guessed - edit if wrong', guessed: true };
+    return { from: pair[0], to: pair[1], travel: guessTravel(scale), basis: 'walk', note: 'guessed - edit if wrong', guessed: true };
 }

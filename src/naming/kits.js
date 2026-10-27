@@ -173,6 +173,11 @@ export const KITS = Object.freeze({
         label: 'Clubs, clinics, hotels and the like',
         patterns: [['{brand} {venue}', 3], ['The {brand} {venue}', 1], ["{family}'s {venue}", 2], ['The {adjInn} {beast}', 2], ['{place} {venue}', 1]],
     },
+    // Offices, banks, towers: no saint's name over the door.
+    office: {
+        label: 'Offices, banks and towers',
+        patterns: [['{brand} {venue}', 3], ['{family} {venue}', 2], ['{place} {venue}', 2], ['The {brand} {venue}', 1]],
+    },
     institution: {
         label: 'Hospitals, clinics, schools and offices',
         patterns: [['{brand} {venue}', 3], ['{family} {venue}', 2], ['{place} {venue}', 2], ["Saint {given}'s {venue}", 1], ['The {brand} {venue}', 1]],

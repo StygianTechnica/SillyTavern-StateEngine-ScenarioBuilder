@@ -252,8 +252,28 @@ These came after spec v0.5 and should be folded into its next revision.
   settlement, region, country) and the world's technology; the clock moves
   on by it. Edit the time in place on the sheet to make it yours; the add
   form starts from a guess too.
-- [ ] Routes: locked or hidden ones, and travel time by means (on foot, by
-  cart, by ship).
+- [x] **Travel time by way of travel (2026-10-26)** (src/library/travel.js):
+  - **One time per route.** A route keeps its time on foot. Riding and
+    carts (before engines), and car / taxi, transit and air travel (TL5-6
+    and up, at the place's own tech level) are worked out from it: a fixed
+    cost (hailing a cab, waiting for the train, getting to the airport),
+    plus a speed that is slower on short trips than on long ones. A long
+    walk counts in travel days.
+  - **Which ways are offered.** A way too slow or silly for the distance is
+    not offered (no flights across town).
+  - **A route's own times.** A route can set its own time for one way (the
+    maglev beats a taxi, the island is ferry only, a portal takes a minute),
+    or say a way does not go there. On the sheet, worked-out times show
+    greyed and the route's own in full.
+  - **Which time a journey takes:** the way the latest turn names ("we hail
+    a cab", "rode for the bridge"), else the way the party has (horses or a
+    car stay the party's way; a taxi or a train is just that trip), else the
+    usual way there.
+  - **Guidance and the director** list each way's time, the party's first.
+  - **Older routes.** A bare time is walking before engines. With engines,
+    the sheet asks once whether it was on foot or by car / transit. "Half a
+    day by cart" or "3 days by ship" becomes that way's time.
+- [ ] Routes: locked or hidden ones.
 - [x] Merge two entries from the catalog (SB-113 merge path): "Merge…" on a
   sheet suggests likely duplicates by name (any type) or searches the library;
   same type merges through State Engine (aliases, empty fields, references),
@@ -324,6 +344,19 @@ API (docs/api.md, SB-640..642); Pretty Panels owns where they appear.
   inside inherit what they do not set. The guidance, the director,
   generation, image prompts and route times all work from the world as it
   holds where the scene (or the entry) is.
+- [ ] **Peoples: races, species and who lives where (added 2026-10-26).**
+  docs/DESIGN - PEOPLES.md. A world's peoples (elves, androids, invented
+  aliens) are Lore entries with a people block: how they look, how they
+  live in *this* world (elves in a cyberpunk city), lifespan, whose names
+  they carry, and a visual block so image prompts can draw an invented
+  people instead of a human. The world, a place (inherited down the tree
+  like the realm) and a faction each have a population mix in words (most /
+  common / some / few / rare). A character has a people, rolled from the mix
+  when generated and guessed from the description otherwise. The cast and
+  location guidance say who is about, and "only these peoples" keeps the
+  model from inventing others. Presets bend to the world's age. From the
+  premise in the same call as naming's rules; from lorebooks and the story
+  through review.
 - [ ] **Realms: nested worlds inside one setting (added 2026-10-26).**
   One setting can hold several worlds with different paradigms: planets in
   a science-fiction setting, each with its own naming, tech level and
@@ -430,6 +463,15 @@ newly confirmed objects, a separate generation connection profile.
   (corporations in a later age, merchant houses and trading partnerships
   before), and a brief that names a rival ("a rival corporation to Omicron
   Innovations") gets a name of its own, not one built from the rival's.
+- [x] **Naming cultures from the premise (2026-10-26):** docs/DESIGN -
+  NAMING.md phase 3.
+  - The Naming tab's "From the premise" card makes one model call that
+    proposes the world's cultures: a preset, a real culture, a blend of
+    seed languages or an alien tongue, how changed, family names, who uses
+    it, and the default. The model never writes the names.
+  - Each proposal is shown with sample names, ticked and added.
+  - "Learn from this world's names" teaches each culture the names already
+    under it. A canon-only world's proposals do this by themselves.
 - [x] **Kinds of alias (2026-10-26):** a character's other names each have a
   kind - nickname, codename / callsign, title / epithet, pen / stage name -
   and who uses them (people or factions). The sheet's "Other names" card

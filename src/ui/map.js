@@ -11,7 +11,8 @@
 // places roughly is all it needs. Model: src/ui/map-model.js.
 
 import { listRoutes, updateRoute, addRoute, guessRoute } from '../library/routes.js';
-import { getParents, getMapPositions, setMapPosition, getPlaceOverview, getMapImages, setMapImage } from '../library/library.js';
+import { routeShort } from '../library/travel.js';
+import { getParents, getMapPositions, setMapPosition, getMapImages, setMapImage } from '../library/library.js';
 import { syncNow } from '../guidance/sync.js';
 import { levelPlaces, levelRoutes, insideCounts, mapScale, estimates, seedPositions, formatMinutes, fitView, levelImage, levelKey, placeNewImage, resizeImage, DEFAULT_MAP_ZOOM } from './map-model.js';
 import { labelPoint, boundsOf } from './graph-layout.js';
@@ -97,9 +98,9 @@ export function locationMap(locations, doc) {
         const at = labelPoint(a, b);
         const est = estimateOf.get(r.id);
         const label = s('text', { class: 'sb-map-route-label', x: at.x, y: at.y },
-            r.travel || '?', r.guessed ? s('tspan', { class: 'sb-map-route-guess-mark' }, ' (guess)') : null,
+            routeShort(r) || '?', r.guessed ? s('tspan', { class: 'sb-map-route-guess-mark' }, ' (guess)') : null,
             est ? s('tspan', { class: 'sb-map-route-estimate', x: at.x, dy: 14 }, `map: ≈ ${est}`) : null);
-        line.append(s('title', {}, `${byId.get(r.from)?.name} - ${byId.get(r.to)?.name}: ${r.travel}${r.note && !r.guessed ? ` (${r.note})` : ''}`));
+        line.append(s('title', {}, `${byId.get(r.from)?.name} - ${byId.get(r.to)?.name}: ${r.travel ? `${r.travel} on foot` : routeShort(r) || '?'}${r.note && !r.guessed ? ` (${r.note})` : ''}`));
         routeEls.push({ r, line, label });
         world.append(line, label);
     }
@@ -369,7 +370,7 @@ function addMapRoute(settingId, a, b, pos) {
     const scale = mapScale(routes, pos);
     const fromMap = scale ? Math.hypot(pos[a.id].x - pos[b.id].x, pos[a.id].y - pos[b.id].y) * scale : null;
     const places = new Map([a, b].map((p) => [p.id, { name: p.name, description: p.base?.description ?? p.description ?? '' }]));
-    const guess = guessRoute(a.id, b.id, { up: (id) => [id], places, techLevel: getPlaceOverview(settingId, a.id)?.tech?.level ?? '' });
+    const guess = guessRoute(a.id, b.id, { up: (id) => [id], places });
     const travel = (fromMap && formatMinutes(fromMap)) || guess?.travel || '10 minutes';
     addRoute(settingId, { from: a.id, to: b.id, travel, note: 'guessed - edit if wrong', guessed: true });
     toast('success', `Route added: ${a.name} - ${b.name}, ${travel} (a guess - change it on either place's sheet).`);

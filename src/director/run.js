@@ -874,7 +874,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
                 ?? await advanceBy(chatId, chatKey, settingId, perTurnDefault(), { planned: true, source: 'director', note: `Time passes: ${perTurnDefault()}` });
             if (moved) timeText = wanted;
             // A move along a route takes at least its travel time.
-            if (movedFrom) await travelAlong(chatId, chatKey, settingId, movedFrom, getChatDoc(chatKey).canonical.locationId);
+            if (movedFrom) await travelAlong(chatId, chatKey, settingId, movedFrom, getChatDoc(chatKey).canonical.locationId, '', { text: [[...messages].reverse().find((m) => m.isUser)?.text ?? ''] });
             // A change of weather the plot calls for: held a while, like the
             // story's own, then the simulation takes over again.
             if (parsed.weather) {

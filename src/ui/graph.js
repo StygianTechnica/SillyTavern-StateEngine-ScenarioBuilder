@@ -22,7 +22,7 @@ import { getSettings, saveSettings } from '../settings.js';
 import { listRelations, addLink, addRelation, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
 import { listRoutes, addRoute, guessRoute } from '../library/routes.js';
 import { baselineFields } from '../library/fields.js';
-import { getObjectTypes, CHAPTER_LABELS, listEntries, getParents, getGraphPositions, setGraphPosition, clearGraphPositions, getOverview } from '../library/library.js';
+import { getObjectTypes, CHAPTER_LABELS, listEntries, getParents, getGraphPositions, setGraphPosition, clearGraphPositions } from '../library/library.js';
 import { safeImageSrc } from '../images/attach.js';
 import { syncNow } from '../guidance/sync.js';
 import { buildGraph, layoutGraph, boundsOf, storyEdges, regionsFor, linkOptions, labelPoint, regionBox } from './graph-layout.js';
@@ -231,7 +231,7 @@ async function openLinkChooser(stage, source, target, byType) {
             } else if (o.kind === 'route') {
                 // The travel time is guessed from the two places, to edit on their sheets.
                 const places = new Map([source, target].map((p) => [p.id, { name: p.name, description: p.base?.description ?? p.description ?? '' }]));
-                const guess = guessRoute(source.id, target.id, { up: (id) => [id], places, techLevel: getOverview(settingId)?.tech?.level ?? '' });
+                const guess = guessRoute(source.id, target.id, { up: (id) => [id], places });
                 addRoute(settingId, { from: source.id, to: target.id, travel: guess?.travel ?? '10 minutes', note: 'guessed - edit if wrong', guessed: true });
             } else {
                 const kind = kindInput.value.trim() || 'knows';

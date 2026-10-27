@@ -9,7 +9,9 @@ import { STOCKS, REAL_CULTURES } from '../naming/stocks/index.js';
 import { cultureChoices, resolveCulture, CULTURE_KINDS, STYLE_KINDS, STYLE_CHOICES, describeShift, PRESETS } from '../naming/cultures.js';
 import {
     worldDefault, setWorldDefault, addCulture, updateCulture, rerollShifts, removeCulture, cultureHolders, setEntryCulture, banName, sampleNames,
+    proposeCultures, acceptProposals, learnFromWorld,
 } from '../naming/run.js';
+import { describeProposal } from '../naming/premise.js';
 import { listEntries } from '../library/library.js';
 import { getSettingDoc } from '../store/setting-store.js';
 import { confirmAction } from './confirm.js';
@@ -120,6 +122,71 @@ function holdersCard(settingId, naming, places, factions) {
                 setEntryCulture(settingId, pickEntry, pickCulture);
                 rerender();
             }, { iconName: 'fa-check' })));
+}
+
+// ---- rules from the premise
+
+const PREVIEW_KINDS = Object.freeze(SAMPLE_KINDS.filter((k) => ['men', 'women', 'towns'].includes(k.key)));
+
+function premiseCard(settingId, all) {
+    const doc = getSettingDoc(settingId);
+    const st = ws.namingPremise?.settingId === settingId ? ws.namingPremise : (ws.namingPremise = { settingId, wish: '', busy: false, proposals: [], skip: new Set() });
+    const hasPremise = Boolean(String(doc.overview?.premise ?? '').trim());
+    const propose = async () => {
+        st.busy = true;
+        rerender();
+        try {
+            st.proposals = await proposeCultures(settingId, all, { wish: st.wish });
+            st.skip = new Set();
+        } catch (err) {
+            toast('error', `Could not make the cultures: ${err?.message ?? err}`);
+        } finally {
+            st.busy = false;
+            rerender();
+        }
+    };
+    const accept = () => {
+        const chosen = st.proposals.filter((_, i) => !st.skip.has(i));
+        if (!chosen.length) return toast('info', 'Tick at least one culture to add.');
+        const r = acceptProposals(settingId, chosen);
+        toast('success', `Added ${r.added.length} culture${r.added.length === 1 ? '' : 's'}${r.assigned ? `, used by ${r.assigned} place${r.assigned === 1 ? '' : 's'} and faction${r.assigned === 1 ? '' : 's'}` : ''}.${r.kept.length ? ` Kept the culture ${r.kept.join(', ')} already had.` : ''}`);
+        st.proposals = [];
+        ws.namingCulture = r.added[0] ?? ws.namingCulture;
+        rerender();
+    };
+    const learn = () => {
+        const r = learnFromWorld(settingId, all);
+        const taught = r.filter((x) => x.count);
+        if (!r.length) return toast('info', 'Make a culture of the world\'s own first (from a preset, or from the premise) - real-world cultures and alien tongues do not learn.');
+        toast(taught.length ? 'success' : 'info', taught.length ? `Learned from this world: ${taught.map((x) => `${x.name} ${x.count} name${x.count === 1 ? '' : 's'}`).join('; ')}.` : 'Nothing new to learn - the cultures already know these names.');
+        rerender();
+    };
+    const wish = h('input', { class: 'text_pole', value: st.wish, placeholder: 'Steer it (optional) - e.g. "the elves keep old Welsh-sounding names", "corporate names are Japanese"', oninput: (e) => { st.wish = e.target.value; } });
+    const proposalRow = (p, i) => {
+        const on = !st.skip.has(i);
+        const samples = sampleNames(settingId, p.def.id, PREVIEW_KINDS, all, { count: 4, extra: { [p.def.id]: p.def } });
+        return h('div', { class: `sb-naming-proposal${on ? '' : ' off'}` },
+            h('label', { class: 'checkbox_label' },
+                h('input', { type: 'checkbox', checked: on, onchange: (e) => { if (e.target.checked) st.skip.delete(i); else st.skip.add(i); rerender(); } }),
+                h('b', {}, p.name), p.isDefault ? h('span', { class: 'sb-chip' }, 'world default') : null),
+            p.who ? h('div', { class: 'sb-hint' }, p.who) : null,
+            h('small', { class: 'sb-hint' }, describeProposal(p)),
+            p.users.length ? h('div', { class: 'sb-chips' }, p.users.map((u) => h('span', { class: 'sb-chip', title: 'Will use this culture' }, u.name))) : null,
+            p.unknown.length ? h('small', { class: 'sb-hint' }, `Not in this world: ${p.unknown.join(', ')}`) : null,
+            PREVIEW_KINDS.map((k) => (samples[k.key]?.length ? h('div', { class: 'sb-naming-samples' }, h('small', { class: 'sb-field-label' }, k.label), h('div', { class: 'sb-chips' }, samples[k.key].map((s) => h('span', { class: 'sb-chip' }, s.name)))) : null)));
+    };
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-wand-magic-sparkles'), ' From the premise',
+            h('small', { class: 'sb-hint' }, doc.canonOnly
+                ? ' - cultures for this canon, learning from the names it already has; nothing is added to any entry'
+                : ' - one model call picks the recipes; the names are still made here, never by the model')),
+        hasPremise ? wish : h('small', { class: 'sb-hint' }, 'Write a premise on the front page first - the cultures are made from it.'),
+        st.proposals.length ? h('div', { class: 'sb-naming-proposals' }, st.proposals.map(proposalRow)) : null,
+        h('div', { class: 'sb-actions' },
+            button(st.busy ? 'Thinking…' : st.proposals.length ? 'Ask again' : 'Make cultures from the premise', () => void propose(), { iconName: st.busy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles', cls: st.proposals.length ? '' : 'sb-primary', disabled: st.busy || !hasPremise }),
+            st.proposals.length ? button('Add the ticked cultures', accept, { iconName: 'fa-check', cls: 'sb-primary', disabled: st.busy }) : null,
+            st.proposals.length ? button('', () => { st.proposals = []; rerender(); }, { iconName: 'fa-xmark', title: 'Discard them' }) : null,
+            button('Learn from this world\'s names', learn, { iconName: 'fa-graduation-cap', title: 'Each of the world\'s own cultures learns to sound like the names its places, factions and people already have (never handing those names out)' })));
 }
 
 // ---- the editor
@@ -260,7 +327,7 @@ export async function renderNaming() {
     const shownLabel = def ? def.name : `the world default (${worldDefault(settingId).label})`;
     return h('div', { class: 'sb-naming' },
         h('div', { class: 'sb-scene-cols' },
-            h('div', { class: 'sb-gm-col' }, defaultCard(settingId, naming), culturesCard(settingId, naming), holdersCard(settingId, naming, places, factions)),
+            h('div', { class: 'sb-gm-col' }, defaultCard(settingId, naming), premiseCard(settingId, all), culturesCard(settingId, naming), holdersCard(settingId, naming, places, factions)),
             h('div', { class: 'sb-gm-col' },
                 def ? editorCard(settingId, naming, def, places, factions) : null,
                 samplesCard(settingId, shown, shownLabel, all),

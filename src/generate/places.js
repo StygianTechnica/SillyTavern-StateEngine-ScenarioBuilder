@@ -1,5 +1,5 @@
 // Generation for places: routes between the places inside a location (with
-// travel times that fit their scale and the world's technology), and a
+// walking times that fit their scale - faster ways follow from them), and a
 // place's climate and environment. The prompts and readers are pure (and
 // tested); suggestRoutes() / suggestEnvironment() run them on the
 // generation connection. Nothing is written here - the sheet shows what
@@ -35,7 +35,7 @@ export function buildRoutesPrompt({ parent, places, overview, existing = [] }) {
         ...places.map((p) => `- ${clean(p.name)}${clean(p.description) ? `: ${cut(p.description, 160)}` : ''}`),
         existing.length ? `\nRoutes that already exist (do not repeat them): ${existing.map((r) => `${r.from} - ${r.to}`).join('; ')}` : '',
         '',
-        'Connect them the way someone would actually get from one to another: a door or stair between rooms, a street between buildings, a road or a sea passage between towns. Not every pair needs a route - only the ones that are directly connected. Give each a travel time that fits the scale and how people travel in this world ("a few steps", "5 minutes", "half a day by cart", "3 days by ship"), and a short note on the way itself when it helps (a narrow stair, the coast road).',
+        'Connect them the way someone would actually get from one to another: a door or stair between rooms, a street between buildings, a road or a sea passage between towns. Not every pair needs a route - only the ones that are directly connected. Give each its time ON FOOT ("a few steps", "5 minutes", "half a day", "3 days") - riding, cars, trains and flights are worked out from it. Only a way that cannot be walked gives its own time and says how ("3 days by ship", "a minute by portal"). Add a short note on the way itself when it helps (a narrow stair, the coast road).',
         '',
         'Reply with ONLY this JSON, using the place names exactly as written above:',
         '{"routes": [{"from": "place name", "to": "place name", "travel": "5 minutes", "note": "a narrow stair"}]}',
@@ -92,15 +92,15 @@ export function unconnectedPairs(placeNames, existing = []) {
 
 // Routes guessed without the model, when it gives none to use: every
 // unconnected pair of a few places (up to 4 - more would be a web of
-// guesses), each with a time from the larger place's size and the world's
-// technology. places: [{ name, description }].
-export function guessedRoutes(places, existing = [], techLevel = '') {
+// guesses), each with a walking time from the larger place's size.
+// places: [{ name, description }].
+export function guessedRoutes(places, existing = []) {
     if (places.length > 4) return [];
     const byName = new Map(places.map((p) => [p.name, p]));
     return unconnectedPairs(places.map((p) => p.name), existing).map(([from, to]) => {
         const scales = [from, to].map((n) => scaleOf(byName.get(n))).filter(Boolean);
         const scale = scales.length ? scales.reduce((x, y) => (SCALE_ORDER.indexOf(y) > SCALE_ORDER.indexOf(x) ? y : x)) : 'building';
-        return { from, to, travel: guessTravel(scale, techLevel), note: 'guessed - edit if wrong', guessed: true };
+        return { from, to, travel: guessTravel(scale), basis: 'walk', note: 'guessed - edit if wrong', guessed: true };
     });
 }
 
@@ -164,7 +164,7 @@ export async function suggestRoutes({ parent, places, overview, existing }) {
         result = { values: [], error: String(err?.message ?? err) };
     }
     if (!result.error && result.values.length) return { items: result.values, message: '' };
-    const guesses = guessedRoutes(places, existing, overview?.tech?.level ?? '');
+    const guesses = guessedRoutes(places, existing);
     return guesses.length
         ? { items: guesses, message: 'The model suggested no routes that could be used, so these are guesses from the places\' size. Keep the ones you want and change their times on the sheet.' }
         : { items: [], message: 'The model suggested no routes that could be used. Add them by hand below, or try again.' };

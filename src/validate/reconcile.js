@@ -365,7 +365,7 @@ async function reconcileOnce() {
         // a time skip the story made is caught up with (sb__scene_deltatime).
         if (acceptedFields.has('weather') || acceptedFields.has('temperature')) await holdStoryWeather(chatKey, settingId, canonical.weather, canonical.temperature);
         // A move along a route takes its travel time.
-        if (acceptedFields.has('location') && canonical.locationId !== doc.canonical.locationId) await travelAlong(chatId, chatKey, settingId, doc.canonical.locationId, canonical.locationId, replySource);
+        if (acceptedFields.has('location') && canonical.locationId !== doc.canonical.locationId) await travelAlong(chatId, chatKey, settingId, doc.canonical.locationId, canonical.locationId, replySource, { text: [latestTurnText()] });
         const replyFrom = doc.clock.planned?.from ?? doc.canonical.time;
         if (newReply) await catchUpWithStory(chatId, chatKey, settingId, raw.scene_deltatime, replySource);
         // The day turning in the reply's own words ("the sun began to set"),

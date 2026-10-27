@@ -100,6 +100,7 @@ import { normalizeTemplates } from '../events/setup.js';
 import { emptyChanges, normalizeChanges } from '../state/changes-model.js';
 import { normalizeAliasInfo } from '../library/alias-kinds.js';
 import { normalizeCultureDef } from '../naming/cultures.js';
+import { normalizeRouteTimes, MODES } from '../library/travel.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
 export const CHAT_SCHEMA_VERSION = 1;
@@ -280,7 +281,7 @@ export function normalizeSettingDoc(doc) {
         // Structured events set up once, to run in any chat on the world (src/events/setup.js).
         eventTemplates: normalizeTemplates(d.eventTemplates),
         // Routes between places: { id, from, to, travel, note, guessed? } (src/library/routes.js).
-        routes: Array.isArray(d.routes) ? d.routes.filter((r) => isObject(r) && str(r.id) && str(r.from) && str(r.to) && r.from !== r.to).map((r) => ({ id: r.id, from: r.from, to: r.to, travel: str(r.travel), note: str(r.note), ...(r.guessed === true ? { guessed: true } : {}) })) : [],
+        routes: Array.isArray(d.routes) ? d.routes.filter((r) => isObject(r) && str(r.id) && str(r.from) && str(r.to) && r.from !== r.to).map((r) => ({ id: r.id, from: r.from, to: r.to, travel: str(r.travel), ...normalizeRouteTimes(r), note: str(r.note), ...(r.guessed === true ? { guessed: true } : {}) })) : [],
         // The name generator's rules and registry (src/naming/).
         naming: normalizeNaming(d.naming) };
 }
@@ -329,7 +330,7 @@ export function emptyCanonical() {
     // time: the canonical moment, scalar seconds on the setting's calendar
     // (src/calendar/clock.js); null until the clock starts. dayPart and day
     // follow it whenever it is set.
-    return { locationId: '', castIds: [], creatureIds: [], creatureCounts: {}, weather: [], temperature: '', indoor: null, dayPart: '', day: 1, time: null, sceneTitle: '', sceneSummary: '', scenePremise: '' };
+    return { locationId: '', castIds: [], creatureIds: [], creatureCounts: {}, weather: [], temperature: '', indoor: null, dayPart: '', day: 1, time: null, sceneTitle: '', sceneSummary: '', scenePremise: '', travelMode: '' };
 }
 
 export function normalizeCanonical(value) {
@@ -354,6 +355,9 @@ export function normalizeCanonical(value) {
         // SITUATION line, or the story's reading when it is a sentence).
         sceneSummary: str(c.sceneSummary),
         scenePremise: str(c.scenePremise),
+        // How the party gets about now - a way it has (horses, a car), from
+        // the story (src/library/travel.js); '' on foot or the usual way.
+        travelMode: MODES.some((m) => m.id === c.travelMode) ? c.travelMode : '',
     };
 }
 

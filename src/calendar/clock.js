@@ -22,7 +22,8 @@ import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.j
 import { weatherAt } from './weather.js';
 import { routeForMove, pathBetween, guessRoute, addRoute } from '../library/routes.js';
 import { listEntries } from '../library/library.js';
-import { placeOverview } from '../library/world-options.js';
+import { placeOverview, isLaterAge } from '../library/world-options.js';
+import { timeFor, techOf, readTravelMode, modeLabel } from '../library/travel.js';
 import { pathOf } from '../library/hierarchy.js';
 
 const FALLBACK_CALENDAR = Object.freeze({
@@ -378,41 +379,56 @@ export async function monthAt(settingId, scalar, offset = 0) {
 
 // The scene moved from one place to another: when a route connects them
 // (or the places they are in), the clock catches up to its travel time,
-// counted from before the reply. When none does, a route is GUESSED from
+// counted from before the reply - by the way the party travels: the one
+// `text` names (the player's message, then the reply), else the way it has
+// (horses, a car - kept from an earlier journey), else the usual way there
+// (src/library/travel.js). When none does, a route is GUESSED from
 // the places' scale and the world's technology (src/library/routes.js),
 // added marked as a guess for the user to edit, and used.
 // -> the history entry, or null.
-export async function travelAlong(chatId, chatKey, settingId, fromId, toId, sourceMessage = '') {
+export async function travelAlong(chatId, chatKey, settingId, fromId, toId, sourceMessage = '', { text = [] } = {}) {
     const doc = getChatDoc(chatKey);
     const now = doc.canonical.time;
     if (!settingId || !Number.isFinite(now)) return null;
     const settingDoc = getSettingDoc(settingId);
     const parents = Object.fromEntries(Object.entries(settingDoc.entries).filter(([, m]) => m.parentId).map(([id, m]) => [id, m.parentId]));
     const up = (id) => [...pathOf(parents, id)].reverse();
+    const here = placeOverview(settingDoc.overview, parents, settingDoc.entries, fromId);
+    const tech = techOf({ techLevel: here?.tech?.level, laterAge: isLaterAge(here) });
+    const named = [text].flat().map(readTravelMode).find(Boolean) ?? null;
+    // A way the party now has stays its way; a taxi or a train is this trip.
+    if (named?.keeps && named.mode !== doc.canonical.travelMode) updateChatDoc(chatKey, (d) => { d.canonical.travelMode = named.mode; });
+    const wanted = named?.mode || doc.canonical.travelMode || '';
+    const legTime = (r) => timeFor(r, tech, wanted);
+    const said = (t) => (t.mode ? `${t.text} ${modeLabel(t.mode)}` : t.text);
     let route = routeForMove(fromId, toId, settingDoc.routes, up);
     // Somewhere further on: every route on the way, one after another -
     // never a guessed shortcut past them.
     const legs = route ? null : pathBetween(fromId, toId, settingDoc.routes);
-    if (legs?.length > 1 && legs.every((r) => r.travel)) {
+    const times = legs?.map(legTime);
+    if (legs?.length > 1 && times.every(Boolean)) {
         let target = doc.clock.planned?.from ?? now;
-        for (const leg of legs) {
-            target = await advanceFrom(settingId, target, leg.travel);
+        for (const t of times) {
+            target = await advanceFrom(settingId, target, t.text);
             if (target === null) return null;
         }
         if (target <= now) return null;
-        return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The journey took ${legs.map((r) => r.travel).join(' + ')}${legs.some((r) => r.guessed) ? ' (partly on guessed routes - edit them on the places\' sheets)' : ''}`, sourceMessage });
+        const noWay = times.some((t) => t.fellBack) ? ` (no way ${modeLabel(wanted)} on part of it)` : '';
+        return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The journey took ${times.map(said).join(' + ')}${noWay}${legs.some((r) => r.guessed) ? ' (partly on guessed routes - edit them on the places\' sheets)' : ''}`, sourceMessage });
     }
     if (!route) {
         try {
             const places = new Map((await listEntries(chatId, settingId, 'location')).map((p) => [p.id, { name: p.name, description: p.base?.description ?? p.description ?? '' }]));
-            const guess = guessRoute(fromId, toId, { up, places, techLevel: placeOverview(settingDoc.overview, parents, settingDoc.entries, fromId)?.tech?.level ?? '' });
+            const guess = guessRoute(fromId, toId, { up, places });
             if (guess && places.has(guess.from) && places.has(guess.to)) route = addRoute(settingId, guess);
         } catch (err) {
             console.debug(LOG_PREFIX, 'could not guess a route', err);
         }
     }
-    if (!route?.travel) return null;
-    const target = await advanceFrom(settingId, doc.clock.planned?.from ?? now, route.travel);
+    const t = route ? legTime(route) : null;
+    if (!t?.text) return null;
+    const target = await advanceFrom(settingId, doc.clock.planned?.from ?? now, t.text);
     if (target === null || target <= now) return null;
-    return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The journey took ${route.travel}${route.guessed ? ' (a guessed route - edit it on the place\'s sheet)' : ''}`, sourceMessage });
+    const noWay = t.fellBack ? ` (there is no way ${modeLabel(wanted)} there)` : '';
+    return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The journey took ${said(t)}${noWay}${route.guessed ? ' (a guessed route - edit it on the place\'s sheet)' : ''}`, sourceMessage });
 }

@@ -249,8 +249,9 @@ export function dossierText(input) {
         if (env.length) lines.push(`${env.join('. ')}.`);
         const list = (label, xs) => { if (xs?.length) lines.push(`${label}: ${xs.slice(0, 10).map((x) => `${clean(x.name)}${clean(x.description) ? ` (${cut(x.description, 90)})` : ''}`).join('; ')}.`); };
         list('Here', loc.items);
-        list('Ways on', [...(loc.places ?? []), ...(loc.routes ?? []).map((r) => ({ name: r.name, description: [r.travel && `${r.travel} away`, r.note].filter(Boolean).join(', ') })), ...(loc.partOf ? [{ name: `back out to ${clean(loc.partOf.name)}` }] : [])]);
+        list('Ways on', [...(loc.places ?? []), ...(loc.routes ?? []).map((r) => ({ name: r.name, description: [r.travel, r.note].filter(Boolean).join(', ') })), ...(loc.partOf ? [{ name: `back out to ${clean(loc.partOf.name)}` }] : [])]);
         list('Further on', (loc.further ?? []).map((f) => ({ name: f.name, description: `by way of ${clean(f.via)}` })));
+        if (clean(loc.travelMode) && loc.routes?.length) lines.push(`The party gets about ${clean(loc.travelMode)}; a journey takes that way's time unless the latest message goes another way.`);
     } else {
         lines.push('Where: not known yet.');
     }

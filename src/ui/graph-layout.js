@@ -9,6 +9,7 @@
 
 import { relationsOf } from '../library/relations.js';
 import { chatStatusOf } from './catalog-model.js';
+import { routeShort } from '../library/travel.js';
 
 // filters: { types: Set | null (null = every type), inPlayOnly }
 // -> { nodes: [{ id, type, name, image, status }],
@@ -43,7 +44,7 @@ export function buildGraph({ entries, parents = {}, doc = null, filters = {}, re
         }
     }
     for (const r of relations ?? []) add(r.from, r.to, 'bond', r.note ? `${r.kind} (${r.note})` : r.kind);
-    for (const r of routes ?? []) add(r.from, r.to, 'route', [r.travel, r.guessed ? 'guessed' : r.note].filter(Boolean).join(', ') || 'route');
+    for (const r of routes ?? []) add(r.from, r.to, 'route', [routeShort(r), r.guessed ? 'guessed' : r.note].filter(Boolean).join(', ') || 'route');
     const authored = (a, b) => (relations ?? []).some((r) => (r.from === a && r.to === b) || (r.from === b && r.to === a));
     for (const r of story ?? []) {
         if (!r?.from || !r?.to || authored(r.from, r.to)) continue;

@@ -59,8 +59,8 @@ describe('route suggestions that come back thin', () => {
         expect(unconnectedPairs([...names, 'Chapel'], [{ from: 'The Old Mill', to: 'Liston Market' }])).toEqual([['Liston Market', 'Chapel'], ['The Old Mill', 'Chapel']]);
     });
     it('fall back to guesses for a few places', () => {
-        const guesses = guessedRoutes([{ name: 'Liston Market' }, { name: 'The Old Mill' }], [], 'tl3');
-        expect(guesses).toEqual([{ from: 'Liston Market', to: 'The Old Mill', travel: '10 minutes', note: 'guessed - edit if wrong', guessed: true }]);
+        const guesses = guessedRoutes([{ name: 'Liston Market' }, { name: 'The Old Mill' }], []);
+        expect(guesses).toEqual([{ from: 'Liston Market', to: 'The Old Mill', travel: '10 minutes', basis: 'walk', note: 'guessed - edit if wrong', guessed: true }]);
         expect(guessedRoutes(Array.from({ length: 5 }, (_, i) => ({ name: `P${i}` })))).toEqual([]);
     });
 });

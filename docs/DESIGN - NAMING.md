@@ -7,8 +7,8 @@ names in code, from rules that belong to the world and to its cultures, and
 hands them to the model. The model is told a thing's name; it is never asked
 to make one up.
 
-Status: phases 1 and 2 built (2026-10-26) - see "Phase 1 as built" and
-"Phase 2 as built" at the end. Phases 3-5 are proposals.
+Status: phases 1-3 built (2026-10-26) - see "Phase 1 as built", "Phase 2
+as built" and "Phase 3 as built" at the end. Phases 4-5 are proposals.
 
 ## 1. Where the model names things today
 
@@ -598,3 +598,52 @@ director / planner / events / missions pools.
 Not yet: population mixes and meanings on sheets (phase 5); editing a
 culture's word stock (place words come from its stocks); "keep" on a
 sample (copy it instead).
+
+## Phase 3 as built (2026-10-26)
+
+- **From the premise** (the Naming tab's card under World default,
+  `src/naming/premise.js`, runner `proposeCultures` in `naming/run.js`):
+  - **The call.** One model call, on a button, with an optional line to
+    steer it.
+  - **What goes in:** the front page, the top two levels of places, the
+    factions, the people's names and the cultures already made.
+  - **What it chooses from:** the presets, the real-world cultures by
+    language and period, the seed languages, and an alien tongue for an
+    inhuman people.
+  - **What comes back:** a plain block per culture (`CULTURE / WHO / BASED
+    ON / DISTANCE / FAMILY NAMES / PLACES / USED BY / DEFAULT / SOUNDS`),
+    up to six.
+  - **How the answer is read.** Forgivingly: markdown, bullets,
+    lower-case keys and "Key - value" all work. A language not on the list
+    is dropped. A missing recipe gets a rolled language. "Icelandic,
+    modern" is the real culture, while "Old Norse 3, German 1" is a blend.
+    Only one culture can be the default.
+  - **What you see.** Each proposal shows its recipe in words, its places
+    and factions, any names it gave that are not in the world, and sample
+    men, women and towns, rolled without using anything up. Tick the ones
+    you want and "Add the ticked cultures".
+  - **What adding does.** Its places and factions use it, except one that
+    already has a culture. The default becomes the world default unless
+    you chose one.
+  - **No model names.** The model never names anything: every name is
+    rolled here.
+- **Learn from this world's names** (`learnFromWorld`):
+  - **What it does.** Each of the world's own grown cultures takes the
+    names already under it as examples: its places and the places inside
+    them, its factions, and the characters living there or belonging to
+    them.
+  - **The default culture** also takes the names that are under no other
+    culture.
+  - **What counts as a name.** People count by their names, places and
+    factions by their distinctive words ("Skarn" from "the Iron Market of
+    Skarn").
+  - **What it never does.** The names are never handed out themselves,
+    and nothing is added to any entry.
+- **A canon-only world:**
+  - The prompt says its names are canon and the cultures must sound like
+    them.
+  - Each proposal learns from its users' names before you add it.
+
+Not yet: offering the call when a world is made (it is on the Naming tab
+only); word pools for descriptive names per culture; peoples in the same
+call (docs/DESIGN - PEOPLES.md, phase 3).

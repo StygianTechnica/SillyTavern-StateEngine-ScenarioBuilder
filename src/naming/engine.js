@@ -299,12 +299,20 @@ function fillKit(kitId, rand, { mood = {}, feature = 'forest', trade = '', venue
             default: return POOLS[key] ? from(key) : key;
         }
     });
-    return { name: name.replace(/\s+/g, ' ').trim(), meaning: '', kit: kitId };
+    // "Karnolds's" is Karnolds'.
+    return { name: name.replace(/\s+/g, ' ').trim().replace(/(\p{L}s)'s\b/gu, "$1'"), meaning: '', kit: kitId };
 }
 
 // What a venue is called on its sign: a nightclub is a Club.
-const VENUE_WORDS = { nightclub: 'Club', offices: 'Offices', office: 'Offices', cafe: 'Café', theater: 'Theatre', parlour: 'Parlour', hq: 'Headquarters' };
-const venueWord = (noun) => VENUE_WORDS[noun] ?? capitalize(noun || 'Club');
+const VENUE_WORDS = {
+    nightclub: 'Club', offices: 'Offices', office: 'Offices', cafe: 'Café', theater: 'Theatre', parlour: 'Parlour', hq: 'Headquarters',
+    'music venue': 'Hall', 'office tower': 'Tower', 'tower block': 'Tower', skyscraper: 'Tower', 'trading floor': 'Exchange', 'stock exchange': 'Exchange',
+    'law office': 'Law Offices', 'apartment block': 'Apartments', apartments: 'Apartments', 'data center': 'Data Center', taproom: 'Taproom', speakeasy: 'Club',
+};
+// Where a saint's name fits over the door (Saint Anne's Hospital) - not an
+// office tower or a bank.
+const SAINTLY = new Set(['hospital', 'clinic', 'school', 'library', 'college', 'university', 'almshouse', 'soup kitchen', 'charity kitchen', 'boarding house', 'orphanage', 'infirmary', 'museum']);
+const venueWord = (noun) => VENUE_WORDS[noun] ?? titleCase(noun || 'Club');
 const HOSPITALITY = new Set(['restaurant', 'cafe', 'café', 'diner', 'hotel', 'motel', 'brothel', 'teahouse', 'bathhouse', 'lounge', 'club', 'nightclub']);
 
 // ---- names built from an existing entry (section 4.1, step 3)
@@ -383,6 +391,10 @@ export function derivedNames(tie, kindInfo, culture, rand) {
 // shared (folded names from other worlds) }.
 // -> { mode: 'none' | 'given' | 'derived' | 'rolled', name, aliases,
 //      meaning, candidates, tie, kind, culture: { id, label }, counter }
+// The purposes of a district whose places are named to draw people in
+// (src/generate/fit-place.js).
+const INVITING = new Set(['pleasure', 'business', 'civic', 'academic', 'residential', 'market']);
+
 export function planName(req, world) {
     const naming = world.naming ?? {};
     const counter = naming.counter ?? 0;
@@ -414,6 +426,10 @@ export function planName(req, world) {
 
     const later = isLaterAge(world.overview);
     const mood = { ...moodOf(world.overview?.tone, `${req.brief ?? ''} ${req.placeText ?? ''}`), later };
+    // A place people go to for a night out, or to do business, is not named
+    // like a gallows inn because the world is grim: only the brief's own
+    // words ("a dive bar", "a seedy club") make it grim there.
+    if (INVITING.has(req.purpose)) Object.assign(mood, { grim: moodOf(req.brief).grim || /\b(?:dive|seedy|grimy|rundown|run-down|filthy|squalid|sleazy)\b/i.test(req.brief ?? ''), jolly: req.purpose === 'pleasure' || mood.jolly });
     const person = (g, familyOnly = false) => {
         const p = personName(culture, rand, { gender: g });
         if (!p) return 'Anon';
@@ -459,9 +475,12 @@ export function planName(req, world) {
                 if (kindInfo.subtype === 'venue') {
                     if (later && /club/.test(kindInfo.noun ?? '') && chance(rand, 0.3)) return { name: `Club ${wordOf(pick(rand, POOLS.callWord))}`, meaning: '', kit: 'venue' };
                     // A bar or a club has a sign; a hospital or an office has a name.
-                    if (later) return fillKit(HOSPITALITY.has(kindInfo.noun) ? 'venue' : 'institution', rand, { mood, venue: venueWord(kindInfo.noun), person, place });
+                    if (later) return fillKit(HOSPITALITY.has(kindInfo.noun) ? 'venue' : SAINTLY.has(kindInfo.noun) ? 'institution' : 'office', rand, { mood, venue: venueWord(kindInfo.noun), person, place });
                     return HOSPITALITY.has(kindInfo.noun) ? fillKit('inn', rand, { mood, person, place }) : fillKit('shop', rand, { mood, trade: venueWord(kindInfo.noun), person, place });
                 }
+                // A bar in a later age has a sign like a club's (Redline Bar,
+                // the Velvet Gull), not only a coaching inn's.
+                if (later && kindInfo.subtype === 'inn' && kindInfo.noun && !['inn', 'tavern', 'coaching inn', 'alehouse'].includes(kindInfo.noun) && chance(rand, 0.7)) return fillKit('venue', rand, { mood, venue: venueWord(kindInfo.noun), person, place });
                 if (oneOf('building') === 'native') return settlementName(culture, rand);
                 return fillKit(kindInfo.subtype === 'shop' ? 'shop' : 'inn', rand, { mood, trade: kindInfo.noun && kindInfo.noun !== 'shop' && kindInfo.noun !== 'store' ? kindInfo.noun : '', person, place });
             case 'house': {

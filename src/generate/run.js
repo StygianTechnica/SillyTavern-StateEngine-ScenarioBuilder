@@ -25,6 +25,8 @@ import { useStateEngineJsonParser } from './json.js';
 import { LOG_PREFIX } from '../constants.js';
 import { rollNameFor, namePoolFor } from '../naming/run.js';
 import { PROMPT_CLICHES } from '../naming/registry.js';
+import { parentFrame, surpriseKind, placeRuleFor } from './fit-place.js';
+import { isLaterAge } from '../library/world-options.js';
 
 const lower = (s) => String(s ?? '').trim().toLowerCase();
 
@@ -176,6 +178,16 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     // entry's location field.
     const parentForPrompt = parentId || (type.id === 'location' ? (entry?.id ? parents[entry.id] ?? null : null) : (draft?.fields?.location ?? entry?.base?.location ?? entry?.location ?? null));
 
+    // A new place inside a district, a town or a region fits what it is for
+    // (src/generate/fit-place.js): a surprise there is given a fitting kind
+    // (a nightclub on the Neon Mile, a bank on the corporate square), picked
+    // here so the name and the model both start from it.
+    const overview = getPlaceOverview(ctx.settingId, type.id === 'location' ? (entry?.id ?? parentId) : (parentForPrompt ?? entry?.base?.location ?? entry?.location ?? null));
+    const parentEntry = type.id === 'location' && parentForPrompt ? allEntries.find((e) => e.id === parentForPrompt) : null;
+    const frame = parentEntry ? parentFrame({ name: parentEntry.name, description: parentEntry.description ?? parentEntry.base?.description ?? '' }) : null;
+    const siblings = parentEntry ? (all.location ?? []).filter((e) => e.id !== entry?.id && parents[e.id] === parentEntry.id).map((e) => ({ name: e.name, description: e.description ?? e.base?.description ?? '' })) : [];
+    const picked = task === 'create' && frame?.purpose && !String(brief ?? '').trim() ? surpriseKind(frame, { later: isLaterAge(overview), siblings }) : '';
+
     // Names (docs/DESIGN - NAMING.md, 4.1): the one the user gave, then one
     // the brief gives, then one built from the entry it is tied to, then a
     // rolled one. The model is told the name; it does not make one up.
@@ -189,7 +201,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         if (naming.name) fixedName = naming.name;
         else {
             const placeText = parentForPrompt ? pathOf(parents, parentForPrompt).map((id) => allEntries.find((e) => e.id === id)).filter(Boolean).map((e) => `${e.name} ${e.description ?? e.base?.description ?? ''}`).join(' ') : '';
-            const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId: naming.cultureId, gender: naming.gender, hasParent: Boolean(parentForPrompt), placeText, placeId: parentForPrompt, factionIds }, all);
+            const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief: picked || brief, purpose: frame?.purpose ?? '', cultureId: naming.cultureId, gender: naming.gender, hasParent: Boolean(parentForPrompt), placeText, placeId: parentForPrompt, factionIds }, all);
             nameApart = plan.apart ?? '';
             if (plan.mode === 'rolled' || plan.mode === 'given') {
                 fixedName = plan.name;
@@ -197,13 +209,15 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
             } else if (plan.mode === 'derived') nameFrom = { tie: plan.tie, candidates: plan.candidates };
         }
     }
+    const placeCtx = placeContext(parentForPrompt, all, parents, getSettingDoc(ctx.settingId).relations);
     const namePool = namePoolFor(ctx.settingId, all, { cultureId: naming.cultureId, placeId: parentForPrompt, factionIds });
     const base = {
         fixedName, nameMeaning, nameFrom, nameApart, namePool, avoidNames: PROMPT_CLICHES,
         type, fields, brief,
         // The world as it holds where the entry is: a place's own realm, or
         // the place an entry lies in (a planet at TL12, a dead-magic zone).
-        overview: getPlaceOverview(ctx.settingId, type.id === 'location' ? (entry?.id ?? parentId) : (parentForPrompt ?? entry?.base?.location ?? entry?.location ?? null)),
+        overview,
+        surpriseKind: picked,
         neighbours: neighboursOf(entry, all, parents, parentId),
         similarNames: (all[type.id] ?? []).filter((e) => e.id !== entry?.id).map((e) => e.name),
         memories,
@@ -214,7 +228,11 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         parentName: parentForPrompt ? pathOf(parents, parentForPrompt).map((id) => nameOfId.get(id)).filter(Boolean).join(' › ') || nameOfId.get(parentForPrompt) : '',
         creating: task === 'create',
         relationNames: allEntries.filter((e) => e.id !== entry?.id).map((e) => e.name).slice(0, 25),
-        place: placeContext(parentForPrompt, all, parents, getSettingDoc(ctx.settingId).relations),
+        place: placeCtx,
+        // A place inside another: what that place is for, and whether what
+        // is in it is its owners' (a fortress's rooms) or its own (a club on
+        // the Neon Mile, not another Omicron site).
+        placeRule: frame ? placeRuleFor(parentEntry.name, frame, { factions: (placeCtx?.factions ?? []).map((f) => f.name), siblings: siblings.map((s) => s.name) }) : '',
         // A quest is the heroes' own: who pursues it, so its objectives are
         // written from their side - never the side they fight.
         questSide: type.id === 'quest' ? questSide(entry, all, ctx.settingId, nameOfId) : null,

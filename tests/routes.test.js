@@ -1,6 +1,7 @@
 import { routesFrom, routeBetween, routeForMove } from '../src/library/routes.js';
 import { buildGuidance } from '../src/guidance/build.js';
 import { pathOf } from '../src/library/hierarchy.js';
+import { timesLine } from '../src/library/travel.js';
 
 const routes = [
     { id: 'r1', from: 'townA', to: 'townB', travel: 'half a day', note: 'the coast road' },
@@ -26,5 +27,12 @@ describe('routes', () => {
     it('appear in the guidance with their travel time', () => {
         const { text } = buildGuidance({ location: { path: ['Town A'], routes: [{ name: 'Town B', travel: 'half a day', note: 'the coast road' }] }, budget: 4000 });
         expect(text).toContain('From here one can go to Town B (half a day, the coast road).');
+    });
+
+    it('appear with each way\'s time, the party\'s way first and named', () => {
+        const travel = timesLine({ travel: '1 hour', basis: 'walk' }, 8, { first: 'transit' });
+        const { text } = buildGuidance({ location: { path: ['Arcadia Plaza'], routes: [{ name: 'The Docks', travel, note: 'the canal road' }], travelMode: 'by transit' }, budget: 4000 });
+        expect(text).toContain('From here one can go to The Docks (25 minutes by transit, 1 hour on foot, 15 minutes by car, the canal road).');
+        expect(text).toContain('The party gets about by transit.');
     });
 });
