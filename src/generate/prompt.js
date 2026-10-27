@@ -137,7 +137,8 @@ function namingRule(input) {
 //     nameFrom: { tie, candidates }   a new entry named from an existing one
 //     nameApart                        an entry it stands apart from (a rival)
 //     namePool: { people, places }    names for anyone or anywhere else
-//     avoidNames                       overused names never to write }
+//     avoidNames                       overused names never to write
+//   sides: [{ name, description, ties: [line] }]   the factions it is one of }
 // -> { system, user, keys, plain } (plain: one field, answered as text)
 export function buildGenerationPrompt(input) {
     const { task, type, entry = { values: {} } } = input;
@@ -178,6 +179,12 @@ ${input.bloodlineLine}`);
 ${input.populationLine} Let what you write fit this mix.`);
     if (input.neighbours?.length) {
         parts.push(`# Related entries already in the setting\n${input.neighbours.slice(0, 16).map((n) => `- ${n.relation ? `${n.relation}: ` : ''}${n.name} (${n.type})${n.description ? ` - ${cut(n.description, 160)}` : ''}`).join('\n')}`);
+    }
+    // The factions it is one of, and how each stands with others
+    // (src/generate/run.js sidesOf): it shares their friends and enemies.
+    if (input.sides?.length) {
+        const lines = input.sides.map((s) => [`- ${s.name} (faction)${s.description ? ` - ${cut(s.description, 200)}` : ''}`, ...s.ties.map((t) => `  - ${cut(t, 200)}`)].join('\n'));
+        parts.push(`# Its side (it is one of these - their friends are its friends, their rivals and enemies are its rivals and enemies, unless the user's direction says otherwise, as for a spy or a traitor)\n${lines.join('\n')}`);
     }
     if (type?.id === 'quest' && input.questSide) {
         const { player, with: allies = [] } = input.questSide;
@@ -254,7 +261,7 @@ ${input.populationLine} Let what you write fit this mix.`);
     const relationNames = task === 'create' ? (input.relationNames ?? []).slice(0, 25) : [];
     if (relationNames.length) {
         template.push(['relations', '[{"name": "...", "kind": "..."}]']);
-        needs.push(`- "relations": up to THREE existing entries it is connected to, and how ("kind" in a few words: ally, rival, serves, sibling, owes...). Choose only from: ${relationNames.join(', ')}. [] if none fits.`);
+        needs.push(`- "relations": up to THREE existing entries it is connected to, and how ("kind" in a few words: ally, rival, serves, sibling, owes...). Choose only from: ${relationNames.join(', ')}. [] if none fits.${input.sides?.length ? ' Each must agree with how its side stands with that entry: never a friend, ally or confidant of its side\'s rival or enemy.' : ''}`);
         keys.push('relations');
     }
     parts.push(`# Your task\n${job}`);

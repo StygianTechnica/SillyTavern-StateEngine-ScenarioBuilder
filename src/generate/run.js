@@ -156,6 +156,51 @@ export function placeContext(placeId, all, parents, relations = []) {
     return { path, factions };
 }
 
+// Whether `text` names `name` as a whole word (case aside).
+const names = (text, name) => {
+    const n = lower(name).trim();
+    if (n.length < 3) return false;
+    return new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'u').test(lower(text));
+};
+
+// The sides an entry stands with, and how each stands with others: the
+// factions its fields (or per-chat state) hold, those whose fields hold it,
+// those it is authored a member of, and - for a new entry - those the
+// user's idea names. A member of a faction shares its friends and enemies:
+// without this a new member of the Iron Hand came out as the close
+// confidant of the Iron Hand's rival. Pure.
+//   fields: the draft's field values; relations: the setting's authored ones
+// -> [{ id, name, description, ties: [{ otherId, line }] }] (at most three
+//    sides, eight ties each)
+export function sidesOf(entry, { fields = {}, brief = '', all, relations = [] }) {
+    const allEntries = Object.values(all).flat();
+    const byId = new Map(allEntries.map((e) => [e.id, e]));
+    const isFaction = (id) => byId.get(id)?.type === 'faction';
+    const ids = [];
+    const add = (id) => { if (isFaction(id) && id !== entry?.id && !ids.includes(id)) ids.push(id); };
+    // Not a field that sets it against a faction (its enemies, its target).
+    const against = (field) => /rival|enem|oppos|hunt|target|against|war|hate|fear/i.test(field);
+    for (const [k, v] of Object.entries({ ...(entry?.base ?? entry ?? {}), ...fields })) if (!against(k)) for (const x of Array.isArray(v) ? v : [v]) if (typeof x === 'string') add(x);
+    if (entry?.id) {
+        for (const r of runtimeRefs(entry)) if (!against(r.field)) r.ids.forEach(add);
+        for (const f of all.faction ?? []) if (Object.entries(f.base ?? f).some(([k, v]) => !against(k) && (Array.isArray(v) ? v : [v]).includes(entry.id))) add(f.id);
+        for (const r of relationsFor(entry.id, relations)) if (/member|serves|works for|leads/.test(r.kind)) add(r.otherId);
+    }
+    if (brief) for (const f of all.faction ?? []) if ([f.name, ...(f.aliases ?? [])].some((n) => names(brief, n))) add(f.id);
+
+    return ids.slice(0, 3).map((id) => {
+        const side = byId.get(id);
+        const ties = [];
+        const tie = (otherId, line) => { if (otherId !== entry?.id && !ties.some((t) => t.line === line)) ties.push({ otherId, line }); };
+        for (const r of relationsFor(id, relations)) if (byId.has(r.otherId)) tie(r.otherId, authoredLine(side.name, byId.get(r.otherId).name, r));
+        // Link fields both ways: its leader and members, and a rival's "enemy of".
+        const rel = relationsOf(side, allEntries);
+        for (const o of rel.outgoing) for (const x of o.ids) tie(x, `${side.name} → ${byId.get(x).name}: ${fieldLabel(o.field)}`);
+        for (const r of rel.incoming) tie(r.id, `${byId.get(r.id).name} → ${side.name}: ${fieldLabel(r.field)}`);
+        return { id, name: side.name, description: side.description ?? side.base?.description ?? '', ties: ties.slice(0, 8) };
+    });
+}
+
 // Generates for one entry of `type`.
 //   task: 'field' | 'fill' | 'enrich' | 'create'
 //   ctx: { chatId, chatKey, settingId }
@@ -249,6 +294,17 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         }
     }
     const placeCtx = placeContext(parentForPrompt, all, parents, getSettingDoc(ctx.settingId).relations);
+    // Its side: the factions it is one of, and how each stands with others -
+    // the user's ties, the link fields, then the story's for pairs not covered.
+    const authored = getSettingDoc(ctx.settingId).relations;
+    const sides = sidesOf(entry, { fields: draft?.fields ?? {}, brief, all, relations: authored });
+    for (const side of sides) {
+        const story = (await storyRelationships({ id: side.id, name: side.name })).filter((x) => !(x.otherId && pairCovered(side.id, x.otherId, authored)) && x.otherId !== entry?.id);
+        for (const r of story.slice(0, Math.max(0, 8 - side.ties.length))) side.ties.push({ otherId: r.otherId, line: relationshipLine(side.name, r) });
+    }
+    // Those its side has ties to come first among the entries it may relate to.
+    const tiedIds = new Set(sides.flatMap((s) => [s.id, ...s.ties.map((t) => t.otherId)]));
+    const others = allEntries.filter((e) => e.id !== entry?.id);
     const namePool = namePoolFor(ctx.settingId, all, { cultureId: naming.cultureId, placeId: parentForPrompt, factionIds });
     const base = {
         fixedName, nameMeaning, nameFrom, nameApart, namePool, avoidNames: PROMPT_CLICHES,
@@ -266,8 +322,9 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         detail: settings.generation.detail,
         parentName: parentForPrompt ? pathOf(parents, parentForPrompt).map((id) => nameOfId.get(id)).filter(Boolean).join(' › ') || nameOfId.get(parentForPrompt) : '',
         creating: task === 'create',
-        relationNames: allEntries.filter((e) => e.id !== entry?.id).map((e) => e.name).slice(0, 25),
+        relationNames: [...others.filter((e) => tiedIds.has(e.id)), ...others.filter((e) => !tiedIds.has(e.id))].map((e) => e.name).slice(0, 25),
         place: placeCtx,
+        sides: sides.map((s) => ({ name: s.name, description: s.description, ties: s.ties.map((t) => t.line) })),
         // A place inside another: what that place is for, and whether what
         // is in it is its owners' (a fortress's rooms) or its own (a club on
         // the Neon Mile, not another Omicron site).
