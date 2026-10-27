@@ -322,6 +322,71 @@ export function flavourOf(overview) {
     ].map(clean).filter(Boolean).join(', ');
 }
 
+// ---- where a place stands
+//
+// A place inside another inherits its climate - and a city's climate is
+// often a paragraph about the whole city ("coastal megacity... the lower
+// classes inhabit half-submerged streets") that drowns an inland club in
+// ships and seawalls. From an ancestor, only the air and the weather come
+// down: lines about the city's layout go, and so do the water words, unless
+// the place or a place between it and that ancestor is by the water. The
+// nearest place it is inside gives it its character ("set in a nightlife
+// district of clubs under endless neon").
+
+const WATER = /\b(?:coast(?:al|line)?s?|sea|seas|ocean(?:ic)?|shore(?:line)?s?|harbou?rs?|port|ports|bay|bays|flood(?:ed|ing|s)?|submerged|half-submerged|seawalls?|tides?|tidal|waterfront|docks?|canals?|ships?|boats?|beach(?:es)?|island|islands|marine|maritime|lagoons?|wharf|wharves|piers?|riverside|river|lakeside)\b/i;
+const WATER_WORDS = /\b(?:coastal|ocean|sea|seaside|harbou?r|marine|maritime|tidal|salt-laden|briny|waterfront|half-submerged|submerged|flooded)\s*/gi;
+// A line about how the city is laid out, or who lives where: not the air of one place in it.
+const LAYOUT = /\b(?:districts?|neighbou?rhoods?|quarters?|streets?|wards?|slums?|residents?|classes|citizens|inhabit\w*|live|lives|sit|sits|platforms?|seawalls?|sea levels?|skyline|towers rise|buildings?)\b/i;
+
+const pieces = (text) => clean(text).split(/(?<=[.!?;:])\s+|\s*[;:]\s*/).map((p) => p.replace(/[.!?;:]+$/, '').trim()).filter(Boolean);
+
+// A climate as it comes down to a place inside: { text, dropped } -
+// dropped: whether anything of the water went.
+export function inheritedClimate(climate, { waterOk = false } = {}) {
+    let dropped = false;
+    const out = [];
+    for (const p of pieces(climate)) {
+        if (LAYOUT.test(p)) { if (WATER.test(p)) dropped = true; continue; }
+        if (waterOk || !WATER.test(p)) { out.push(p); continue; }
+        const left = p.replace(WATER_WORDS, '').replace(/\s+/g, ' ').trim();
+        dropped = true;
+        // What is left still has water in it ("rain off the sea"): out.
+        if (left && !WATER.test(left) && left.split(' ').length >= 1) out.push(left);
+    }
+    const text = out.map((p, i) => (i ? p.charAt(0).toLowerCase() + p.slice(1) : p)).join(', ');
+    return { text, dropped };
+}
+
+// path: the places it is inside, nearest first: [{ name, aliases,
+// description, climate }]. own: { description, climate }. others: names
+// to keep out. -> { climate, within, exclude: [words for --no / negative] }
+export function placeSurroundings({ own = {}, path = [], others = [] } = {}) {
+    const ownClimate = clean(own.climate);
+    let climate = ownClimate;
+    let exclude = [];
+    if (!ownClimate) {
+        const at = path.findIndex((p) => clean(p.climate));
+        if (at >= 0) {
+            const between = [own.description, ...path.slice(0, at).map((p) => p.description)].join(' ');
+            const waterOk = WATER.test(between);
+            const got = inheritedClimate(path[at].climate, { waterOk });
+            climate = got.text;
+            if (got.dropped && !waterOk) exclude = ['coastline', 'ocean', 'ships', 'boats', 'flooded streets'];
+        }
+    }
+    const parent = path[0];
+    let within = '';
+    if (parent && clean(parent.description)) {
+        let seen = visualDescription(parent.description, { own: [parent.name, ...(parent.aliases ?? [])], others, kind: kindWord(parent.name), max: 28 }).split('. ')[0];
+        // A coastal city around a place that is not by the water itself.
+        if (WATER.test(seen) && !WATER.test(own.description ?? '')) {
+            seen = seen.split(/,\s*/).filter((p) => !WATER.test(p)).join(', ').replace(WATER_WORDS, '').replace(/\s+/g, ' ').trim();
+        }
+        if (seen) within = `set in ${seen.charAt(0).toLowerCase()}${seen.slice(1)}`;
+    }
+    return { climate, within, exclude };
+}
+
 // The style's words - its "fantasy" made this world's genre ("dark fantasy
 // oil painting" is "dark post-apocalyptic oil painting" in a wasteland).
 export function styleOf(options, overview = {}, { provider = '' } = {}) {
@@ -339,7 +404,9 @@ export function styleOf(options, overview = {}, { provider = '' } = {}) {
 // (DEFAULT_IMAGE_OPTIONS shape). -> { prompt, negative, provider }
 // knownNames: every name in the library (people, factions, gods, places) -
 // none of them reaches the picture.
-export function buildImagePrompt({ entry, narrative = '', environment = {}, overview = {}, options = {}, knownNames = [] }) {
+// surroundings: { within, exclude } from placeSurroundings (a place's
+// district, and the water kept out of an inland one).
+export function buildImagePrompt({ entry, narrative = '', environment = {}, overview = {}, options = {}, knownNames = [], surroundings = {} }) {
     const opts = { ...DEFAULT_IMAGE_OPTIONS, ...options, midjourney: { ...DEFAULT_IMAGE_OPTIONS.midjourney, ...(options.midjourney ?? {}) } };
     const names = opts.includeNames ? [] : [entry.name, ...(entry.aliases ?? [])];
     // A place's (or thing's) name taken out leaves its kind in its stead
@@ -361,6 +428,7 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
         leads ? styleText : '',
         opts.includeNames && entry.type === 'character' ? clean(entry.name) : '',
         ...subjectOf(entry, description, others, overview),
+        entry.type === 'location' ? clean(surroundings.within) : '',
         entry.type === 'character' ? clean(preset?.portrait) : '',
         entry.type === 'location' || entry.type === 'scene' ? env : '',
         flavourOf(overview),
@@ -378,7 +446,7 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
         if (Number.isFinite(Number(mj.stylize)) && Number(mj.stylize) !== 100) params.push(`--stylize ${Math.round(Number(mj.stylize))}`);
         if (Number(mj.chaos) > 0) params.push(`--chaos ${Math.round(Number(mj.chaos))}`);
         if (mj.raw) params.push('--style raw');
-        const no = [...new Set([...clean(mj.no).split(',').map(clean).filter(Boolean), ...clean(preset?.mjNo).split(',').map(clean).filter(Boolean), ...(opts.respectLimits === false ? [] : worldExclusions(overview))])];
+        const no = [...new Set([...clean(mj.no).split(',').map(clean).filter(Boolean), ...clean(preset?.mjNo).split(',').map(clean).filter(Boolean), ...(opts.respectLimits === false ? [] : worldExclusions(overview)), ...(surroundings.exclude ?? [])])];
         if (no.length) params.push(`--no ${no.join(', ')}`);
         if (clean(mj.sref)) params.push(`--sref ${clean(mj.sref)}`);
         if (clean(mj.extra)) params.push(clean(mj.extra));
@@ -386,7 +454,7 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
         return { provider: 'midjourney', prompt: `${subject.replace(/--+/g, '-')} ${params.join(' ')}`, negative: '' };
     }
     if (opts.provider === 'stable_diffusion') {
-        const negative = [clean(opts.negative), clean(preset?.sdNegative), ...(opts.respectLimits === false ? [] : worldExclusions(overview))].filter(Boolean).join(', ');
+        const negative = [clean(opts.negative), clean(preset?.sdNegative), ...(opts.respectLimits === false ? [] : worldExclusions(overview)), ...(surroundings.exclude ?? [])].filter(Boolean).join(', ');
         return { provider: 'stable_diffusion', prompt: `${subject}, highly detailed`, negative };
     }
     const style = styleText;

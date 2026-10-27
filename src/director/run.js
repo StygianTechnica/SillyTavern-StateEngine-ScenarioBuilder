@@ -49,6 +49,8 @@ import { buildPeoplePrompt, readPeople } from './people.js';
 import { unknownsFor, toldInChat, mergeTold, PERSPECTIVE_TOKENS } from './perspective.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
 import { directorPlan, takeBeats, markActive } from '../planner/run.js';
+import { livePoolFor, takeFromPool, byType, rollNameFor, markNameUsed } from '../naming/run.js';
+import { poolLine, swapInvented, applySwaps } from '../naming/live.js';
 
 export const DIRECTOR_EVENT = 'scenario_builder_director';
 
@@ -446,9 +448,16 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // Scenes the story stepped away from and must come back to (src/director/suspended.js).
     const waiting = stillWaiting(doc.suspended, doc.turn);
     const nameOfId = (id) => everything.find((e) => e.id === id)?.name ?? '';
+    // Names for anyone or anywhere new, from the culture where the scene is
+    // (src/naming/live.js); a made-up one is swapped for the next of them.
+    let live = null;
+    if (settingId && settings.director.allowCreate && !canonOnly && settings.naming.live !== false) {
+        try { live = livePoolFor(settingId, byType(everything), { placeId: guidance.location?.id ?? null }); } catch (err) { console.warn(LOG_PREFIX, 'could not roll names for the director', err); }
+    }
     // Trimmed to fit the director model's context (src/director/fit.js).
     const fitted = fitDirectorPrompt({
         ...guidance,
+        namePoolLine: live ? poolLine(live.pool) : '',
         messages,
         userName: SillyTavern.getContext().name1,
         previousNote: doc.director.note,
@@ -520,7 +529,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     const playerChar = settingId ? characters.find((c) => c.id === playerIdOf(settingId, characters)) : null;
     const playerNames = [...(playerChar ? callNames(playerChar) : []), clean(SillyTavern.getContext().name1)].filter(Boolean);
     for (const key of ['note', 'summary', 'direction', 'situation']) parsed[key] = withoutPlayerActions(parsed[key], playerNames);
-    const { note, created } = parsed;
+    let { note } = parsed;
+    const { created } = parsed;
     if (!note) throw new Error('The model wrote no briefing.');
 
     // Only what the recent chat brought up (the last few messages).
@@ -553,6 +563,36 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         if (r.ok) wanted.push({ ...c, tiedIds: r.tiedIds });
     }
     if (wanted.length < created.length) console.info(LOG_PREFIX, `the director left out ${created.length - wanted.length} new thing(s): not brought up by the chat or tied to the setting, or an item that is only flavour`);
+    // A new person or place with a name the model made up takes the next
+    // pool name, and the briefing is changed to match before the narrator
+    // sees it. A name in the chat or the notes is the story's and stays.
+    if (live && wanted.length) {
+        const swapped = swapInvented(wanted, live.pool, {
+            // What it was shown, and what the world says (a prompt trimmed to fit leaves some out).
+            allowedText: [prompt, ...messages.map((m) => m.text), ...everything.map((e) => e.base?.description ?? e.description ?? '')].join('\n'),
+            known: known.flatMap((e) => [e.name, ...e.aliases]),
+            // A new place named for what it is (a nightclub, a ruin), rolled in code.
+            rollPlace: (c) => {
+                try {
+                    const plan = rollNameFor(settingId, { typeId: 'location', brief: c.description, hasParent: !!guidance.location?.id, placeId: guidance.location?.id ?? null }, byType(everything));
+                    if (plan.mode !== 'rolled') return '';
+                    markNameUsed(settingId, plan.name);
+                    return plan.name;
+                } catch {
+                    return '';
+                }
+            },
+        });
+        if (swapped.swaps.length) {
+            console.info(LOG_PREFIX, `made-up names swapped for the world's own: ${swapped.swaps.map((s) => `${s.from} -> ${s.to}`).join(', ')}`);
+            wanted.splice(0, wanted.length, ...swapped.created);
+            note = applySwaps(note, swapped.swaps);
+            for (const k of ['summary', 'direction', 'situation']) parsed[k] = applySwaps(parsed[k], swapped.swaps);
+            if (parsed.move?.place) parsed.move = { ...parsed.move, place: applySwaps(parsed.move.place, swapped.swaps) };
+            parsed.enters = parsed.enters.map((n) => applySwaps(n, swapped.swaps));
+        }
+        try { takeFromPool(settingId, live.key, swapped.used); } catch { /* the pool tops itself up next time */ }
+    }
     const made = settingId && settings.director.allowCreate && !canonOnly
         ? await createNeeded(chatId, chatKey, settingId, wanted, guidance.location?.id ?? null, placeIds.map((id) => ({ id, names: [known.find((e) => e.id === id)?.name, ...(known.find((e) => e.id === id)?.aliases ?? [])].filter(Boolean) })), known.filter((e) => e.type === 'location'))
         : [];

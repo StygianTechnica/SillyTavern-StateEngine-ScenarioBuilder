@@ -5,7 +5,8 @@
 
 import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { getSettings, saveSettings } from '../settings.js';
-import { planName, namePool } from './engine.js';
+import { planName, namePool, rollPool } from './engine.js';
+import { prunePool, shortfall } from './live.js';
 import { recordName } from './registry.js';
 import { cultureChoices, defaultCultureId, defaultCultureChoice, resolveCulture, inheritedCulture, newCultureDef } from './cultures.js';
 import { makeRng } from './random.js';
@@ -309,5 +310,52 @@ export function learnFromWorld(settingId, all) {
             out.push({ id: def.id, name: def.name, count: (def.learned?.length ?? 0) - before });
         }
     });
+    return out;
+}
+
+// ---- live play (src/naming/live.js)
+
+// The pool for where the story is: the culture of the place (or the
+// factions), its names kept from earlier replies, topped up to a few of
+// each. A pool name the world has taken since is marked used and replaced.
+// -> { key, cultureId, pool: { men, women, places } }
+export function livePoolFor(settingId, all, { placeId = null, factionIds = [] } = {}) {
+    const cultureId = cultureIdFor(settingId, all, { placeId, factionIds });
+    const key = cultureId || 'world';
+    const world = worldOf(settingId, all);
+    const { pool, gone } = prunePool(getSettingDoc(settingId).naming.pools[key], world.names);
+    for (const name of gone) markNameUsed(settingId, name);
+    const want = shortfall(pool);
+    const rolling = want.men || want.women || want.places;
+    if (rolling) {
+        const fresh = rollPool({ ...world, names: [...world.names, ...pool.men, ...pool.women, ...pool.places] }, { cultureId, ...want });
+        pool.men.push(...fresh.men);
+        pool.women.push(...fresh.women);
+        pool.places.push(...fresh.places);
+        record(settingId, fresh.counter, [...fresh.men, ...fresh.women].map((name) => ({ name, kind: 'person', culture: cultureId, state: 'o' }))
+            .concat(fresh.places.map((name) => ({ name, kind: 'settlement', culture: cultureId, state: 'o' }))));
+    }
+    // Saved only when it changed: the guidance asks on every refresh.
+    if (rolling || gone.length) updateSettingDoc(settingId, (d) => { d.naming.pools[key] = pool; });
+    return { key, cultureId, pool };
+}
+
+// Pool names that were taken (by the model, or by a swap): out of the
+// pool and used for good.
+export function takeFromPool(settingId, key, names = []) {
+    if (!names.length) return;
+    const gone = new Set(names.map(fold));
+    updateSettingDoc(settingId, (d) => {
+        const p = d.naming.pools[key];
+        if (!p) return;
+        for (const k of ['men', 'women', 'places']) p[k] = p[k].filter((n) => !gone.has(fold(n)));
+    });
+    for (const n of names) markNameUsed(settingId, n);
+}
+
+// { typeId: entries[] } from a flat list of entries with a `type`.
+export function byType(entries = []) {
+    const out = {};
+    for (const e of entries) (out[e.type] ??= []).push(e);
     return out;
 }

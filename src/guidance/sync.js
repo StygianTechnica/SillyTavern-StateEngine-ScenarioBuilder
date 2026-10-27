@@ -47,6 +47,8 @@ import { fightValues } from '../director/fight.js';
 import { protectedText, stanceFor } from '../director/combat.js';
 import { eventValues } from '../events/model.js';
 import { knownAsText } from '../library/alias-kinds.js';
+import { livePoolFor, byType } from '../naming/run.js';
+import { narratorPoolLine } from '../naming/live.js';
 
 export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
 
@@ -69,6 +71,20 @@ function announce() {
 // When Scenario Builder has no canonical location or cast yet: what the
 // story says (its own prompted scene variables), else State Engine's Scene
 // Context, else the characters State Engine marks present.
+// The narrator's line of names for anyone new (src/naming/live.js), when
+// the user turned it on: no extra call, the director's pool for this place.
+async function narratorNames(chatId, settingId, library, locationId, settings) {
+    if (!settingId || !settings.naming.narrator || settings.naming.live === false || library.canonOnly) return '';
+    try {
+        const all = [];
+        for (const type of ['character', 'location', 'faction', 'creature', 'item']) all.push(...(await listEntries(chatId, settingId, type).catch(() => [])).map((o) => ({ ...o, type })));
+        return narratorPoolLine(livePoolFor(settingId, byType(all), { placeId: locationId || null }).pool);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'no names for the narrator', err);
+        return '';
+    }
+}
+
 async function sceneFallbacks(chatId) {
     const out = { locationId: '', castIds: [] };
     try {
@@ -414,6 +430,9 @@ export async function gatherInputs(chatId, chatKey) {
             // Going in circles, or the player asking whether it is over
             // (src/director/loops.js) - read from the chat itself.
             loop: circling((SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-8).map((m) => ({ text: String(m.mes ?? ''), isUser: !!m.is_user }))).line,
+            // Names the narrator may give someone new (settings.naming.narrator,
+            // off by default): the director's pool for this place.
+            names: await narratorNames(chatId, settingId, library, locationId, settings),
             // A power answering its champion (src/library/powers.js).
             powersNarrator: settings.director.enabled ? doc.powersNarrator : '',
             // The fight the director keeps (src/director/fight.js).

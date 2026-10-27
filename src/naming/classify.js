@@ -207,3 +207,8 @@ export function tiesInBrief(text, all = []) {
     }
     return out.sort((a, b) => b.matched.length - a.matched.length).slice(0, 3);
 }
+
+// Every plain word the tables above know ("tavern", "forest", "cartel"):
+// the swap rule in live.js reads a name made of them as plain English.
+export const KIND_WORDS = Object.freeze(new Set([LOCATION_KINDS, FEATURES, FACTION_KINDS, PURPOSES].flatMap((t) => t.flatMap(([, words]) => words))
+    .concat(PUBLIC_BUILDINGS, SHIP, PIRATE, NAVAL).flatMap((w) => w.split(/[\s-]+/)).map((w) => w.toLowerCase())));

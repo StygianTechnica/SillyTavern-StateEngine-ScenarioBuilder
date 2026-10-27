@@ -10,6 +10,7 @@
 import { LOG_PREFIX } from '../constants.js';
 import { emptyForm, emptyRoom } from './setup.js';
 import { KIND_LABEL } from './model.js';
+import { poolLine, swapInvented, applySwaps } from '../naming/live.js';
 
 const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
@@ -41,7 +42,8 @@ const KIND_TASK = {
 // -> { system, user, plain }
 // input: { kind, request, overview, placeName, playerName, candidates:
 //   [{ name, type, description }], rooms: [name] (a crawl's dungeon's own
-//   places), canonOnly }
+//   places), canonOnly, pool: { men, women, places } (names for anyone
+//   invented - src/naming/live.js) }
 export function buildEventPrompt(input) {
     const kind = KIND_TASK[input?.kind] ? input.kind : 'arena';
     const [task, format] = KIND_TASK[kind];
@@ -59,6 +61,7 @@ export function buildEventPrompt(input) {
         input?.canonOnly
             ? '- Use only people, creatures and places listed above; invent none.'
             : '- Take people and creatures from the list where they fit; otherwise invent ones that fit the setting, each with a name (a kind of creature may be a number and a kind: "3 ghouls").',
+        input?.canonOnly || !poolLine(input?.pool) ? '' : `- ${poolLine(input.pool)}`,
         '# Reply\nExactly these lines:',
         'NAME: <the event\'s name>',
         'OPENING: <one or two sentences: how it begins>',
@@ -114,11 +117,43 @@ export function readEventSetup(text, kind = 'arena') {
     return form.name && !empty ? form : null;
 }
 
+// Invented entrants and opponents named with a made-up word of the
+// model's own take pool names (src/naming/live.js), and the opening and
+// close say the same. opts: { allowedText, known }. -> { form, used, swaps }
+export function swapEventNames(form, pool, opts = {}) {
+    if (!form || !pool) return { form, used: [], swaps: [] };
+    const key = form.kind === 'tournament' ? 'entrants' : form.kind === 'arena' ? 'opponents' : '';
+    if (!key) return { form, used: [], swaps: [] };
+    const lines = String(form[key] ?? '').split('\n').filter((l) => l.trim());
+    const people = lines.map((l) => ({ kind: 'character', name: clean(l.split('|')[0]), description: '' }));
+    const out = swapInvented(people, pool, opts);
+    if (!out.swaps.length) return { form, used: out.used, swaps: [] };
+    const next = { ...form, [key]: lines.map((l, i) => [out.created[i].name, ...l.split('|').slice(1).map(clean)].join(' | ')).join('\n') };
+    for (const k of ['name', 'intro', 'close', 'prize']) next[k] = applySwaps(next[k], out.swaps);
+    return { form: next, used: out.used, swaps: out.swaps };
+}
+
 // The crawl's rooms matched to the dungeon's own places by name.
 export function matchRooms(form, places = []) {
     if (form?.kind !== 'crawl') return form;
     const key = (s) => clean(s).toLowerCase().replace(/^the\s+/, '');
     return { ...form, rooms: form.rooms.map((r) => ({ ...r, placeId: r.placeId || places.find((p) => key(p.name) === key(r.name))?.id || '' })) };
+}
+
+// The live-play pool for where the event is held, with every name the
+// world has (src/naming/run.js). null when names are left to the model.
+async function poolFor(chatId, settingId, lib, placeId) {
+    try {
+        const { getSettings } = await import('../settings.js');
+        if (getSettings().naming.live === false) return null;
+        const { livePoolFor, byType } = await import('../naming/run.js');
+        const all = [];
+        for (const t of await lib.getObjectTypes().catch(() => [])) all.push(...(await lib.listEntries(chatId, settingId, t.id).catch(() => [])).map((x) => ({ ...x, type: t.id })));
+        return { ...livePoolFor(settingId, byType(all), { placeId: placeId || null }), known: all.flatMap((x) => [x.name, ...(x.aliases ?? x.base?.aliases ?? [])]) };
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not roll names for the event', err);
+        return null;
+    }
 }
 
 // Fills a form from loose guidance. options: { kind, request, placeId }.
@@ -134,6 +169,8 @@ export async function generateEventForm(chatId, settingId, { kind = 'arena', req
         const parents = lib.getParents(settingId);
         const inside = kind === 'crawl' && placeId ? places.filter((p) => parents[p.id] === placeId) : [];
         const overview = lib.getOverview(settingId);
+        const canonOnly = lib.isCanonOnly(settingId);
+        const live = canonOnly ? null : await poolFor(chatId, settingId, lib, placeId);
         const prompt = buildEventPrompt({
             kind,
             request,
@@ -142,7 +179,8 @@ export async function generateEventForm(chatId, settingId, { kind = 'arena', req
             playerName: player?.name ?? SillyTavern.getContext().name1,
             candidates: [...characters.filter((c) => c.id !== playerId).slice(0, 18).map((e) => ({ ...e, type: 'character' })), ...creatures.slice(0, 12).map((e) => ({ ...e, type: 'creature' }))].map((e) => ({ name: e.name, type: e.type, description: e.description })),
             rooms: inside.map((p) => p.name),
-            canonOnly: lib.isCanonOnly(settingId),
+            canonOnly,
+            pool: live?.pool ?? null,
         });
         const { askReliably } = await import('../generate/run.js');
         const result = await askReliably(prompt, (_p, text) => {
@@ -153,7 +191,15 @@ export async function generateEventForm(chatId, settingId, { kind = 'arena', req
             console.warn(LOG_PREFIX, `could not write the ${kind}: ${result.error}`);
             return null;
         }
-        return matchRooms({ ...result.values, placeId }, inside);
+        let form = result.values;
+        if (live) {
+            const swapped = swapEventNames(form, live.pool, { allowedText: [prompt.user, request].join('\n'), known: live.known });
+            if (swapped.swaps.length) console.info(LOG_PREFIX, `made-up names in the ${kind} swapped for the world's own: ${swapped.swaps.map((s) => `${s.from} -> ${s.to}`).join(', ')}`);
+            form = swapped.form;
+            const { takeFromPool } = await import('../naming/run.js');
+            takeFromPool(settingId, live.key, swapped.used);
+        }
+        return matchRooms({ ...form, placeId }, inside);
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not generate the event', err);
         return null;

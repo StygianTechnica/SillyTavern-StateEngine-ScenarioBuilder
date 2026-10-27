@@ -35,6 +35,7 @@ src/
                              catalog-model.js, graph-layout.js, status-model.js (pure)
   naming/                    the name generator (docs/DESIGN - NAMING.md): stocks/ (real-world
                              names by language), engine.js (pure: planName, namePool),
+                             live.js (pure: live-play pools and the swap rule),
                              run.js (reads the world, records the registry)
   public-api.js              window.StateEngineScenarioBuilder
 ```

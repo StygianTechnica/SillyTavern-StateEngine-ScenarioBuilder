@@ -472,6 +472,15 @@ newly confirmed objects, a separate generation connection profile.
   - Each proposal is shown with sample names, ticked and added.
   - "Learn from this world's names" teaches each culture the names already
     under it. A canon-only world's proposals do this by themselves.
+- [x] **Names in live play (2026-10-26):** docs/DESIGN - NAMING.md phase 4.
+  - The director, the GM planner, events and missions are handed a small
+    pool of names rolled for the culture where the story is.
+  - A new person or place the model names with made-up words of its own is
+    given the next pool name before it is saved, and the briefing (or the
+    event, or the job) is changed to match. Names the story already uses,
+    descriptive names and plain-English ones are kept. No extra calls.
+  - An optional guidance line (off by default) offers the pool to the
+    narrator too.
 - [x] **Kinds of alias (2026-10-26):** a character's other names each have a
   kind - nickname, codename / callsign, title / epithet, pen / stage name -
   and who uses them (people or factions). The sheet's "Other names" card

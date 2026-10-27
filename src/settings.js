@@ -63,8 +63,10 @@ const DEFAULTS = {
     quests: { autoCreate: true, tracked: 5 },
     // The name generator (src/naming/): avoidOtherWorlds keeps names used in
     // the user's other worlds out of this one; shared is that list (folded
-    // names, newest last, capped).
-    naming: { avoidOtherWorlds: true, shared: [] },
+    // names, newest last, capped). live: the director, planner, events and
+    // missions get a pool of names and made-up ones are swapped (no extra
+    // call); narrator: the narrator is also told the pool (off by default).
+    naming: { avoidOtherWorlds: true, shared: [], live: true, narrator: false },
     // Lore (src/library/lore-sync.js): make Lore entries from Archivist's
     // compiled world lore automatically.
     lore: { autoCreate: true },
@@ -170,6 +172,8 @@ export function getSettings() {
     settings.lore.autoCreate ??= true;
     settings.naming ??= structuredClone(DEFAULTS.naming);
     settings.naming.avoidOtherWorlds ??= true;
+    settings.naming.live ??= true;
+    settings.naming.narrator ??= false;
     if (!Array.isArray(settings.naming.shared)) settings.naming.shared = [];
     return settings;
 }

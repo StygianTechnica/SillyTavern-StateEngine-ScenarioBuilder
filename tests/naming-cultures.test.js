@@ -85,3 +85,26 @@ describe('whose names a new thing takes', () => {
         expect(defaultCultureChoice({}, { defaultCulture: 'c1' })).toEqual({ id: 'c1', why: 'chosen by you' });
     });
 });
+
+describe('people of a later age', () => {
+    const EPITHET = /\bthe (?:Elder|Younger|Bold|Wise|Red|Black|Grey|Tall|Lame|Fair|Old|Silent|Proud|Quick|Smith|Hunter|Wanderer|Stranger|Lucky)\b|One-Eye|Ironhand|Longstride/;
+    const cyber = { worldType: 'science_fiction', tone: 'gritty, noir', premise: 'A cyberpunk megacity run by corporations.', tech: { level: 'tl9' } };
+
+    it('a science-fiction blend gives a given and a family name, never an epithet', () => {
+        for (const seed of ['a', 'b', 'c', 'd', 'e', 'f']) {
+            for (const n of roll(12, { typeId: 'character', brief: 'a fixer' }, { seed }, cyber)) {
+                expect(n, n).not.toMatch(EPITHET);
+                expect(n, n).not.toMatch(/, (?:son|daughter) of /);
+                expect(n.split(' ').length, n).toBeGreaterThanOrEqual(2);
+            }
+        }
+    });
+
+    it('a one-name culture of its own keeps its epithets in an earlier age only', () => {
+        const naming = { seed: 'h', cultures: { c1: { name: 'Islanders', seeds: [{ language: 'hawaiian', weight: 1 }], mutation: 0 } } };
+        const earlier = roll(60, { typeId: 'character', brief: 'a sailor', cultureId: 'c1' }, naming, { worldType: 'fantasy' });
+        expect(earlier.some((n) => EPITHET.test(n))).toBe(true);
+        const later = roll(60, { typeId: 'character', brief: 'a sailor', cultureId: 'c1' }, naming, cyber);
+        for (const n of later) expect(n, n).not.toMatch(EPITHET);
+    });
+});

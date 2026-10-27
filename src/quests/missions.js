@@ -15,6 +15,8 @@
 // The prompt and readers are pure (and tested); the runners never throw.
 
 import { LOG_PREFIX } from '../constants.js';
+import { poolLine, swapInvented, applySwaps } from '../naming/live.js';
+import { genderFrom } from '../naming/classify.js';
 
 export const MISSION_DIFFICULTIES = Object.freeze(['trivial', 'easy', 'moderate', 'hard', 'deadly']);
 // How a giver picks the next mission's difficulty: grows with its record,
@@ -128,7 +130,8 @@ const SYSTEM = 'You are a game master\'s assistant for a roleplay. You write one
 // input: { giver: { name, type, description, trade, clients, reward },
 //   taker: { name, description }, group: [name], difficulty, overview,
 //   candidates: [{ name, type, description }], past: [{ name, status }],
-//   request, canonOnly }
+//   request, canonOnly, pool: { men, women, places } (names for anyone
+//   invented - src/naming/live.js) }
 export function buildMissionPrompt(input) {
     const g = input?.giver ?? {};
     const taker = input?.taker ?? {};
@@ -150,6 +153,7 @@ export function buildMissionPrompt(input) {
         input?.canonOnly
             ? '- The client and the target must be people, places or things listed above; never invent new ones.'
             : '- Take the client and the target from the list above where one fits; otherwise invent one that fits the setting, and give it a name.',
+        input?.canonOnly || !poolLine(input?.pool) ? '' : `- ${poolLine(input.pool)}`,
         '- The task is concrete: who or what, where, and what counts as done. A few objectives in order.',
         '- Never decide what the one taking the job thinks, feels or chooses: they may still turn it down.',
         '# Reply\nExactly these lines:',
@@ -188,6 +192,24 @@ export function readMission(text) {
         objectives: objectives.map((o) => o.replace(/[.;]+$/, '')).filter(Boolean).slice(0, 6),
         completion: pick(/^(?:done when|completes? when|done)\s*[:\-–]\s*(.+)$/i),
         abandon: pick(/^(?:fails? when|failed when|fails?)\s*[:\-–]\s*(.+)$/i),
+    };
+}
+
+// An invented client - and a target the task speaks of as a person (he,
+// she) - named with a made-up word of the model's own takes a pool name
+// (src/naming/live.js); the rest of the job says the same. opts: {
+// allowedText, known }. -> { mission, used, swaps }
+export function swapMissionNames(m, pool, opts = {}) {
+    if (!m || !pool) return { mission: m, used: [], swaps: [] };
+    const parts = [{ kind: 'character', name: m.client, description: '' }];
+    if (genderFrom(m.task)) parts.push({ kind: 'character', name: m.target, description: m.task });
+    const out = swapInvented(parts.filter((p) => clean(p.name)), pool, opts);
+    if (!out.swaps.length) return { mission: m, used: out.used, swaps: [] };
+    const swap = (t) => applySwaps(t, out.swaps);
+    return {
+        mission: { ...m, name: swap(m.name), client: swap(m.client), target: swap(m.target), task: swap(m.task), reward: swap(m.reward), objectives: m.objectives.map(swap), completion: swap(m.completion), abandon: swap(m.abandon) },
+        used: out.used,
+        swaps: out.swaps,
     };
 }
 
@@ -304,6 +326,20 @@ export async function offerMission(chatId, chatKey, settingId, giverId, { diffic
             candidates.push(...list.filter((e) => e.id !== giverId && e.id !== playerId).slice(0, type === 'character' ? 14 : 8).map((e) => ({ name: e.name, type, description: e.description })));
         }
         const overview = lib.getOverview(settingId);
+        const canonOnly = lib.isCanonOnly(settingId);
+        // Names for an invented client or target, from the giver's culture.
+        let live = null;
+        if (!canonOnly && (await import('../settings.js')).getSettings().naming.live !== false) {
+            try {
+                const { livePoolFor, byType } = await import('../naming/run.js');
+                const all = [];
+                for (const t of await lib.getObjectTypes().catch(() => [])) all.push(...(await lib.listEntries(chatId, settingId, t.id).catch(() => [])).map((x) => ({ ...x, type: t.id })));
+                const placeId = doc.canonical.locationId || null;
+                live = { ...livePoolFor(settingId, byType(all), { placeId, factionIds: giverEntry.type === 'faction' ? [giverId] : [] }), known: all.flatMap((x) => [x.name, ...(x.aliases ?? x.base?.aliases ?? [])]) };
+            } catch (err) {
+                console.warn(LOG_PREFIX, `could not roll names for ${giverEntry.name}'s job`, err);
+            }
+        }
         const prompt = buildMissionPrompt({
             giver: { name: giverEntry.name, type: giverEntry.type, description: giverEntry.description, trade: giver.trade, clients: giver.clients, reward: giver.reward },
             taker: { name: player?.name ?? SillyTavern.getContext().name1, description: player?.description ?? '' },
@@ -313,7 +349,8 @@ export async function offerMission(chatId, chatKey, settingId, giverId, { diffic
             candidates,
             past: past.map((m) => ({ name: m.name, status: m.status })),
             request,
-            canonOnly: lib.isCanonOnly(settingId),
+            canonOnly,
+            pool: live?.pool ?? null,
         });
         const { askReliably } = await import('../generate/run.js');
         const result = await askReliably(prompt, (_p, text) => {
@@ -324,7 +361,14 @@ export async function offerMission(chatId, chatKey, settingId, giverId, { diffic
             console.warn(LOG_PREFIX, `could not write a mission for ${giverEntry.name}: ${result.error}`);
             return null;
         }
-        const m = result.values;
+        let m = result.values;
+        if (live) {
+            const swapped = swapMissionNames(m, live.pool, { allowedText: [prompt.user, request].join(' '), known: live.known });
+            if (swapped.swaps.length) console.info(LOG_PREFIX, `made-up names in ${giverEntry.name}'s job swapped for the world's own: ${swapped.swaps.map((s) => `${s.from} -> ${s.to}`).join(', ')}`);
+            m = swapped.mission;
+            const { takeFromPool } = await import('../naming/run.js');
+            takeFromPool(settingId, live.key, swapped.used);
+        }
         const clientId = await findPart(chatId, settingId, m.client);
         const targetId = await findPart(chatId, settingId, m.target);
         const description = [m.task, m.client && `For ${m.client}.`, m.reward && `Pays ${m.reward}.`].filter(Boolean).join(' ');

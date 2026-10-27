@@ -47,6 +47,8 @@ import {
     buildSteerObjectsPrompt, readSteerObjects, buildStarterPrompt, readStarter,
 } from './prompts.js';
 import { povRule } from '../director/perspective.js';
+import { livePoolFor, byType } from '../naming/run.js';
+import { poolLine } from '../naming/live.js';
 
 export const PLANNER_EVENT = 'scenario_builder_planner';
 
@@ -224,7 +226,7 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
         const newVolume = writing && volume.number > 1 && !beatsOf(doc.gm.outline).some((b) => b.status === 'done') ? { number: volume.number } : null;
         if (newVolume && !wish) wish = volume.direction;
         const parsed = readOutline(await ask(buildOutlinePrompt({
-            dossier: dossierText({ ...guidance, ...ctx }),
+            dossier: await dossierWithNames(chatId, settingId, guidance, ctx),
             userName: userName(),
             messages: chatMessages(writing ? 12 : 8),
             shape,
@@ -272,7 +274,7 @@ export async function runBeat(chatId, chatKey, beatId, wish = '') {
         const { sceneContext } = await import('../director/run.js');
         const ctx = await sceneContext(chatId, chatKey, settingId, guidance);
         const beat = readBeat(await ask(buildBeatPrompt({
-            dossier: dossierText({ ...guidance, ...ctx }),
+            dossier: await dossierWithNames(chatId, settingId, guidance, ctx),
             userName: userName(),
             messages: chatMessages(6),
             shape,
@@ -303,7 +305,7 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
         const doc = getChatDoc(chatKey);
         const sameDay = doc.gm.day?.day === doc.canonical.day;
         const { system, prompt } = buildDayPrompt({
-            dossier: dossierText({ ...guidance, ...ctx }),
+            dossier: await dossierWithNames(chatId, settingId, guidance, ctx),
             dateText: guidance.clock?.words ?? '',
             dayPart: guidance.clock?.dayPart ?? doc.canonical.dayPart,
             userName: userName(),
@@ -712,6 +714,21 @@ export function editFinishedVolume(chatKey, number, patch) {
 
 const creationMode = (settingId) => (settingId ? getSettingDoc(settingId).gm?.creation : 'proposals') ?? 'proposals';
 
+// The dossier, with names for anyone new from the culture where the scene
+// is (src/naming/live.js): the same pool the director is handed, so a
+// person the plan brings in has a name of the world's own.
+async function dossierWithNames(chatId, settingId, guidance, ctx) {
+    const text = dossierText({ ...guidance, ...ctx });
+    if (!settingId || isCanonOnly(settingId) || getSettings().naming.live === false) return text;
+    try {
+        const line = poolLine(livePoolFor(settingId, byType(await knownEntries(chatId, settingId)), { placeId: guidance.location?.id ?? null }).pool);
+        return line ? `${text}\n\n${line}` : text;
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not roll names for the plan', err);
+        return text;
+    }
+}
+
 // The library as the guards need it: every entry, by name and aliases.
 async function knownEntries(chatId, settingId) {
     const out = [];
@@ -755,7 +772,7 @@ export async function runIdeas(chatId, chatKey) {
         const lore = known.filter((e) => e.type === 'lore' && !inPlay.has(e.id)).slice(0, 10);
         const messages = chatMessages(6);
         const ideas = readIdeas(await ask(buildIdeasPrompt({
-            dossier: dossierText({ ...guidance, ...ctx }),
+            dossier: await dossierWithNames(chatId, settingId, guidance, ctx),
             userName: userName(),
             messages,
             story: storyWords(doc.gm),

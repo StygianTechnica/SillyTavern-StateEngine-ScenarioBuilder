@@ -31,7 +31,7 @@ async function useFile(entry, file) {
     }
 }
 
-export function renderImagePanel({ type, entry, narrative, environment, overview, knownNames = [] }) {
+export function renderImagePanel({ type, entry, narrative, environment, overview, knownNames = [], surroundings = {} }) {
     const settings = getSettings();
     const opts = settings.imagePrompts;
     const src = safeImageSrc(entry.image);
@@ -92,7 +92,7 @@ export function renderImagePanel({ type, entry, narrative, environment, overview
                         btn.dataset.busy = '1';
                         btn.classList.add('sb-busy');
                         try {
-                            const { prompt } = buildImagePrompt({ entry, narrative, environment, overview, knownNames, options: { ...opts, provider: 'stable_diffusion' } });
+                            const { prompt } = buildImagePrompt({ entry, narrative, environment, overview, knownNames, surroundings, options: { ...opts, provider: 'stable_diffusion' } });
                             const path = await generateWithImageGenerator(prompt);
                             await setImage(entry, path);
                             toast('success', 'Image generated.');
@@ -109,7 +109,7 @@ export function renderImagePanel({ type, entry, narrative, environment, overview
     const promptBox = h('textarea', { class: 'text_pole sb-prompt', rows: 6, spellcheck: 'false' });
     const negativeBox = h('textarea', { class: 'text_pole', rows: 2, spellcheck: 'false' });
     const refresh = () => {
-        const result = buildImagePrompt({ entry, narrative, environment, overview, knownNames, options: opts });
+        const result = buildImagePrompt({ entry, narrative, environment, overview, knownNames, surroundings, options: opts });
         promptBox.value = result.prompt;
         negativeBox.value = result.negative;
         negativeWrap.hidden = opts.provider !== 'stable_diffusion';

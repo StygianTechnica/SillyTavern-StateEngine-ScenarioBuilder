@@ -200,7 +200,10 @@ export function parseSound(sound) {
 }
 
 // A blend for a world that has no people of its own to model (science
-// fiction, a multiverse): three languages from anywhere, mutated hard.
+// fiction, a multiverse): three languages from anywhere, mutated hard. A
+// given name and a family name, whatever the lead language's own custom
+// (one name in Hawaiian, "son of" in Sanskrit): a mixed people of a later
+// age goes by both.
 function rolledBlend(seed, mutation = 2) {
     const rand = makeRng(seed, 'blend');
     const picked = [];
@@ -208,7 +211,7 @@ function rolledBlend(seed, mutation = 2) {
         const id = pick(rand, STOCK_IDS);
         if (!picked.includes(id)) picked.push(id);
     }
-    return { id: 'auto:blend', label: `A blend of ${picked.map((id) => STOCKS[id].label).join(', ')}`, seeds: picked.map((language, i) => ({ language, weight: 3 - i })), mutation };
+    return { id: 'auto:blend', label: `A blend of ${picked.map((id) => STOCKS[id].label).join(', ')}`, seeds: picked.map((language, i) => ({ language, weight: 3 - i })), mutation, convention: 'western' };
 }
 
 export function resolveCulture(id, { naming = {}, seed = 'world' } = {}) {

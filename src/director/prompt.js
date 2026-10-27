@@ -518,6 +518,8 @@ export function buildDirectorPrompt(input) {
             'Items are different: a named item takes on weight and pulls the story toward it. Describe ordinary objects in the prose only. Add an item only when it is a real plot point or something an open thread needs, and say which:',
             'NEW item | <name> | <one-sentence description> | <the thread or plot point it serves>',
             'Most replies need no NEW lines. Never add something at random or just for colour, and never add something that already exists above. Only when the story needs a new plot point may you invent one - and then it must grow out of what is above (tie it to a person, place, faction or thread by name), fit the setting and its rules, and be named in your briefing.',
+            // Names rolled for the culture here (src/naming/live.js).
+            ...(clean(input.namePoolLine) ? [clean(input.namePoolLine)] : []),
         );
     } else {
         parts.push('', 'Use only the places, people, creatures, factions, lore, events, quests and items named above; do not invent new named ones.');

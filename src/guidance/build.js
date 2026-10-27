@@ -47,6 +47,7 @@ export const SECTIONS = Object.freeze([
     { key: 'triggered', title: 'Set off by the story', priority: 9, keep: true },
     { key: 'fight', title: 'The fight', priority: 9, keep: true },
     { key: 'powers', title: 'A power answers', priority: 9, keep: true },
+    { key: 'names', title: 'Names for anyone new', priority: 3, keep: false },
     { key: 'loop', title: 'Going in circles', priority: 9, keep: true },
     { key: 'event', title: 'The event', priority: 9, keep: true },
     { key: 'intimacy', title: 'Intimate scene', priority: 8, keep: true },
@@ -407,6 +408,8 @@ const BUILDERS = {
     loop: (input) => (clean(input.loop) ? { full: clean(input.loop), compact: '' } : null),
     // A god called on by its champion answers (src/library/powers.js).
     powers: (input) => (clean(input.powersNarrator) ? { full: clean(input.powersNarrator), compact: '' } : null),
+    // Rolled names for anyone the narrator brings in (src/naming/live.js; off by default).
+    names: (input) => (clean(input.names) ? { full: clean(input.names), compact: '' } : null),
     // A structured event's stage under way, never what comes next (src/events/).
     event: (input) => (eventGuidance(input.event) ? { full: eventGuidance(input.event), compact: '' } : null),
     intimacy: (input) => intimacySection(input),
@@ -501,7 +504,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
     ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'secrets', 'corrections', 'dead', 'protected']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
-    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'loop', 'triggered', 'fight', 'powers', 'event', 'intimacy', 'absent', 'alone']],
+    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'loop', 'triggered', 'fight', 'powers', 'event', 'intimacy', 'absent', 'alone', 'names']],
 ]);
 
 // buildGuidance()'s result -> { [variable]: text } ('' for an empty part).

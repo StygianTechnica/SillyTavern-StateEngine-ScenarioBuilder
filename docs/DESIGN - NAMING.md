@@ -7,8 +7,8 @@ names in code, from rules that belong to the world and to its cultures, and
 hands them to the model. The model is told a thing's name; it is never asked
 to make one up.
 
-Status: phases 1-3 built (2026-10-26) - see "Phase 1 as built", "Phase 2
-as built" and "Phase 3 as built" at the end. Phases 4-5 are proposals.
+Status: phases 1-4 built (2026-10-26) - see "Phase 1 as built" to "Phase 4
+as built" at the end. Phase 5 is a proposal.
 
 ## 1. Where the model names things today
 
@@ -647,3 +647,69 @@ sample (copy it instead).
 Not yet: offering the call when a world is made (it is on the Naming tab
 only); word pools for descriptive names per culture; peoples in the same
 call (docs/DESIGN - PEOPLES.md, phase 3).
+
+## Phase 4 as built (2026-10-26)
+
+`src/naming/live.js` (pure), runners `livePoolFor` / `takeFromPool` in
+`naming/run.js`, `rollPool` in `engine.js`. No extra model calls.
+
+- **The pool.** Two men's, two women's and two places' names, rolled for
+  the culture where the story is (the scene's place, or a giver faction's
+  own), kept in the world's naming document (`naming.pools`, per culture)
+  and topped up only as names are used. A pool name the world has taken
+  since is marked used and replaced. Pool names are "offered" in the
+  registry until used.
+- **Who gets it.** The director (when it may add things), every GM planner
+  pass that invents (outline, beat, day, ideas - in the dossier), the event
+  generator and the mission writer, as one line: "Names for anyone or
+  anywhere new that needs a name: people - ...; places - .... Use these
+  rather than making up a name; a name built from one the world already
+  has, or a plain descriptive one, is fine too." Never in a canon-only
+  world.
+- **The swap rule** (`inventedName`, `swapInvented`, `applySwaps`):
+  - **What is swapped:** a new **person** whose name (titles aside) is one
+    to three made-up words, and a new **place** of one or two made-up
+    words. A made-up word is one that is not plain English: not in the kit
+    word pools, the kinds classify.js knows, a short list of common words,
+    or two of those run together ("Ashfall" stays, "Skarnhold" goes). An
+    overused name (the cliché list) is swapped whatever it is made of.
+  - **What stays:** a name in the chat, in the notes the model was shown
+    or in any entry's description; a name built from a world name (Kaelen
+    from Kael, Vaskaro from the Vaskari); a descriptive name ("The
+    Eyepatched Man", "The Rusty Anchor"); a place with a plain word in it
+    ("Varyn Keep"); a person's name with a group or place word in it (a
+    faction taken for a client); someone unnamed; and every faction, lore,
+    event, quest and item.
+  - **How:** a woman's name for someone the description makes a woman, a
+    man's for a man; a place the director adds is rolled in code for its
+    own description (a nightclub gets a club's name, "Zyrex" becomes "The
+    Kingfisher Club" whole), the pool's towns only when that fails; a title is kept ("Captain Zyrith" -> "Captain Vodri
+    Skarheim"). The text is changed to match - the whole name, each part
+    and its possessive ("Zyrith's" -> "Vodri's"); a patronymic or an
+    epithet ("Imanini, son of Ashvattha", "Mahi the Tall") is called by its
+    first word.
+  - **Where:** the director's NEW character and location lines, before
+    they are created, with the briefing, summary, direction, situation,
+    MOVE place and ENTERS names changed before the narrator sees them; a
+    tournament's entrants and an arena's opponents (and the event's name,
+    opening, close and prize); a mission's client, and its target when the
+    task speaks of the target as a person (and the job's name, task,
+    reward, objectives and ends). The planner's ideas are steered by the
+    pool but never rewritten: they are text the user reads, and whoever
+    they bring in is made through the director.
+- **The narrator** (off by default): a guidance section, "Names for anyone
+  new", lists the pool for the narrator: "[If someone or somewhere new
+  needs a name, use one of these: ...]". Whatever it writes is the story's.
+- **Settings:** "Name new people and places from the world's cultures"
+  (`settings.naming.live`, on) and "...and offer them to the narrator too"
+  (`settings.naming.narrator`, off), under the game master's options.
+
+- **People of a later age** (found while testing the pools): no one in a
+  modern or later world gets an English epithet ("the Tall", "Ironhand") -
+  only a real culture's own bynames, where it has them. The science-fiction
+  blend gives a given and a family name, whatever its lead language does
+  (Hawaiian's one name, Sanskrit's "son of").
+
+Not yet: the narrator's own first mentions are never renamed (open
+question, proposed no); a swapped place written mid-sentence keeps its
+capital "The".

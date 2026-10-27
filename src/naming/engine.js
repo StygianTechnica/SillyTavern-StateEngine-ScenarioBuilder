@@ -114,8 +114,9 @@ function prefixFor(culture, rand, gender) {
 }
 
 // A person: { name, aliases, gender }. father / family may be given (a
-// child takes their family's name).
-function personName(culture, rand, { gender = '', father = '', family = '' } = {}) {
+// child takes their family's name). later: a modern or later world, where
+// no one is "the Tall" or "Ironhand".
+function personName(culture, rand, { gender = '', father = '', family = '', later = false } = {}) {
     const g = gendered(rand, gender);
     const st = stockOf(culture.root);
     const convention = culture.real ? culture.convention : ({ roman: 'western', greek: 'patronym' }[culture.convention] ?? culture.convention);
@@ -126,7 +127,7 @@ function personName(culture, rand, { gender = '', father = '', family = '' } = {
     switch (convention) {
         case 'icelandic': case 'patronym': case 'tamil':
             parts.father = father || namePart(culture, 'm', rand);
-            if (convention === 'patronym' && chance(rand, 0.25)) parts.byname = pickByname(culture, rand);
+            if (convention === 'patronym' && chance(rand, 0.25)) parts.byname = pickByname(culture, rand, later);
             break;
         case 'greek':
             parts.father = father || namePart(culture, 'm', rand);
@@ -148,11 +149,11 @@ function personName(culture, rand, { gender = '', father = '', family = '' } = {
         case 'arabic':
             parts.father = father || namePart(culture, 'm', rand);
             if (culture.era === 'modern') parts.family = fam();
-            else if (chance(rand, 0.5)) parts.byname = pickByname(culture, rand);
+            else if (chance(rand, 0.5)) parts.byname = pickByname(culture, rand, later);
             break;
         case 'single':
             // An alien tongue takes no English epithet.
-            if (!culture.sound && chance(rand, 0.3)) parts.byname = pickByname(culture, rand);
+            if (!culture.sound && chance(rand, 0.3)) parts.byname = pickByname(culture, rand, later);
             break;
         case 'vietnamese':
             parts.family = fam();
@@ -166,9 +167,12 @@ function personName(culture, rand, { gender = '', father = '', family = '' } = {
     return { ...composed, gender: g, parts };
 }
 
-function pickByname(culture, rand) {
+// An epithet: the stock's own (a real culture's), else an English one -
+// never in a later age, unless the real culture itself still uses them.
+function pickByname(culture, rand, later = false) {
     const st = stockOf(culture.root);
     const own = st?.bynames ?? [];
+    if (later) return culture.real && own.length ? realPick(rand, own) : '';
     return own.length && chance(rand, culture.real ? 1 : 0.6) ? realPick(rand, own) : pick(rand, EPITHETS);
 }
 
@@ -431,7 +435,7 @@ export function planName(req, world) {
     // words ("a dive bar", "a seedy club") make it grim there.
     if (INVITING.has(req.purpose)) Object.assign(mood, { grim: moodOf(req.brief).grim || /\b(?:dive|seedy|grimy|rundown|run-down|filthy|squalid|sleazy)\b/i.test(req.brief ?? ''), jolly: req.purpose === 'pleasure' || mood.jolly });
     const person = (g, familyOnly = false) => {
-        const p = personName(culture, rand, { gender: g });
+        const p = personName(culture, rand, { gender: g, later });
         if (!p) return 'Anon';
         // A house or a shop sign wants a family name: one the tradition has,
         // else a place-made one (an Icelandic farm, an elven house).
@@ -443,7 +447,7 @@ export function planName(req, world) {
 
     const roll = () => {
         switch (kindInfo.kind) {
-            case 'person': return personName(culture, rand, { gender: req.gender || kindInfo.gender, father: req.father, family: req.family });
+            case 'person': return personName(culture, rand, { gender: req.gender || kindInfo.gender, father: req.father, family: req.family, later });
             case 'settlement':
                 if (kindInfo.subtype === 'fort') return chance(rand, 0.3) ? { name: `Castle ${person('', true)}`, meaning: '' } : settlementName(culture, rand, { prefer: /fort|castle|stronghold|keep|tower|burg|walled/ });
                 if (kindInfo.subtype === 'temple') return chance(rand, 0.5) ? { name: `The Temple of the ${wordOf(weighted(rand, POOLS.orderNoun, (r) => wordWeight(r, mood)))}`, meaning: '', kit: 'order' } : settlementName(culture, rand, { prefer: /holy|church|temple|shrine|sanctuary|monastery/ });
@@ -535,6 +539,26 @@ export function namePool(world, { cultureId = '', people = 3, places = 2 } = {})
         return '';
     };
     for (let i = 0; i < people; i++) { const n = take('character', i % 2 ? 'a woman' : 'a man'); if (n) out.people.push(n); }
+    for (let i = 0; i < places; i++) { const n = take('location', i % 2 ? 'a village' : 'a town'); if (n) out.places.push(n); }
+    return { ...out, counter };
+}
+
+// Names for a live-play pool (src/naming/live.js): so many men's, women's
+// and places' names, none already in `world.names`. -> { men, women,
+// places, counter }
+export function rollPool(world, { cultureId = '', men = 0, women = 0, places = 0 } = {}) {
+    const naming = world.naming ?? {};
+    let counter = naming.counter ?? 0;
+    const out = { men: [], women: [], places: [] };
+    const extra = [];
+    const take = (typeId, brief) => {
+        const r = planName({ typeId, brief, cultureId }, { ...world, names: [...(world.names ?? []), ...extra], naming: { ...naming, counter } });
+        counter = r.counter;
+        if (r.mode === 'rolled') { extra.push(r.name); return r.name; }
+        return '';
+    };
+    for (let i = 0; i < men; i++) { const n = take('character', 'a man'); if (n) out.men.push(n); }
+    for (let i = 0; i < women; i++) { const n = take('character', 'a woman'); if (n) out.women.push(n); }
     for (let i = 0; i < places; i++) { const n = take('location', i % 2 ? 'a village' : 'a town'); if (n) out.places.push(n); }
     return { ...out, counter };
 }

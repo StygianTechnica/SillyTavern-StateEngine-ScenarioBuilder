@@ -100,6 +100,7 @@ import { normalizeTemplates } from '../events/setup.js';
 import { emptyChanges, normalizeChanges } from '../state/changes-model.js';
 import { normalizeAliasInfo } from '../library/alias-kinds.js';
 import { normalizeCultureDef } from '../naming/cultures.js';
+import { normalizePool } from '../naming/live.js';
 import { normalizeRouteTimes, MODES } from '../library/travel.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
@@ -290,7 +291,7 @@ export function normalizeSettingDoc(doc) {
 // default culture ('' = chosen from the front page), its own cultures, the
 // cliché switch, banned names, and the registry of names handed out.
 export function emptyNaming() {
-    return { seed: '', defaultCulture: '', cultures: {}, cliches: true, banned: [], registry: [], counter: 0 };
+    return { seed: '', defaultCulture: '', cultures: {}, cliches: true, banned: [], registry: [], counter: 0, pools: {} };
 }
 
 const REGISTRY_STATES = new Set(['o', 'u', 'd']);
@@ -306,6 +307,9 @@ function normalizeNaming(value) {
         banned: strList(n.banned),
         registry: Array.isArray(n.registry) ? n.registry.filter((r) => isObject(r) && str(r.n)).map((r) => ({ n: r.n, k: str(r.k), c: str(r.c), s: REGISTRY_STATES.has(r.s) ? r.s : 'o', i: Number.isInteger(r.i) ? r.i : 0 })) : [],
         counter: Number.isInteger(n.counter) && n.counter > 0 ? n.counter : 0,
+        // Live-play pools per culture (src/naming/live.js): { [culture id or
+        // 'world']: { men, women, places } }, kept until their names are used.
+        pools: isObject(n.pools) ? Object.fromEntries(Object.entries(n.pools).filter(([k]) => k).slice(0, 24).map(([k, v]) => [k, normalizePool(v)])) : {},
     };
 }
 

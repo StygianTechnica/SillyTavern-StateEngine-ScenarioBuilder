@@ -20,6 +20,7 @@ import { getSettings } from '../settings.js';
 import { safeImageSrc } from '../images/attach.js';
 import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
+import { placeSurroundings } from '../images/prompt.js';
 import { renderQuestTab } from './quest-board.js';
 import { renderMissionsTab, GIVER_TYPES } from './missions-tab.js';
 import { isDead, markDead, bringBack, setDeathHow } from '../state/death.js';
@@ -1276,14 +1277,23 @@ async function imageTab({ type, entry, isNew, doc, parents }) {
     if (isNew) return h('div', { class: 'sb-muted' }, 'Save the entry first, then give it a picture.');
     const envById = Object.fromEntries(Object.entries(getSettingDoc(ws.ctx.settingId).entries).map(([id, m]) => [id, m.environment]));
     const inherited = inheritedEnvironment(parents, envById, entry.id);
+    const knownNames = Object.entries(genCtx?.all ?? {}).filter(([t]) => t !== 'item' && t !== 'creature').flatMap(([, list]) => list.flatMap((e) => [e.name, ...(e.aliases ?? e.base?.aliases ?? [])]));
+    // A place inside another: its district's character, and only the air
+    // and weather of a city's climate (src/images/prompt.js placeSurroundings).
+    const places = new Map((genCtx?.all?.location ?? []).map((p) => [p.id, p]));
+    const placeOf = (id) => ({ name: places.get(id)?.name ?? '', aliases: places.get(id)?.aliases ?? places.get(id)?.base?.aliases ?? [], description: places.get(id)?.base?.description ?? places.get(id)?.description ?? '', climate: envById[id]?.climate ?? '' });
+    const surroundings = entry.type === 'location'
+        ? placeSurroundings({ own: { description: entry.base?.description ?? entry.description ?? '', climate: envById[entry.id]?.climate ?? '' }, path: pathOf(parents, entry.id).slice(0, -1).reverse().map(placeOf), others: knownNames })
+        : null;
     return renderImagePanel({
         type, entry,
         narrative: doc.narrative[entry.id]?.text ?? '',
-        environment: { climate: inherited.climate?.value ?? '', lighting: inherited.lighting?.value ?? '' },
+        environment: { climate: surroundings ? surroundings.climate : inherited.climate?.value ?? '', lighting: inherited.lighting?.value ?? '' },
+        surroundings: surroundings ?? {},
         overview: getPlaceOverview(ws.ctx.settingId, entry.type === 'location' ? entry.id : (entry.base?.location ?? entry.location ?? null)),
         // Every proper name in the library, kept out of the picture - not the
         // names of kinds of creature or thing ("a death knight" is a look).
-        knownNames: Object.entries(genCtx?.all ?? {}).filter(([t]) => t !== 'item' && t !== 'creature').flatMap(([, list]) => list.flatMap((e) => [e.name, ...(e.aliases ?? e.base?.aliases ?? [])])),
+        knownNames,
     });
 }
 
