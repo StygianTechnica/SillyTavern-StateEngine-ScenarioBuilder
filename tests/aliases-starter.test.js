@@ -1,6 +1,6 @@
 import { normalizeAliasInfo, aliasInfoFor, aliasLabel, knownAsText } from '../src/library/alias-kinds.js';
 import { buildAliasPrompt, readAlias } from '../src/generate/prompt.js';
-import { buildStarterPrompt, readStarter } from '../src/planner/prompts.js';
+import { buildStarterPrompt, readStarter, writesForPlayer } from '../src/planner/prompts.js';
 import { buildCast } from '../src/guidance/build.js';
 import { planName } from '../src/naming/engine.js';
 import { normalizeSettingDoc } from '../src/store/schema.js';
@@ -69,6 +69,23 @@ describe('the starter post', () => {
         expect(prompt).toContain('The user wants: open on the rain');
         expect(prompt).not.toContain('THE LATEST CHAT');
         expect(buildStarterPrompt({ userName: 'Kaya', messages: [{ name: 'Kaya', text: 'We leave at dawn.', isUser: true }] }).prompt).toContain('THE LATEST CHAT');
+    });
+
+    it('carries the table\'s own narrator rules, and ends on leaving the player be', () => {
+        const { system, prompt } = buildStarterPrompt({ userName: 'Cyril Moriarty', rules: 'You are the Game Master. You write ONLY what NPCs do.', messages: [] });
+        expect(system).toContain("The table's own rules for the narrator - follow them:\nYou are the Game Master. You write ONLY what NPCs do.");
+        expect(prompt.split('\n').slice(-2)[0]).toMatch(/^Cyril Moriarty does nothing in this post/);
+        expect(buildStarterPrompt({ userName: 'Cyril Moriarty', retry: true }).prompt).toContain('Your last answer wrote what Cyril Moriarty did.');
+        expect(buildStarterPrompt({ userName: 'Kaya' }).system).not.toContain("table's own rules");
+    });
+
+    it('notices a post that narrates the player character', () => {
+        expect(writesForPlayer('Neon bleeds across the street. Cyril steps into the alley.', 'Cyril Moriarty')).toBe(true);
+        expect(writesForPlayer("Rain falls. Cyril's hand tightens on the rail.", 'Cyril Moriarty')).toBe(true);
+        expect(writesForPlayer('Cyril Moriarty pushed the door.', 'Cyril Moriarty')).toBe(true);
+        expect(writesForPlayer('Mara turns to Cyril. "Cyril walks with us," she says.', 'Cyril Moriarty')).toBe(false);
+        expect(writesForPlayer('The guard eyes Cyril Moriarty warily. Cyril is late.', 'Cyril Moriarty')).toBe(false);
+        expect(writesForPlayer('You feel the cold.', 'Cyril Moriarty')).toBe(false);
     });
 
     it('reads the post without what the model wraps it in', () => {

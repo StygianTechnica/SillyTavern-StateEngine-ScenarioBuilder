@@ -15,6 +15,7 @@ import { setBloodline, rewriteBloodline, describeBloodlineLook } from '../librar
 import { canGenerateFor } from '../generate/run.js';
 import { cultureChoices } from '../naming/cultures.js';
 import { ws, rerender, openSheet, markDirty } from './ws.js';
+import { confirmAction } from './confirm.js';
 import { h, icon, button, select, field, toast } from './dom.js';
 
 const after = () => { void syncNow(); rerender({ force: true }); };
@@ -61,7 +62,8 @@ export function bloodlineCard(entry, all) {
     if (!b.on) {
         return h('div', { class: 'sb-card sb-card-quiet' },
             h('div', { class: 'sb-row' },
-                h('small', { class: 'sb-hint' }, 'Is this a bloodline - a race, species or kind of being a character can be?'),
+                // Switched off with its details kept: it can be switched back as it was.
+                h('small', { class: 'sb-hint' }, b.singular || b.look ? 'Not a bloodline now - its details are kept. Is it one after all?' : 'Is this a bloodline - a race, species or kind of being a character can be?'),
                 h('span', { class: 'sb-push' }),
                 button('It is a bloodline', () => { setEntryMeta(settingId, entry.id, { bloodline: { ...emptyBloodline(), ...normalizeBloodline(entry.meta?.bloodline), on: true, playable: true } }); after(); }, { iconName: 'fa-dna' })));
     }
@@ -75,9 +77,7 @@ export function bloodlineCard(entry, all) {
     return h('div', { class: 'sb-card' },
         suggestions(entry, b),
         h('div', { class: 'sb-card-title' }, icon('fa-dna'), ' Bloodline',
-            h('small', { class: 'sb-hint' }, ' - who they are and how they live in this world'),
-            h('span', { class: 'sb-spacer' }),
-            h('span', { class: 'sb-iconbtn', title: 'Not a bloodline - plain lore again (the details are kept)', onclick: () => { setEntryMeta(settingId, entry.id, { bloodline: { ...b, on: false } }); after(); } }, icon('fa-xmark'))),
+            h('small', { class: 'sb-hint' }, ' - who they are and how they live in this world')),
         h('div', { class: 'sb-row' },
             field('Kind', select(opt(BLOODLINE_KINDS), b.kind, { onchange: (e) => save({ kind: e.target.value }) })),
             field('One of them', commitInput(b.singular, (x) => save({ singular: x }), { placeholder: w.singular || 'elf' })),
@@ -98,7 +98,13 @@ export function bloodlineCard(entry, all) {
             field('Related creature', select([{ value: '', label: '(none)' }, ...creatures.map((c) => ({ value: c.id, label: c.name }))], b.related, { onchange: (e) => save({ related: e.target.value }) }), 'Trolls the bloodline, trolls under the bridge.'),
             h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: b.playable, onchange: (e) => save({ playable: e.target.checked }) }), h('span', {}, 'The player can be one')),
             h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: b.canMix, onchange: (e) => save({ canMix: e.target.checked }) }), h('span', {}, 'Children with others (half-bloods)'))),
-        h('div', { class: 'sb-actions' }, ...askButtons(entry)),
+        h('div', { class: 'sb-actions' }, ...askButtons(entry),
+            // Labelled and asked: an unlabelled cross in the title read as closing the card.
+            button('Not a bloodline', async () => {
+                if (!await confirmAction(`Make ${entry.name} plain lore again? Characters can no longer be one of them. Its details are kept.`)) return;
+                setEntryMeta(settingId, entry.id, { bloodline: { ...b, on: false } });
+                after();
+            }, { iconName: 'fa-xmark', cls: 'sb-push', title: 'Plain lore again - the details are kept' })),
         h('details', { class: 'sb-subcard', open: !!(v.body || v.skin || v.features) },
             h('summary', {}, icon('fa-image'), ' How to draw them (image prompts)'),
             field('How well image models know them', select(opt(KNOWN), v.known, { onchange: (e) => saveVisual({ known: e.target.value }) }),

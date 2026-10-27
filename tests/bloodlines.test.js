@@ -207,6 +207,13 @@ describe('image prompts', () => {
         const { prompt } = buildImagePrompt({ entry: vaskari, bloodline: visualFor(vaskari), options: { provider: 'stable_diffusion' } });
         expect(prompt).toMatch(/^full-body character design of a Vaskari, four-armed/);
     });
+    it('says a feature the tags hold once', () => {
+        const m = fromPreset('high_elves', { premise: 'An old, modern city with hidden magic', worldType: 'modern' });
+        const high = { id: 'he', type: 'lore', name: m.name, description: m.description, meta: { bloodline: m.bloodline } };
+        const { prompt } = buildImagePrompt({ entry: high, bloodline: visualFor(high), options: { provider: 'stable_diffusion' } });
+        expect(prompt).toMatch(/^full-body character design of a high elf, elf, pointed ears, tailored modern clothes/);
+        expect(prompt.match(/pointed ears/g)).toHaveLength(1);
+    });
     it('has nothing to draw for humans', () => {
         expect(visualFor({ id: HUMANS })).toBe(null);
         expect(visualFor(line('h', 'Humans', { kind: 'human' }))).toBe(null);

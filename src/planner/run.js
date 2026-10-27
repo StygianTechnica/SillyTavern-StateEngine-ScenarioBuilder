@@ -44,7 +44,7 @@ import { stillWaiting } from '../director/suspended.js';
 import {
     buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline,
     buildBeatPrompt, readBeat, buildRecapPrompt, readRecap, readRecapText, closeCutJson, buildIdeasPrompt, readIdeas,
-    buildSteerObjectsPrompt, readSteerObjects, buildStarterPrompt, readStarter,
+    buildSteerObjectsPrompt, readSteerObjects, buildStarterPrompt, readStarter, writesForPlayer,
 } from './prompts.js';
 import { povRule } from '../director/perspective.js';
 import { livePoolFor, byType } from '../naming/run.js';
@@ -935,7 +935,7 @@ export async function writeStarter(chatId, chatKey, { wish = '' } = {}) {
     const { sceneContext } = await import('../director/run.js');
     const ctx = await sceneContext(chatId, chatKey, settingId, guidance);
     const player = (guidance.cast ?? []).find((c) => c.player)?.name || userName();
-    const prompt = buildStarterPrompt({
+    const input = {
         dossier: dossierText({ ...guidance, ...ctx }),
         userName: player,
         story: storyWords(doc.gm),
@@ -944,11 +944,33 @@ export async function writeStarter(chatId, chatKey, { wish = '' } = {}) {
         pov: povRule(getSettings().director?.pov, player),
         messages: chatMessages(4),
         wish,
-    });
-    const raw = await callModel([{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.prompt }], Math.max(plannerSettings().maxTokens || 0, STARTER_TOKENS));
-    const text = readStarter(raw);
+        rules: curatorRules(),
+    };
+    const ask = async (p) => readStarter(await callModel([{ role: 'system', content: p.system }, { role: 'user', content: p.prompt }], Math.max(plannerSettings().maxTokens || 0, STARTER_TOKENS)));
+    let text = await ask(buildStarterPrompt(input));
+    // It narrated the player: asked once more, told so.
+    if (text && writesForPlayer(text, player)) {
+        console.info(LOG_PREFIX, 'the starter wrote the player character\'s actions - asking again');
+        const again = await ask(buildStarterPrompt({ ...input, retry: true }));
+        if (again) text = again;
+    }
     if (!text) throw new Error('The model wrote nothing usable - try again, or a larger model.');
     return text;
+}
+
+// The narrator rules the user keeps in Curator (its enabled system blocks,
+// such as a GM card), macros filled in: a call made apart from the chat's
+// prompt gets them too. '' without Curator.
+function curatorRules() {
+    try {
+        const blocks = window.Curator?.getInjectionBlocks?.() ?? [];
+        const fill = SillyTavern.getContext().substituteParams ?? ((t) => t);
+        const text = blocks.filter((b) => b?.enabled && b.role === 'system' && String(b.text ?? '').trim()).map((b) => fill(String(b.text).trim())).join('\n\n');
+        return text.length > 4000 ? `${text.slice(0, 3999)}…` : text;
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not read the Curator blocks', err);
+        return '';
+    }
 }
 
 // Who a post can be posted as: the open chat's character, or each member

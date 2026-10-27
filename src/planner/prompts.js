@@ -607,7 +607,9 @@ export function readSteerObjects(json, { steer = '', userName = '', isKnown = ()
 
 // input: { dossier, userName (the player character), story (storyWords),
 //   premise (the outline's), gmStyle, pov (a point-of-view rule, or ''),
-//   messages (the chat so far: [{ name, text, isUser }]), wish }
+//   messages (the chat so far: [{ name, text, isUser }]), wish,
+//   rules (the table's own narrator rules - the user's Curator blocks), retry
+//   (true when a first answer wrote the player's actions) }
 // -> { system, prompt }. The answer is the post itself, in prose.
 export function buildStarterPrompt(input) {
     const userName = clean(input.userName) || 'the player character';
@@ -616,7 +618,7 @@ export function buildStarterPrompt(input) {
         'You are the narrator of an ongoing roleplay. Write the post that opens the current scene - the first thing the player reads before they act.',
         `${userName} is the player character, played by a human: never write what ${userName} says, does, thinks, feels or decides. Write the world and the other characters; leave ${userName} free to act.`,
         'Use only the people, places and things given; invent no new named ones. People act as they have been shown and know only what they have learned.',
-    ].join(' ');
+    ].join(' ') + (clean(input.rules) ? `\n\nThe table's own rules for the narrator - follow them:\n${String(input.rules).trim()}` : '');
     const parts = [clean(input.dossier)];
     const story = storyText(input.story);
     if (clean(input.premise)) parts.push('', 'WHAT THE STORY IS ABOUT', clean(input.premise));
@@ -634,6 +636,9 @@ export function buildStarterPrompt(input) {
         ...(clean(input.gmStyle) ? [`- The game master's style: ${cut(input.gmStyle, 400)}`] : []),
         ...(clean(input.wish) ? [`- The user wants: ${cut(input.wish, 400)}`] : []),
         '',
+        // Last, where it weighs most: the beat and the chat are full of the
+        // player's doings, and a model follows them into narrating them.
+        `${input.retry ? `Your last answer wrote what ${userName} did. ` : ''}${userName} does nothing in this post: no action, word, thought or feeling of theirs - not even "${userName} watches". Where the beat is something ${userName} does, write only what leads up to it and leave the doing to them.`,
         'Reply with the post only.',
     );
     return { system, prompt: parts.join('\n') };
@@ -648,4 +653,19 @@ export function readStarter(raw) {
     t = t.replace(/^\*\*[^*\n]{1,60}\*\*\n+/, '').trim();
     if (/^["“][\s\S]*["”]$/.test(t) && !/["“”]/.test(t.slice(1, -1))) t = t.slice(1, -1).trim();
     return t;
+}
+
+// Whether a post narrates the player character: a sentence (outside
+// dialogue) whose subject is them - their name or first name - followed by
+// a verb of their own ("Cyril steps", "Cyril's hand tightens"). Others
+// talking to or about them is fine; so is "you" in a second-person post,
+// which shows what the player senses. Pure.
+export function writesForPlayer(text, player) {
+    const full = clean(player);
+    const names = [...new Set([full, full.split(' ')[0]].filter((n) => n.length > 1))];
+    if (!names.length) return false;
+    const prose = String(text ?? '').replace(/["“][^"”]*["”]/g, ' ');
+    const who = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    const subject = new RegExp(`(?:^|[.!?…]\\s+|\\n)\\s*(?:${who})(?:'s\\s+\\w+)?\\s+(?!is\\b|was\\b|has\\b|had\\b|are\\b|were\\b|have\\b)\\w+(?:s|ed)\\b`, 'u');
+    return subject.test(prose);
 }

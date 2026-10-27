@@ -299,7 +299,13 @@ const article = (noun) => (/^[aeiou]/i.test(noun) ? `an ${noun}` : `a ${noun}`);
 // fighter", or the body and features of a bloodline no model knows.
 function subjectOf(entry, description, names = [], overview = {}, kind = null) {
     const role = roleArchetype(field(entry, 'role'), [entry.name, ...(entry.aliases ?? []), ...names]);
-    if (entry.type === 'lore' && kind) return [`full-body character design of ${article(kind.lead)}`, clean(kind.tags), ...kind.details, 'reference sheet, plain background'];
+    if (entry.type === 'lore' && kind) {
+        // A feature the tags already hold ("pointed ears") is said once.
+        const tags = clean(kind.tags).split(',').map(clean).filter(Boolean);
+        const said = new Set(tags.map((t) => t.toLowerCase()));
+        const details = kind.details.map((d) => d.split(',').map(clean).filter((x) => x && !said.has(x.toLowerCase())).join(', ')).filter(Boolean);
+        return [`full-body character design of ${article(kind.lead)}`, tags.join(', '), ...details, 'reference sheet, plain background'];
+    }
     switch (entry.type) {
         case 'character': {
             const who = [kind?.lead, role].filter(Boolean).join(' ');
