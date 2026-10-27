@@ -111,6 +111,10 @@ const text = (v) => (typeof v === 'string' ? v : '');
 const clamp = (v, lo, hi, d) => (Number.isFinite(Number(v)) ? Math.max(lo, Math.min(hi, Math.round(Number(v)))) : d);
 const seedList = (v) => (Array.isArray(v) ? v.filter((x) => isObj(x) && STOCKS[x.language]).map((x) => ({ language: x.language, weight: clamp(x.weight, 1, 5, 1) })) : []);
 const nameList = (v) => (Array.isArray(v) ? [...new Set(v.map((x) => text(x).trim()).filter(Boolean))] : []);
+// A word pool of the culture's own: plain words, each capitalised, no repeats.
+const wordList = (v) => [...new Set((Array.isArray(v) ? v : String(v ?? '').split(/[,\n]/))
+    .map((x) => text(x).trim().replace(/\s+/g, ' ')).filter((x) => x && x.length <= 30)
+    .map((x) => x.replace(/(^|[\s-])(\p{L})/gu, (_m, a, b) => a + b.toUpperCase())))].slice(0, 80);
 const SHIFT_IDS = new Set(SHIFTS.map((x) => x.id));
 const STYLE_IDS = new Set(STYLE_CHOICES.map(([k]) => k));
 
@@ -119,7 +123,8 @@ export function normalizeCultureDef(raw, id) {
     const kind = ['invented', 'real', 'sound'].includes(d.kind) ? d.kind : 'invented';
     const style = {};
     if (isObj(d.style)) for (const [k] of STYLE_KINDS) if (STYLE_IDS.has(d.style[k])) style[k] = d.style[k];
-    const out = { id, name: text(d.name).trim() || 'New culture', notes: text(d.notes), kind, style, banned: nameList(d.banned), from: text(d.from) };
+    const p = isObj(d.pools) ? d.pools : {};
+    const out = { id, name: text(d.name).trim() || 'New culture', notes: text(d.notes), kind, style, banned: nameList(d.banned), from: text(d.from), pools: { adjectives: wordList(p.adjectives), nouns: wordList(p.nouns) } };
     if (kind === 'real') return { ...out, realId: REAL_CULTURES.some((r) => r.id === d.realId) ? d.realId : 'real:english:modern' };
     if (kind === 'sound') {
         const s = isObj(d.sound) ? d.sound : {};
@@ -166,8 +171,12 @@ export const describeShift = (id) => {
     return s ? SHIFT_WORDS(s) : id;
 };
 
-// The working shape of a world's own culture.
+// The working shape of a world's own culture, with its own word pools.
 function buildOwn(def, seed) {
+    return { ...buildOwnShape(def, seed), pools: def.pools ?? { adjectives: [], nouns: [] } };
+}
+
+function buildOwnShape(def, seed) {
     if (def.kind === 'real') {
         const base = resolveCulture(def.realId, { seed });
         return { ...base, id: def.id, label: def.name, style: { ...base.style, ...def.style }, banned: def.banned };

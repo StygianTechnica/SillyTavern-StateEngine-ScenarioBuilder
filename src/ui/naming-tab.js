@@ -9,7 +9,7 @@ import { STOCKS, REAL_CULTURES } from '../naming/stocks/index.js';
 import { cultureChoices, resolveCulture, CULTURE_KINDS, STYLE_KINDS, STYLE_CHOICES, describeShift, PRESETS } from '../naming/cultures.js';
 import {
     worldDefault, setWorldDefault, addCulture, updateCulture, rerollShifts, removeCulture, cultureHolders, setEntryCulture, banName, sampleNames,
-    proposeCultures, acceptProposals, learnFromWorld,
+    proposeCultures, acceptProposals, learnFromWorld, keepName, releaseName, keptNames,
 } from '../naming/run.js';
 import { describeProposal } from '../naming/premise.js';
 import { listEntries } from '../library/library.js';
@@ -161,6 +161,11 @@ function premiseCard(settingId, all) {
         toast(taught.length ? 'success' : 'info', taught.length ? `Learned from this world: ${taught.map((x) => `${x.name} ${x.count} name${x.count === 1 ? '' : 's'}`).join('; ')}.` : 'Nothing new to learn - the cultures already know these names.');
         rerender();
     };
+    // Sent here by the front page's offer: ask at once.
+    if (st.start && hasPremise && !st.busy) {
+        st.start = false;
+        queueMicrotask(() => void propose());
+    }
     const wish = h('input', { class: 'text_pole', value: st.wish, placeholder: 'Steer it (optional) - e.g. "the elves keep old Welsh-sounding names", "corporate names are Japanese"', oninput: (e) => { st.wish = e.target.value; } });
     const proposalRow = (p, i) => {
         const on = !st.skip.has(i);
@@ -266,6 +271,10 @@ function editorCard(settingId, naming, def, places, factions) {
                 onchange: (e) => set((d) => { if (e.target.value) d.style[k] = e.target.value; else delete d.style[k]; }),
             }))))),
         field('Never these names', commitArea(csvOf(def.banned), (v) => set((d) => { d.banned = listOf(v); }), 2, { placeholder: 'Names and words it must not make, comma-separated' })),
+        // Plain words of its own for descriptive names (the Tarred Gull, the Salt Wardens).
+        h('div', { class: 'sb-row' },
+            field('Its own describing words', commitArea(csvOf(def.pools?.adjectives), (v) => set((d) => { d.pools = { ...(d.pools ?? {}), adjectives: listOf(v) }; }), 2, { placeholder: 'Tarred, Salt, Grey, Drowned' }), 'Mixed into descriptive names - inns, wilds, gangs, orders - about half the time.'),
+            field('Its own things', commitArea(csvOf(def.pools?.nouns), (v) => set((d) => { d.pools = { ...(d.pools ?? {}), nouns: listOf(v) }; }), 2, { placeholder: 'Gull, Tide, Anchor, Net' }), 'The beasts and things in those names.')),
         h('div', { class: 'sb-field' }, h('span', { class: 'sb-field-label' }, 'Used by'),
             users.length ? h('div', { class: 'sb-chips' }, users.map((x) => h('span', { class: 'sb-chip' }, byId.get(x.id).name))) : h('small', { class: 'sb-hint' }, isDefault ? 'Everything, as the world default.' : 'Nothing yet - set it on places and factions under "Who uses which", or on their sheets.')),
         h('div', { class: 'sb-actions' },
@@ -279,22 +288,42 @@ function editorCard(settingId, naming, def, places, factions) {
 
 // ---- samples and the test bench
 
+const copy = async (name) => {
+    try { await navigator.clipboard.writeText(name); toast('success', `Copied "${name}".`); } catch { toast('warning', 'Could not copy - your browser blocked it.'); }
+};
+
+// A sample name: click copies it, the bookmark keeps it for later, the
+// cross bans it for good.
+function sampleChip(settingId, cultureId, s, kind) {
+    return h('span', { class: 'sb-chip', title: s.meaning ? `"${s.meaning}"` : 'Click to copy' },
+        h('span', { onclick: () => void copy(s.name) }, s.name),
+        h('span', { class: 'sb-iconbtn', title: 'Keep this name for later - nothing else will be given it', onclick: () => { keepName(settingId, { name: s.name, meaning: s.meaning, cultureId, kind }); toast('success', `Kept "${s.name}" - it is under Kept names.`); rerender(); } }, icon('fa-bookmark')),
+        h('span', { class: 'sb-iconbtn', title: 'Never make this name', onclick: () => { banName(settingId, cultureId, s.name); rerender(); } }, icon('fa-xmark')));
+}
+
+// Names the user kept from the samples, until an entry takes one.
+function keptCard(settingId) {
+    const kept = keptNames(settingId);
+    if (!kept.length) return null;
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-bookmark'), ' Kept names'),
+        h('small', { class: 'sb-hint' }, 'Kept for you: the generator gives them to nothing else. Name an entry with one and it is used; the cross lets it go.'),
+        h('div', { class: 'sb-chips' }, kept.map((k) => h('span', { class: 'sb-chip', title: [k.meaning && `"${k.meaning}"`, k.culture].filter(Boolean).join(' - ') || 'Click to copy' },
+            h('span', { onclick: () => void copy(k.name) }, k.name),
+            h('span', { class: 'sb-iconbtn', title: 'Let it go - it may come round again', onclick: () => { releaseName(settingId, k.name); rerender(); } }, icon('fa-xmark'))))));
+}
+
 function samplesCard(settingId, cultureId, label, all) {
     const round = ws.namingRound ?? 0;
     const rows = sampleNames(settingId, cultureId, SAMPLE_KINDS, all, { round });
-    const copy = async (name) => {
-        try { await navigator.clipboard.writeText(name); toast('success', `Copied "${name}".`); } catch { toast('warning', 'Could not copy - your browser blocked it.'); }
-    };
     return h('div', { class: 'sb-card' },
         h('div', { class: 'sb-card-title' }, icon('fa-dice'), ` Sample names - ${label}`,
             h('span', { class: 'sb-spacer' }),
             button('Roll again', () => { ws.namingRound = round + 1; rerender(); }, { iconName: 'fa-rotate' })),
-        h('small', { class: 'sb-hint' }, 'Click a name to copy it; the cross bans it for good. Samples are not used up - the generator still hands out fresh names.'),
+        h('small', { class: 'sb-hint' }, 'Click a name to copy it; the bookmark keeps it for later; the cross bans it for good. Samples are not used up - the generator still hands out fresh names.'),
         SAMPLE_KINDS.map((k) => h('div', { class: 'sb-naming-samples' },
             h('small', { class: 'sb-field-label' }, k.label),
-            h('div', { class: 'sb-chips' }, (rows[k.key] ?? []).map((s) => h('span', { class: 'sb-chip', title: s.meaning ? `"${s.meaning}"` : 'Click to copy' },
-                h('span', { onclick: () => void copy(s.name) }, s.name),
-                h('span', { class: 'sb-iconbtn', title: 'Never make this name', onclick: () => { banName(settingId, cultureId, s.name); rerender(); } }, icon('fa-xmark'))))))));
+            h('div', { class: 'sb-chips' }, (rows[k.key] ?? []).map((s) => sampleChip(settingId, cultureId, s, k.typeId))))));
 }
 
 function benchCard(settingId, cultureId, all) {
@@ -312,7 +341,7 @@ function benchCard(settingId, cultureId, all) {
             select([{ value: 'character', label: 'A person' }, { value: 'location', label: 'A place' }, { value: 'faction', label: 'A faction' }, { value: 'item', label: 'A ship' }], b.typeId, { onchange: (e) => { b.typeId = e.target.value; } }),
             brief,
             button('Roll', roll, { iconName: 'fa-dice' })),
-        b.out.length ? h('div', { class: 'sb-chips' }, b.out.map((s) => h('span', { class: 'sb-chip', title: s.meaning ? `"${s.meaning}"` : '' }, s.name))) : null);
+        b.out.length ? h('div', { class: 'sb-chips' }, b.out.map((s) => sampleChip(settingId, cultureId, s, b.typeId))) : null);
 }
 
 export async function renderNaming() {
@@ -331,5 +360,6 @@ export async function renderNaming() {
             h('div', { class: 'sb-gm-col' },
                 def ? editorCard(settingId, naming, def, places, factions) : null,
                 samplesCard(settingId, shown, shownLabel, all),
-                benchCard(settingId, shown, all))));
+                benchCard(settingId, shown, all),
+                keptCard(settingId))));
 }

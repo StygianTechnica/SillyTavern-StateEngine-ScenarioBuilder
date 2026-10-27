@@ -21,6 +21,7 @@ import {
     eraGroups, randomFor, techForEra, splitList, joinList,
 } from '../library/world-options.js';
 import { generateOverview, generateEntry, rollEntryName } from '../generate/run.js';
+import { premiseOffer, dismissPremiseOffer } from '../naming/run.js';
 import { cultureOptions, markNameDeclined } from '../naming/run.js';
 import { fieldDefs, wantsNsfwNote } from './sheet.js';
 import { renderQuestBoard } from './quest-board.js';
@@ -132,6 +133,7 @@ async function frontPage(types, all) {
                     overview.gmStyle ? h('div', { class: 'sb-front-rules' }, h('h4', {}, 'How the game master runs this story'), h('p', { class: 'sb-prose' }, overview.gmStyle)) : null,
                 ],
             canonCard(settingId),
+            namingOffer(settingId),
             h('h4', {}, 'Contents'),
             toc);
     }
@@ -326,6 +328,23 @@ function systemsRead(o) {
 
 // The canon switch: a fixed setting (from a published lorebook, say) that
 // nothing generated should be added to.
+// Once the front page has a premise: the offer to make the world's naming
+// cultures from it (the Naming tab's "From the premise", one model call).
+function namingOffer(settingId) {
+    const offer = isCanonOnly(settingId) ? null : premiseOffer(settingId);
+    if (!offer) return null;
+    return h('div', { class: 'sb-callout sb-naming-offer' }, icon('fa-signature'),
+        h('div', {},
+            h('span', {}, `Names here come from ${offer.label}${offer.why ? ` (${offer.why})` : ''}. Make naming cultures of this world's own from its premise - who uses which, ready to tick and add?`),
+            h('div', { class: 'sb-actions' },
+                button('Make cultures from the premise', () => {
+                    ws.namingPremise = { settingId, wish: '', busy: false, proposals: [], skip: new Set(), start: true };
+                    ws.tab = 'naming';
+                    rerender();
+                }, { iconName: 'fa-wand-magic-sparkles', cls: 'sb-primary', title: 'One model call - the Naming tab shows what it proposes' }),
+                button('Not now', () => { dismissPremiseOffer(settingId); rerender(); }, { iconName: 'fa-xmark', title: 'The Naming tab keeps the button' }))));
+}
+
 function canonCard(settingId) {
     const on = isCanonOnly(settingId);
     return h('label', { class: `sb-canon${on ? ' sb-canon-on' : ''}` },

@@ -291,10 +291,10 @@ export function normalizeSettingDoc(doc) {
 // default culture ('' = chosen from the front page), its own cultures, the
 // cliché switch, banned names, and the registry of names handed out.
 export function emptyNaming() {
-    return { seed: '', defaultCulture: '', cultures: {}, cliches: true, banned: [], registry: [], counter: 0, pools: {} };
+    return { seed: '', defaultCulture: '', cultures: {}, cliches: true, banned: [], registry: [], counter: 0, pools: {}, offerDismissed: false };
 }
 
-const REGISTRY_STATES = new Set(['o', 'u', 'd']);
+const REGISTRY_STATES = new Set(['o', 'u', 'd', 'k']);
 function normalizeNaming(value) {
     const n = isObject(value) ? value : {};
     const cultures = {};
@@ -305,8 +305,10 @@ function normalizeNaming(value) {
         cultures,
         cliches: n.cliches !== false,
         banned: strList(n.banned),
-        registry: Array.isArray(n.registry) ? n.registry.filter((r) => isObject(r) && str(r.n)).map((r) => ({ n: r.n, k: str(r.k), c: str(r.c), s: REGISTRY_STATES.has(r.s) ? r.s : 'o', i: Number.isInteger(r.i) ? r.i : 0 })) : [],
+        registry: Array.isArray(n.registry) ? n.registry.filter((r) => isObject(r) && str(r.n)).map((r) => ({ n: r.n, k: str(r.k), c: str(r.c), s: REGISTRY_STATES.has(r.s) ? r.s : 'o', i: Number.isInteger(r.i) ? r.i : 0, ...(str(r.m) ? { m: str(r.m).slice(0, 80) } : {}) })) : [],
         counter: Number.isInteger(n.counter) && n.counter > 0 ? n.counter : 0,
+        // The front page's offer to make cultures from the premise, put away.
+        offerDismissed: n.offerDismissed === true,
         // Live-play pools per culture (src/naming/live.js): { [culture id or
         // 'world']: { men, women, places } }, kept until their names are used.
         pools: isObject(n.pools) ? Object.fromEntries(Object.entries(n.pools).filter(([k]) => k).slice(0, 24).map(([k, v]) => [k, normalizePool(v)])) : {},

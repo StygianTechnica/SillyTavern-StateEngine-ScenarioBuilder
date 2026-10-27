@@ -18,6 +18,7 @@ import { WEATHER_VALUES } from '../store/schema.js';
 import { lookLines } from '../library/world-options.js';
 import { shortTitle } from '../validate/drift.js';
 import { unknownsLines, povBrief } from './perspective.js';
+import { keptNameLines } from '../library/alias-kinds.js';
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
@@ -317,6 +318,12 @@ export function dossierText(input) {
         lines.push(`- ${clean(c.name)}${c.provisional ? ' (no name yet - known by this description)' : ''}${bits.length ? `: ${bits.join('; ')}` : ''}`);
     }
     if (cast.length && cast.every((c) => c.player)) lines.push('- No one else is here.');
+    // Codenames and nicknames kept to a few (src/library/alias-kinds.js).
+    const kept = keptNameLines(cast);
+    if (kept.length) {
+        section('NAMES NOT EVERYONE HERE KNOWS');
+        for (const l of kept.slice(0, 6)) lines.push(`- ${l}`);
+    }
     // The creatures: those in the scene act; those that only live here are
     // not seen until the story brings them in (an ENTERS line).
     const creatures = (loc?.creatures ?? []).filter((x) => clean(x?.name));

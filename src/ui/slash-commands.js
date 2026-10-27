@@ -3,6 +3,10 @@
 //                   queues a request for the game master in the open chat,
 //                   as if added in the GM Plan tab; returns its id
 //   /sb-requests    lists the open chat's open requests (and returns them)
+//   /sb-name [type=...] [culture=...] [count=5] <what it is>
+//                   rolls names from the name generator for the open chat's
+//                   world - "a tavern", "a smuggler woman" (docs/DESIGN -
+//                   NAMING.md); returns them, one per line
 // Registered best-effort: the slash command API varies between SillyTavern
 // versions, and a failure never stops the extension from loading.
 
@@ -10,7 +14,8 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings, isActive } from '../settings.js';
 import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
 import { getChatDoc } from '../store/chat-store.js';
-import { getBoundSettingId } from '../library/library.js';
+import { getBoundSettingId, getObjectTypes, listEntries } from '../library/library.js';
+import { namesForCommand, cultureNamed, byType } from '../naming/run.js';
 import { URGENCIES, openRequests } from '../planner/model.js';
 import { queueRequest } from '../planner/run.js';
 import { toast } from './dom.js';
@@ -72,6 +77,42 @@ export async function listCommand() {
     return text;
 }
 
+const NAME_TYPES = ['character', 'location', 'faction', 'item', 'creature'];
+
+// args: { type, culture, count, quiet }; text: what it is for. -> names, one per line.
+export async function nameCommand(args, text) {
+    const quiet = String(args?.quiet ?? '').toLowerCase() === 'true';
+    const say = (kind, message) => { if (!quiet || kind === 'warning') toast(kind, message); };
+    const brief = String(text ?? '').trim();
+    const ref = getCurrentChatRef();
+    const settingId = ref ? await getBoundSettingId(ref.chatId) : null;
+    if (!isActive() || !settingId) {
+        say('warning', 'Names come from a world: open a chat with a setting (Scenario Builder on).');
+        return '';
+    }
+    const typeId = String(args?.type ?? '').trim().toLowerCase();
+    if (typeId && !NAME_TYPES.includes(typeId)) {
+        say('warning', `type must be ${NAME_TYPES.join(', ')}.`);
+        return '';
+    }
+    const cultureId = args?.culture ? cultureNamed(settingId, String(args.culture)) : '';
+    if (args?.culture && !cultureId) {
+        say('warning', `No culture called "${args.culture}" in this world (Naming tab).`);
+        return '';
+    }
+    const count = Math.max(1, Math.min(12, Number.parseInt(args?.count ?? '5', 10) || 5));
+    const all = [];
+    for (const t of await getObjectTypes().catch(() => [])) all.push(...(await listEntries(ref.chatId, settingId, t.id).catch(() => [])).map((x) => ({ ...x, type: t.id })));
+    const { names, typeId: rolledAs } = namesForCommand(settingId, byType(all), { brief, typeId, cultureId, count, placeId: getChatDoc(chatKeyFor(ref)).canonical.locationId || null });
+    if (!names.length) {
+        say('info', `Nothing to roll for "${brief || 'that'}" - a room, a quest or an object is named in plain words.`);
+        return '';
+    }
+    const lines = names.map((n) => (n.meaning ? `${n.name} ("${n.meaning}")` : n.name));
+    say('info', `Names (${rolledAs}${brief ? `: ${brief}` : ''}):\n${lines.join('\n')}`);
+    return names.map((n) => n.name).join('\n');
+}
+
 export function registerSlashCommands() {
     try {
         const context = SillyTavern.getContext();
@@ -87,6 +128,18 @@ export function registerSlashCommands() {
                 named({ name: 'quiet', description: 'true: no toast', typeList: ARGUMENT_TYPE ? [ARGUMENT_TYPE.BOOLEAN] : undefined, defaultValue: 'false' }),
             ].filter(Boolean),
             helpString: 'Queue a request for the Scenario Builder game master in this chat - what you would like to happen. It shapes the next scenes (GM Plan tab → Your requests). Examples: <code>/sb-request add an NPC - a rival smuggler</code>, <code>/sb-request urgency=soon a quiet scene by the fire</code>.',
+        }));
+        SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+            name: 'sb-name',
+            callback: (args, value) => nameCommand(args, value),
+            returns: 'the names, one per line',
+            namedArgumentList: [
+                named({ name: 'type', description: 'character, location, faction, item or creature (guessed from the text when left out)', typeList: ARGUMENT_TYPE ? [ARGUMENT_TYPE.STRING] : undefined, enumList: NAME_TYPES }),
+                named({ name: 'culture', description: 'a culture of this world, by name (the Naming tab); the scene’s place or the world default when left out', typeList: ARGUMENT_TYPE ? [ARGUMENT_TYPE.STRING] : undefined }),
+                named({ name: 'count', description: 'how many, 1 to 12 (5)', typeList: ARGUMENT_TYPE ? [ARGUMENT_TYPE.NUMBER] : undefined, defaultValue: '5' }),
+                named({ name: 'quiet', description: 'true: no toast', typeList: ARGUMENT_TYPE ? [ARGUMENT_TYPE.BOOLEAN] : undefined, defaultValue: 'false' }),
+            ].filter(Boolean),
+            helpString: 'Roll names from the Scenario Builder name generator for this chat’s world - never the model, never one already used. Examples: <code>/sb-name a tavern</code>, <code>/sb-name culture=Vaskari count=3 a smuggler woman</code>, <code>/sb-name type=faction a mercenary company</code>.',
         }));
         SlashCommandParser.addCommandObject(SlashCommand.fromProps({
             name: 'sb-requests',

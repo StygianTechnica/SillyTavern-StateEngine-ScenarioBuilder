@@ -46,7 +46,8 @@ import { weatherText } from '../calendar/weather.js';
 import { fightValues } from '../director/fight.js';
 import { protectedText, stanceFor } from '../director/combat.js';
 import { eventValues } from '../events/model.js';
-import { knownAsText } from '../library/alias-kinds.js';
+import { knownAsText, keptNames } from '../library/alias-kinds.js';
+import { libraryMemberships } from '../library/faction-sync.js';
 import { livePoolFor, byType } from '../naming/run.js';
 import { narratorPoolLine } from '../naming/live.js';
 
@@ -200,8 +201,12 @@ export async function gatherInputs(chatId, chatKey) {
     const nameById0 = new Map(allCharacters.map((ch) => [ch.id, ch.name]));
     // Who uses an alias may be a faction (a crew's codename for one of its own).
     const aliasUsers = new Map(nameById0);
+    // Who belongs to which faction - a crew member knows the crew's codenames.
+    let memberships = new Map();
     if (settingId && Object.values(library.entries ?? {}).some((m) => Object.values(m?.aliasInfo ?? {}).some((i) => i.knownBy?.length))) {
-        for (const f of await listEntries(chatId, settingId, 'faction')) aliasUsers.set(f.id, f.name);
+        const factionList = await listEntries(chatId, settingId, 'faction');
+        for (const f of factionList) aliasUsers.set(f.id, f.name);
+        memberships = libraryMemberships(factionList, library.relations ?? []);
     }
     // Who the dead were (role, patron), and the names that may never be
     // placed in the scene: powers' and the dead's.
@@ -225,6 +230,9 @@ export async function gatherInputs(chatId, chatKey) {
             aliases: obj.aliases ?? base.aliases ?? [],
             // How they are known, and by whom (src/library/alias-kinds.js).
             knownAs: settingId ? knownAsText(obj.name, obj.aliases ?? base.aliases ?? [], library.entries?.[id]?.aliasInfo ?? {}, (x) => aliasUsers.get(x) ?? '') : '',
+            // The names kept to a few, for the director (who here does not know them).
+            factions: (memberships.get(id) ?? []).map((f) => aliasUsers.get(f)).filter(Boolean),
+            keptNames: settingId ? keptNames(obj.aliases ?? base.aliases ?? [], library.entries?.[id]?.aliasInfo ?? {}, (x) => aliasUsers.get(x) ?? '', (x) => aliasUsers.has(x) && !nameById0.has(x)) : [],
             role: await readField(chatId, id, 'se__character.role', 'role'),
             description: doc.narrative[id]?.text || obj.description || '',
             personality: text(base.personality),

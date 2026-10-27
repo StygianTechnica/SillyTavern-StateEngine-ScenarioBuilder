@@ -11,7 +11,7 @@ import { recordName } from './registry.js';
 import { cultureChoices, defaultCultureId, defaultCultureChoice, resolveCulture, inheritedCulture, newCultureDef } from './cultures.js';
 import { makeRng } from './random.js';
 import { rollShifts } from './mutate.js';
-import { tiesInBrief, tieRelation } from './classify.js';
+import { tiesInBrief, tieRelation, typeForBrief } from './classify.js';
 import { getParents } from '../library/library.js';
 import { fold } from './text.js';
 import { buildNamingRulesPrompt, readNamingRules, proposalToDef, learnedNames, learnInto } from './premise.js';
@@ -64,7 +64,7 @@ export function cultureIdFor(settingId, all = {}, { placeId = null, factionIds =
 export function rollNameFor(settingId, req, all) {
     const cultureId = req.cultureId || cultureIdFor(settingId, all, req);
     const plan = planName({ ...req, cultureId }, worldOf(settingId, all));
-    if (plan.mode === 'rolled') record(settingId, plan.counter, [{ name: plan.name, kind: plan.kind, culture: plan.culture?.id, state: 'o' }]);
+    if (plan.mode === 'rolled') record(settingId, plan.counter, [{ name: plan.name, kind: plan.kind, culture: plan.culture?.id, state: 'o', meaning: plan.meaning }]);
     else if (plan.counter) record(settingId, plan.counter, []);
     return plan;
 }
@@ -122,6 +122,18 @@ export function worldDefault(settingId) {
     // What the front page alone would choose, shown even when the user chose.
     const automatic = defaultCultureChoice(doc.overview, { ...doc.naming, defaultCulture: '' });
     return { id, why, auto: !doc.naming.defaultCulture, label: label(id), automatic: { ...automatic, label: label(automatic.id) } };
+}
+
+// Whether the front page offers to make cultures from the premise: a
+// premise written, no cultures of the world's own yet, not put away.
+export function premiseOffer(settingId) {
+    const doc = getSettingDoc(settingId);
+    if (doc.naming.offerDismissed || Object.keys(doc.naming.cultures).length || !String(doc.overview?.premise ?? '').trim()) return null;
+    return worldDefault(settingId);
+}
+
+export function dismissPremiseOffer(settingId) {
+    updateSettingDoc(settingId, (d) => { d.naming.offerDismissed = true; });
 }
 
 // '' = chosen from the front page.
@@ -358,4 +370,62 @@ export function byType(entries = []) {
     const out = {};
     for (const e of entries) (out[e.type] ??= []).push(e);
     return out;
+}
+
+// What the registry knows of a name on a sheet: its meaning in its own
+// tongue and the culture it was rolled in. -> { meaning, culture } or null.
+export function nameNote(settingId, name) {
+    if (!settingId || !name) return null;
+    const doc = getSettingDoc(settingId);
+    const f = fold(name);
+    const r = doc.naming.registry.find((x) => fold(x.n) === f && x.s !== 'd');
+    if (!r || (!r.m && !r.c)) return null;
+    const culture = r.c ? resolveCulture(r.c, { naming: doc.naming, seed: doc.naming.seed || 'world' })?.label ?? '' : '';
+    return r.m || culture ? { meaning: r.m ?? '', culture } : null;
+}
+
+// The culture a /sb-name culture= argument means: an id, or a word of a
+// culture's label ("vaskari", "icelandic"). '' when none matches.
+export function cultureNamed(settingId, text) {
+    const want = fold(text);
+    if (!want) return '';
+    const options = cultureOptions(settingId).filter((o) => o.value);
+    return (options.find((o) => o.value === text) ?? options.find((o) => fold(o.label.replace(/^[^:]*:\s*/, '')) === want) ?? options.find((o) => fold(o.label).includes(want)))?.value ?? '';
+}
+
+// /sb-name: a few names for a brief, rolled as Generate would roll them
+// (the place the scene is in sets the culture unless one is named), each
+// recorded as offered so it is not handed out twice. -> [{ name, meaning }]
+export function namesForCommand(settingId, all, { brief = '', typeId = '', cultureId = '', count = 5, placeId = null } = {}) {
+    const type = typeId || typeForBrief(brief);
+    const out = [];
+    for (let i = 0; i < count * 2 && out.length < count; i++) {
+        const plan = rollNameFor(settingId, { typeId: type, brief, cultureId, placeId, hasParent: type === 'location' && !!placeId }, all);
+        if (plan.mode !== 'rolled' || out.some((o) => o.name === plan.name)) continue;
+        out.push({ name: plan.name, meaning: plan.meaning ?? '' });
+    }
+    return { typeId: type, names: out };
+}
+
+// ---- names kept for later (the Naming tab's samples)
+
+// A sample name the user keeps: never handed out to anything else, listed
+// until an entry takes it (then it is used) or the user lets it go.
+export function keepName(settingId, { name, meaning = '', cultureId = '', kind = '' }) {
+    if (!name) return;
+    const doc = getSettingDoc(settingId);
+    record(settingId, doc.naming.counter, [{ name, meaning, culture: cultureId, kind, state: 'k' }]);
+}
+
+// Let a kept name go: it may come round again.
+export function releaseName(settingId, name) {
+    const f = fold(name);
+    updateSettingDoc(settingId, (d) => { d.naming.registry = d.naming.registry.filter((r) => !(r.s === 'k' && fold(r.n) === f)); });
+}
+
+// -> [{ name, meaning, culture (label) }], newest first.
+export function keptNames(settingId) {
+    const doc = getSettingDoc(settingId);
+    const label = (id) => (id ? resolveCulture(id, { naming: doc.naming, seed: doc.naming.seed || 'world' })?.label ?? '' : '');
+    return doc.naming.registry.filter((r) => r.s === 'k').reverse().map((r) => ({ name: r.n, meaning: r.m ?? '', culture: label(r.c) }));
 }

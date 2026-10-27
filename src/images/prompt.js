@@ -334,7 +334,7 @@ export function flavourOf(overview) {
 // district of clubs under endless neon").
 
 const WATER = /\b(?:coast(?:al|line)?s?|sea|seas|ocean(?:ic)?|shore(?:line)?s?|harbou?rs?|port|ports|bay|bays|flood(?:ed|ing|s)?|submerged|half-submerged|seawalls?|tides?|tidal|waterfront|docks?|canals?|ships?|boats?|beach(?:es)?|island|islands|marine|maritime|lagoons?|wharf|wharves|piers?|riverside|river|lakeside)\b/i;
-const WATER_WORDS = /\b(?:coastal|ocean|sea|seaside|harbou?r|marine|maritime|tidal|salt-laden|briny|waterfront|half-submerged|submerged|flooded)\s*/gi;
+const WATER_WORDS = /\b(?:coastal|ocean|sea|seaside|harbou?r|marine|maritime|tidal|salt-laden|briny|waterfront|half-submerged|submerged|flooded)\s+(?=\p{L})/giu;
 // A line about how the city is laid out, or who lives where: not the air of one place in it.
 const LAYOUT = /\b(?:districts?|neighbou?rhoods?|quarters?|streets?|wards?|slums?|residents?|classes|citizens|inhabit\w*|live|lives|sit|sits|platforms?|seawalls?|sea levels?|skyline|towers rise|buildings?)\b/i;
 
@@ -353,8 +353,23 @@ export function inheritedClimate(climate, { waterOk = false } = {}) {
         // What is left still has water in it ("rain off the sea"): out.
         if (left && !WATER.test(left) && left.split(' ').length >= 1) out.push(left);
     }
-    const text = out.map((p, i) => (i ? p.charAt(0).toLowerCase() + p.slice(1) : p)).join(', ');
+    const text = out.map((p, i) => (i ? p.charAt(0).toLowerCase() + p.slice(1) : p.charAt(0).toUpperCase() + p.slice(1))).join(', ');
     return { text, dropped };
+}
+
+// What a place is, as a noun phrase from its first sentence - "A nightlife
+// district of clubs...", "[Firebrand Square is] a labyrinthine network of
+// high-rises...", "[It weaves through the heart,] an endless maze of
+// neon-lit alleys..." - or its first visual clause. '' when there is none.
+function whatItIs(description) {
+    const first = clean(description).split(/(?<=[.!?])\s+/)[0]?.replace(/[.!?]+$/, '') ?? '';
+    if (!first) return '';
+    if (/^(?:an?)\s/i.test(first)) return first;
+    const is = first.match(/\b(?:is|are|was|were|remains)\s+((?:an?|one of the)\s.+)$/i);
+    if (is) return is[1];
+    const apposition = first.match(/,\s+((?:an?)\s.+)$/i);
+    if (apposition) return apposition[1];
+    return visualDescription(first, { max: 24 });
 }
 
 // path: the places it is inside, nearest first: [{ name, aliases,
@@ -377,10 +392,11 @@ export function placeSurroundings({ own = {}, path = [], others = [] } = {}) {
     const parent = path[0];
     let within = '';
     if (parent && clean(parent.description)) {
-        let seen = visualDescription(parent.description, { own: [parent.name, ...(parent.aliases ?? [])], others, kind: kindWord(parent.name), max: 28 }).split('. ')[0];
+        let seen = whatItIs(parent.description);
+        seen = seen ? words(withoutNames(seen, { own: [parent.name, ...(parent.aliases ?? [])], others, kind: kindWord(parent.name) }), 24).replace(/[,;:]+$/, '') : '';
         // A coastal city around a place that is not by the water itself.
         if (WATER.test(seen) && !WATER.test(own.description ?? '')) {
-            seen = seen.split(/,\s*/).filter((p) => !WATER.test(p)).join(', ').replace(WATER_WORDS, '').replace(/\s+/g, ' ').trim();
+            seen = seen.replace(WATER_WORDS, '').split(/,\s*/).filter((p) => !WATER.test(p)).join(', ').replace(/\s+/g, ' ').trim();
         }
         if (seen) within = `set in ${seen.charAt(0).toLowerCase()}${seen.slice(1)}`;
     }

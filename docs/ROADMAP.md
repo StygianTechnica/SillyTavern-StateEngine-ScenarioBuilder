@@ -394,6 +394,13 @@ API (docs/api.md, SB-640..642); Pretty Panels owns where they appear.
   next to a backward one, carried by its people wherever they go).
 - [x] Image prompts that respect world limits (e.g. Midjourney `--no` with
   absent magic or technology).
+- [x] **Image prompts for places inside places (2026-10-26):** a place
+  inside a district says what the district is ("set in an endless maze of
+  neon-lit alleys..."), and a city's climate comes down to it as air and
+  weather only - its lines about seawalls and half-submerged streets stay
+  with the city, and the coast and ships go to --no / the negative, unless
+  the place or its district is by the water (src/images/prompt.js
+  placeSurroundings). A place's own climate is used as written.
 - [ ] Final enumerations and custom values (OPEN-15).
 
 ## Images
@@ -481,14 +488,21 @@ newly confirmed objects, a separate generation connection profile.
     descriptive names and plain-English ones are kept. No extra calls.
   - An optional guidance line (off by default) offers the pool to the
     narrator too.
+- [x] **Naming extras (2026-10-26):** docs/DESIGN - NAMING.md phase 5 -
+  naming is done.
+  - Name meanings on sheets, the /sb-name slash command, kept names on the
+    Naming tab, a culture's own describing words for its descriptive names.
+  - The front page offers to make cultures from the premise.
+  - The director is told who in the scene does not know a codename.
+  - Population mixes moved to docs/DESIGN - PEOPLES.md.
 - [x] **Kinds of alias (2026-10-26):** a character's other names each have a
   kind - nickname, codename / callsign, title / epithet, pen / stage name -
   and who uses them (people or factions). The sheet's "Other names" card
   adds them: a nickname or title written by the model from who they are, a
   codename (a callsign kit) or stage name rolled by the name generator. The
   cast guidance says how each is known and that no one else uses a name kept
-  to a few (src/library/alias-kinds.js). Not yet: the director keeping a
-  codename out of the mouths of people who do not know it beyond that line.
+  to a few (src/library/alias-kinds.js), and the director is told who in
+  the scene does not know it (naming phase 5).
 - [x] **Starter post (2026-10-26):** the GM Plan tab's "Opening post" card
   writes an opening for the current scene - the place, time and weather, who
   is here, the outline's beat now, the point of view - never the player

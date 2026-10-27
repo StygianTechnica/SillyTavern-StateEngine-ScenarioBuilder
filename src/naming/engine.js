@@ -272,11 +272,21 @@ function nativeFeature(culture, rand, feature) {
 
 const plural = (w) => (/(s|x|ch|sh)$/i.test(w) ? `${w}es` : /[^aeiou]y$/i.test(w) ? `${w.slice(0, -1)}ies` : `${w}s`);
 
+// The kit pools a culture's own adjectives and nouns stand in for.
+const OWN_ADJECTIVES = new Set(['adj', 'adjInn', 'colour', 'gangAdj', 'pirateAdj']);
+const OWN_NOUNS = new Set(['beast', 'thing', 'orderNoun', 'gangNoun', 'pirateNoun', 'districtNoun', 'shipBeast', 'brand']);
+
 function fillKit(kitId, rand, { mood = {}, feature = 'forest', trade = '', venue = 'Club', purpose = '', person, place }) {
     const kit = KITS[kitId];
     const [pattern] = weighted(rand, kit.patterns, ([, w]) => w);
     const used = new Set();
     const from = (key) => {
+        // Half the time a word of the culture's own, where it has some of this kind.
+        const own = OWN_ADJECTIVES.has(key) ? mood.own?.adjectives : OWN_NOUNS.has(key) ? mood.own?.nouns : null;
+        if (own?.length && chance(rand, 0.5)) {
+            const fresh = own.filter((w) => !used.has(w));
+            if (fresh.length) { const w = pick(rand, fresh); used.add(w); return w; }
+        }
         const list = POOLS[key];
         for (let i = 0; i < 6; i++) {
             const w = wordOf(weighted(rand, list, (raw) => wordWeight(raw, mood)));
@@ -429,7 +439,8 @@ export function planName(req, world) {
     if (!kindInfo) return { mode: 'none', name: '', aliases: [], meaning: '', candidates: [], counter, apart, ...meta };
 
     const later = isLaterAge(world.overview);
-    const mood = { ...moodOf(world.overview?.tone, `${req.brief ?? ''} ${req.placeText ?? ''}`), later };
+    // own: the culture's own word pools (the Naming tab), mixed into the kits.
+    const mood = { ...moodOf(world.overview?.tone, `${req.brief ?? ''} ${req.placeText ?? ''}`), later, own: culture.pools };
     // A place people go to for a night out, or to do business, is not named
     // like a gallows inn because the world is grim: only the brief's own
     // words ("a dive bar", "a seedy club") make it grim there.

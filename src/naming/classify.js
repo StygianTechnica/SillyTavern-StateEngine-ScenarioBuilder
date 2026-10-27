@@ -212,3 +212,18 @@ export function tiesInBrief(text, all = []) {
 // the swap rule in live.js reads a name made of them as plain English.
 export const KIND_WORDS = Object.freeze(new Set([LOCATION_KINDS, FEATURES, FACTION_KINDS, PURPOSES].flatMap((t) => t.flatMap(([, words]) => words))
     .concat(PUBLIC_BUILDINGS, SHIP, PIRATE, NAVAL).flatMap((w) => w.split(/[\s-]+/)).map((w) => w.toLowerCase())));
+
+// What kind of entry a loose brief is for ("a tavern", "a smuggler woman",
+// "a rival corporation", "a pirate ship"), for the /sb-name command:
+// 'character' | 'location' | 'faction' | 'item'.
+const SETTLEMENT_WORDS = /\b(?:town|city|village|hamlet|port|capital|planet|moon|world|kingdom|realm|region|country|province|colony|outpost|island|empire|nation|duchy|county|settlement|megacity|arcology)\b/i;
+export function typeForBrief(brief = '') {
+    const t = String(brief ?? '');
+    if (nameKindFor('item', t)?.kind === 'ship') return 'item';
+    const faction = nameKindFor('faction', t);
+    if (faction && !faction.guessed) return 'faction';
+    const place = nameKindFor('location', t);
+    if (place && (place.kind !== 'settlement' || place.subtype || place.noun)) return 'location';
+    if (SETTLEMENT_WORDS.test(t)) return 'location';
+    return 'character';
+}

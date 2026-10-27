@@ -2,8 +2,10 @@
 // generator has handed out, so no name comes twice and the pieces of names
 // are spread instead of circling the likeliest ones.
 //
-// registry entry: { n: name, k: kind, c: culture id, s: state, i: counter }
-//   s: 'o' offered (shown, not taken), 'u' used, 'd' turned down.
+// registry entry: { n: name, k: kind, c: culture id, s: state, i: counter,
+//   m: what it means in its own tongue ("wolf-home"), when it has one }
+//   s: 'o' offered (shown, not taken), 'u' used, 'd' turned down, 'k' kept
+//   by the user for later (never handed out to anything else).
 
 import { fold, nameTokens, tooClose } from './text.js';
 
@@ -90,13 +92,14 @@ export function spreadScore(name, index) {
 
 // The registry with one more entry (or an entry's state changed), trimmed:
 // offered names go first, then the oldest.
-export function recordName(registry, { name, kind = '', culture = '', state = 'o', counter = 0 }) {
+export function recordName(registry, { name, kind = '', culture = '', state = 'o', counter = 0, meaning = '' }) {
     const f = fold(name);
     const list = registry.filter((r) => fold(r.n) !== f);
     const before = registry.find((r) => fold(r.n) === f);
     // Used and turned-down names keep their state over a later "offered".
     const s = before && state === 'o' && before.s !== 'o' ? before.s : state;
-    list.push({ n: name, k: kind || before?.k || '', c: culture || before?.c || '', s, i: counter });
+    const m = meaning || before?.m || '';
+    list.push({ n: name, k: kind || before?.k || '', c: culture || before?.c || '', s, i: counter, ...(m ? { m } : {}) });
     while (list.length > REGISTRY_MAX) {
         const drop = list.findIndex((r) => r.s === 'o');
         list.splice(drop >= 0 ? drop : 0, 1);

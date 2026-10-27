@@ -45,7 +45,7 @@ import { generateEntry, canGenerateFor, rollEntryName, generateAlias } from '../
 import { ALIAS_KINDS, kindLabel, aliasInfoFor, aliasLabel } from '../library/alias-kinds.js';
 import { cultureChoices, resolveCulture, inheritedCulture } from '../naming/cultures.js';
 import { worldDefault } from '../naming/run.js';
-import { markNameUsed, markNameDeclined } from '../naming/run.js';
+import { markNameUsed, markNameDeclined, nameNote } from '../naming/run.js';
 import { splitAliases, mergeAliases } from '../generate/prompt.js';
 import { WORLD_TYPES, MAGIC_PRESENCE, TECH_LEVELS, inheritedRealm, isLaterAge } from '../library/world-options.js';
 import { MODES, routeTimes, readBasis, asWalkRoute, walkFromMode, techOf, formatWalk } from '../library/travel.js';
@@ -361,6 +361,7 @@ export async function renderSheet(type, all) {
         h('div', { class: 'sb-sheet-title' },
             h('div', { class: 'sb-type-chip' }, h('i', { class: `fa-solid ${type.icon}` }), type.label, type.scope === 'story' ? h('small', {}, ' · this chat') : null),
             ws.editing ? h('div', { class: 'sb-row sb-name-row' }, textInput('name', draft.name, { class: 'text_pole sb-name-input', placeholder: `Name this ${type.noun}` }), nameDice(type, all)) : h('h2', {}, entry.name),
+            !ws.editing ? meaningLine(settingId, entry.name) : null,
             ws.editing ? textInput('aliases', csv(draft.aliases), { placeholder: 'Also known as… (comma-separated)', oninput: (e) => set('aliases', fromCsv(e.target.value)) })
                 : (entry.aliases?.length ? h('small', { class: 'sb-aka' }, `also ${entry.aliases.map((a) => aliasLabel(a, entry.meta?.aliasInfo)).join(', ')}`) : null),
             where.length ? h('div', { class: 'sb-where' }, icon('fa-location-dot'), where.map((n, i) => [i ? ' › ' : '', n])) : null,
@@ -484,6 +485,17 @@ function nsfwSpark() {
         busy: ws.generating?.field === 'meta.nsfw',
         disabledReason: gate.ok ? (ws.generating ? 'Writing…' : '') : gate.reason,
     });
+}
+
+// What a rolled name means in its own tongue, and whose it is: "wolf-home"
+// in Old Norse blend. Nothing for a name the generator never gave.
+function meaningLine(settingId, name) {
+    const note = nameNote(settingId, name);
+    if (!note) return null;
+    return h('small', { class: 'sb-name-meaning', title: 'From the name generator (the Naming tab)' },
+        note.meaning ? h('em', {}, `"${note.meaning}"`) : null,
+        note.meaning && note.culture ? ' - ' : '',
+        note.culture ? `${note.meaning ? 'in ' : 'a name in '}${note.culture}` : '');
 }
 
 // The dice beside the Name: a name from the name generator, never the

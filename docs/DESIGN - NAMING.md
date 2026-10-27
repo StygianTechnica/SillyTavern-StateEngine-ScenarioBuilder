@@ -7,8 +7,8 @@ names in code, from rules that belong to the world and to its cultures, and
 hands them to the model. The model is told a thing's name; it is never asked
 to make one up.
 
-Status: phases 1-4 built (2026-10-26) - see "Phase 1 as built" to "Phase 4
-as built" at the end. Phase 5 is a proposal.
+Status: built (2026-10-26) - phases 1-5, see "Phase 1 as built" to "Phase 5
+as built" at the end. Population mixes moved to docs/DESIGN - PEOPLES.md.
 
 ## 1. Where the model names things today
 
@@ -644,9 +644,9 @@ sample (copy it instead).
     them.
   - Each proposal learns from its users' names before you add it.
 
-Not yet: offering the call when a world is made (it is on the Naming tab
-only); word pools for descriptive names per culture; peoples in the same
-call (docs/DESIGN - PEOPLES.md, phase 3).
+Since built (phase 5): the front page offers the call, and cultures have
+word pools of their own. Not yet: peoples in the same call (docs/DESIGN -
+PEOPLES.md, phase 3).
 
 ## Phase 4 as built (2026-10-26)
 
@@ -713,3 +713,40 @@ call (docs/DESIGN - PEOPLES.md, phase 3).
 Not yet: the narrator's own first mentions are never renamed (open
 question, proposed no); a swapped place written mid-sentence keeps its
 capital "The".
+
+## Phase 5 as built (2026-10-26)
+
+With this, naming is done. What is left belongs to other designs: population
+mixes and a people's culture are docs/DESIGN - PEOPLES.md (phases 1-3).
+
+- **Meanings on sheets.** A rolled name's meaning ("wolf-home") is kept in
+  the registry (`m`) with its culture; the sheet shows it under the name -
+  *"wolf-home"* - in Old Norse blend (`nameNote` in `naming/run.js`).
+  Names typed by the user, or rolled before this, show nothing.
+- **`/sb-name [type=...] [culture=...] [count=5] <what it is>`** rolls names
+  for the open chat's world, the scene's place setting the culture unless
+  one is named (by a word of its label: `culture=vaskari`). The type is read
+  from the text when left out (`typeForBrief`: "a tavern" a place, "a rival
+  corporation" a faction, "a pirate ship" a ship). The names are recorded
+  as offered, shown in a toast with their meanings and returned one per
+  line for STscript.
+- **Kept names.** A sample (or a test-bench) name's bookmark keeps it for
+  later: registry state `k`, never handed out to anything else, listed in
+  the Naming tab's "Kept names" card until an entry takes it (then it is
+  used) or the user lets it go.
+- **A culture's own words.** The culture editor's "Its own describing words"
+  and "Its own things" (`pools.adjectives`, `pools.nouns`) are mixed into
+  its descriptive names - inns, wilds, gangs, orders, ships, brands - about
+  half the time.
+- **The premise offer.** Once the front page has a premise and the world
+  has no cultures of its own, the front page offers "Make cultures from the
+  premise": it opens the Naming tab and asks at once. "Not now" puts the
+  offer away (`naming.offerDismissed`); the Naming tab keeps the button.
+  Not in a canon-only world.
+- **Codenames kept to their users.** Beyond the narrator's cast line, the
+  director's prompt has "NAMES NOT EVERYONE HERE KNOWS": for each name kept
+  to a few (an alias with users), who here does not know it - the player
+  character included, and a faction's members counted as knowing their
+  crew's codename - so no one says it in front of them until the story has
+  them learn it (`keptNames`, `keptNameLines` in
+  `src/library/alias-kinds.js`).
