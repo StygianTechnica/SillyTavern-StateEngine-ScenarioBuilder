@@ -103,10 +103,13 @@ const nameKey = (name) => String(name ?? '').toLowerCase().replace(/[’']s$/, '
 
 // Library entries of the type whose name or an alias matches `name` -
 // the duplicate guard (SB-137).
-export async function findSimilar(chatId, settingId, typeId, name) {
+// `pending`: also what State Engine's review has detected but not confirmed
+// yet - it becomes an entry of its own once confirmed, so a second one
+// made now would be a duplicate.
+export async function findSimilar(chatId, settingId, typeId, name, { pending = false } = {}) {
     const key = nameKey(name);
     if (!key) return [];
-    const entries = await listEntries(chatId, settingId, typeId);
+    const entries = [...await listEntries(chatId, settingId, typeId), ...(pending ? await listUnconfirmed(chatId, typeId) : [])];
     return entries.filter((e) => [e.name, ...(e.aliases ?? [])].some((n) => {
         const other = nameKey(n);
         return other === key || (other.length > 3 && key.length > 3 && (other.includes(key) || key.includes(other)));

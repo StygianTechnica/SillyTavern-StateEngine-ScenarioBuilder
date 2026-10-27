@@ -14,12 +14,12 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf, saveKnowledge, listKnowledge } from '../library/library.js';
+import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, listUnconfirmed, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf, saveKnowledge, listKnowledge } from '../library/library.js';
 import { bargainItem, sameBargain, fulfilledByReturn } from '../library/knowledge.js';
 import { stillWaiting, steppedAway, suspend, returnTo, restorePatch, waitingIds, withoutWaiting, suspendedText } from './suspended.js';
 import { routesFrom, listRoutes, headingAlong, placesFurtherOn } from '../library/routes.js';
 import { pathOf } from '../library/hierarchy.js';
-import { listRelations, relationsFor } from '../library/relations-edit.js';
+import { listRelations, relationsFor, addRelation } from '../library/relations-edit.js';
 import { setCanonical } from '../state/canonical.js';
 import { advanceBy, perTurnDefault, holdStoryWeather, setTime, travelAlong, setTimeOfDay } from '../calendar/clock.js';
 import { baselineFields } from '../library/fields.js';
@@ -44,7 +44,7 @@ import { markDead, deadText, deadByName, bringBack } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
 import { creatureFormOf, readCount, addCount, takeCount, creatureLabel } from '../library/creature-form.js';
 import { namesSomething, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn, samePlaceName } from './prompt.js';
-import { libraryMemberships } from '../library/faction-sync.js';
+import { libraryMemberships, briefMemberships } from '../library/faction-sync.js';
 import { buildPeoplePrompt, readPeople } from './people.js';
 import { unknownsFor, toldInChat, mergeTold, PERSPECTIVE_TOKENS } from './perspective.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
@@ -184,10 +184,13 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
     // the story wrote it.
     const bloodlines = created.some((i) => i.kind === 'character') ? bloodlinesOf(await listEntries(chatId, settingId, 'lore').catch(() => [])) : [];
     const doc = getSettingDoc(settingId);
+    let factions = null;
     const mix = bloodlines.length ? mixFor({ world: doc.overview.population, parents: getParents(settingId), metaById: doc.entries, placeId: locationId }).mix : [];
     for (const item of created) {
         try {
-            if ((await findSimilar(chatId, settingId, item.kind, item.name)).length) continue;
+            // Checked again here, just before making it: State Engine's review
+            // may have taken the same person in while the briefing was written.
+            if ((await findSimilar(chatId, settingId, item.kind, item.name, { pending: true })).length) continue;
             const data = { name: item.name, description: item.description };
             if (item.tiedIds?.length) data.related_entity_ids = [...new Set(item.tiedIds)];
             if (item.kind === 'quest') data.startValues = { status: 'Active' };
@@ -206,6 +209,11 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
             const kin = item.kind === 'character' && bloodlines.length ? decideLineage({ brief: `${item.name}. ${item.description}`, bloodlines, mix }) : null;
             const obj = await createEntry(chatId, settingId, item.kind, data, { origin: 'director', ...(item.provisional ? { provisional: true } : {}), ...(kin?.ids.length ? { lineage: { ids: kin.ids, note: '' } } : {}) });
             if (!obj) continue;
+            // "An Iron Hand enforcer": one of its people, as the briefing says.
+            if (item.kind === 'character') {
+                factions ??= await listEntries(chatId, settingId, 'faction').catch(() => []);
+                for (const m of briefMemberships(`${item.name}. ${item.description}`, factions)) addRelation(settingId, { from: obj.id, to: m.id, kind: m.kind });
+            }
             const parent = item.kind === 'location' ? parentForNewPlace(item, chain) : null;
             if (parent) setParent(settingId, obj.id, parent);
             // `here` travels with it: State Engine may store the name a little
@@ -552,13 +560,18 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // Never at random: brought up by the chat, or tied to what the setting
     // already has (prompt.js relevance). Items only for plot points.
     const known = everything.map((e) => ({ id: e.id, type: e.type, name: e.name, aliases: e.aliases ?? e.base?.aliases ?? [] }));
+    // What State Engine's review detected in the same reply is the story's
+    // own and is about to be confirmed: never a second one of it.
+    const pending = [];
+    if (settingId && created.length) for (const t of types) pending.push(...await listUnconfirmed(chatId, t.id).catch(() => []));
+    const knownOrPending = [...known, ...pending.map((e) => ({ id: e.id, type: e.type, name: e.name, aliases: e.aliases ?? e.base?.aliases ?? [] }))];
     const typeIds = new Set(types.map((t) => t.id));
     const wanted = [];
     for (const c of created) {
         // Only kinds State Engine has.
         if (!typeIds.has(c.kind)) continue;
         // Never a second thing of a name the library has, whatever its type.
-        const existing = knownAs(c.name, known);
+        const existing = knownAs(c.name, knownOrPending);
         if (existing) {
             console.info(LOG_PREFIX, `the director did not add ${c.kind} "${c.name}": the library already has "${existing.name}"${existing.type ? ` (${existing.type})` : ''}`);
             continue;

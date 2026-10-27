@@ -83,6 +83,69 @@ export async function setupFactionTracking(settingId) {
 // character one of its people.
 export const MEMBER_KINDS = Object.freeze(new Set(['member of', 'leads', 'serves', 'works for']));
 
+// Words that set someone against a faction, or put them outside it.
+const OUTSIDE = /\b(rival|enem|oppos|hunt|against|hate|fears?\b|feared|fled|flee|escap|left\b|leaving|former|ex(?:-|\b)|once\b|betray|desert|exile|spy|spies|infiltrat|owes?\b|owing|target|war\b|wars\b)/i;
+const LEAD = /\b(boss|leader|head|chief|captain|commander|founder|master|mistress|ruler|king|queen|don|kingpin|matriarch|patriarch|ceo|president|runs|leads|heads|commands|rules|founded)\b/i;
+const MEMBER = /\b(members?|belongs?|part|works?|working|serves?|serving|agents?|operatives?|soldiers?|enforcers?|recruits?|lieutenants?|thugs?|guards?|knights?|initiates?|acolytes?|loyal|sworn|joined|joins)\b/i;
+
+// Pure: the kind a relationship a model wrote to a faction stands for, when
+// it makes the character one of its people ("boss of" -> leads, "enforcer
+// for" -> member of); null when it does not.
+export function memberKindOf(kind) {
+    const k = String(kind ?? '').toLowerCase().trim();
+    if (MEMBER_KINDS.has(k)) return k;
+    if (!k || OUTSIDE.test(k)) return null;
+    if (LEAD.test(k) || /\blead/.test(k)) return 'leads';
+    if (/\bserv/.test(k)) return 'serves';
+    if (/\bwork(s|ing)? for\b|\bemploy/.test(k)) return 'works for';
+    if (MEMBER.test(k)) return 'member of';
+    return null;
+}
+
+// Pure: the factions a new character's idea makes them one of - "the boss
+// of the Iron Hand", "an Iron Hand enforcer", "who works for the Guild" -
+// and not those it only mentions ("owes the Iron Hand", "a rival of...").
+// -> [{ id, name, kind: 'leads' | 'member of' }]
+export function briefMemberships(brief, factions) {
+    const text = String(brief ?? '');
+    const out = [];
+    for (const f of factions ?? []) {
+        const record = f.base ?? f;
+        // Each mention in order; the first that says where they stand decides.
+        const mentions = [];
+        for (const n of [f.name, ...(record.aliases ?? f.aliases ?? [])]) {
+            const name = String(n ?? '').trim();
+            if (name.length < 3) continue;
+            const re = new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'giu');
+            for (const m of text.matchAll(re)) mentions.push({ start: m.index + m[1].length, name });
+        }
+        for (const { start, name } of mentions.sort((a, b) => a.start - b.start)) {
+            const stand = mentionStand(text, start, name);
+            if (stand === 'outside') break;
+            if (stand) {
+                out.push({ id: f.id, name: f.name, kind: stand });
+                break;
+            }
+        }
+    }
+    return out;
+}
+
+// Where one mention of a faction puts someone: 'leads', 'member of',
+// 'outside' (set against it or gone from it), or null (only mentioned).
+function mentionStand(text, start, name) {
+    // Its clause: from the last break before the name to the next after it.
+    const before = text.slice(0, start).split(/[.;:!?\n,]|\b(?:and|but|while|who|whom|though|yet|whose)\b/i).pop().split(/\s+/).filter(Boolean).slice(-5).join(' ');
+    const after = text.slice(start + name.length).split(/[.;:!?\n,]|\b(?:and|but|while|who|whom|though|yet)\b/i)[0];
+    // The words right after it: "Iron Hand enforcer", "the Dogs' new lieutenant".
+    const next = /^\s*(?:['’]s?\s+)?((?:[\p{L}-]+\s*){0,2})/u.exec(after)?.[1] ?? '';
+    if (OUTSIDE.test(before) || OUTSIDE.test(next)) return 'outside';
+    if (LEAD.test(before) || LEAD.test(next)) return 'leads';
+    // "in the Iron Hand" is in it; "heard of the Iron Hand" is not.
+    if (MEMBER.test(before) || MEMBER.test(next) || /\b(in|inside|within|among|under)\s+(the\s+)?$/i.test(`${before} `)) return 'member of';
+    return null;
+}
+
 const ids = (v) => (Array.isArray(v) ? v.filter((x) => typeof x === 'string' && x) : []);
 
 // Pure: the library's factions for each character.

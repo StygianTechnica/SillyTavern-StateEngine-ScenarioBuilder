@@ -29,6 +29,7 @@ import { parentFrame, surpriseKind, placeRuleFor } from './fit-place.js';
 import { isLaterAge } from '../library/world-options.js';
 import { bloodlinesOf, choicesOf, decideLineage, namesOfLineage, lineageOf, lineageBriefLine, populationBriefLine, mixFor, viewsAt } from '../library/bloodlines.js';
 import { BLOODLINE_PRESETS } from '../library/bloodline-presets.js';
+import { briefMemberships, memberKindOf } from '../library/faction-sync.js';
 
 // Every kind-of-being word the presets know, for spotting one a brief names
 // that the world has no bloodline for - not those that are also plain words
@@ -396,7 +397,25 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
             return other ? { otherId: other.id, name: other.name, kind: String((typeof r === 'object' && r?.kind) || 'knows').toLowerCase().slice(0, 40) } : null;
         }).filter(Boolean).slice(0, 3);
     }
+    if (task === 'create' && type.id === 'character') {
+        const joined = withMemberships(result.values.relations ?? [], brief, all.faction ?? []);
+        if (joined.length) result.values.relations = joined;
+    }
     return { values: result.values, dropped: result.dropped, lineage: { ids: kin.ids, how: kin.how, unknown: kin.unknown } };
+}
+
+// A new character's relationships with its factions made memberships: the
+// ones the user's idea gives ("the boss of the Iron Hand") come first and
+// replace what the model wrote for that faction, and the model's own words
+// for belonging ("enforcer for") become a kind that counts as membership
+// (src/library/faction-sync.js MEMBER_KINDS). Pure.
+//   relations: [{ otherId, name, kind }]
+export function withMemberships(relations, brief, factions) {
+    const factionIds = new Set((factions ?? []).map((f) => f.id));
+    const given = briefMemberships(brief, factions).map((m) => ({ otherId: m.id, name: m.name, kind: m.kind }));
+    const own = (relations ?? []).filter((r) => !given.some((g) => g.otherId === r.otherId))
+        .map((r) => (factionIds.has(r.otherId) ? { ...r, kind: memberKindOf(r.kind) ?? r.kind } : r));
+    return [...given, ...own].slice(0, Math.max(3, given.length));
 }
 
 // The faction ids among an entry's field values.
