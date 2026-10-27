@@ -52,6 +52,7 @@ import { directorPlan, takeBeats, markActive } from '../planner/run.js';
 import { livePoolFor, takeFromPool, byType, rollNameFor, markNameUsed } from '../naming/run.js';
 import { poolLine, swapInvented, applySwaps } from '../naming/live.js';
 import { bloodlinesOf, decideLineage, mixFor } from '../library/bloodlines.js';
+import { noticeStoryBloodlines } from '../library/bloodline-store.js';
 
 export const DIRECTOR_EVENT = 'scenario_builder_director';
 
@@ -209,12 +210,15 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
             if (parent) setParent(settingId, obj.id, parent);
             // `here` travels with it: State Engine may store the name a little
             // differently, so matching back by name loses it.
-            made.push({ id: obj.id, kind: item.kind, name: obj.name, parent, here: item.here === true });
+            made.push({ id: obj.id, kind: item.kind, name: obj.name, parent, here: item.here === true, unknownKind: kin?.unknown ? { id: obj.id, description: item.description } : null });
         } catch (err) {
             console.warn(LOG_PREFIX, `the director could not add ${item.name}`, err);
         }
     }
     if (!made.length) return made;
+    // A kind of being the world has no bloodline for comes in as one (phase 3).
+    const strangers = made.map((m) => m.unknownKind).filter(Boolean);
+    if (strangers.length) await noticeStoryBloodlines(chatId, chatKey, settingId, strangers).catch((err) => console.warn(LOG_PREFIX, 'could not take in a bloodline', err));
     const at = new Date().toISOString();
     const adopted = made.map((m) => ({ id: newLocalId('a'), objectId: m.id, type: m.kind, name: m.name, at, placedUnder: m.kind === 'location' ? m.parent ?? '' : '', enrich: 'off', error: '' }));
     updateChatDoc(chatKey, (d) => {

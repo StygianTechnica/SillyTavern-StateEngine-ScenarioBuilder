@@ -12,8 +12,8 @@ live *in this world*, how common they are where, and whose names they
 carry. They come from presets, from the premise, from the user's own
 invention, or from the story itself, like everything else.
 
-Status: phases 1 and 2 built (2026-10-27) - see "Phase 1 as built" and
-"Phase 2 as built" at the end. Phases 3-4 not yet. Called "Peoples" in the first draft; renamed so it is
+Status: phases 1-3 built (2026-10-27) - see "Phase 1 as built" to "Phase
+3 as built" at the end. Phase 4 not yet. Called "Peoples" in the first draft; renamed so it is
 not confused with characters and suits the book's theming.
 
 ## 1. What a bloodline is
@@ -444,6 +444,62 @@ No extra model calls: everything is decided in code and told to the model.
   kind the world lacks is left as the story wrote it (phase 3 takes those
   in). Its rolled names still come from the place's culture pool.
 
-Not yet: phases 3-4 - the premise call, lorebook import, story-led new
-bloodlines through review, "Rewrite for this world" and "Describe how they
-look", mixed heritage done fully, prejudice per place, lifespans in ages.
+Since built: phase 3, below.
+
+## Phase 3 as built (2026-10-27)
+
+The pure half is `src/library/bloodline-prompts.js`; the runners are in
+`src/library/bloodline-store.js`.
+
+- **From the premise - one call with the naming cultures.** The naming
+  premise prompt (`src/naming/premise.js`) gains a "THE BLOODLINES" part:
+  a block per bloodline (`BLOODLINE / ONE / KIND / PRESET / LOOK / HERE /
+  SHARE / NAMES / KNOWN / BODY / SKIN / FEATURES`, at most six) and an
+  `ONLY THESE` line. The answer is cut at the bloodlines so the cultures
+  are read as before (`splitPremiseAnswer`), and the blocks are read as
+  forgivingly (markdown, bullets, "none"). The same card - "Make cultures
+  and bloodlines from the premise" - is on the Naming and the Bloodlines
+  tabs. Bloodlines are ticked like cultures, with a "These bloodlines and
+  no others" box set from the answer. Adding them:
+  - each starts from its preset (bent to the age) when PRESET names one,
+    else new, with the model's kind, words, look, here and drawing notes
+    over it;
+  - NAMES points at a culture added in the same go (by name), one of the
+    world's own, else the preset's; "local" is the place's names;
+  - each joins the world's mix with its share (a human one takes the
+    implicit humans' place).
+  Not in a canon-only world: there the call makes cultures only.
+- **Lorebook import.** The classifier has a "bloodline" kind (a race,
+  species or people characters can be - not a monster); it, or a lore entry
+  that reads like one (`looksLikeBloodline`: titled for a plural kind, "The
+  Elves of Arcadia", "Kobolds", or opening "X are a ... species / race /
+  people"), is imported as lore marked a bloodline with only the words its
+  name gives (`importedBloodline`) - the look and the rest stay empty, as
+  the book is canon. A lore entry already in the library that reads like a
+  bloodline is marked on import too. Bloodlines from a book do not join the
+  world's mix: the book does not say how common they are.
+- **From the story.** When a character the story brought in is taken in
+  (`src/library/intake.js`), or the director adds one, its role and first
+  sentence are read for a kind of being the world has no bloodline for
+  (`storyKind`; the first kind named is the one meant - "a kobold who
+  sells to the dwarves" is a kobold, "a half-orc" an orc). Only once the
+  world has bloodlines at all, and never in a canon-only world:
+  - normally a bloodline is made at once - "Trolls", rare in the world's
+    mix, these characters of it - and listed in the chat's Review as a new
+    bloodline, enriched like anything the story adds;
+  - when the world says "these and no others", it waits in Review ("Add
+    the bloodline" / "Not in this world"); one turned down is never raised
+    again (`bloodlinesHeard` in the setting document).
+  A kind named in the Generate panel's idea still only gets the toast
+  (phase 2): the user is there to add it.
+- **The sheet's two calls** (the Bloodline card, one generation each, on a
+  button; the result is shown and used only on "Use these"):
+  - **Rewrite for this world**: the description, look, how they live here
+    and what they wear, rewritten for the premise, age and technology,
+    keeping what still fits. Blocked on canon, like any generation.
+  - **Describe how they look**: the drawing notes (known, body, skin,
+    features, dress, tags, never draw, variety) from the description. On a
+    canon entry or in a canon-only world, only what the text says.
+
+Not yet: phase 4 - mixed heritage done fully, prejudice per place,
+lifespans in ages.

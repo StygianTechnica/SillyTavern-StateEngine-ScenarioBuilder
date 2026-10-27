@@ -12,6 +12,10 @@ import {
     proposeCultures, acceptProposals, learnFromWorld, keepName, releaseName, keptNames,
 } from '../naming/run.js';
 import { describeProposal } from '../naming/premise.js';
+import { bloodlinesOf } from '../library/bloodlines.js';
+import { premiseBloodlines, acceptBloodlineProposals } from '../library/bloodline-store.js';
+import { describeBloodlineProposal } from '../library/bloodline-prompts.js';
+import { syncNow } from '../guidance/sync.js';
 import { listEntries } from '../library/library.js';
 import { getSettingDoc } from '../store/setting-store.js';
 import { confirmAction } from './confirm.js';
@@ -128,15 +132,23 @@ function holdersCard(settingId, naming, places, factions) {
 
 const PREVIEW_KINDS = Object.freeze(SAMPLE_KINDS.filter((k) => ['men', 'women', 'towns'].includes(k.key)));
 
-function premiseCard(settingId, all) {
+// The one premise call makes the naming cultures and the bloodlines together
+// (docs/DESIGN - BLOODLINES.md, section 7) - the same card, and the same
+// proposals, on the Naming and the Bloodlines tabs. all: { location,
+// faction, character, lore }.
+export function premiseCard(settingId, all) {
     const doc = getSettingDoc(settingId);
-    const st = ws.namingPremise?.settingId === settingId ? ws.namingPremise : (ws.namingPremise = { settingId, wish: '', busy: false, proposals: [], skip: new Set() });
+    const st = ws.namingPremise?.settingId === settingId ? ws.namingPremise : (ws.namingPremise = { settingId, wish: '', busy: false, proposals: [], skip: new Set(), kin: null, skipKin: new Set(), only: false });
     const hasPremise = Boolean(String(doc.overview?.premise ?? '').trim());
+    const bloodlines = bloodlinesOf(all.lore ?? []);
     const propose = async () => {
         st.busy = true;
         rerender();
         try {
-            st.proposals = await proposeCultures(settingId, all, { wish: st.wish });
+            st.proposals = await proposeCultures(settingId, all, { wish: st.wish, bloodlines: premiseBloodlines(settingId, bloodlines) });
+            st.kin = st.proposals.bloodlines ?? null;
+            st.only = st.kin?.only === true;
+            st.skipKin = new Set();
             st.skip = new Set();
         } catch (err) {
             toast('error', `Could not make the cultures: ${err?.message ?? err}`);
@@ -145,13 +157,31 @@ function premiseCard(settingId, all) {
             rerender();
         }
     };
-    const accept = () => {
+    const accept = async () => {
         const chosen = st.proposals.filter((_, i) => !st.skip.has(i));
-        if (!chosen.length) return toast('info', 'Tick at least one culture to add.');
-        const r = acceptProposals(settingId, chosen);
-        toast('success', `Added ${r.added.length} culture${r.added.length === 1 ? '' : 's'}${r.assigned ? `, used by ${r.assigned} place${r.assigned === 1 ? '' : 's'} and faction${r.assigned === 1 ? '' : 's'}` : ''}.${r.kept.length ? ` Kept the culture ${r.kept.join(', ')} already had.` : ''}`);
+        const kin = (st.kin?.proposals ?? []).filter((_, i) => !st.skipKin.has(i));
+        if (!chosen.length && !kin.length) return toast('info', 'Tick at least one culture or bloodline to add.');
+        const r = chosen.length ? acceptProposals(settingId, chosen) : { added: [], assigned: 0, kept: [] };
+        // The bloodlines' NAMES lines point at the cultures just added, by name.
+        const cultureIds = Object.fromEntries(chosen.map((c, i) => [c.name, r.added[i]]).filter(([, id]) => id));
+        st.busy = true;
+        rerender();
+        let made = [];
+        try {
+            if (kin.length) made = await acceptBloodlineProposals(ws.ctx.chatId, settingId, kin, { only: st.only, cultureIds });
+        } catch (err) {
+            toast('error', `Could not add the bloodlines: ${err?.message ?? err}`);
+        } finally {
+            st.busy = false;
+        }
+        const bits = [];
+        if (r.added.length) bits.push(`${r.added.length} culture${r.added.length === 1 ? '' : 's'}${r.assigned ? ` (used by ${r.assigned} place${r.assigned === 1 ? '' : 's'} and faction${r.assigned === 1 ? '' : 's'})` : ''}`);
+        if (made.length) bits.push(`${made.length} bloodline${made.length === 1 ? '' : 's'}`);
+        toast('success', `Added ${bits.join(' and ') || 'nothing'}.${r.kept.length ? ` Kept the culture ${r.kept.join(', ')} already had.` : ''}`);
         st.proposals = [];
+        st.kin = null;
         ws.namingCulture = r.added[0] ?? ws.namingCulture;
+        void syncNow();
         rerender();
     };
     const learn = () => {
@@ -180,17 +210,31 @@ function premiseCard(settingId, all) {
             p.unknown.length ? h('small', { class: 'sb-hint' }, `Not in this world: ${p.unknown.join(', ')}`) : null,
             PREVIEW_KINDS.map((k) => (samples[k.key]?.length ? h('div', { class: 'sb-naming-samples' }, h('small', { class: 'sb-field-label' }, k.label), h('div', { class: 'sb-chips' }, samples[k.key].map((s) => h('span', { class: 'sb-chip' }, s.name)))) : null)));
     };
+    const kinRow = (p, i) => {
+        const on = !st.skipKin.has(i);
+        return h('div', { class: `sb-naming-proposal${on ? '' : ' off'}` },
+            h('label', { class: 'checkbox_label' },
+                h('input', { type: 'checkbox', checked: on, onchange: (e) => { if (e.target.checked) st.skipKin.delete(i); else st.skipKin.add(i); rerender(); } }),
+                icon('fa-dna'), h('b', {}, ` ${p.name}`)),
+            h('small', { class: 'sb-hint' }, describeBloodlineProposal(p)),
+            p.look ? h('div', { class: 'sb-hint' }, p.look) : null,
+            p.here ? h('div', { class: 'sb-hint' }, p.here) : null);
+    };
+    const kinList = st.kin?.proposals ?? [];
+    const anything = st.proposals.length || kinList.length;
     return h('div', { class: 'sb-card' },
         h('div', { class: 'sb-card-title' }, icon('fa-wand-magic-sparkles'), ' From the premise',
             h('small', { class: 'sb-hint' }, doc.canonOnly
                 ? ' - cultures for this canon, learning from the names it already has; nothing is added to any entry'
-                : ' - one model call picks the recipes; the names are still made here, never by the model')),
+                : ' - one model call picks the naming recipes and the bloodlines; names are still made here, never by the model')),
         hasPremise ? wish : h('small', { class: 'sb-hint' }, 'Write a premise on the front page first - the cultures are made from it.'),
-        st.proposals.length ? h('div', { class: 'sb-naming-proposals' }, st.proposals.map(proposalRow)) : null,
+        st.proposals.length ? h('div', { class: 'sb-naming-proposals' }, h('div', { class: 'sb-section-title' }, 'Naming cultures'), st.proposals.map(proposalRow)) : null,
+        kinList.length ? h('div', { class: 'sb-naming-proposals' }, h('div', { class: 'sb-section-title' }, 'Bloodlines'), kinList.map(kinRow),
+            h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: st.only, onchange: (e) => { st.only = e.target.checked; } }), h('span', {}, 'These bloodlines and no others'))) : null,
         h('div', { class: 'sb-actions' },
-            button(st.busy ? 'Thinking…' : st.proposals.length ? 'Ask again' : 'Make cultures from the premise', () => void propose(), { iconName: st.busy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles', cls: st.proposals.length ? '' : 'sb-primary', disabled: st.busy || !hasPremise }),
-            st.proposals.length ? button('Add the ticked cultures', accept, { iconName: 'fa-check', cls: 'sb-primary', disabled: st.busy }) : null,
-            st.proposals.length ? button('', () => { st.proposals = []; rerender(); }, { iconName: 'fa-xmark', title: 'Discard them' }) : null,
+            button(st.busy ? 'Thinking…' : anything ? 'Ask again' : (doc.canonOnly ? 'Make cultures from the premise' : 'Make cultures and bloodlines from the premise'), () => void propose(), { iconName: st.busy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles', cls: anything ? '' : 'sb-primary', disabled: st.busy || !hasPremise }),
+            anything ? button('Add the ticked ones', () => void accept(), { iconName: 'fa-check', cls: 'sb-primary', disabled: st.busy }) : null,
+            anything ? button('', () => { st.proposals = []; st.kin = null; rerender(); }, { iconName: 'fa-xmark', title: 'Discard them' }) : null,
             button('Learn from this world\'s names', learn, { iconName: 'fa-graduation-cap', title: 'Each of the world\'s own cultures learns to sound like the names its places, factions and people already have (never handing those names out)' })));
 }
 
@@ -348,8 +392,8 @@ export async function renderNaming() {
     const { chatId, settingId } = ws.ctx;
     if (!settingId) return h('div', { class: 'sb-muted' }, 'This chat has no setting yet.');
     const naming = getSettingDoc(settingId).naming;
-    const [places, factions, characters] = await Promise.all(['location', 'faction', 'character'].map((t) => listEntries(chatId, settingId, t).catch(() => [])));
-    const all = { location: places, faction: factions, character: characters };
+    const [places, factions, characters, lore] = await Promise.all(['location', 'faction', 'character', 'lore'].map((t) => listEntries(chatId, settingId, t).catch(() => [])));
+    const all = { location: places, faction: factions, character: characters, lore };
     if (ws.namingCulture && !naming.cultures[ws.namingCulture]) ws.namingCulture = null;
     const def = ws.namingCulture ? naming.cultures[ws.namingCulture] : null;
     const shown = def ? def.id : worldDefault(settingId).id;

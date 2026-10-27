@@ -20,6 +20,9 @@ import { GUIDANCE_PARTS } from '../guidance/build.js';
 import { curatorStatus, curatorLine } from './status-model.js';
 import { activateForOpenChat } from './activate.js';
 import { enrichListed } from '../library/intake.js';
+import { getSettingDoc } from '../store/setting-store.js';
+import { takeInStoryBloodline, dismissStoryBloodline } from '../library/bloodline-store.js';
+import { storyBloodline } from '../library/bloodline-prompts.js';
 import { holdStoryWeather, advanceBy } from '../calendar/clock.js';
 import { getEnrichmentStatus, cancelEnrichment } from '../generate/enrich.js';
 import { openChanges, writeChange, useChange, dismissChange, editChangeDraft } from '../state/changes.js';
@@ -167,9 +170,9 @@ export async function renderReview() {
             h('div', { class: 'sb-row' },
                 h('i', { class: `fa-solid ${t?.icon ?? 'fa-star'}` }),
                 h('b', {}, a.name),
-                h('small', { class: 'sb-hint' }, `new ${t?.noun ?? 'entry'}${a.placedUnder ? ` · placed in ${a.placedUnder}` : ''}`),
+                h('small', { class: 'sb-hint' }, `new ${a.bloodline ? 'bloodline' : t?.noun ?? 'entry'}${a.placedUnder ? ` · placed in ${a.placedUnder}` : ''}`),
                 enrichBadge(a)),
-            h('small', { class: 'sb-hint' }, 'Confirmed into the setting and now tracked here. Check its details and where it sits.'),
+            h('small', { class: 'sb-hint' }, a.bloodline ? 'A kind of being the story brought in - a bloodline now. Check how they look and live here on its sheet.' : 'Confirmed into the setting and now tracked here. Check its details and where it sits.'),
             h('div', { class: 'sb-actions' },
                 button('Open sheet', () => openSheet(a.objectId, a.type), { iconName: 'fa-pen', cls: 'sb-primary' }),
                 ['off', 'failed', 'held'].includes(a.enrich) ? button('Add detail', () => enrichListed(chatId, chatKey, settingId, a.id), { iconName: 'fa-wand-magic-sparkles', title: a.error || 'Write its empty fields from the setting\'s context' }) : null,
@@ -203,6 +206,18 @@ export async function renderReview() {
                     void mergeCandidate(chatId, chatKey, c.id, mergeSel.value).then((ok) => { if (!ok) toast('error', 'Could not merge it.'); done(); });
                 }, { iconName: 'fa-code-merge' }),
                 button('Reject', () => void rejectCandidate(chatId, chatKey, c.id).then(done), { iconName: 'fa-ban', cls: 'sb-danger' }))));
+    }
+
+    // Kinds of being the story brought into a "these and no others" world
+    // (src/library/bloodline-store.js): yours to allow or turn down.
+    const heard = settingId ? (getSettingDoc(settingId).bloodlinesHeard ?? []).filter((x) => x.status === 'pending') : [];
+    for (const x of heard) {
+        const made = storyBloodline(x.word);
+        candidates.push(h('div', { class: 'sb-review-item' },
+            h('div', {}, icon('fa-dna'), h('b', {}, ` ${made.name}`), ` - the story has ${x.ids.length === 1 ? 'someone' : `${x.ids.length} people`} who ${x.ids.length === 1 ? 'is' : 'are'} ${/^[aeiou]/i.test(x.word) ? 'an' : 'a'} ${x.word}, but this world has only the bloodlines you listed.`),
+            h('div', { class: 'sb-actions' },
+                button('Add the bloodline', () => void takeInStoryBloodline(chatId, chatKey, settingId, x.word, x.ids).then((id) => { if (!id) toast('error', 'Could not add it.'); done(); rerender(); }), { iconName: 'fa-plus', cls: 'sb-primary', title: 'Make it one of this world\'s bloodlines (rare), with these characters of it' }),
+                button('Not in this world', () => { dismissStoryBloodline(settingId, x.word); rerender(); }, { iconName: 'fa-ban', title: 'Never raised again - correct the story by hand if it matters' }))));
     }
 
     const section = (title, iconName, items, empty) => [h('h3', {}, icon(iconName), ` ${title}`), items.length ? items : h('div', { class: 'sb-muted' }, empty)];

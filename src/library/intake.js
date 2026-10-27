@@ -11,7 +11,9 @@
 //     present) joins the scene: it was detected because it is there;
 //   - it is listed in the open chat's Review ("New in the setting");
 //   - its empty fields are enriched in the background, when auto-enrich is
-//     on and the canon switches allow it (src/generate/enrich.js).
+//     on and the canon switches allow it (src/generate/enrich.js);
+//   - a character said to be a kind of being the world has no bloodline for
+//     ("a troll bouncer") brings that bloodline in (src/library/bloodline-store.js).
 // The first pass for a setting only records what is already there, so an
 // existing library is never flooded with enrichment.
 
@@ -23,6 +25,7 @@ import { newLocalId } from '../store/schema.js';
 import { setCanonical } from '../state/canonical.js';
 import { getObjectTypes, listEntries, getParents, setParent, setEntryMeta, mayAddGeneratedDetail } from './library.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
+import { noticeStoryBloodlines } from './bloodline-store.js';
 
 // Where a new place most likely sits: next to the place the scene came
 // from when it moved here, else next to the current location.
@@ -100,6 +103,8 @@ export async function runIntake(chatId, chatKey, settingId) {
             d.adopted = [...d.adopted, ...items.filter((a) => !seen.has(a.objectId))];
         });
         sceneArrivals(chatId, chatKey, arrived, names);
+        const storyPeople = fresh.filter((o) => o.type === 'character' && (!o.meta?.origin || o.meta.origin === 'story'));
+        if (storyPeople.length) await noticeStoryBloodlines(chatId, chatKey, settingId, storyPeople).catch((err) => console.warn(LOG_PREFIX, 'could not take in a bloodline', err));
         for (const item of items) {
             if (item.enrich === 'queued') enqueueEnrichment({ settingId, chatId, chatKey, objectId: item.objectId, name: item.name, adoptedId: item.id });
         }

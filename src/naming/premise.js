@@ -39,7 +39,9 @@ function realLines() {
 
 // The prompt. input: { overview, places: [{ name, description }],
 // factions: [{ name, description }], names: [string] (people already in the
-// world), cultures: [string] (the world's own already), canonOnly, wish }.
+// world), cultures: [string] (the world's own already), canonOnly, wish,
+// bloodlines: the bloodlines part (src/library/bloodline-prompts.js) - the
+// same call proposes them, so the call budget stays flat }.
 // -> { system, prompt }
 export function buildNamingRulesPrompt(input = {}) {
     const o = input.overview ?? {};
@@ -88,6 +90,7 @@ export function buildNamingRulesPrompt(input = {}) {
         'USED BY: the places and factions above that use it, by their exact names, comma-separated (or "none")',
         'DEFAULT: "yes" for the one culture used for everything else - only one',
         'SOUNDS: only for an alien tongue - "consonants: k:3 r:2 th; vowels: a:3 o i; syllables: 2-3"',
+        input.bloodlines ? `\n${input.bloodlines}` : '',
     ].filter((x) => x !== '').join('\n').replace(/\n{3,}/g, '\n\n');
     return { system, prompt };
 }

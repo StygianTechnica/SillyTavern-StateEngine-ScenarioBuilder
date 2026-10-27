@@ -23,6 +23,7 @@ import { getObject } from '../api/objects.js';
 import { getEntryMeta, getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { getObjectTypes, listEntries, createEntry, updateEntry, setEntryMeta, setParent, setCanonOnly, getParents, deleteEntry } from '../library/library.js';
 import { baselineFields } from '../library/fields.js';
+import { looksLikeBloodline, importedBloodline } from '../library/bloodline-prompts.js';
 import { addRelation } from '../library/relations-edit.js';
 import { callModel } from '../generate/llm.js';
 import { askReliably } from '../generate/run.js';
@@ -181,6 +182,10 @@ async function analyseEntry(entry, { objects, types, typeLabels, fieldsFor, maxT
     type = kind.type;
     name = kind.name;
     if (kind.guessed) proposal.note = 'kind guessed - check it';
+    // A race, species or people is a bloodline: lore, marked as one
+    // (docs/DESIGN - BLOODLINES.md, section 7) - by the model's word, or
+    // when the entry plainly reads like one.
+    if (type === 'lore' && (kind.bloodline || looksLikeBloodline(entry))) proposal.bloodline = true;
     // The model's name may match an object the title did not.
     const byName = objects.find((o) => o.type === type && [o.name, ...(o.aliases ?? [])].some((n) => lower(n) === lower(name)));
     // An entry about one thing is that thing's own entry.
@@ -190,7 +195,7 @@ async function analyseEntry(entry, { objects, types, typeLabels, fieldsFor, maxT
     const { values, relations, note } = await extract(entry, { type: typeDef, name, existing: {}, fieldsFor, maxTokens, objects, own: true });
     const locatedIn = typeof values.located_in === 'string' ? values.located_in : '';
     delete values.located_in;
-    return [{ ...proposal, action: 'create', type, name, values, locatedIn, relations, include: true, own: true, note: [proposal.note, note].filter(Boolean).join('; ') }];
+    return [{ ...proposal, action: 'create', type, name, values, locatedIn, relations, include: true, own: true, note: [proposal.bloodline ? 'a bloodline' : '', proposal.note, note].filter(Boolean).join('; ') }];
 }
 
 // An entry listing several things (a pantheon, a roster): each named thing
@@ -238,12 +243,14 @@ async function analyseMatched(entry, match, proposal, { types, fieldsFor, maxTok
     const locatedIn = typeof values.located_in === 'string' ? values.located_in : '';
     delete values.located_in;
     const { patch, replaced } = replacing ? ownOver(existing, values) : { patch: blanksOnly(existing, values), replaced: {} };
-    const any = Object.keys(patch).length > 0 || relations.length > 0 || (match.type === 'location' && locatedIn && !match.meta?.parentId);
+    // Lore that reads like a bloodline and is not marked as one yet.
+    const bloodline = match.type === 'lore' && match.meta?.bloodline?.on !== true && looksLikeBloodline(entry);
+    const any = Object.keys(patch).length > 0 || relations.length > 0 || (match.type === 'location' && locatedIn && !match.meta?.parentId) || bloodline;
     const from = job?.titles?.[match.meta?.source] ?? 'another entry';
     const why = Object.keys(replaced).length ? `its own entry - replaces what "${from}" gave it` : '';
     return {
         ...proposal, action: any ? 'fill' : 'skip', type: match.type, name: match.name, matchId: match.id, matchName: match.name,
-        values: patch, replaces: replaced, own, locatedIn, relations, include: any, note: any ? [why, note].filter(Boolean).join('; ') : 'nothing new for it',
+        values: patch, replaces: replaced, own, locatedIn, relations, include: any, bloodline, note: any ? [bloodline ? 'marked as a bloodline' : '', why, note].filter(Boolean).join('; ') : 'nothing new for it',
     };
 }
 
@@ -368,13 +375,15 @@ export async function applyImport() {
                         record.filled.push({ id: targetId, name: fresh?.name ?? p.name, before, parentBefore: parentsBefore[targetId] ?? null });
                     }
                     const meta = { ...(job.options.canonLock ? { canonLocked: true } : {}) };
+                    // Marked a bloodline with only the words its name gives.
+                    if (p.bloodline && getEntryMeta(settingId, targetId).bloodline?.on !== true) meta.bloodline = importedBloodline(fresh?.name ?? p.name);
                     if (!getEntryMeta(settingId, targetId).source || ownOverMention) meta.source = p.entry.source;
                     setEntryMeta(settingId, targetId, meta);
                     summary.filled += 1;
                     if (p.locatedIn && p.type === 'location') places.push([targetId, p.locatedIn]);
                     p.appliedId = targetId;
                 } else {
-                    const obj = await createEntry(chatId, settingId, p.type, { name: p.name, ...p.values }, { origin: 'import', source: p.entry.source, canonLocked: job.options.canonLock === true });
+                    const obj = await createEntry(chatId, settingId, p.type, { name: p.name, ...p.values }, { origin: 'import', source: p.entry.source, canonLocked: job.options.canonLock === true, ...(p.bloodline ? { bloodline: importedBloodline(p.name) } : {}) });
                     if (!obj) throw new Error('State Engine refused to create it');
                     created.set(key, obj.id);
                     record.created.push({ id: obj.id, type: p.type, name: p.name });

@@ -17,6 +17,7 @@ import { addBloodline, setWorldPopulation } from '../library/bloodline-store.js'
 import { resolveCulture } from '../naming/cultures.js';
 import { safeImageSrc } from '../images/attach.js';
 import { mixEditor, commitInput } from './bloodline-cards.js';
+import { premiseCard } from './naming-tab.js';
 import { ws, rerender, openSheet } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
 
@@ -121,13 +122,14 @@ function benchCard(settingId, bloodlines, all) {
 export async function renderBloodlines() {
     const { chatId, settingId } = ws.ctx;
     if (!settingId) return h('div', { class: 'sb-muted' }, 'This chat has no setting yet.');
-    const [lore, location, faction] = await Promise.all(['lore', 'location', 'faction'].map((t) => listEntries(chatId, settingId, t).catch(() => [])));
-    const all = { lore, location, faction };
+    const [lore, location, faction, character] = await Promise.all(['lore', 'location', 'faction', 'character'].map((t) => listEntries(chatId, settingId, t).catch(() => [])));
+    const all = { lore, location, faction, character };
     const bloodlines = bloodlinesOf(lore);
     const world = normalizePopulation(getSettingDoc(settingId).overview.population);
     return h('div', { class: 'sb-naming' },
         h('div', { class: 'sb-scene-cols' },
-            h('div', { class: 'sb-gm-col' }, listCard(settingId, bloodlines, world)),
+            // The premise call is shared with the Naming tab (one call for both).
+            h('div', { class: 'sb-gm-col' }, listCard(settingId, bloodlines, world), premiseCard(settingId, all)),
             h('div', { class: 'sb-gm-col' }, whereCard(settingId, bloodlines, all), benchCard(settingId, bloodlines, all))));
 }
 

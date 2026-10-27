@@ -645,8 +645,8 @@ sample (copy it instead).
   - Each proposal learns from its users' names before you add it.
 
 Since built (phase 5): the front page offers the call, and cultures have
-word pools of their own. Not yet: bloodlines in the same call (docs/DESIGN -
-BLOODLINES.md, phase 3).
+word pools of their own, and the same call proposes the world's bloodlines
+(docs/DESIGN - BLOODLINES.md, phase 3).
 
 ## Phase 4 as built (2026-10-26)
 

@@ -254,7 +254,7 @@ export function normalizeCalendar(value) {
 export function emptySettingDoc() {
     // playerId: the character the user plays ('' = the one named like the
     // SillyTavern persona, if any) - the guidance never writes for them.
-    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {}, map: {} }, calendar: emptyCalendar(), playerId: '', routes: [], knowledge: [], gm: { creation: 'proposals' }, eventTemplates: [], naming: emptyNaming() };
+    return { schemaVersion: SETTING_SCHEMA_VERSION, overview: emptyOverview(), canonOnly: false, entries: {}, groups: [], tracked: [], trackedReady: false, imports: [], relations: [], graph: { positions: {}, map: {} }, calendar: emptyCalendar(), playerId: '', routes: [], knowledge: [], gm: { creation: 'proposals' }, eventTemplates: [], naming: emptyNaming(), bloodlinesHeard: [] };
 }
 
 // Brings any stored setting document (or nothing) to the current shape.
@@ -296,7 +296,10 @@ export function normalizeSettingDoc(doc) {
         // Routes between places: { id, from, to, travel, note, guessed? } (src/library/routes.js).
         routes: Array.isArray(d.routes) ? d.routes.filter((r) => isObject(r) && str(r.id) && str(r.from) && str(r.to) && r.from !== r.to).map((r) => ({ id: r.id, from: r.from, to: r.to, travel: str(r.travel), ...normalizeRouteTimes(r), note: str(r.note), ...(r.guessed === true ? { guessed: true } : {}) })) : [],
         // The name generator's rules and registry (src/naming/).
-        naming: normalizeNaming(d.naming) };
+        naming: normalizeNaming(d.naming),
+        // Kinds of being the story brought into a "these and no others" world,
+        // waiting for the user, or turned down for good (src/library/bloodline-store.js).
+        bloodlinesHeard: Array.isArray(d.bloodlinesHeard) ? d.bloodlinesHeard.filter((x) => isObject(x) && str(x.word)).map((x) => ({ word: str(x.word).toLowerCase(), ids: strList(x.ids), status: x.status === 'dismissed' ? 'dismissed' : 'pending', at: str(x.at) })).slice(-40) : [] };
 }
 
 // The world's naming (docs/DESIGN - NAMING.md, section 7): its seed, the

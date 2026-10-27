@@ -76,25 +76,27 @@ export function buildClassifyPrompt(entry, typeLabels = {}) {
     const choices = IMPORT_TYPES.map((t) => `- ${t}${typeLabels[t] ? `: ${typeLabels[t]}` : ''}`).join('\n');
     const user = [
         entryBlock(entry),
-        `# Your task\nDecide what this entry is about.\nIf it is about ONE thing, say its kind and name. Kinds:\n${choices}\n- many: the entry describes SEVERAL separate things of note, each with its own name (a list of deities, a roster of guild members, a list of places)\n- skip: the entry is not about anything in the world (writing rules, instructions to the AI, formatting)`,
+        `# Your task\nDecide what this entry is about.\nIf it is about ONE thing, say its kind and name. Kinds:\n${choices}\n- bloodline: a race, species or people that characters can BE (the elves of a land, an alien species, androids) - not a monster met in fights\n- many: the entry describes SEVERAL separate things of note, each with its own name (a list of deities, a roster of guild members, a list of places)\n- skip: the entry is not about anything in the world (writing rules, instructions to the AI, formatting)`,
         '# Reply\nReply with ONE line, exactly in this form, and nothing else:\nkind | name\nFor example:\nlocation | The Brass Market\nor, for a list of several things:\nmany | The Pantheon',
     ].join('\n\n');
     return { system: SYSTEM, user };
 }
 
-// The kind and name from a classify answer. -> { type, name } ('skip' as type
-// to leave the entry out), or null when the answer is unreadable.
+// The kind and name from a classify answer. -> { type, name, bloodline? }
+// ('skip' as type to leave the entry out; a bloodline is lore, marked), or
+// null when the answer is unreadable.
 export function parseClassify(text, entry) {
-    const line = String(text ?? '').split('\n').map((l) => l.replace(/[`*]/g, '').trim()).find((l) => l.includes('|') || IMPORT_TYPES.some((t) => l.toLowerCase().startsWith(t)) || /^(skip|many)/i.test(l));
+    const line = String(text ?? '').split('\n').map((l) => l.replace(/[`*]/g, '').trim()).find((l) => l.includes('|') || IMPORT_TYPES.some((t) => l.toLowerCase().startsWith(t)) || /^(skip|many|bloodline)/i.test(l));
     if (!line) return null;
     const [kindRaw, ...rest] = line.split('|');
     const kind = clean(kindRaw).toLowerCase().replace(/^kind\s*:\s*/, '');
-    const type = kind.startsWith('skip') ? 'skip' : kind.startsWith('many') || kind.startsWith('several') ? 'many' : IMPORT_TYPES.find((t) => kind.startsWith(t) || kind === `${t}s`);
+    const bloodline = /^(?:bloodline|race|species|people|ancestry)/.test(kind);
+    const type = bloodline ? 'lore' : kind.startsWith('skip') ? 'skip' : kind.startsWith('many') || kind.startsWith('several') ? 'many' : IMPORT_TYPES.find((t) => kind.startsWith(t) || kind === `${t}s`);
     if (!type) return null;
     // The entry's own title is its name; the model's name is used only when
     // the entry has none (a model renaming entries merges or loses them).
     const modelName = clean(rest.join('|')).replace(/^name\s*:\s*/i, '').replace(/^["']|["'.]$/g, '');
-    return { type, name: entry.title || modelName || entry.keys[0] || '' };
+    return { type, name: entry.title || modelName || entry.keys[0] || '', ...(bloodline ? { bloodline: true } : {}) };
 }
 
 // "Pull this entry's facts into these fields" - a JSON template; fields

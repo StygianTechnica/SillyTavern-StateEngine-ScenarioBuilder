@@ -234,7 +234,10 @@ function entryNamed(name, entries) {
 // One model call: the cultures the premise suggests. Nothing is stored.
 // -> [proposal + { def (to preview and add), users: [{ id, name }],
 // unknown: [name] }]. Throws (model) with a message for the user.
-export async function proposeCultures(settingId, all, { wish = '' } = {}) {
+// With `bloodlines` ({ section, cultures(raw), read(raw) } from
+// src/library/bloodline-store.js), the same call also proposes the world's
+// bloodlines. -> [proposal], with .bloodlines = { proposals, only } then.
+export async function proposeCultures(settingId, all, { wish = '', bloodlines = null } = {}) {
     const seed = seedOf(settingId);
     const doc = getSettingDoc(settingId);
     const parents = getParents(settingId);
@@ -251,13 +254,15 @@ export async function proposeCultures(settingId, all, { wish = '' } = {}) {
         cultures: Object.values(doc.naming.cultures).map((c) => c.name),
         canonOnly: doc.canonOnly,
         wish,
+        bloodlines: bloodlines?.section ?? '',
     });
     const raw = await callModel([{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.prompt }], Math.max(getSettings().generation?.maxTokens || 0, 900));
-    const proposals = readNamingRules(raw, { existing: Object.values(doc.naming.cultures).map((c) => c.name) });
-    if (!proposals.length) throw new Error('The model proposed no cultures in the expected format - try again, or a larger model.');
+    const kin = bloodlines ? bloodlines.read(raw) : null;
+    const proposals = readNamingRules(bloodlines ? bloodlines.cultures(raw) : raw, { existing: Object.values(doc.naming.cultures).map((c) => c.name) });
+    if (!proposals.length && !kin?.proposals.length) throw new Error('The model proposed no cultures in the expected format - try again, or a larger model.');
     const holders = [...places, ...factions];
     const ids = Object.keys(doc.naming.cultures);
-    return proposals.map((p) => {
+    const out = proposals.map((p) => {
         const users = [];
         const unknown = [];
         for (const n of p.users) {
@@ -271,6 +276,8 @@ export async function proposeCultures(settingId, all, { wish = '' } = {}) {
         if (doc.canonOnly) def = learnInto(def, learnedNames(users.map((u) => u.id), [...places, ...factions, ...people], parents));
         return { ...p, def, users, unknown };
     });
+    if (kin) out.bloodlines = kin;
+    return out;
 }
 
 // Adds the chosen proposals as the world's own cultures: each one's places

@@ -3,7 +3,7 @@
 // and a faction's members - and the mix editor the Bloodlines tab shares.
 // Each saves at once, like the sheet's fight and gifts cards.
 
-import { setEntryMeta, getParents } from '../library/library.js';
+import { setEntryMeta, getParents, updateEntry } from '../library/library.js';
 import { getSettingDoc } from '../store/setting-store.js';
 import { syncNow } from '../guidance/sync.js';
 import {
@@ -11,10 +11,11 @@ import {
     bloodlinesOf, choicesOf, normalizeBloodline, normalizeLineage, normalizePlacePopulation, normalizeMembers,
     wordsOf, lineageOf, mixAt, mixText, emptyBloodline,
 } from '../library/bloodlines.js';
-import { setBloodline } from '../library/bloodline-store.js';
+import { setBloodline, rewriteBloodline, describeBloodlineLook } from '../library/bloodline-store.js';
+import { canGenerateFor } from '../generate/run.js';
 import { cultureChoices } from '../naming/cultures.js';
 import { ws, rerender, openSheet, markDirty } from './ws.js';
-import { h, icon, button, select, field } from './dom.js';
+import { h, icon, button, select, field, toast } from './dom.js';
 
 const after = () => { void syncNow(); rerender({ force: true }); };
 
@@ -72,6 +73,7 @@ export function bloodlineCard(entry, all) {
     const opt = (list) => [{ value: '', label: '(not set)' }, ...list.map(([id, label]) => ({ value: id, label }))];
     const v = b.visual;
     return h('div', { class: 'sb-card' },
+        suggestions(entry, b),
         h('div', { class: 'sb-card-title' }, icon('fa-dna'), ' Bloodline',
             h('small', { class: 'sb-hint' }, ' - who they are and how they live in this world'),
             h('span', { class: 'sb-spacer' }),
@@ -96,6 +98,7 @@ export function bloodlineCard(entry, all) {
             field('Related creature', select([{ value: '', label: '(none)' }, ...creatures.map((c) => ({ value: c.id, label: c.name }))], b.related, { onchange: (e) => save({ related: e.target.value }) }), 'Trolls the bloodline, trolls under the bridge.'),
             h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: b.playable, onchange: (e) => save({ playable: e.target.checked }) }), h('span', {}, 'The player can be one')),
             h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: b.canMix, onchange: (e) => save({ canMix: e.target.checked }) }), h('span', {}, 'Children with others (half-bloods)'))),
+        h('div', { class: 'sb-actions' }, ...askButtons(entry)),
         h('details', { class: 'sb-subcard', open: !!(v.body || v.skin || v.features) },
             h('summary', {}, icon('fa-image'), ' How to draw them (image prompts)'),
             field('How well image models know them', select(opt(KNOWN), v.known, { onchange: (e) => saveVisual({ known: e.target.value }) }),
@@ -109,6 +112,61 @@ export function bloodlineCard(entry, all) {
                 field('Tags', commitInput(v.tags, (x) => saveVisual({ tags: x }), { placeholder: 'elf, pointed ears' })),
                 field('Never draw', commitInput(v.negative, (x) => saveVisual({ negative: x }), { placeholder: 'human ears, hair' }))),
             field('How they differ', commitInput(v.variety, (x) => saveVisual({ variety: x }), { placeholder: 'colouring varies by clan' }))));
+}
+
+// "Rewrite for this world" and "Describe how they look" (docs/DESIGN -
+// BLOODLINES.md, phase 3): one model call each, on a button. What comes
+// back is shown as a proposal - nothing changes until "Use these".
+function askButtons(entry) {
+    const { settingId } = ws.ctx;
+    const gate = canGenerateFor(settingId, entry.id);
+    const st = ws.bloodlineAsk?.id === entry.id ? ws.bloodlineAsk : null;
+    const busy = !!st?.busy;
+    const run = async (kind) => {
+        ws.bloodlineAsk = { id: entry.id, kind, busy: true, values: null };
+        rerender({ force: true });
+        try {
+            const values = kind === 'rewrite' ? await rewriteBloodline(settingId, entry) : await describeBloodlineLook(settingId, entry);
+            ws.bloodlineAsk = { id: entry.id, kind, busy: false, values };
+        } catch (err) {
+            ws.bloodlineAsk = null;
+            toast('error', `Could not write it: ${err?.message ?? err}`);
+        }
+        rerender({ force: true });
+    };
+    const blocked = !gate.ok || busy;
+    return [
+        button(busy && st.kind === 'rewrite' ? 'Writing…' : 'Rewrite for this world', () => void run('rewrite'), { iconName: busy && st.kind === 'rewrite' ? 'fa-spinner fa-spin' : 'fa-earth-americas', disabled: blocked, title: gate.ok ? 'Their description, look, how they live and what they wear, rewritten for this world\'s age and premise - shown first, used only if you say so' : gate.reason }),
+        button(busy && st.kind === 'look' ? 'Writing…' : 'Describe how they look', () => void run('look'), { iconName: busy && st.kind === 'look' ? 'fa-spinner fa-spin' : 'fa-image', disabled: busy, title: 'Fill "How to draw them" from the description - in a canon world, only what it says' }),
+    ];
+}
+
+const SHOWN = { description: 'Description', look: 'How they look', here: 'How they live here', dress: 'What they wear', known: 'Known to image models', body: 'Body', skin: 'Skin', features: 'Features', tags: 'Tags', negative: 'Never draw', variety: 'How they differ' };
+
+function suggestions(entry, b) {
+    const st = ws.bloodlineAsk;
+    if (st?.id !== entry.id || !st.values) return null;
+    const { settingId, chatId } = ws.ctx;
+    const rows = Object.entries(st.values).filter(([, v]) => String(v ?? '').trim());
+    const use = async () => {
+        const v = st.values;
+        if (st.kind === 'rewrite') {
+            if (v.description && !await updateEntry(chatId, settingId, entry.id, { description: v.description })) return toast('error', 'State Engine refused the change - see the console.');
+            setBloodline(settingId, entry.id, { ...(v.look ? { look: v.look } : {}), ...(v.here ? { here: v.here } : {}), visual: v.dress ? { dress: v.dress } : {} });
+        } else {
+            // A blank line keeps what is there.
+            setBloodline(settingId, entry.id, { visual: Object.fromEntries(Object.entries(v).filter(([, x]) => String(x ?? '').trim())) });
+        }
+        ws.bloodlineAsk = null;
+        toast('success', 'Used.');
+        after();
+    };
+    return h('div', { class: 'sb-callout sb-bloodline-ask' },
+        h('div', {}, h('b', {}, st.kind === 'rewrite' ? 'Rewritten for this world' : 'How to draw them'), h('small', { class: 'sb-hint' }, ' - nothing is changed until you use it')),
+        h('dl', { class: 'sb-glance' }, rows.flatMap(([k, v]) => [h('dt', {}, SHOWN[k] ?? k), h('dd', {}, String(v))])),
+        h('div', { class: 'sb-actions' },
+            button('Use these', () => void use(), { iconName: 'fa-check', cls: 'sb-primary' }),
+            button('Discard', () => { ws.bloodlineAsk = null; rerender({ force: true }); }, { iconName: 'fa-xmark' })));
 }
 
 // ---- a character: their bloodline

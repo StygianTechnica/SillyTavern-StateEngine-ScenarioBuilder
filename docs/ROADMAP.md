@@ -345,7 +345,7 @@ API (docs/api.md, SB-640..642); Pretty Panels owns where they appear.
   generation, image prompts and route times all work from the world as it
   holds where the scene (or the entry) is.
 - [ ] **Bloodlines: races, species and who lives where (added 2026-10-26;
-  phases 1-2 built 2026-10-27).** docs/DESIGN - BLOODLINES.md (first drafted as
+  phases 1-3 built 2026-10-27).** docs/DESIGN - BLOODLINES.md (first drafted as
   "Peoples"). A world's bloodlines (elves, androids, invented
   aliens) are Lore entries with a bloodline block: how they look, how they
   live in *this* world (elves in a cyberpunk city), lifespan, whose names

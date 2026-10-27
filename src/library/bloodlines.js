@@ -429,15 +429,14 @@ export function matchBrief(text, bloodlines = [], extraWords = []) {
         const human = humansOf(bloodlines).id;
         if (ids[0] !== human && [w.singular, w.adjective].some((x) => foundAt(raw, `half-${clean(x)}`) >= 0 || foundAt(raw, `half ${clean(x)}`) >= 0)) ids.push(human);
     }
-    // Only when nothing the world knows was named: "an elf and a troll"
-    // is an elf. A proper word ("Grey") counts only with its capital.
-    let unknown = '';
-    if (!ids.length) {
-        const words = [...new Set([...KIND_WORDS, ...extraWords.map(clean)])].filter((x) => x && !covered.has(x.toLowerCase()));
-        const found = words.map((x) => ({ x, at: Math.min(...[x, `${x}s`, singularPlural(x)].map((y) => foundAt(raw, y)).filter((i) => i >= 0).concat(Infinity)) })).filter((f) => f.at < Infinity).sort((a, b) => a.at - b.at)[0];
-        unknown = found?.x ?? '';
-    }
-    return { ids, unknown };
+    // Whichever kind comes first is the one meant: "an elf and a troll" is
+    // an elf, "a kobold who sells to the dwarves" a kobold. A proper word
+    // ("Grey") counts only with its capital.
+    // A kind ending in one the world has ("half-orc", "wood elf") is that one.
+    const words = [...new Set([...KIND_WORDS, ...extraWords.map(clean)])].filter((x) => x && !covered.has(x.toLowerCase()) && !covered.has(x.toLowerCase().split(/[\s-]/).pop()));
+    const found = words.map((x) => ({ x, at: Math.min(...[x, `${x}s`, singularPlural(x)].map((y) => foundAt(raw, y)).filter((i) => i >= 0).concat(Infinity)) })).filter((f) => f.at < Infinity).sort((a, b) => a.at - b.at)[0];
+    if (found && (!hits.length || found.at < hits[0].at)) return { ids: [], unknown: found.x };
+    return { ids, unknown: '' };
 }
 const singularPlural = (x) => ({ elf: 'elves', dwarf: 'dwarves', fey: 'fey', fae: 'fae', merfolk: 'merfolk', lizardfolk: 'lizardfolk' }[x] ?? `${x}s`);
 
