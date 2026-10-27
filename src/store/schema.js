@@ -81,6 +81,8 @@
 //                                           no quest is made from them again
 //     loreLinks: { [archivistWorldId]: loreId }   lore made from or linked to Archivist's world lore
 //     loreDismissed: [archivistWorldId]     Archivist lore whose entry was removed
+//     beliefsSeen: { [beliefId]: { [personId]: turn } }   who met a belief's subject
+//                                           (src/library/knowledge.js)
 //     corrections: [{ id, text, turnsLeft, source }],
 //     history: [historyEntry],              every automated or manual change (SB-226)
 //     turn }                                AI replies reconciled so far
@@ -88,7 +90,7 @@
 import { emptyGm, normalizeGm } from '../planner/model.js';
 import { emptyMagic, emptyTech, normalizeMagic, normalizeTech } from '../library/world-options.js';
 import { emptyQuestMeta, normalizeQuestMeta } from '../quests/model.js';
-import { normalizeKnowledgeItem } from '../library/knowledge.js';
+import { normalizeKnowledgeItem, normalizeBeliefsSeen } from '../library/knowledge.js';
 import { emptyGiver, normalizeGiver } from '../quests/missions.js';
 import { normalizeDead } from '../state/death.js';
 import { normalizeEnrichments } from '../generate/revert.js';
@@ -474,6 +476,9 @@ export function emptyChatDoc() {
         // What the player told whom (src/director/perspective.js toldInChat):
         // { [memoryKey]: [personId] }.
         perspectiveTold: {},
+        // Who has met the subject of a belief they held, and when
+        // (src/library/knowledge.js): { [beliefId]: { [personId]: turn } }.
+        beliefsSeen: {},
         // Changes the story made to the world, offered as current
         // descriptions (src/state/changes.js).
         changes: emptyChanges(),
@@ -536,6 +541,7 @@ export function normalizeChatDoc(doc) {
         dead: normalizeDead(d.dead),
         combatStance: STANCES.includes(d.combatStance) ? d.combatStance : '',
         changes: normalizeChanges(d.changes),
+        beliefsSeen: normalizeBeliefsSeen(d.beliefsSeen),
         perspectiveTold: isObject(d.perspectiveTold) ? Object.fromEntries(Object.entries(d.perspectiveTold).filter(([k, v]) => k && Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === 'string')])) : {},
         powersDid: isObject(d.powersDid) ? Object.fromEntries(Object.entries(d.powersDid).filter(([k, v]) => k && typeof v === 'string').map(([k, v]) => [k, v.slice(0, 200)])) : {},
         powersNarrator: str(d.powersNarrator).slice(0, 800),

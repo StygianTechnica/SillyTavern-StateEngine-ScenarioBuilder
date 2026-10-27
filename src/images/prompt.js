@@ -116,6 +116,7 @@ export const DEFAULT_IMAGE_OPTIONS = Object.freeze({
 });
 
 import { normalizeMagic, normalizeTech, describeLook, isLaterAge } from '../library/world-options.js';
+import { ageIn, ageReading } from '../library/bloodlines.js';
 export { isLaterAge, WORLD_LOOKS } from '../library/world-options.js';
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
@@ -449,7 +450,17 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
     const ownNames = [entry.name, ...(entry.aliases ?? [])];
     const others = (knownNames ?? []).filter((n) => !ownNames.some((o) => clean(o).toLowerCase() === clean(n).toLowerCase()));
     const source = isVisualEnough(narrative) ? narrative : (entry.description || narrative || '');
-    const description = visualDescription(source, { own: names, others, kind: entry.type === 'character' ? '' : kindWord(entry.name) });
+    let description = visualDescription(source, { own: names, others, kind: entry.type === 'character' ? '' : kindWord(entry.name) });
+    // A long-lived one's age is how old they look (src/library/bloodlines.js
+    // ageReading): a 312-year-old elf is drawn about 39, not as an old man.
+    if (entry.type === 'character' && bloodline?.lifespan && bloodline.lifespan !== 'human') {
+        const age = ageIn([source, field(entry, 'appearance'), field(entry, 'age')].join(' '));
+        const reading = age ? ageReading(age, bloodline.lifespan, bloodline.lifespanNote) : null;
+        if (reading) {
+            description = clean(description.replace(/\b(?:an?\s+)?\d{1,5}[\s-]*(?:years?|yrs?)[\s-]*old\b|\baged?\s*[:=]?\s*\d{1,5}\b/gi, '').replace(/\s+([,.])/g, '$1').replace(/^[,.\s]+/, ''));
+            bloodline = { ...bloodline, details: [`looks about ${reading.looks}`, ...(bloodline.details ?? [])] };
+        }
+    }
     const env = [clean(environment.climate), clean(environment.lighting)].filter(Boolean).join(', ');
     const preset = styleFor(opts);
     const styleText = styleOf(opts, overview, { provider: opts.provider });

@@ -27,7 +27,7 @@ import { rollNameFor, namePoolFor } from '../naming/run.js';
 import { PROMPT_CLICHES } from '../naming/registry.js';
 import { parentFrame, surpriseKind, placeRuleFor } from './fit-place.js';
 import { isLaterAge } from '../library/world-options.js';
-import { bloodlinesOf, choicesOf, decideLineage, cultureOfLineage, lineageOf, lineageBriefLine, populationBriefLine, mixFor } from '../library/bloodlines.js';
+import { bloodlinesOf, choicesOf, decideLineage, namesOfLineage, lineageOf, lineageBriefLine, populationBriefLine, mixFor, viewsAt } from '../library/bloodlines.js';
 import { BLOODLINE_PRESETS } from '../library/bloodline-presets.js';
 
 // Every kind-of-being word the presets know, for spotting one a brief names
@@ -40,9 +40,10 @@ const PRESET_WORDS = BLOODLINE_PRESETS.map((p) => p.singular).filter((w) => !['h
 // rolled from the mix where they will be - and the culture it names them
 // in; a saved character's own; and, for a place or faction, who lives
 // there. Nothing when the world has no bloodlines.
-// -> { ids, how, unknown, cultureId, line, populationLine }
+// -> { ids, how, unknown, cultureId, familyCulture, line, populationLine }
+// familyCulture: { id } when mixed heritage names them from both parents.
 export function bloodlineContext({ settingId, type, task, entry = null, all, brief = '', placeId = null, factionIds = [], chosen = '', random = Math.random }) {
-    const none = { ids: [], how: '', unknown: '', cultureId: '', line: '', populationLine: '' };
+    const none = { ids: [], how: '', unknown: '', cultureId: '', familyCulture: null, line: '', populationLine: '' };
     const bloodlines = bloodlinesOf(all?.lore ?? []);
     if (!bloodlines.length) return none;
     const byId = Object.fromEntries(choicesOf(bloodlines).map((b) => [b.id, b]));
@@ -53,10 +54,13 @@ export function bloodlineContext({ settingId, type, task, entry = null, all, bri
         const decided = task === 'create' && !entry?.id
             ? decideLineage({ chosen, brief, bloodlines, mix: mixAtOf(placeId, factionIds[0] ?? null).mix, extraWords: PRESET_WORDS, random })
             : { ...lineageOf(entry, bloodlines), how: 'own', unknown: '' };
-        return { ...none, ids: decided.ids, how: decided.how, unknown: decided.unknown, cultureId: cultureOfLineage(decided.ids, byId, random), line: lineageBriefLine(decided.ids, byId, decided.unknown) };
+        const names = namesOfLineage(decided.ids, byId, random);
+        return { ...none, ids: decided.ids, how: decided.how, unknown: decided.unknown, cultureId: names.given, familyCulture: names.split ? { id: names.family } : null, line: lineageBriefLine(decided.ids, byId, decided.unknown) };
     }
-    if (type.id === 'location') return { ...none, populationLine: populationBriefLine(mixAtOf(entry?.id ?? placeId, null), byId, doc.overview.population) };
-    if (type.id === 'faction') return { ...none, populationLine: populationBriefLine(mixAtOf(placeId, entry?.id ?? null), byId, doc.overview.population) };
+    // How each bloodline is seen there (a place's own, else the one it is in).
+    const views = (p) => viewsAt(doc.overview.population, parents, doc.entries, p);
+    if (type.id === 'location') return { ...none, populationLine: populationBriefLine(mixAtOf(entry?.id ?? placeId, null), byId, doc.overview.population, views(entry?.id ?? placeId)) };
+    if (type.id === 'faction') return { ...none, populationLine: populationBriefLine(mixAtOf(placeId, entry?.id ?? null), byId, doc.overview.population, views(placeId)) };
     return none;
 }
 
@@ -285,7 +289,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         if (naming.name) fixedName = naming.name;
         else {
             const placeText = parentForPrompt ? pathOf(parents, parentForPrompt).map((id) => allEntries.find((e) => e.id === id)).filter(Boolean).map((e) => `${e.name} ${e.description ?? e.base?.description ?? ''}`).join(' ') : '';
-            const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief: picked || brief, purpose: frame?.purpose ?? '', cultureId: nameCulture, gender: naming.gender, hasParent: Boolean(parentForPrompt), placeText, placeId: parentForPrompt, factionIds }, all);
+            const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief: picked || brief, purpose: frame?.purpose ?? '', cultureId: nameCulture, familyCulture: naming.cultureId ? null : kin.familyCulture, gender: naming.gender, hasParent: Boolean(parentForPrompt), placeText, placeId: parentForPrompt, factionIds }, all);
             nameApart = plan.apart ?? '';
             if (plan.mode === 'rolled' || plan.mode === 'given') {
                 fixedName = plan.name;
@@ -408,8 +412,10 @@ function factionIdsOf(fields, all) {
 // naming.lineage: a character's bloodline ids - their culture names them.
 export function rollEntryName({ ctx, type, brief = '', all, parentId = null, naming = {}, fields = {} }) {
     const byId = Object.fromEntries(choicesOf(bloodlinesOf(all?.lore ?? [])).map((b) => [b.id, b]));
-    const cultureId = naming.cultureId || (type.id === 'character' ? cultureOfLineage(naming.lineage ?? [], byId) : '');
-    const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId, gender: naming.gender, hasParent: Boolean(parentId), placeId: parentId || (typeof fields.location === 'string' ? fields.location : null), factionIds: factionIdsOf(fields, all) }, all);
+    // Mixed heritage: the given name from one parent's culture, the family name from the other's.
+    const names = type.id === 'character' && !naming.cultureId ? namesOfLineage(naming.lineage ?? [], byId) : { given: '', split: false };
+    const cultureId = naming.cultureId || names.given;
+    const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId, familyCulture: names.split ? { id: names.family } : null, gender: naming.gender, hasParent: Boolean(parentId), placeId: parentId || (typeof fields.location === 'string' ? fields.location : null), factionIds: factionIdsOf(fields, all) }, all);
     if (plan.mode === 'rolled' || plan.mode === 'given') return plan.name;
     return plan.mode === 'derived' ? plan.candidates[0] : '';
 }

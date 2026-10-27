@@ -225,6 +225,8 @@ function locationSection(input) {
     if (env.rules?.value) body.push(`Local custom here: ${sentence(env.rules.value)}`);
     // Who is about here, when it is more than humans (src/library/bloodlines.js).
     if (clean(loc?.whoIsAbout)) body.push(sentence(clean(loc.whoIsAbout)));
+    // How the bloodlines of those here are seen in this place (bloodlines.js seenHereLine).
+    if (clean(loc?.seenHere)) body.push(sentence(clean(loc.seenHere)));
     if (body.length) lines.push(body.join(' '));
     // The sky, the hour's needs and the calendar's occasions.
     const hourLines = [ck?.sky, ck?.needs, ck?.holiday].filter((x) => clean(x));
@@ -293,12 +295,14 @@ function castLine(c) {
     const knownAs = clean(c.knownAs) ? unstop(truncate(c.knownAs, 300)) : '';
     if (c.player) {
         const who = [clean(c.bloodline), clean(c.role)].filter(Boolean).join(', ');
-        return `- ${clean(c.name)}${who ? ` (${who})` : ''}: the player character, played by the user.${knownAs ? ` ${knownAs}.` : ''}`;
+        return `- ${clean(c.name)}${who ? ` (${who})` : ''}: the player character, played by the user.${clean(c.age) ? ` ${firstUpper(unstop(c.age))}.` : ''}${knownAs ? ` ${knownAs}.` : ''}`;
     }
     const bits = [];
     if (clean(c.role)) bits.push(firstUpper(unstop(c.role)));
     if (clean(c.description)) bits.push(unstop(truncate(c.description, 160)));
     if (clean(c.lineageNote)) bits.push(firstUpper(unstop(truncate(c.lineageNote, 120))));
+    // Their age for their kind (src/library/bloodlines.js ageLine).
+    if (clean(c.age)) bits.push(firstUpper(unstop(c.age)));
     if (knownAs) bits.push(knownAs);
     if (clean(c.personality)) bits.push(unstop(truncate(c.personality, 90)));
     if (clean(c.voice)) bits.push(`Voice: ${unstop(firstLower(truncate(c.voice, 120)))}`);
@@ -310,6 +314,8 @@ function castLine(c) {
     for (const r of c.relations ?? []) bits.push(firstUpper(unstop(truncate(r, 90))));
     // What they know that others may not, and what binds them.
     for (const k of c.knows ?? []) bits.push(`Knows: ${unstop(truncate(k, 160))}`);
+    // What they hold true that is not (src/library/knowledge.js, beliefs).
+    for (const k of c.believes ?? []) bits.push(`Believes: ${unstop(truncate(k, 160))}`);
     for (const k of [...(c.sworn ?? []), ...(c.owed ?? [])]) bits.push(unstop(truncate(k, 160)));
     return `- ${name}${bits.length ? `: ${bits.join('. ')}.` : ''}`;
 }
@@ -339,6 +345,7 @@ function castParagraph(c) {
     const bits = [`${name}${kind ? ` (${kind})` : ''}${role ? `, ${article}${firstLower(role)},` : ''} is here.`];
     if (clean(c.description)) bits.push(sentence(truncate(c.description, 320)));
     if (clean(c.lineageNote)) bits.push(sentence(firstUpper(truncate(c.lineageNote, 160))));
+    if (clean(c.age)) bits.push(sentence(firstUpper(c.age)));
     if (clean(c.personality)) bits.push(`By temperament: ${sentence(firstLower(truncate(c.personality, 200)))}`);
     if (clean(c.voice)) bits.push(`How ${name} talks and moves: ${sentence(firstLower(truncate(c.voice, 240)))}`);
     if (clean(c.goals)) bits.push(`What ${name} wants: ${sentence(firstLower(truncate(c.goals, 200)))}`);

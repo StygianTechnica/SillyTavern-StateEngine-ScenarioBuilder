@@ -1047,6 +1047,8 @@ export function frictionLines({ cells = [], relations = [], knowledge = [], name
         if (told >= 4 || !clean(k?.text)) continue;
         if (k.kind === 'secret' && k.status === 'kept') { out.push(`A secret${names(k.knownBy) ? ` known to ${names(k.knownBy)}` : ''}: ${clean(k.text)}`); told++; }
         if (k.kind === 'oath' && (k.status === 'pending' || k.status === 'broken')) { out.push(`An oath ${k.status === 'broken' ? 'broken' : 'not yet kept'}${names(k.madeBy) ? ` by ${names(k.madeBy)}` : ''}: ${clean(k.text)}`); told++; }
+        // A belief that is not so: a reunion, a reveal waiting to happen.
+        if (k.kind === 'belief' && k.status === 'held') { out.push(`Believed by ${k.everyone ? 'most people' : names(k.heldBy) || 'some'}, but not so${names(k.knownBy) ? ` (the truth known to ${names(k.knownBy)})` : ''}: ${clean(k.text)}`); told++; }
     }
     return out.slice(0, 12);
 }

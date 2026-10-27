@@ -599,6 +599,7 @@
 .sb-mix-row { display: flex; align-items: center; gap: 6px; }
 .sb-mix-row .sb-mix-name { flex: 1; }
 .sb-mix-row select { width: auto; flex: 0 0 12em; }
+.sb-mix-row input.text_pole { flex: 2; min-width: 8em; margin: 0; }
 .sb-bloodline-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; margin-bottom: 8px; }
 .sb-bloodline-card { display: flex; gap: 8px; padding: 6px; border: 1px solid var(--SmartThemeBorderColor, rgba(255,255,255,0.15)); border-radius: 6px; cursor: pointer; }
 .sb-bloodline-card:hover { background: var(--SmartThemeQuoteColor, rgba(255,255,255,0.06)); }

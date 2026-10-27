@@ -313,6 +313,7 @@ export function dossierText(input) {
             clean(c.thought) && `thinking: ${cut(c.thought, 160)}`,
             ...(c.relations ?? []).map((r) => cut(r, 140)),
             ...(c.knows ?? []).map((k) => `knows: ${cut(k, 160)}`),
+            ...(c.believes ?? []).map((k) => `believes (wrongly): ${cut(k, 160)}`),
             ...[...(c.sworn ?? []), ...(c.owed ?? [])].map((k) => cut(k, 160)),
         ].filter(Boolean).map(bare);
         lines.push(`- ${clean(c.name)}${c.provisional ? ' (no name yet - known by this description)' : ''}${bits.length ? `: ${bits.join('; ')}` : ''}`);

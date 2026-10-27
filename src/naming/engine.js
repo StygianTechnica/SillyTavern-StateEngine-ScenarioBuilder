@@ -536,6 +536,22 @@ export function planName(req, world) {
     return { mode: 'rolled', name: best.name, aliases: best.aliases ?? [], meaning: best.meaning ?? '', gender: best.gender ?? '', candidates: [], counter: counter + 1, apart, ...meta };
 }
 
+// A family name alone, in a culture: the one a child of mixed heritage
+// takes from the parent whose given names they do not (docs/DESIGN -
+// BLOODLINES.md, phase 4). '' when the culture has none to give.
+export function familyNameIn(cultureId, world, salt = 0) {
+    const naming = world.naming ?? {};
+    const culture = resolveCulture(cultureId || defaultCultureId(world.overview, naming), { naming, seed: naming.seed ?? 'world' });
+    if (!culture) return '';
+    const rand = makeRng(naming.seed ?? 'world', 'family', naming.counter ?? 0, culture.id, salt);
+    const index = buildIndex({ names: world.names, registry: naming.registry, shared: world.shared, counter: naming.counter ?? 0, real: culture.real, cliches: naming.cliches !== false, banned: [...(naming.banned ?? []), ...(culture.banned ?? [])] });
+    for (let i = 0; i < 8; i++) {
+        const n = namePart(culture, 'family', rand) || houseFromPlace(culture, rand);
+        if (n && acceptable(n, index, { kit: false })) return n;
+    }
+    return '';
+}
+
 // A few names for any other person or place a text may mention ("her
 // brother", "the village she fled"): { people, places }.
 export function namePool(world, { cultureId = '', people = 3, places = 2 } = {}) {

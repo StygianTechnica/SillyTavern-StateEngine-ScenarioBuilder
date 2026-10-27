@@ -9,14 +9,14 @@ import { listEntries, getParents } from '../library/library.js';
 import { getSettingDoc } from '../store/setting-store.js';
 import { syncNow } from '../guidance/sync.js';
 import {
-    BLOODLINE_KINDS, SHARES, normalizeBloodline, normalizePopulation, normalizePlacePopulation, normalizeMembers,
+    BLOODLINE_KINDS, SHARES, STANDINGS, normalizeBloodline, normalizePopulation, normalizePlacePopulation, normalizeMembers,
     bloodlinesOf, choicesOf, wordsOf, mixFor, mixText, rollBloodline, whoIsAboutLine, onlyRule,
 } from '../library/bloodlines.js';
 import { presetGroups } from '../library/bloodline-presets.js';
 import { addBloodline, setWorldPopulation } from '../library/bloodline-store.js';
 import { resolveCulture } from '../naming/cultures.js';
 import { safeImageSrc } from '../images/attach.js';
-import { mixEditor, commitInput } from './bloodline-cards.js';
+import { mixEditor, viewsEditor, commitInput } from './bloodline-cards.js';
 import { premiseCard } from './naming-tab.js';
 import { ws, rerender, openSheet } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
@@ -74,7 +74,7 @@ function whereCard(settingId, bloodlines, all) {
     const world = normalizePopulation(doc.overview.population);
     const choices = choicesOf(bloodlines);
     const byId = Object.fromEntries(choices.map((b) => [b.id, b]));
-    const places = (all.location ?? []).filter((e) => normalizePlacePopulation(doc.entries[e.id]?.population).mix.length);
+    const places = (all.location ?? []).filter((e) => { const own = normalizePlacePopulation(doc.entries[e.id]?.population); return own.mix.length || own.views.length; });
     const factions = (all.faction ?? []).filter((e) => normalizeMembers(doc.entries[e.id]?.members).mix.length);
     const rule = onlyRule(world, byId);
     return h('div', { class: 'sb-card' },
@@ -86,12 +86,17 @@ function whereCard(settingId, bloodlines, all) {
             h('input', { type: 'checkbox', checked: world.only, onchange: (e) => { setWorldPopulation(settingId, { only: e.target.checked }); after(); } }),
             h('span', {}, 'These bloodlines and no others')),
         rule ? h('small', { class: 'sb-hint' }, `Told to the narrator with the world's limits: "${rule}"`) : null,
+        // How bloodlines are seen everywhere, unless a place says otherwise.
+        h('div', { class: 'sb-section-title' }, 'How they are seen'),
+        h('small', { class: 'sb-hint' }, 'Everywhere, unless a place says otherwise on its sheet. Told to the narrator when one of them is in the scene, so the locals react to them.'),
+        viewsEditor(world.views, choices, (views) => { setWorldPopulation(settingId, { views }); after(); }, { emptyText: 'Nothing said - the story decides.' }),
         h('div', { class: 'sb-section-title' }, 'Places and factions with their own'),
         places.length || factions.length ? [...places, ...factions].map((e) => {
             const own = e.type === 'faction' ? normalizeMembers(doc.entries[e.id]?.members) : normalizePlacePopulation(doc.entries[e.id]?.population);
             return h('div', { class: 'sb-alias-row sb-link', onclick: () => openSheet(e.id, e.type) },
                 h('strong', {}, e.name),
-                h('small', { class: 'sb-hint' }, ` ${e.type === 'faction' ? 'takes' : own.mode === 'replace' ? 'only' : 'changes'}: ${mixText(own.mix, byId)}`));
+                own.mix.length ? h('small', { class: 'sb-hint' }, ` ${e.type === 'faction' ? 'takes' : own.mode === 'replace' ? 'only' : 'changes'}: ${mixText(own.mix, byId)}`) : null,
+                own.views?.length ? h('small', { class: 'sb-hint' }, ` - ${own.views.map((v) => `${wordsOf(byId[v.id] ?? { id: v.id }).plural} ${STANDINGS.find(([id]) => id === v.standing)?.[2] ?? v.standing}`).join(', ')}`) : null);
         }) : h('small', { class: 'sb-hint' }, 'None yet - set one on a place\'s or faction\'s sheet ("Who lives here", "Who it takes").'));
 }
 

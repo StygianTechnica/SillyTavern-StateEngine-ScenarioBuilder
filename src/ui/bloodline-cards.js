@@ -7,9 +7,9 @@ import { setEntryMeta, getParents, updateEntry } from '../library/library.js';
 import { getSettingDoc } from '../store/setting-store.js';
 import { syncNow } from '../guidance/sync.js';
 import {
-    BLOODLINE_KINDS, SHARES, LIFESPANS, KNOWN, NAMING_MODES, HUMANS,
+    BLOODLINE_KINDS, SHARES, LIFESPANS, KNOWN, NAMING_MODES, STANDINGS, HUMANS,
     bloodlinesOf, choicesOf, normalizeBloodline, normalizeLineage, normalizePlacePopulation, normalizeMembers,
-    wordsOf, lineageOf, mixAt, mixText, emptyBloodline,
+    wordsOf, lineageOf, mixAt, mixText, emptyBloodline, viewsAt, seenHereLine,
 } from '../library/bloodlines.js';
 import { setBloodline, rewriteBloodline, describeBloodlineLook } from '../library/bloodline-store.js';
 import { canGenerateFor } from '../generate/run.js';
@@ -50,6 +50,26 @@ export function mixEditor(mix, choices, onChange, { emptyText = 'Nobody set - in
             : h('small', { class: 'sb-hint' }, emptyText),
         left.length ? select([{ value: '', label: 'Add a bloodline…' }, ...left.map((b) => ({ value: b.id, label: nameOf(b) }))], '', {
             onchange: (e) => { if (e.target.value) onChange([...rows, { id: e.target.value, share: 'some' }]); },
+        }) : null);
+}
+
+// How bloodlines are seen (phase 4): rows of bloodline, standing and a
+// note, with a row to add one. onChange(views).
+export function viewsEditor(views, choices, onChange, { emptyText = 'Nothing said - as above.' } = {}) {
+    const byId = new Map(choices.map((b) => [b.id, b]));
+    const rows = views.filter((v) => byId.has(v.id));
+    const left = choices.filter((b) => !rows.some((v) => v.id === b.id));
+    const standings = STANDINGS.map(([id, label]) => ({ value: id, label }));
+    const change = (id, patch) => onChange(rows.map((x) => (x.id === id ? { ...x, ...patch } : x)));
+    return h('div', { class: 'sb-mix' },
+        rows.length ? rows.map((v) => h('div', { class: 'sb-mix-row' },
+            h('span', { class: 'sb-mix-name' }, nameOf(byId.get(v.id))),
+            select(standings, v.standing, { onchange: (e) => change(v.id, { standing: e.target.value }) }),
+            commitInput(v.note, (x) => change(v.id, { note: x }), { placeholder: 'why - e.g. old grudges from the Purge' }),
+            h('span', { class: 'sb-iconbtn', title: 'Say nothing of them here', onclick: () => onChange(rows.filter((x) => x.id !== v.id)) }, icon('fa-xmark'))))
+            : h('small', { class: 'sb-hint' }, emptyText),
+        left.length ? select([{ value: '', label: 'Say how a bloodline is seen…' }, ...left.map((b) => ({ value: b.id, label: nameOf(b) }))], '', {
+            onchange: (e) => { if (e.target.value) onChange([...rows, { id: e.target.value, standing: 'distrusted', note: '' }]); },
         }) : null);
 }
 
@@ -238,5 +258,9 @@ export function populationCard(type, entry, all) {
         p.mix.length ? field('This mix', select([{ value: 'adjust', label: 'Changes the one above' }, { value: 'replace', label: 'Replaces the one above' }], p.mode, { onchange: (e) => save({ mode: e.target.value }) })) : null,
         mixEditor(p.mix, choices, (mix) => save({ mix }), { emptyText: 'As above.' }),
         field('Notes', commitInput(p.notes, (x) => save({ notes: x }), { placeholder: 'e.g. androids do the service work' })),
-        p.mix.length ? h('small', { class: 'sb-hint' }, `Here: ${mixText(here.mix, byId) || 'nobody'}.`) : null);
+        p.mix.length ? h('small', { class: 'sb-hint' }, `Here: ${mixText(here.mix, byId) || 'nobody'}.`) : null,
+        // How bloodlines are seen here: told to the narrator when one of them is in the scene.
+        h('div', { class: 'sb-section-title' }, 'How they are seen here'),
+        h('small', { class: 'sb-hint' }, `From above: ${seenHereLine(viewsAt(doc.overview.population, parents, doc.entries, parents[entry.id] ?? null), byId) || 'nothing said'}`),
+        viewsEditor(p.views, choices, (views) => save({ views }), { emptyText: 'As above.' }));
 }

@@ -8,7 +8,7 @@
 import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc } from '../store/chat-store.js';
 import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview, getPlaceOverview, playerIdOf, setPlayerId, listEntries, allKnowledge, listKnowledge, saveKnowledge, removeKnowledge, mergeEntries } from '../library/library.js';
-import { knowledgeOf, OATH_STATUSES, SECRET_STATUSES } from '../library/knowledge.js';
+import { knowledgeOf, statusesOf } from '../library/knowledge.js';
 import { pathOf, descendantsOf, inheritedEnvironment } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
 import { getSettingDoc } from '../store/setting-store.js';
@@ -26,7 +26,7 @@ import { renderMissionsTab, GIVER_TYPES } from './missions-tab.js';
 import { isDead, markDead, bringBack, setDeathHow } from '../state/death.js';
 import { suggestParents } from '../library/place-context.js';
 import { creatureFormOf } from '../library/creature-form.js';
-import { bloodlinesOf, lineageOf, visualFor } from '../library/bloodlines.js';
+import { bloodlinesOf, choicesOf, lineageOf, lineageVisual, visualFor } from '../library/bloodlines.js';
 import { bloodlineCard, lineageCard, populationCard } from './bloodline-cards.js';
 import { isPower, patronsOf } from '../library/powers.js';
 import { POWER_RATINGS, POWER_LABELS, FATES, FATE_LABELS, STANCE_LABELS, normalizeCombatMeta, stanceFor } from '../director/combat.js';
@@ -1219,22 +1219,34 @@ async function relationsTab({ entry, isNew, allEntries, names, parents, defs }) 
         h('small', { class: 'sb-hint' }, 'Story relationships come from Archivist and are read-only here; "Correct it" writes your own version, which takes precedence.'));
 }
 
-// Secrets and oaths touching this entry (src/library/knowledge.js): the
-// story's (Archivist, read-only) and the user's own, with who knows a
-// secret and who swore an oath to whom.
+// Secrets, oaths and beliefs touching this entry (src/library/knowledge.js):
+// the story's (Archivist, read-only) and the user's own, with who knows a
+// secret, who swore an oath to whom, and who holds a belief that is not so.
 async function secretsCard(entry, names, allEntries) {
     const { settingId } = ws.ctx;
     const nameOf = (id) => names.get(id)?.name ?? '';
     const items = knowledgeOf(entry, await allKnowledge(settingId, nameOf));
     const people = (list) => (list ?? []).map((p) => p.name).filter(Boolean).join(', ');
-    const draft = ws.secretDraft?.for === entry.id ? ws.secretDraft : (ws.secretDraft = { for: entry.id, kind: 'secret', text: '', knownBy: entry.type === 'character' ? [entry.id] : [], madeBy: entry.type === 'character' ? [entry.id] : [], madeTo: [], status: '' });
+    const mineChar = entry.type === 'character' ? [entry.id] : [];
+    const draft = ws.secretDraft?.for === entry.id ? ws.secretDraft : (ws.secretDraft = { for: entry.id, kind: 'secret', text: '', knownBy: mineChar, madeBy: mineChar, madeTo: [], status: '', about: mineChar, heldBy: entry.type === 'faction' ? [entry.id] : [], everyone: entry.type !== 'faction', truth: '', reaction: '' });
     const characters = allEntries.filter((e) => e.type === 'character').sort((a, b) => a.name.localeCompare(b.name));
-    const multi = (key) => h('select', { class: 'text_pole sb-multi', multiple: true, size: Math.min(5, Math.max(2, characters.length)), onchange: (e) => { draft[key] = [...e.target.selectedOptions].map((o) => o.value); } },
-        characters.map((c) => h('option', { value: c.id, selected: draft[key].includes(c.id) }, c.name)));
+    const factions = allEntries.filter((e) => e.type === 'faction').sort((a, b) => a.name.localeCompare(b.name));
+    const multi = (key, list = characters) => h('select', { class: 'text_pole sb-multi', multiple: true, size: Math.min(5, Math.max(2, list.length)), onchange: (e) => { draft[key] = [...e.target.selectedOptions].map((o) => o.value); } },
+        list.map((c) => h('option', { value: c.id, selected: (draft[key] ?? []).includes(c.id) }, c.type === 'faction' ? `${c.name} (faction)` : c.name)));
+    // Who has met a belief's subject in this chat - and knows better now.
+    const seenIn = getChatDoc(ws.ctx.chatKey).beliefsSeen ?? {};
+    const seenBy = (k) => Object.keys(seenIn[k.id] ?? {}).map((id) => names.get(id)?.name ?? '').filter(Boolean);
+    const KIND_ICONS = { oath: 'fa-handshake', belief: 'fa-ghost', secret: 'fa-user-secret' };
+    const KIND_TITLES = { oath: 'An oath, vow or pledge', belief: 'A belief many hold that is not so', secret: 'A secret' };
     const row = (k) => h('div', { class: 'sb-rel' },
-        h('span', { class: 'sb-chip sb-chip-on', title: k.kind === 'oath' ? 'An oath, vow or pledge' : 'A secret' }, icon(k.kind === 'oath' ? 'fa-handshake' : 'fa-user-secret'), ` ${k.kind}`),
+        h('span', { class: 'sb-chip sb-chip-on', title: KIND_TITLES[k.kind] }, icon(KIND_ICONS[k.kind] ?? 'fa-user-secret'), ` ${k.kind}`),
         h('span', {}, k.text),
         k.kind === 'secret' && k.knownBy.length ? h('small', { class: 'sb-hint' }, `known by ${people(k.knownBy)}`) : null,
+        k.kind === 'belief' ? h('small', { class: 'sb-hint' }, [
+            `held by ${k.everyone ? 'everyone' : people(k.heldBy) || 'no one yet'}`,
+            k.knownBy.length ? `the truth known to ${people(k.knownBy)}` : '',
+            seenBy(k).length ? `seen through in this chat by ${seenBy(k).join(', ')}` : '',
+        ].filter(Boolean).join(' · ')) : null,
         k.kind === 'oath' ? h('small', { class: 'sb-hint' }, [k.madeBy.length ? `sworn by ${people(k.madeBy)}` : '', k.madeTo.length ? `to ${people(k.madeTo)}` : ''].filter(Boolean).join(' ')) : null,
         h('span', { class: `sb-badge${k.status === 'broken' || k.status === 'revealed' ? ' sb-badge-warn' : ''}` }, k.status),
         h('span', { class: 'sb-push' }, k.source === 'story'
@@ -1246,30 +1258,48 @@ async function secretsCard(entry, names, allEntries) {
     const mine = items.filter((k) => k.source !== 'story');
     const story = items.filter((k) => k.source === 'story');
     const save = () => {
-        if (!draft.text.trim()) return toast('warning', 'Write the secret or oath first.');
+        if (!draft.text.trim()) return toast('warning', `Write the ${draft.kind} first.`);
+        if (draft.kind === 'belief' && !(draft.about ?? []).length) return toast('warning', 'Pick who the belief is about - their coming is what shakes it.');
         saveKnowledge(settingId, { ...draft, status: draft.status || undefined });
         ws.secretDraft = null;
         void syncNow().then(() => rerender());
     };
     const form = h('div', { class: 'sb-addform' },
         h('div', { class: 'sb-row' },
-            select([{ value: 'secret', label: 'A secret' }, { value: 'oath', label: 'An oath, vow or pledge' }], draft.kind, { onchange: (e) => { draft.kind = e.target.value; draft.status = ''; rerender(); } }),
-            h('input', { class: 'text_pole', value: draft.text, placeholder: draft.kind === 'oath' ? 'e.g. to see Varyn safely to Redhaven' : `e.g. ${entry.name} is the champion of Elyon`, oninput: (e) => { draft.text = e.target.value; } })),
-        draft.kind === 'secret'
-            ? h('div', { class: 'sb-row' }, h('small', { class: 'sb-hint' }, 'Known by'), multi('knownBy'),
-                h('small', { class: 'sb-hint' }, 'Everyone else in a scene is told they do not know it.'))
-            : h('div', { class: 'sb-row' }, h('small', { class: 'sb-hint' }, 'Sworn by'), multi('madeBy'), h('small', { class: 'sb-hint' }, 'to'), multi('madeTo')),
+            select([{ value: 'secret', label: 'A secret' }, { value: 'oath', label: 'An oath, vow or pledge' }, { value: 'belief', label: 'A belief that is not so' }], draft.kind, { onchange: (e) => { draft.kind = e.target.value; draft.status = ''; rerender(); } }),
+            h('input', { class: 'text_pole', value: draft.text, placeholder: draft.kind === 'oath' ? 'e.g. to see Varyn safely to Redhaven' : draft.kind === 'belief' ? `e.g. ${entry.type === 'character' ? entry.name : 'Cyril Moriarty'} is dead - killed in the Omicron lab fire` : `e.g. ${entry.name} is the champion of Elyon`, oninput: (e) => { draft.text = e.target.value; } })),
+        draft.kind === 'belief' ? beliefFields(draft, multi, characters, factions)
+            : draft.kind === 'secret'
+                ? h('div', { class: 'sb-row' }, h('small', { class: 'sb-hint' }, 'Known by'), multi('knownBy'),
+                    h('small', { class: 'sb-hint' }, 'Everyone else in a scene is told they do not know it.'))
+                : h('div', { class: 'sb-row' }, h('small', { class: 'sb-hint' }, 'Sworn by'), multi('madeBy'), h('small', { class: 'sb-hint' }, 'to'), multi('madeTo')),
         h('div', { class: 'sb-row' },
-            select((draft.kind === 'oath' ? OATH_STATUSES : SECRET_STATUSES).map((s) => ({ value: s, label: s })), draft.status || (draft.kind === 'oath' ? 'pending' : 'kept'), { onchange: (e) => { draft.status = e.target.value; } }),
+            select(statusesOf(draft.kind).map((s) => ({ value: s, label: s })), draft.status || statusesOf(draft.kind)[0], { onchange: (e) => { draft.status = e.target.value; } }),
             button(draft.id ? 'Save' : 'Add', save, { iconName: draft.id ? 'fa-floppy-disk' : 'fa-plus', cls: 'sb-primary' }),
             draft.id || draft.text ? button('Cancel', () => { ws.secretDraft = null; rerender(); }, { iconName: 'fa-xmark' }) : null));
     return h('div', {},
-        h('div', { class: 'sb-section-title' }, icon('fa-user-secret'), ' Your secrets and oaths'),
+        h('div', { class: 'sb-section-title' }, icon('fa-user-secret'), ' Your secrets, oaths and beliefs'),
         mine.length ? h('div', { class: 'sb-relgroup' }, mine.map(row)) : null,
         form,
-        h('small', { class: 'sb-hint' }, 'The guidance tells each person present what they know and have sworn, and tells everyone else they do not know a secret.'),
+        h('small', { class: 'sb-hint' }, 'The guidance tells each person present what they know, have sworn and wrongly believe, and tells everyone else they do not know a secret. Someone who believes a thing that is not so is shocked the first time they meet the truth of it - and knows better from then on.'),
         h('div', { class: 'sb-section-title' }, icon('fa-book-open-reader'), ` From the story${story.length ? ` (${story.length})` : ''}`),
         story.length ? h('div', { class: 'sb-relgroup' }, story.map(row)) : h('div', { class: 'sb-muted' }, 'None yet. Archivist adds the secrets and oaths the story shows as the chat goes on.'));
+}
+
+// A belief's own fields: who it is about, who holds it (everyone, or the
+// people and factions picked), who knows the truth, and two optional lines.
+function beliefFields(draft, multi, characters, factions) {
+    return h('div', {},
+        h('div', { class: 'sb-row' }, h('small', { class: 'sb-hint' }, 'About'), multi('about'),
+            h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: draft.bySight !== false, onchange: (e) => { draft.bySight = e.target.checked; } }), h('span', {}, 'Seeing them shows it is not so')),
+            h('small', { class: 'sb-hint' }, 'Then those who believe it are shocked when they turn up. Off for a disguise or a hidden illness: the sight does not give it away.')),
+        h('div', { class: 'sb-row' },
+            h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: draft.everyone === true, onchange: (e) => { draft.everyone = e.target.checked; rerender(); } }), h('span', {}, 'Everyone believes it')),
+            draft.everyone ? null : [h('small', { class: 'sb-hint' }, 'Held by'), multi('heldBy', [...factions, ...characters])],
+            h('small', { class: 'sb-hint' }, 'The truth is known to'), multi('knownBy')),
+        h('div', { class: 'sb-row' },
+            h('input', { class: 'text_pole', value: draft.truth ?? '', placeholder: 'The truth (optional), e.g. he survived; the eye keeps him alive', oninput: (e) => { draft.truth = e.target.value; } }),
+            h('input', { class: 'text_pole', value: draft.reaction ?? '', placeholder: 'What they may take the sight for (optional), e.g. a ghost, a clone, a trick', oninput: (e) => { draft.reaction = e.target.value; } })));
 }
 
 async function storyTab({ entry, isNew, doc }) {
@@ -1309,8 +1339,9 @@ async function imageTab({ type, entry, isNew, doc, parents }) {
     const knownNames = Object.entries(genCtx?.all ?? {}).filter(([t]) => t !== 'item' && t !== 'creature').flatMap(([, list]) => list.filter((e) => e.meta?.bloodline?.on !== true).flatMap((e) => [e.name, ...(e.aliases ?? e.base?.aliases ?? [])]));
     // What one of their bloodline looks like (a bloodline's own picture is one of them).
     const bloodlines = bloodlinesOf(genCtx?.all?.lore ?? []);
-    const kindId = entry.type === 'character' ? lineageOf(entry, bloodlines).ids[0] : (entry.meta?.bloodline?.on ? entry.id : '');
-    const bloodline = kindId ? visualFor(bloodlines.find((b) => b.id === kindId)) : null;
+    // A character of mixed heritage is drawn as one (lineageVisual).
+    const byKind = Object.fromEntries(choicesOf(bloodlines).map((b) => [b.id, b]));
+    const bloodline = entry.type === 'character' ? lineageVisual(lineageOf(entry, bloodlines).ids, byKind) : (entry.meta?.bloodline?.on ? visualFor(bloodlines.find((b) => b.id === entry.id)) : null);
     // A place inside another: its district's character, and only the air
     // and weather of a city's climate (src/images/prompt.js placeSurroundings).
     const places = new Map((genCtx?.all?.location ?? []).map((p) => [p.id, p]));

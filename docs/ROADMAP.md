@@ -345,7 +345,7 @@ API (docs/api.md, SB-640..642); Pretty Panels owns where they appear.
   generation, image prompts and route times all work from the world as it
   holds where the scene (or the entry) is.
 - [ ] **Bloodlines: races, species and who lives where (added 2026-10-26;
-  phases 1-3 built 2026-10-27).** docs/DESIGN - BLOODLINES.md (first drafted as
+  phases 1-4 built 2026-10-27).** docs/DESIGN - BLOODLINES.md (first drafted as
   "Peoples"). A world's bloodlines (elves, androids, invented
   aliens) are Lore entries with a bloodline block: how they look, how they
   live in *this* world (elves in a cyberpunk city), lifespan, whose names
@@ -614,6 +614,20 @@ Done: the Worlds tab (src/worlds/, src/ui/worlds-tab.js).
   here does not know it (they never act on it, hint at it or guess it);
   the director is given the same and told people act only on what they
   know. Revealed secrets and released or kept oaths drop out.
+- [x] Beliefs that are not so (2026-10-27, src/library/knowledge.js, no new
+  model calls): a third kind beside secrets and oaths - "Cyril Moriarty is
+  dead". Who it is about; held by everyone, or by people and factions (a
+  faction's members hold it); who knows the truth, and optionally what the
+  truth is and what holders may take the sight for ("a ghost, a clone").
+  A holder away from its subject is told they believe it ("Believes: ...").
+  A holder meeting the subject for the first time is shocked that turn (a
+  scene rule: they react now, before the scene goes on; with "everyone",
+  bystanders too), and knows better from the next - recorded per chat
+  (`beliefsSeen`), so another playthrough has its own and the shock comes
+  once per person. "Seeing them shows it is not so" is off for a disguise
+  or a hidden illness: then it is simply believed, even to their face.
+  Dispelled: dropped. The player is never told what they believe. The GM
+  planner sees held beliefs as frictions; merging entries carries them.
 - [~] Perspective and knowledge boundaries beyond secrets (9.4, OPEN-5) -
   progressed 2026-10-19, no new model calls:
   - Narrator (src/guidance/build.js, secrets section) and director system

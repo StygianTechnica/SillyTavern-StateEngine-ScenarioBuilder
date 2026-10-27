@@ -12,8 +12,8 @@ live *in this world*, how common they are where, and whose names they
 carry. They come from presets, from the premise, from the user's own
 invention, or from the story itself, like everything else.
 
-Status: phases 1-3 built (2026-10-27) - see "Phase 1 as built" to "Phase
-3 as built" at the end. Phase 4 not yet. Called "Peoples" in the first draft; renamed so it is
+Status: phases 1-4 built (2026-10-27) - see "Phase 1 as built" to "Phase
+4 as built" at the end. Called "Peoples" in the first draft; renamed so it is
 not confused with characters and suits the book's theming.
 
 ## 1. What a bloodline is
@@ -501,5 +501,65 @@ The pure half is `src/library/bloodline-prompts.js`; the runners are in
     features, dress, tags, never draw, variety) from the description. On a
     canon entry or in a canon-only world, only what the text says.
 
-Not yet: phase 4 - mixed heritage done fully, prejudice per place,
-lifespans in ages.
+Since built: phase 4, below.
+
+## Phase 4 as built (2026-10-27)
+
+All in `src/library/bloodlines.js` (pure), with the runners where they
+already were.
+
+- **Lifespans in ages.** A character has no age field: their age is read
+  from their text ("312 years old", "a 300-year-old elf", "aged 41",
+  "Age: 41" - `ageIn`, from the description, appearance and an age field
+  if the type has one). `ageReading` reads it by their bloodline's span:
+  each span has the ages where one stops being a child, young, in the prime
+  of life, middle-aged and old (short 8/15/25/40/55, human 14/25/45/65/85,
+  long 40/100/400/600/800; ageless never ages past 25 and looks about 30),
+  and how old one looks is the same point on a human's. A lifespan note
+  that says it ("a 300-year-old looks 30") wins. Mixed heritage
+  ("long+human") lies between its parents'. Used:
+  - in the cast line and the cast paragraph: "312 years old - in the
+    prime of life for a high elf, looks about 39" (`ageLine`; nothing for
+    a human span);
+  - for a new character: "High elves live for centuries: one of 250 is in
+    the prime of life and looks about 35. Give an age that fits."
+    (`lifespanLine`, in `lineageBriefLine`);
+  - in image prompts: a long-lived character's age is taken out of the
+    description and "looks about 39" put after their kind, so a 312-year-old
+    elf is not drawn as an old man.
+- **Mixed heritage, done fully.**
+  - Labels: "half-orc" (the other parent human), "half high elf" (a kind of
+    two words), "half dwarf, half orc" (two others) - `lineageLabel`.
+  - Look (`lineageVisual`): drawn as one, the first mark of each
+    non-human parent softened ("subtly pointed ears"), "mixed heritage";
+    a half-human keeps nothing out (the human parent may give hair, a human
+    face), two others only what neither has. The sheet's picture uses it.
+  - Names (`namesOfLineage`): the given name in one parent's culture, the
+    family name in the other's - which is rolled. Each parent's culture by
+    its own mode (own / local / either); a local parent's side takes the
+    place's names. `familyNameIn` (`src/naming/engine.js`) rolls the
+    family name, and `rollNameFor` passes it as the person's family
+    (`familyCulture`). A culture picked in the Generate panel still wins.
+    A culture with no family names (a patronymic one) keeps its own way.
+  - A writer is told of both parents: both bloodlines' lines, "something
+    of each parent in their looks and upbringing", how each side sees one
+    of mixed blood, and that a half-elf ages more slowly than a human but
+    not as slowly as an elf.
+  - Only a bloodline with "children with others" offers a second on the
+    character's card, as before.
+- **How bloodlines are seen, per place.** `views: [{ id, standing, note }]`
+  on the world's population and on a place's (standings: revered, welcome,
+  accepted, watched warily, distrusted, looked down on, feared, hunted,
+  outlawed). `viewsAt` inherits them like the mix: the world's, then each
+  place from the top - the nearest that says something of a bloodline
+  wins. Used:
+  - in the location section, for the bloodlines of those in the scene
+    (the player too): "High elves are distrusted here (the Purge) - the
+    locals treat Kael accordingly." (`seenHereLine`); nothing when none of
+    them is here;
+  - when a place or faction is written: "How they are seen there: ..."
+    (`populationBriefLine`).
+  - Set on the Bloodlines tab ("How they are seen", the world's) and on a
+    place's "Who lives here" card ("How they are seen here", with what
+    comes from above). The tab's list of places with their own shows
+    their views too.

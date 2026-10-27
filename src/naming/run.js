@@ -5,7 +5,7 @@
 
 import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { getSettings, saveSettings } from '../settings.js';
-import { planName, namePool, rollPool } from './engine.js';
+import { planName, namePool, rollPool, familyNameIn } from './engine.js';
 import { prunePool, shortfall } from './live.js';
 import { recordName } from './registry.js';
 import { cultureChoices, defaultCultureId, defaultCultureChoice, resolveCulture, inheritedCulture, newCultureDef } from './cultures.js';
@@ -58,12 +58,21 @@ export function cultureIdFor(settingId, all = {}, { placeId = null, factionIds =
 }
 
 // A name for a new thing. req: { typeId, brief, cultureId, gender,
-// hasParent, placeText, placeId, factionIds }. -> the engine's plan (mode
-// 'rolled' | 'derived' | 'given' | 'none'); a rolled name is recorded as
-// offered.
+// hasParent, placeText, placeId, factionIds, familyCulture }. -> the
+// engine's plan (mode 'rolled' | 'derived' | 'given' | 'none'); a rolled
+// name is recorded as offered.
+// familyCulture: { id } - mixed heritage (src/library/bloodlines.js
+// namesOfLineage): the family name in that culture ('' - the place's),
+// the given name in `cultureId`.
 export function rollNameFor(settingId, req, all) {
     const cultureId = req.cultureId || cultureIdFor(settingId, all, req);
-    const plan = planName({ ...req, cultureId }, worldOf(settingId, all));
+    const world = worldOf(settingId, all);
+    let family = req.family ?? '';
+    if (req.familyCulture && req.typeId === 'character' && !family) {
+        const familyId = req.familyCulture.id || cultureIdFor(settingId, all, req);
+        if (familyId !== cultureId) family = familyNameIn(familyId, world);
+    }
+    const plan = planName({ ...req, cultureId, family }, world);
     if (plan.mode === 'rolled') record(settingId, plan.counter, [{ name: plan.name, kind: plan.kind, culture: plan.culture?.id, state: 'o', meaning: plan.meaning }]);
     else if (plan.counter) record(settingId, plan.counter, []);
     return plan;

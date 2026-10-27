@@ -112,9 +112,10 @@ export function mergeSettingDoc(doc, dupId, keepId) {
     }
     doc.routes = routes;
 
-    // Secrets and oaths: who knows, who swore, to whom.
+    // Secrets, oaths and beliefs: who knows, who swore, to whom, who it is
+    // about and who holds it.
     for (const k of doc.knowledge ?? []) {
-        for (const field of ['knownBy', 'madeBy', 'madeTo']) {
+        for (const field of ['knownBy', 'madeBy', 'madeTo', 'about', 'heldBy']) {
             const next = swapList(k[field], dupId, keepId);
             if (next.join() !== (k[field] ?? []).join()) moved.push('secrets and oaths');
             k[field] = next;

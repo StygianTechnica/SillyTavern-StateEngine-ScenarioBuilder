@@ -36,7 +36,7 @@ import { isIntimate } from './intimacy.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { relevantLore } from '../library/lore.js';
 import { placeOverview, isLaterAge } from '../library/world-options.js';
-import { bloodlinesOf, choicesOf, lineageOf, lineageLabel, bloodlineBrief, mixAt, whoIsAboutLine, onlyRule, normalizeBloodline } from '../library/bloodlines.js';
+import { bloodlinesOf, choicesOf, lineageOf, lineageLabel, bloodlineBrief, mixAt, whoIsAboutLine, onlyRule, normalizeBloodline, lineageVisual, ageIn, ageLine, viewsAt, seenHereLine } from '../library/bloodlines.js';
 import { timesLine, techOf, modeLabel } from '../library/travel.js';
 import { relationsFor, pairCovered } from '../library/relations-edit.js';
 import { activeQuests } from '../quests/sync.js';
@@ -240,6 +240,8 @@ export async function gatherInputs(chatId, chatKey) {
             bloodline: bloodlines.some((b) => normalizeBloodline(b.meta?.bloodline).kind !== 'human') ? lineageLabel(lineage.ids, bloodlineById) : '',
             bloodlineIds: lineage.ids,
             lineageNote: lineage.note,
+            // How old they are for their kind: a 312-year-old elf is in their prime.
+            age: ageOfKind([doc.narrative[id]?.text, obj.description, text(base.appearance), text(base.age)].join(' '), lineage.ids, bloodlineById),
             aliases: obj.aliases ?? base.aliases ?? [],
             // How they are known, and by whom (src/library/alias-kinds.js).
             knownAs: settingId ? knownAsText(obj.name, obj.aliases ?? base.aliases ?? [], library.entries?.[id]?.aliasInfo ?? {}, (x) => aliasUsers.get(x) ?? '') : '',
@@ -265,6 +267,9 @@ export async function gatherInputs(chatId, chatKey) {
             why: c.castIds.length ? 'canonically present' : 'present in the story',
         });
     }
+    // How the bloodlines of those here are seen in this place (phase 4).
+    if (location && settingId) location.seenHere = seenHereLine(viewsAt(library.overview.population, parents, library.entries, locationId), bloodlineById, cast.map((m) => ({ name: m.name, ids: m.bloodlineIds ?? [] })));
+
     // How the characters present relate to each other: the relationships
     // the user authored first, then the story's (Archivist) for pairs the
     // user has not written.
@@ -312,13 +317,31 @@ export async function gatherInputs(chatId, chatKey) {
     if (settingId && cast.length) {
         try {
             const nameById = new Map(allCharacters.map((c) => [c.id, c.name]));
+            // A belief may be held by a faction: its members hold it.
+            const beliefs = (library.knowledge ?? []).filter((k) => k.kind === 'belief' && k.status === 'held');
+            let beliefMembers = memberships;
+            if (beliefs.some((k) => k.heldBy.length)) {
+                const factionList = await listEntries(chatId, settingId, 'faction');
+                for (const f of factionList) nameById.set(f.id, f.name);
+                if (!beliefMembers.size) beliefMembers = libraryMemberships(factionList, library.relations ?? []);
+            }
             const knowledge = await allKnowledge(settingId, (id) => nameById.get(id) ?? '');
-            const { members, rules } = sceneKnowledge(knowledge, cast);
+            const { members, rules, newlySeen } = sceneKnowledge(knowledge, cast, { seen: doc.beliefsSeen, turn: doc.turn, memberships: beliefMembers });
             for (const member of cast) {
                 const k = members.get(member.id ?? member.name);
-                if (k) Object.assign(member, { knows: k.knows, sworn: k.sworn, owed: k.owed });
+                if (k) Object.assign(member, { knows: k.knows, sworn: k.sworn, owed: k.owed, believes: k.believes });
             }
             secretRules = rules;
+            // Holders meeting a belief's subject: shocked this turn, knowing
+            // from the next.
+            if (newlySeen.length) {
+                updateChatDoc(chatKey, (d) => {
+                    for (const s of newlySeen) {
+                        d.beliefsSeen[s.beliefId] = d.beliefsSeen[s.beliefId] ?? {};
+                        if (d.beliefsSeen[s.beliefId][s.personId] === undefined) d.beliefsSeen[s.beliefId][s.personId] = doc.turn;
+                    }
+                });
+            }
         } catch (err) {
             console.debug(LOG_PREFIX, 'no secrets or oaths for the guidance', err);
         }
@@ -587,4 +610,12 @@ export function startGuidanceSync() {
         eventSource.on(event, requestSync);
     }
     requestSync();
+}
+
+// A character's age as it reads for their kind (src/library/bloodlines.js
+// ageLine): '' for a human span, or when their text gives no age.
+function ageOfKind(text, ids, byId) {
+    const v = ids?.length ? lineageVisual(ids, byId) : null;
+    if (!v?.lifespan) return '';
+    return ageLine(ageIn(text), { lifespan: v.lifespan, note: v.lifespanNote, singular: lineageLabel(ids, byId) });
 }

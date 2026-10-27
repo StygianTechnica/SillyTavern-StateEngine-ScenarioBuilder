@@ -64,11 +64,11 @@ describe('normalizing', () => {
     });
     it('is stored with the setting and its entries', () => {
         const doc = normalizeSettingDoc({ overview: { population: { mix: [{ id: HUMANS, share: 'most' }], only: true } }, entries: { x: { lineage: { ids: ['elf1'] }, bloodline: { on: true } } } });
-        expect(doc.overview.population).toEqual({ mix: [{ id: HUMANS, share: 'most' }], notes: '', only: true });
+        expect(doc.overview.population).toEqual({ mix: [{ id: HUMANS, share: 'most' }], notes: '', only: true, views: [] });
         expect(doc.entries.x.lineage.ids).toEqual(['elf1']);
         expect(doc.entries.x.bloodline.on).toBe(true);
-        expect(normalizeEntryMeta({}).population).toEqual({ mode: 'adjust', mix: [], notes: '' });
-        expect(normalizeSettingDoc({}).overview.population).toEqual({ mix: [], notes: '', only: false });
+        expect(normalizeEntryMeta({}).population).toEqual({ mode: 'adjust', mix: [], notes: '', views: [] });
+        expect(normalizeSettingDoc({}).overview.population).toEqual({ mix: [], notes: '', only: false, views: [] });
     });
 });
 
@@ -137,7 +137,7 @@ describe('a character\'s bloodline', () => {
     });
     it('labels one or two', () => {
         expect(lineageLabel(['elf1'], byId)).toBe('elf');
-        expect(lineageLabel(['elf1', HUMANS], byId)).toBe('half elf, half human');
+        expect(lineageLabel(['elf1', HUMANS], byId)).toBe('half-elf');
         expect(lineageLabel([], byId)).toBe('');
     });
     it('has a short form for prompts', () => {
