@@ -8,7 +8,7 @@ hands them to the model. The model is told a thing's name; it is never asked
 to make one up.
 
 Status: built (2026-10-26) - phases 1-5, see "Phase 1 as built" to "Phase 5
-as built" at the end. Population mixes moved to docs/DESIGN - PEOPLES.md.
+as built" at the end. Population mixes moved to docs/DESIGN - BLOODLINES.md.
 
 ## 1. Where the model names things today
 
@@ -645,8 +645,8 @@ sample (copy it instead).
   - Each proposal learns from its users' names before you add it.
 
 Since built (phase 5): the front page offers the call, and cultures have
-word pools of their own. Not yet: peoples in the same call (docs/DESIGN -
-PEOPLES.md, phase 3).
+word pools of their own. Not yet: bloodlines in the same call (docs/DESIGN -
+BLOODLINES.md, phase 3).
 
 ## Phase 4 as built (2026-10-26)
 
@@ -717,7 +717,7 @@ capital "The".
 ## Phase 5 as built (2026-10-26)
 
 With this, naming is done. What is left belongs to other designs: population
-mixes and a people's culture are docs/DESIGN - PEOPLES.md (phases 1-3).
+mixes and a bloodline's culture are docs/DESIGN - BLOODLINES.md (phases 1-3).
 
 - **Meanings on sheets.** A rolled name's meaning ("wolf-home") is kept in
   the registry (`m`) with its culture; the sheet shows it under the name -

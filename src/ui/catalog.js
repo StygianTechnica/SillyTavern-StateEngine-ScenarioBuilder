@@ -385,8 +385,9 @@ function chapterPage(type, all, doc, board = null) {
     const view = viewOf(type.id);
     const sort = getSettings().catalog.sort;
 
-    const filtered = sortEntries(filterEntries(entries, { search: ws.search, tag: ws.tag, status: ws.status, within: ws.within }, { doc, parents }), sort, doc);
-    const filtering = !!(ws.search || ws.tag || ws.status || ws.within);
+    const bloodline = type.id === 'lore' ? ws.bloodlineFilter ?? '' : '';
+    const filtered = sortEntries(filterEntries(entries, { search: ws.search, tag: ws.tag, status: ws.status, within: ws.within, bloodline }, { doc, parents }), sort, doc);
+    const filtering = !!(ws.search || ws.tag || ws.status || ws.within || bloodline);
 
     const tags = tagsOf(entries);
     const views = [['grid', 'fa-grip', 'Cards'], ['list', 'fa-list', 'List']];
@@ -399,6 +400,7 @@ function chapterPage(type, all, doc, board = null) {
             oninput: (e) => { ws.search = e.target.value; clearTimeout(chapterPage.t); chapterPage.t = setTimeout(rerender, 250); },
         })),
         tags.length ? select([{ value: '', label: 'Any tag' }, ...tags.map((t) => ({ value: t, label: `#${t}` }))], ws.tag, { title: 'Tag', onchange: (e) => { ws.tag = e.target.value; rerender(); } }) : null,
+        type.id === 'lore' && entries.some((e) => e.meta?.bloodline?.on === true) ? select([{ value: '', label: 'All lore' }, { value: 'only', label: 'Bloodlines' }, { value: 'none', label: 'Not bloodlines' }], bloodline, { title: 'Bloodlines', onchange: (e) => { ws.bloodlineFilter = e.target.value; rerender(); } }) : null,
         select([{ value: '', label: 'Any status' }, ...Object.entries(STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))], ws.status, { title: 'Status in this chat', onchange: (e) => { ws.status = e.target.value; rerender(); } }),
         PLACED.has(type.id) && locations.length ? select([{ value: '', label: 'Anywhere' }, ...locations.map((l) => ({ value: l.id, label: `Within ${pathLabel(l.id) || l.name}` })).sort((a, b) => a.label.localeCompare(b.label))], ws.within, { title: 'Where', onchange: (e) => { ws.within = e.target.value; rerender(); } }) : null,
         view !== 'tree' && view !== 'map' ? select([{ value: 'name', label: 'A–Z' }, { value: 'recent', label: 'Recently edited' }, { value: 'status', label: 'In play first' }], sort, { title: 'Sort', onchange: (e) => { getSettings().catalog.sort = e.target.value; saveSettings(); rerender(); } }) : null,
@@ -419,7 +421,7 @@ function chapterPage(type, all, doc, board = null) {
                 button(`Create the first ${type.noun}`, () => openSheet('new'), { iconName: 'fa-plus', cls: 'sb-primary' }),
                 button('Generate one', () => { ws.genPanel = type.id; rerender(); }, { iconName: 'fa-wand-magic-sparkles' })));
     } else if (!filtered.length) {
-        body = h('div', { class: 'sb-callout' }, icon('fa-filter-circle-xmark'), h('span', {}, 'Nothing matches.'), button('Clear filters', () => { ws.search = ''; ws.tag = ''; ws.status = ''; ws.within = ''; rerender(); }));
+        body = h('div', { class: 'sb-callout' }, icon('fa-filter-circle-xmark'), h('span', {}, 'Nothing matches.'), button('Clear filters', () => { ws.search = ''; ws.tag = ''; ws.status = ''; ws.within = ''; ws.bloodlineFilter = ''; rerender(); }));
     } else if (view === 'tree' && !filtering) {
         body = locationTree(entries, doc, parents);
     } else if (view === 'map' && !filtering) {

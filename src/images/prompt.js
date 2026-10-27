@@ -294,10 +294,17 @@ const field = (entry, name) => {
 // The subject phrase for each type: what the picture is of.
 const article = (noun) => (/^[aeiou]/i.test(noun) ? `an ${noun}` : `a ${noun}`);
 
-function subjectOf(entry, description, names = [], overview = {}) {
+// `kind`: what one of their bloodline looks like (bloodlines.js visualFor) -
+// it leads, since models weigh the start: "portrait of an elf veteran
+// fighter", or the body and features of a bloodline no model knows.
+function subjectOf(entry, description, names = [], overview = {}, kind = null) {
     const role = roleArchetype(field(entry, 'role'), [entry.name, ...(entry.aliases ?? []), ...names]);
+    if (entry.type === 'lore' && kind) return [`full-body character design of ${article(kind.lead)}`, clean(kind.tags), ...kind.details, 'reference sheet, plain background'];
     switch (entry.type) {
-        case 'character': return [role ? `portrait of ${article(role)}` : 'character portrait', description];
+        case 'character': {
+            const who = [kind?.lead, role].filter(Boolean).join(' ');
+            return [who ? `portrait of ${article(who)}` : 'character portrait', ...(kind?.details ?? []), description];
+        }
         case 'location': return [description || 'a place', 'establishing shot'];
         // Heraldry belongs to the castle age; a later world brands its factions.
         case 'faction': return [`${isLaterAge(overview) ? 'logo and branding' : 'heraldic emblem and banner'} of ${description ? `a faction: ${description}` : 'a faction'}`];
@@ -422,7 +429,9 @@ export function styleOf(options, overview = {}, { provider = '' } = {}) {
 // none of them reaches the picture.
 // surroundings: { within, exclude } from placeSurroundings (a place's
 // district, and the water kept out of an inland one).
-export function buildImagePrompt({ entry, narrative = '', environment = {}, overview = {}, options = {}, knownNames = [], surroundings = {} }) {
+// bloodline: { lead, tags, details, negative } - a character's bloodline,
+// or a bloodline's own reference picture (src/library/bloodlines.js visualFor).
+export function buildImagePrompt({ entry, narrative = '', environment = {}, overview = {}, options = {}, knownNames = [], surroundings = {}, bloodline = null }) {
     const opts = { ...DEFAULT_IMAGE_OPTIONS, ...options, midjourney: { ...DEFAULT_IMAGE_OPTIONS.midjourney, ...(options.midjourney ?? {}) } };
     const names = opts.includeNames ? [] : [entry.name, ...(entry.aliases ?? [])];
     // A place's (or thing's) name taken out leaves its kind in its stead
@@ -443,7 +452,7 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
     const parts = [
         leads ? styleText : '',
         opts.includeNames && entry.type === 'character' ? clean(entry.name) : '',
-        ...subjectOf(entry, description, others, overview),
+        ...subjectOf(entry, description, others, overview, bloodline),
         entry.type === 'location' ? clean(surroundings.within) : '',
         entry.type === 'character' ? clean(preset?.portrait) : '',
         entry.type === 'location' || entry.type === 'scene' ? env : '',
@@ -462,7 +471,7 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
         if (Number.isFinite(Number(mj.stylize)) && Number(mj.stylize) !== 100) params.push(`--stylize ${Math.round(Number(mj.stylize))}`);
         if (Number(mj.chaos) > 0) params.push(`--chaos ${Math.round(Number(mj.chaos))}`);
         if (mj.raw) params.push('--style raw');
-        const no = [...new Set([...clean(mj.no).split(',').map(clean).filter(Boolean), ...clean(preset?.mjNo).split(',').map(clean).filter(Boolean), ...(opts.respectLimits === false ? [] : worldExclusions(overview)), ...(surroundings.exclude ?? [])])];
+        const no = [...new Set([...clean(mj.no).split(',').map(clean).filter(Boolean), ...clean(preset?.mjNo).split(',').map(clean).filter(Boolean), ...(opts.respectLimits === false ? [] : worldExclusions(overview)), ...(surroundings.exclude ?? []), ...(bloodline?.negative ?? [])])];
         if (no.length) params.push(`--no ${no.join(', ')}`);
         if (clean(mj.sref)) params.push(`--sref ${clean(mj.sref)}`);
         if (clean(mj.extra)) params.push(clean(mj.extra));
@@ -470,7 +479,7 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
         return { provider: 'midjourney', prompt: `${subject.replace(/--+/g, '-')} ${params.join(' ')}`, negative: '' };
     }
     if (opts.provider === 'stable_diffusion') {
-        const negative = [clean(opts.negative), clean(preset?.sdNegative), ...(opts.respectLimits === false ? [] : worldExclusions(overview)), ...(surroundings.exclude ?? [])].filter(Boolean).join(', ');
+        const negative = [clean(opts.negative), clean(preset?.sdNegative), ...(opts.respectLimits === false ? [] : worldExclusions(overview)), ...(surroundings.exclude ?? []), ...(bloodline?.negative ?? [])].filter(Boolean).join(', ');
         return { provider: 'stable_diffusion', prompt: `${subject}, highly detailed`, negative };
     }
     const style = styleText;

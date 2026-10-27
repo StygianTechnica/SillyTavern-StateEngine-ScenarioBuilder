@@ -145,9 +145,10 @@ function aloneSection(input) {
 
 // The world's hard limits (what does not exist), its own section so it
 // stands right after the setting and is never dropped.
-function limitsSection(overview) {
+function limitsSection(overview, only = '') {
     const o = overview ?? {};
-    const limits = [...describeMagic(o.magic).limits, ...describeTech(o.tech).limits].map((l) => sentence(l));
+    // The world's "these bloodlines and no others" (src/library/bloodlines.js onlyRule).
+    const limits = [...describeMagic(o.magic).limits, ...describeTech(o.tech).limits, clean(only)].filter(Boolean).map((l) => sentence(l));
     // How the world looks - kept with the limits, which are never dropped,
     // so a post-apocalyptic "fortress" is never a storybook castle.
     const look = lookLines(o).map((l) => sentence(l));
@@ -222,6 +223,8 @@ function locationSection(input) {
     if (env.lighting?.value) body.push(`The light: ${sentence(lower(env.lighting.value))}`);
     if (env.climate?.value) body.push(`The climate is ${sentence(lower(env.climate.value))}`);
     if (env.rules?.value) body.push(`Local custom here: ${sentence(env.rules.value)}`);
+    // Who is about here, when it is more than humans (src/library/bloodlines.js).
+    if (clean(loc?.whoIsAbout)) body.push(sentence(clean(loc.whoIsAbout)));
     if (body.length) lines.push(body.join(' '));
     // The sky, the hour's needs and the calendar's occasions.
     const hourLines = [ck?.sky, ck?.needs, ck?.holiday].filter((x) => clean(x));
@@ -284,13 +287,18 @@ function sceneSection(scene) {
 // they are: nothing about what they want, feel or mean to do, which a model
 // would take as a cue to write for them.
 function castLine(c) {
-    const name = clean(c.name);
+    // The bloodline with the name: "Kiri (elf)".
+    const name = `${clean(c.name)}${clean(c.bloodline) ? ` (${clean(c.bloodline)})` : ''}`;
     // Nicknames, codenames, titles - and who uses them (sync: knownAsText).
     const knownAs = clean(c.knownAs) ? unstop(truncate(c.knownAs, 300)) : '';
-    if (c.player) return `- ${name}${clean(c.role) ? ` (${clean(c.role)})` : ''}: the player character, played by the user.${knownAs ? ` ${knownAs}.` : ''}`;
+    if (c.player) {
+        const who = [clean(c.bloodline), clean(c.role)].filter(Boolean).join(', ');
+        return `- ${clean(c.name)}${who ? ` (${who})` : ''}: the player character, played by the user.${knownAs ? ` ${knownAs}.` : ''}`;
+    }
     const bits = [];
     if (clean(c.role)) bits.push(firstUpper(unstop(c.role)));
     if (clean(c.description)) bits.push(unstop(truncate(c.description, 160)));
+    if (clean(c.lineageNote)) bits.push(firstUpper(unstop(truncate(c.lineageNote, 120))));
     if (knownAs) bits.push(knownAs);
     if (clean(c.personality)) bits.push(unstop(truncate(c.personality, 90)));
     if (clean(c.voice)) bits.push(`Voice: ${unstop(firstLower(truncate(c.voice, 120)))}`);
@@ -313,6 +321,9 @@ export function buildCast(input) {
     const others = list.filter((c) => !c.player);
     const player = list.find((c) => c.player);
     const lines = ['Additional Context-Characters present:', ...list.map(castLine)];
+    // What the bloodlines present look like and how they live in this world.
+    const kinds = (input.bloodlines?.present ?? []).map(clean).filter(Boolean);
+    if (kinds.length) lines.push(`Bloodlines present - ${kinds.map((k) => truncate(k, 260)).join(' ')}`);
     const absent = (input.absent ?? []).map(clean).filter(Boolean);
     if (absent.length) lines.push(`Not here: ${andList(absent)}. ${absent.length === 1 ? 'They are' : 'They are'} elsewhere now; do not write ${absent.length === 1 ? 'them' : 'them'} into this reply.`);
     if (others.length) lines.push(`Write ${others.length === 1 ? clean(others[0].name) : 'each of them'} true to what they want and how they feel. ${others.length === 1 ? 'They pursue their' : 'Each pursues their'} own aims: in this reply ${others.length === 1 ? 'they take' : 'at least one of them takes'} the initiative - starting something, pressing a plan, acting on someone - instead of only reacting.${player ? ` Never write ${clean(player.name)}'s words, actions, thoughts or feelings.` : ''}`);
@@ -324,8 +335,10 @@ function castParagraph(c) {
     const name = clean(c.name);
     const role = clean(c.role);
     const article = /^(the|a|an|my|his|her|their)\s/i.test(role) ? '' : 'the ';
-    const bits = [`${name}${role ? `, ${article}${firstLower(role)},` : ''} is here.`];
+    const kind = clean(c.bloodline);
+    const bits = [`${name}${kind ? ` (${kind})` : ''}${role ? `, ${article}${firstLower(role)},` : ''} is here.`];
     if (clean(c.description)) bits.push(sentence(truncate(c.description, 320)));
+    if (clean(c.lineageNote)) bits.push(sentence(firstUpper(truncate(c.lineageNote, 160))));
     if (clean(c.personality)) bits.push(`By temperament: ${sentence(firstLower(truncate(c.personality, 200)))}`);
     if (clean(c.voice)) bits.push(`How ${name} talks and moves: ${sentence(firstLower(truncate(c.voice, 240)))}`);
     if (clean(c.goals)) bits.push(`What ${name} wants: ${sentence(firstLower(truncate(c.goals, 200)))}`);
@@ -417,7 +430,7 @@ const BUILDERS = {
     direction: (input) => withOutcomes(directorPart(input.director, 'direction')),
     // The user's own standing instructions (the front page).
     style: (input) => (clean(input.overview?.gmStyle) ? { full: `How this story is run: ${sentence(truncate(input.overview.gmStyle, 800))}`, compact: '' } : null),
-    limits: (input) => limitsSection(input.overview),
+    limits: (input) => limitsSection(input.overview, input.bloodlines?.only),
     overview: (input) => overviewSection(input.overview),
     location: (input) => locationSection(input),
     scene: (input) => sceneSection(input.scene),
@@ -438,7 +451,8 @@ const BUILDERS = {
 
 // input: { overview, location: { path, description, environment, indoor },
 //   time: { day, dayPart }, weather, temperature, scene: { title, premise },
-//   cast: [{ name, role, description, mood, intent, condition, why }],
+//   cast: [{ name, role, bloodline, lineageNote, description, mood, intent, condition, why }],
+//   bloodlines: { only, present: [line] } (src/library/bloodlines.js),
 //   corrections: [text], sections: { [key]: boolean }, budget }
 // -> { text, tokens, sections: [{ key, title, mode, text, tokens, why }] }
 //   mode: 'full' | 'compact' | 'dropped' (over budget) | 'off' (toggled

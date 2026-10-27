@@ -8,7 +8,9 @@
 //   { schemaVersion,
 //     overview: { premise, worldType, tone, themes, era, rules,
 //                 magic: { presence, power, kinds, absent, restrictions, notes },
-//                 tech: { level, levelFromEra, flavors, spread, absent, notes } },
+//                 tech: { level, levelFromEra, flavors, spread, absent, notes },
+//                 population: { mix: [{ id, share }], notes, only } },
+//                                   (src/library/bloodlines.js)
 //                 (src/library/world-options.js; the old single magicLevel migrates)
 //     canonOnly,                    the setting is fixed canon (e.g. from a published
 //                                   lorebook): nothing generated is added to its
@@ -102,6 +104,7 @@ import { normalizeAliasInfo } from '../library/alias-kinds.js';
 import { normalizeCultureDef } from '../naming/cultures.js';
 import { normalizePool } from '../naming/live.js';
 import { normalizeRouteTimes, MODES } from '../library/travel.js';
+import { emptyPopulation, normalizePopulation, normalizeBloodline, normalizeLineage, normalizePlacePopulation, normalizeMembers } from '../library/bloodlines.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
 export const CHAT_SCHEMA_VERSION = 1;
@@ -125,7 +128,7 @@ const strList = (value) => (Array.isArray(value) ? [...new Set(value.filter((v) 
 const OVERVIEW_TEXT_KEYS = Object.freeze(['premise', 'worldType', 'tone', 'themes', 'era', 'rules', 'gmStyle']);
 
 export function emptyOverview() {
-    return { premise: '', worldType: '', tone: '', themes: '', era: '', rules: '', gmStyle: '', magic: emptyMagic(), tech: emptyTech() };
+    return { premise: '', worldType: '', tone: '', themes: '', era: '', rules: '', gmStyle: '', magic: emptyMagic(), tech: emptyTech(), population: emptyPopulation() };
 }
 
 export function emptyRealm() {
@@ -194,6 +197,13 @@ export function normalizeEntryMeta(meta) {
         // How they fare in a fight: a power rating and a fate (plot device,
         // unkillable, mortal) - src/director/combat.js.
         combat: normalizeCombatMeta(m.combat),
+        // Bloodlines (src/library/bloodlines.js): a lore entry that is one
+        // (its block), a character's own, a place's mix and a faction's
+        // members.
+        bloodline: normalizeBloodline(m.bloodline),
+        lineage: normalizeLineage(m.lineage),
+        population: normalizePlacePopulation(m.population),
+        members: normalizeMembers(m.members),
     };
 }
 
@@ -264,6 +274,8 @@ export function normalizeSettingDoc(doc) {
     for (const key of OVERVIEW_TEXT_KEYS) overview[key] = str(o[key]);
     overview.magic = normalizeMagic(o.magic, str(o.magicLevel));
     overview.tech = normalizeTech(o.tech);
+    // Who lives in the world (src/library/bloodlines.js).
+    overview.population = normalizePopulation(o.population);
     const entries = {};
     if (isObject(d.entries)) for (const [id, meta] of Object.entries(d.entries)) entries[id] = normalizeEntryMeta(meta);
     const groups = Array.isArray(d.groups)

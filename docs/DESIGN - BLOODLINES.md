@@ -1,54 +1,56 @@
-# Design - Peoples
+# Design - Bloodlines
 
 A world says who lives in it. Elves, dwarves and orcs in a fantasy realm;
 androids, uplifted octopuses and Greys in a space opera; and, the hard
 case, elves in a cyberpunk megacity, where the model's picture of an elf
 (a bow, a forest, a silver circlet) is the wrong one. Today Scenario
-Builder has no idea of a people. The model guesses from the premise, puts
+Builder has no idea of a bloodline. The model guesses from the premise, puts
 elves everywhere or nowhere, and dresses them for the wrong age.
 
-This design gives a world its **peoples**: who they are, how they look and
+This design gives a world its **bloodlines**: who they are, how they look and
 live *in this world*, how common they are where, and whose names they
 carry. They come from presets, from the premise, from the user's own
 invention, or from the story itself, like everything else.
 
-Status: proposal (2026-10-26). Nothing built.
+Status: phase 1 built (2026-10-27) - see "Phase 1 as built" at the end.
+Phases 2-4 not yet. Called "Peoples" in the first draft; renamed so it is
+not confused with characters and suits the book's theming.
 
-## 1. What a people is
+## 1. What a bloodline is
 
-A **people** is any kind of being that a character can *be*: an ancestry
+A **bloodline** is any kind of being that a character can *be*: an ancestry
 (elf, dwarf, half-orc), a species (Vulcan, Grey, uplifted octopus), a made
 kind (android, clone, golem), a changed kind (vampire, cyborg, ghoul), or
 plain humans. "Race", "species", "ancestry", "kind" are the user's word for
-it. The UI says "Peoples".
+it. The UI says "Bloodlines".
 
 It is not a **creature**. A creature (`library/creature-form.js`) is
 something met in a fight or the wild: a wolf, Ashmaw the dragon, "3
-zombies". A people is someone's identity. Where the two meet (a troll
+zombies". A bloodline is someone's identity. Where the two meet (a troll
 bouncer *and* trolls under the bridge), they are separate entries, and the
-people can name the creature kind it is related to.
+bloodline can name the creature kind it is related to.
 
-It is not a **faction** either. "The Sunborn" can be an elven *people*,
+It is not a **faction** either. "The Sunborn" can be an elven *bloodline*,
 while "House Sunborn" is a *faction* of mostly Sunborn elves.
 
-## 2. Peoples are Lore entries
+## 2. Bloodlines are Lore entries
 
-A people is a **Lore entry** with a people block in its Scenario Builder
+A bloodline is a **Lore entry** with a bloodline block in its Scenario Builder
 metadata. It is not a new State Engine type and not a list hidden in the
 setting doc. Being Lore gives it, for free:
 - a sheet, a description and an image, plus a place in the catalog with a
-  "Peoples" filter;
+  "Bloodlines" filter;
 - lorebook export, and import from a lorebook ("the Elves of Arcadia" in a
-  published book comes in as a people when it reads like one, section 7);
-- the lore selection that already picks "lore tied to the people present"
+  published book comes in as a bloodline when it reads like one, section 7);
+- the lore selection that already picks "lore tied to the bloodline present"
   (`guidance/build.js`), so an elf in the scene brings the elves' lore line
   without a new mechanism;
 - Archivist's lore and the story-leads path (section 7).
 
-The structured part lives in `meta.people` (pure, in `src/library/peoples.js`):
+The structured part lives in `meta.bloodline` (pure, in `src/library/bloodlines.js`):
 
 ```
-meta.people = {
+meta.bloodline = {
   kind,          'ancestry' | 'species' | 'made' | 'changed' | 'human'
                  (it only steers wording and presets)
   plural,        "elves", "Vaskari" - for "mostly humans, some elves"
@@ -68,16 +70,16 @@ meta.people = {
     mode,        'own' | 'local' | 'either' - their own tongue, the place's,
                  or a mix (elves raised in the city have city names)
   },
-  related,       a creature entry id (trolls the people / trolls the beast)
+  related,       a creature entry id (trolls the bloodline / trolls the beast)
   playable,      the player can be one (it shows in the player's choices)
   canMix,        children with others are possible (half-elves)
 }
 ```
 
-Everything is optional. A people with only a name and a description
+Everything is optional. A bloodline with only a name and a description
 already works: it simply has less to steer with.
 
-**Humans count.** A world gets an implicit "Humans" people when none is
+**Humans count.** A world gets an implicit "Humans" bloodline when none is
 defined, so "mostly humans, a few elves" can be said. The user can make
 humans an entry of their own with a description and a "here" line.
 
@@ -85,15 +87,15 @@ humans an entry of their own with a description and a "here" line.
 
 ### 3.1 The world's mix
 
-The overview gets a **population**: which peoples live in the world and how
+The overview gets a **population**: which bloodlines live in the world and how
 common each is.
 
 ```
 overview.population = {
-  mix: [{ people, share }],   share: 'most' | 'common' | 'some' | 'few' |
+  mix: [{ bloodline, share }],   share: 'most' | 'common' | 'some' | 'few' |
                                      'rare' | 'unique' | 'none'
   notes,                      "elves keep to the arcologies"
-  only,                       true: these peoples and no others (the model
+  only,                       true: these bloodlines and no others (the model
                               must not invent dwarves). false: others may
                               turn up rarely when the story wants them.
 }
@@ -115,24 +117,24 @@ is exactly how kind of world, magic and tech already pass down
 - Victorian London on a time-travel stop: humans only.
 
 A place's mix can **replace** the world's, or **adjust** it, as in "as
-above, but elves common". Adjust is the default because it is what people
+above, but elves common". Adjust is the default because it is what users
 mean most of the time.
 
 ### 3.3 A faction's members
 
 A faction can say who it takes: "elves only" (the Sunborn Court), "mostly
-dwarves", "anyone". It is the same list of people and share, on the
+dwarves", "anyone". It is the same list of bloodline and share, on the
 faction's sheet. It is used when a member is rolled (section 4) and in the
 faction's guidance line.
 
-## 4. Where peoples are used
+## 4. Where bloodlines are used
 
-### 4.1 A character's people
+### 4.1 A character's bloodline
 
-A character gets **People** on its sheet: one people, two for mixed
+A character gets **Bloodline** on its sheet: one bloodline, two for mixed
 heritage (when both allow mixing), and an optional line of their own
 ("raised human; had her ears clipped at fourteen"). It is stored in
-`meta.people = { ids: [], note }`.
+`meta.lineage = { ids: [], note }`.
 
 The story can also say it. A character whose description says "an elven
 fixer" is matched to the Elves entry by name, plural and adjective when
@@ -141,15 +143,15 @@ guessed, and taken when the user saves).
 
 ### 4.2 Generation
 
-- **Generate / Surprise me** for a character, with no people in the brief:
+- **Generate / Surprise me** for a character, with no bloodline in the brief:
   roll one from the mix that holds where they will live (their place, else
   their faction's members, else the world). It happens in code, before the
   model, like the name. The prompt is told "She is an elf (Elves: ...the
   'look' and 'here' lines...)", so the model writes an elf of *this* world.
-- **A people in the brief** ("an elf hacker", "a Vaskari trader") wins. It
+- **A bloodline in the brief** ("an elf hacker", "a Vaskari trader") wins. It
   is matched to an entry. An unknown one ("a troll bouncer" in a world
-  without trolls) is used as given and offered as a new people (section 7).
-- **Name and people go together.** The people is rolled first, then its
+  without trolls) is used as given and offered as a new bloodline (section 7).
+- **Name and bloodline go together.** The bloodline is rolled first, then its
   naming culture feeds the name roll (section 5).
 - **Locations and factions** get the population line in their generation
   prompt ("who lives here: mostly humans, some elves"), so a new district
@@ -157,21 +159,21 @@ guessed, and taken when the user saves).
 
 ### 4.3 Guidance and the director
 
-- **The cast line** gets the people: "Kiri Ashvale (elf, fixer)". The
+- **The cast line** gets the bloodline: "Kiri Ashvale (elf, fixer)". The
   player's line too.
 - **The location section** gets one short line when the place's mix is not
   "humans only": "Who is about here: mostly humans; some elves; androids
   common in service work". It costs no extra calls and is a few tokens. It
   stays out when the mix is plain or unknown.
-- **The peoples' lore** comes in through the lore section as it does today:
-  the people of anyone present. The "look" and "here" lines are the short
+- **The bloodlines' lore** comes in through the lore section as it does today:
+  the bloodline of anyone present. The "look" and "here" lines are the short
   form, and the full description only when the budget allows.
 - **The director**, inventing NPCs (NEW lines), is given the mix of the
-  place and the `only` rule: "only these peoples exist: ...". A new
-  character it adds gets a people like a generated one: its own word if it
+  place and the `only` rule: "only these bloodlines exist: ...". A new
+  character it adds gets a bloodline like a generated one: its own word if it
   gave one, else rolled.
-- **Out-of-world peoples:** when the world says `only`, guidance carries a
-  short rule: "There are no dwarves, orcs or other peoples in this world
+- **Out-of-world bloodlines:** when the world says `only`, guidance carries a
+  short rule: "There are no dwarves, orcs or other bloodlines in this world
   beyond: ...". It sits beside the existing "absent" lists for magic and
   tech.
 
@@ -179,12 +181,12 @@ guessed, and taken when the user saves).
 
 An image model knows "elf" and "orc". It does not know a Vaskari, a
 crystal-singer or an uplifted octopus, and given only the name it draws a
-human, or nothing that fits. So a people carries its own **visual block**,
+human, or nothing that fits. So a bloodline carries its own **visual block**,
 and how much of it goes into a prompt depends on how well the image model
-can be expected to know the people already:
+can be expected to know the bloodline already:
 
 ```
-meta.people.visual = {
+meta.bloodline.visual = {
   known,      'well' (elf, dwarf, android: a tag is enough) |
               'partly' (tiefling, Grey: a tag plus the features that matter) |
               'not' (invented: the full description, no tag to lean on)
@@ -201,64 +203,64 @@ meta.people.visual = {
 }
 ```
 
-- **Prompts lead with the people when it is not well known.** The
+- **Prompts lead with the bloodline when it is not well known.** The
   character's subject line opens with the body plan and features before
   the clothes and pose ("a slate-scaled four-armed Vaskari woman, three
   amber eyes, feathered crest, wearing ..."), because models weight the
-  start. A well-known people gets its tag plus anything the world changes
+  start. A well-known bloodline gets its tag plus anything the world changes
   ("an elf, ears surgically clipped").
 - **Negatives per provider.** `negative` goes into the SD negative prompt
   and Midjourney's `--no`. A non-human body plan also adds "human" to them,
   which otherwise pulls the figure back to a person in a costume.
 - **Descriptions write it in.** When Generate writes a character of a
-  people that is not well known, it is told the visual block and asked to
+  bloodline that is not well known, it is told the visual block and asked to
   put the features into the character's appearance. Then the character's
   own description carries them, for the narrator and for any image tool
   the user takes it to.
-- **The people's own portrait.** Its Lore image is a reference picture of
+- **The bloodline's own portrait.** Its Lore image is a reference picture of
   one of them (the existing image panel, with the visual block as the
   subject), so the user can check that the description draws what they
-  mean before every character of that people inherits it.
-- **Written for the user when blank.** For an invented people with a
-  description but no visual block, one call (on the people's sheet, or as
+  mean before every character of that bloodline inherits it.
+- **Written for the user when blank.** For an invented bloodline with a
+  description but no visual block, one call (on the bloodline's sheet, or as
   part of "invent your own") fills the block from the description. It is
   never automatic.
 - **The age still applies.** The later-age rule in `lookLines` keeps
-  clothes in the world's age, and `dress` says how this people does it
+  clothes in the world's age, and `dress` says how this bloodline does it
   ("chrome ear cuffs, no forest garb").
 
-## 5. Peoples and naming
+## 5. Bloodlines and naming
 
 The naming design already has "Who uses which culture" with faction >
-place > world. Peoples slot in **for people only**:
+place > world. Bloodlines slot in **for characters only**:
 
 > the user's typed name > the character's own culture (sheet) > **their
-> people's culture** (by its mode) > their faction's > their place's > the
+> bloodline's culture** (by its mode) > their faction's > their place's > the
 > world default
 
 - **own**: an elf rolls elven names wherever they live.
 - **local**: they carry the place's names (elves raised in Arcadia City
-  have city names), and the people's culture is not used.
+  have city names), and the bloodline's culture is not used.
 - **either**: a coin weighted toward own: some keep the old names, some
   don't. This suits cyberpunk elves who rename themselves.
 
 Mixed heritage takes either parent's culture (the given name from one, the
 family name from the other when both are own).
 
-Places and factions are unchanged: a people does not name a district.
+Places and factions are unchanged: a bloodline does not name a district.
 
 ## 6. Defaults: presets
 
-The Peoples tab offers starting points, the way the Naming tab offers
-cultures. A preset fills a people block and a short description. Where a
+The Bloodlines tab offers starting points, the way the Naming tab offers
+cultures. A preset fills a bloodline block and a short description. Where a
 naming preset fits, it links to that culture (elves to the Elves culture,
 dwarves to Dwarves).
 
 | Group | Presets |
 |-------|---------|
-| Fantasy | humans, elves (high / wood / dark), dwarves, halflings, gnomes, orcs, half-orcs, goblins, giants / ogres, merfolk, fey, dragon-kin, beast-folk, undead (as a changed people), vampires |
+| Fantasy | humans, elves (high / wood / dark), dwarves, halflings, gnomes, orcs, half-orcs, goblins, giants / ogres, merfolk, fey, dragon-kin, beast-folk, undead (as a changed bloodline), vampires |
 | Science fiction | humans, augmented / cyborgs, androids, clones, uplifted animals, Greys, insectoid hive, reptilian, energy beings, gene-adapted (spacer, high-gravity) |
-| Modern / urban fantasy | humans, vampires, werewolves, witches (as a people when the setting treats them so), fae in hiding, ghosts |
+| Modern / urban fantasy | humans, vampires, werewolves, witches (as a bloodline when the setting treats them so), fae in hiding, ghosts |
 
 **A preset bends to the age.** Picked in a later-age world, a fantasy
 preset's "look" and "here" are written for that age. Its template has two
@@ -267,56 +269,56 @@ user asks, one model call rewrites the preset's lines for this premise.
 The call is optional, on a button, and counts as one generation like any
 other.
 
-**Invent your own.** "New people" asks for a name and a line ("silicon
+**Invent your own.** "New bloodline" asks for a name and a line ("silicon
 crystal folk who sing to grow") and runs the ordinary Lore Generate with
-the people form, so the model fills the block from the premise. A blank
+the bloodline form, so the model fills the block from the premise. A blank
 one is for writing it by hand.
 
-## 7. Where peoples come from
+## 7. Where bloodlines come from
 
 The same four doors as every entry (memory: story leads validation):
 - **The user**: presets, invented, hand-written.
-- **The premise**: one call reads the premise and lists the peoples and
+- **The premise**: one call reads the premise and lists the bloodlines and
   the world's mix. This should be the **same call** as naming phase 3
-  ("rules from the premise"): one call proposes cultures, peoples, which
-  people speaks which, and the mix. It shows as proposals the user accepts.
+  ("rules from the premise"): one call proposes cultures, bloodlines, which
+  bloodline speaks which, and the mix. It shows as proposals the user accepts.
   This keeps the call budget flat (memory: LLM call budget).
-- **A lorebook**: an imported lore entry that reads like a people ("The
-  elves of X are...", an entry named for a plural kind) is marked a people
+- **A lorebook**: an imported lore entry that reads like a bloodline ("The
+  elves of X are...", an entry named for a plural kind) is marked a bloodline
   with only the fields its text gives. The canon-only rule holds: nothing
   is added that the book does not say (memory: canon-only lorebooks).
-- **The story**: a people the story uses that the world lacks ("the troll
+- **The story**: a bloodline the story uses that the world lacks ("the troll
   bouncer") is noticed when a character is taken in or generated with one.
   The State Engine review confirms it and Scenario Builder takes it in as a
-  new people, enriched, not ignored. When the world is `only`, it is listed
+  new bloodline, enriched, not ignored. When the world is `only`, it is listed
   for the user to decide instead of added (the world said no trolls; the
   story disagreed).
 
-## 8. The Peoples tab
+## 8. The Bloodlines tab
 
 A tab beside Naming, laid out like it:
-- **This world's peoples**: cards with name, plural, kind, share in the
+- **This world's bloodlines**: cards with name, plural, kind, share in the
   world, naming culture, and a portrait when there is one. Add from preset
-  / invent / blank. Each opens its Lore sheet, where the people block is a
+  / invent / blank. Each opens its Lore sheet, where the bloodline block is a
   card.
-- **Who lives where**: the world's mix as a list of rows (people, share),
+- **Who lives where**: the world's mix as a list of rows (bloodline, share),
   the notes, and the "only these" switch. Below it, the places and factions
   that set their own, each with its mix and a link to it.
-- **Try it**: roll five characters' peoples here, in a place or faction, to
+- **Try it**: roll five characters' bloodlines here, in a place or faction, to
   see the mix work (no model call). It is the same idea as Sample names.
 
 ## 9. Where it lives
 
 | What | Where |
 |------|-------|
-| people block, mix, shares, rolling, matching words in text | `src/library/peoples.js` (pure, tested) |
-| presets | `src/library/people-presets.js` |
+| bloodline block, mix, shares, rolling, matching words in text | `src/library/bloodlines.js` (pure, tested) |
+| presets | `src/library/bloodline-presets.js` |
 | world mix | `overview.population` in `store/schema.js` |
 | place mix | `meta.realm.population`, inherited with the realm (`world-options.js`) |
 | faction members | `meta.members` |
-| character's people | `meta.people` |
-| culture order for people | `naming/cultures.js` `inheritedCulture` gains the people step |
-| tab | `src/ui/peoples-tab.js`; the sheet cards in `ui/sheet.js` |
+| character's bloodline | `meta.lineage` |
+| culture order for bloodline | `naming/cultures.js` `inheritedCulture` gains the bloodline step |
+| tab | `src/ui/bloodlines-tab.js`; the sheet cards in `ui/sheet.js` |
 | guidance lines | `guidance/build.js` (cast, location), `guidance/sync.js` |
 | generation | `generate/prompt.js`, `generate/run.js` |
 | director | `director/prompt.js` (mix and `only` for NEW lines) |
@@ -324,28 +326,28 @@ A tab beside Naming, laid out like it:
 
 ## 10. Phases
 
-1. **Peoples and the mix.**
-   - The people block on Lore entries, the Peoples tab, and presets with
+1. **Bloodlines and the mix.**
+   - The bloodline block on Lore entries, the Bloodlines tab, and presets with
      both ages.
    - The world, place and faction mix.
-   - A character's People field and the guess from the description.
+   - A character's Bloodline field and the guess from the description.
    - The cast and location guidance lines, and the visual block in image
      prompts.
 2. **Generation uses them.**
-   - Rolling a people for Generate / Surprise me.
-   - Briefs matched to peoples.
-   - Name culture by people (section 5).
+   - Rolling a bloodline for Generate / Surprise me.
+   - Briefs matched to bloodlines.
+   - Name culture by bloodline (section 5).
    - The mix in location and faction prompts, and the director's NEW lines
      and the `only` rule.
 3. **From the premise and the story.**
    - The shared premise call with naming phase 3.
-   - Lorebook import marking peoples.
-   - Story-led new peoples through review.
+   - Lorebook import marking bloodlines.
+   - Story-led new bloodlines through review.
    - "Rewrite for this world" on a preset, and "Describe how they look"
      (fill the visual block from the description).
 4. **Extras.**
    - Mixed heritage done fully.
-   - How peoples see each other: standing and prejudice per place ("elves
+   - How bloodlines see each other: standing and prejudice per place ("elves
      are distrusted in the Sprawl"), as guidance for NPC reactions.
    - Lifespan in ages: a 300-year-old elf is not "old".
    - The realms roadmap item, whose population mix is this.
@@ -354,13 +356,52 @@ A tab beside Naming, laid out like it:
 
 1. **Lore entries or a list of their own?** The proposal is Lore entries,
    for export, import, the lore selection and the story paths. The cost is
-   that the catalog's Lore list gets a Peoples filter, and that a people
-   deleted as lore is deleted as a people.
+   that the catalog's Lore list gets a Bloodlines filter, and that a bloodline
+   deleted as lore is deleted as a bloodline.
 2. **Shares as words** (most / common / some / few / rare) rather than
    percentages. Words are easier to write and read, but less exact.
-3. **A tab of its own, or one "Peoples & names" tab** with the Naming tab
+3. **A tab of its own, or one "Bloodlines & names" tab** with the Naming tab
    (they are closely linked through section 5)? The proposal is two tabs,
    with links between them.
 4. **How strict `only` is.** It is off by default, so the story can still
    bring in a stray kind of being. Should a world made from a fantasy
    preset turn it on?
+
+## Phase 1 as built (2026-10-27)
+
+Names in code follow the rename: `meta.bloodline` (the block on a Lore
+entry), `meta.lineage` (a character's), `meta.population` (a place's mix),
+`meta.members` (a faction's), `overview.population` (the world's).
+
+| File | What it does |
+|------|--------------|
+| `src/library/bloodlines.js` | Pure. The block and its normalizing; shares and their weights; the implicit humans (`HUMANS`, replaced by a world's own human bloodline); the mix at a place (`mixAt`: world, then each place from the top, adjusting or replacing) and for a faction (`mixFor`); rolling from a mix; the mix in words; the "who is about" line and the "only" rule; the guess from a character's role and first sentence; the cast label ("elf", "half elf, half human"); the short form for prompts; what an image prompt needs (`visualFor`). |
+| `src/library/bloodline-presets.js` | 31 presets in three groups (fantasy, science fiction, modern and urban fantasy), each text in an earlier and a later version; a preset links its naming culture where one fits. |
+| `src/library/bloodline-store.js` | The world's bloodlines (lore marked as one), adding one from a preset or by name (it joins the world's mix as "some", with humans "most" when the mix was empty), the world's mix. |
+| `src/ui/bloodlines-tab.js` | The tab, after Naming: the bloodlines as cards (open the Lore sheet), add from a preset (the world's own group first) or by name; who lives where (the world's mix, notes, "these and no others", then the places and factions with their own); "Try it" rolls five in a place or faction and shows the line the narrator gets there. |
+| `src/ui/bloodline-cards.js` | On the sheets, saving at once: a Lore entry's "It is a bloodline" and its block (with "How to draw them"); a character's bloodline, a second for mixed heritage when it allows it, their own note, and the guess with "That is right"; a place's "Who lives here" (changes or replaces the mix above) and a faction's "Who it takes". |
+
+- **Guidance.** The cast line has the bloodline ("Kiri (elf): ..."; the
+  player's "(elf, courier)"), and "human" only in a world that has other
+  bloodlines. After the cast, "Bloodlines present - Elves: look. How they
+  live here: ...", for those present other than the player, at most four.
+  The location section has "Who is about here: ..." when the mix is more
+  than humans, and "No elves are found here." for a bloodline set to none.
+  The "only" rule goes with the world's limits (never dropped).
+- **A character with no bloodline set** is read from their role and the
+  first sentence of their description, by each bloodline's singular and
+  adjective (humans never guessed); the guess is used until one is set.
+- **Images.** A character's portrait leads with their bloodline ("portrait
+  of an elf fixer"); one that image models do not know well adds its body,
+  skin and features before the description; its "never draw" words and,
+  for a body that is not a person's, "human" go to `--no` and the negative
+  prompt. A bloodline's own Lore picture is a full-body reference of one.
+  Bloodline names are not stripped from descriptions as proper names.
+- **Catalog.** The Lore chapter has a Bloodlines / Not bloodlines filter
+  once the world has one.
+
+Not yet: everything in phases 2-4 - rolling a bloodline in Generate and
+matching briefs, names by bloodline (section 5), the mix in location and
+faction prompts and the director's NEW lines, the premise call, lorebook
+import, story-led bloodlines, "Rewrite for this world" and "Describe how
+they look", lifespans in ages and prejudice per place.

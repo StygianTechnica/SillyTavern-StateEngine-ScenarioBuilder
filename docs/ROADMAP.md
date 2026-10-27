@@ -344,16 +344,17 @@ API (docs/api.md, SB-640..642); Pretty Panels owns where they appear.
   inside inherit what they do not set. The guidance, the director,
   generation, image prompts and route times all work from the world as it
   holds where the scene (or the entry) is.
-- [ ] **Peoples: races, species and who lives where (added 2026-10-26).**
-  docs/DESIGN - PEOPLES.md. A world's peoples (elves, androids, invented
-  aliens) are Lore entries with a people block: how they look, how they
+- [ ] **Bloodlines: races, species and who lives where (added 2026-10-26;
+  phase 1 built 2026-10-27).** docs/DESIGN - BLOODLINES.md (first drafted as
+  "Peoples"). A world's bloodlines (elves, androids, invented
+  aliens) are Lore entries with a bloodline block: how they look, how they
   live in *this* world (elves in a cyberpunk city), lifespan, whose names
   they carry, and a visual block so image prompts can draw an invented
-  people instead of a human. The world, a place (inherited down the tree
+  bloodline instead of a human. The world, a place (inherited down the tree
   like the realm) and a faction each have a population mix in words (most /
-  common / some / few / rare). A character has a people, rolled from the mix
+  common / some / few / rare). A character has a bloodline, rolled from the mix
   when generated and guessed from the description otherwise. The cast and
-  location guidance say who is about, and "only these peoples" keeps the
+  location guidance say who is about, and "only these bloodlines" keeps the
   model from inventing others. Presets bend to the world's age. From the
   premise in the same call as naming's rules; from lorebooks and the story
   through review.
@@ -494,7 +495,7 @@ newly confirmed objects, a separate generation connection profile.
     Naming tab, a culture's own describing words for its descriptive names.
   - The front page offers to make cultures from the premise.
   - The director is told who in the scene does not know a codename.
-  - Population mixes moved to docs/DESIGN - PEOPLES.md.
+  - Population mixes moved to docs/DESIGN - BLOODLINES.md.
 - [x] **Kinds of alias (2026-10-26):** a character's other names each have a
   kind - nickname, codename / callsign, title / epithet, pen / stage name -
   and who uses them (people or factions). The sheet's "Other names" card

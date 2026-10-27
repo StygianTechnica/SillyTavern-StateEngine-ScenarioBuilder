@@ -36,6 +36,7 @@ import { isIntimate } from './intimacy.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { relevantLore } from '../library/lore.js';
 import { placeOverview, isLaterAge } from '../library/world-options.js';
+import { bloodlinesOf, choicesOf, lineageOf, lineageLabel, bloodlineBrief, mixAt, whoIsAboutLine, onlyRule, normalizeBloodline } from '../library/bloodlines.js';
 import { timesLine, techOf, modeLabel } from '../library/travel.js';
 import { relationsFor, pairCovered } from '../library/relations-edit.js';
 import { activeQuests } from '../quests/sync.js';
@@ -122,6 +123,10 @@ export async function gatherInputs(chatId, chatKey) {
     const castIds = c.castIds.length ? c.castIds : fallback.castIds;
     const sceneSource = c.locationId ? 'canonical' : (locationId ? 'from the story' : '');
 
+    // The world's bloodlines (src/library/bloodlines.js), by id.
+    const bloodlines = settingId ? bloodlinesOf(await listEntries(chatId, settingId, 'lore').catch(() => [])) : [];
+    const bloodlineById = Object.fromEntries(choicesOf(bloodlines).map((b) => [b.id, b]));
+
     let location = null;
     let locationPath = [];
     if (locationId) {
@@ -186,6 +191,8 @@ export async function gatherInputs(chatId, chatKey) {
                             state: await readField(chatId, o.id, '', 'state'),
                         };
                     })),
+                // Who is about here, from the world's mix as this place changes it.
+                whoIsAbout: whoIsAboutLine(mixAt(library.overview.population, parents, library.entries, obj.id), bloodlineById),
                 source: sceneSource,
                 id: obj.id,
             };
@@ -224,9 +231,15 @@ export async function gatherInputs(chatId, chatKey) {
         names.set(id, obj.name);
         const base = obj.base ?? obj;
         const text = (v) => (Array.isArray(v) ? v.join(', ') : (typeof v === 'string' ? v : ''));
+        // Their bloodline: set on the sheet, else read from their description.
+        const lineage = bloodlines.length ? lineageOf({ ...obj, meta: library.entries?.[id] ?? {} }, bloodlines) : { ids: [], note: '' };
         // Runtime values by field role (SB-441); GM notes are never read here (SB-123).
         cast.push({
             name: obj.name,
+            // "human" says nothing in a world of humans alone.
+            bloodline: bloodlines.some((b) => normalizeBloodline(b.meta?.bloodline).kind !== 'human') ? lineageLabel(lineage.ids, bloodlineById) : '',
+            bloodlineIds: lineage.ids,
+            lineageNote: lineage.note,
             aliases: obj.aliases ?? base.aliases ?? [],
             // How they are known, and by whom (src/library/alias-kinds.js).
             knownAs: settingId ? knownAsText(obj.name, obj.aliases ?? base.aliases ?? [], library.entries?.[id]?.aliasInfo ?? {}, (x) => aliasUsers.get(x) ?? '') : '',
@@ -418,6 +431,12 @@ export async function gatherInputs(chatId, chatKey) {
             weatherText: weatherText({ weather: c.weather, temperature: c.temperature }, { indoor: c.indoor === true, open: clock?.open !== false }),
             scene: { title: c.sceneTitle, premise: c.scenePremise },
             cast,
+            // The "only these" rule, and how the bloodlines of those present
+            // look and live here (their look and here lines).
+            bloodlines: {
+                only: onlyRule(library.overview.population, bloodlineById),
+                present: [...new Set(cast.filter((m) => !m.player).flatMap((m) => m.bloodlineIds ?? []))].map((bid) => bloodlineBrief(bloodlineById[bid])).filter(Boolean).slice(0, 4),
+            },
             // An intimate scene: the people's own notes for it are given.
             intimate: isIntimate(doc.nsfwMode, (await getVariableValues(chatId, ['scene_nsfw']).catch(() => ({}))).scene_nsfw),
             // Taken out of the scene by hand, while that holds.

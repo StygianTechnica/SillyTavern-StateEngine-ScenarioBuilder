@@ -26,6 +26,8 @@ import { renderMissionsTab, GIVER_TYPES } from './missions-tab.js';
 import { isDead, markDead, bringBack, setDeathHow } from '../state/death.js';
 import { suggestParents } from '../library/place-context.js';
 import { creatureFormOf } from '../library/creature-form.js';
+import { bloodlinesOf, lineageOf, visualFor } from '../library/bloodlines.js';
+import { bloodlineCard, lineageCard, populationCard } from './bloodline-cards.js';
 import { isPower, patronsOf } from '../library/powers.js';
 import { POWER_RATINGS, POWER_LABELS, FATES, FATE_LABELS, STANCE_LABELS, normalizeCombatMeta, stanceFor } from '../director/combat.js';
 import { recordEnrichment, enrichmentRecord, normalizeEnrichments, revertPlan, revertEnrichment } from '../generate/revert.js';
@@ -585,6 +587,11 @@ function overviewTab({ type, entry, isNew, defs, doc, all }) {
             h('div', { class: 'sb-prose' }, narrative)) : null,
         narrative ? h('details', { class: 'sb-base-desc' }, h('summary', {}, 'Original description'), base) : base,
         glance.length ? h('dl', { class: 'sb-glance' }, glance.flatMap((d) => [h('dt', {}, d.label), h('dd', {}, String(entry.base?.[d.name] ?? entry[d.name]))])) : null,
+        // Bloodlines (src/ui/bloodline-cards.js): a lore entry that is one, a
+        // character's own, who lives in a place or joins a faction.
+        isNew ? null : bloodlineCard(entry, all),
+        isNew ? null : lineageCard(type, entry, all),
+        isNew ? null : populationCard(type, entry, all),
         isNew ? null : giftsCard(type, entry, all, defs),
         isNew ? null : combatCard(type, entry, all),
         isNew ? null : enrichmentCard(entry, defs));
@@ -1289,7 +1296,12 @@ async function imageTab({ type, entry, isNew, doc, parents }) {
     if (isNew) return h('div', { class: 'sb-muted' }, 'Save the entry first, then give it a picture.');
     const envById = Object.fromEntries(Object.entries(getSettingDoc(ws.ctx.settingId).entries).map(([id, m]) => [id, m.environment]));
     const inherited = inheritedEnvironment(parents, envById, entry.id);
-    const knownNames = Object.entries(genCtx?.all ?? {}).filter(([t]) => t !== 'item' && t !== 'creature').flatMap(([, list]) => list.flatMap((e) => [e.name, ...(e.aliases ?? e.base?.aliases ?? [])]));
+    // A bloodline's name is a kind of being ("Elves"), a look like a creature's.
+    const knownNames = Object.entries(genCtx?.all ?? {}).filter(([t]) => t !== 'item' && t !== 'creature').flatMap(([, list]) => list.filter((e) => e.meta?.bloodline?.on !== true).flatMap((e) => [e.name, ...(e.aliases ?? e.base?.aliases ?? [])]));
+    // What one of their bloodline looks like (a bloodline's own picture is one of them).
+    const bloodlines = bloodlinesOf(genCtx?.all?.lore ?? []);
+    const kindId = entry.type === 'character' ? lineageOf(entry, bloodlines).ids[0] : (entry.meta?.bloodline?.on ? entry.id : '');
+    const bloodline = kindId ? visualFor(bloodlines.find((b) => b.id === kindId)) : null;
     // A place inside another: its district's character, and only the air
     // and weather of a city's climate (src/images/prompt.js placeSurroundings).
     const places = new Map((genCtx?.all?.location ?? []).map((p) => [p.id, p]));
@@ -1306,6 +1318,7 @@ async function imageTab({ type, entry, isNew, doc, parents }) {
         // Every proper name in the library, kept out of the picture - not the
         // names of kinds of creature or thing ("a death knight" is a look).
         knownNames,
+        bloodline,
     });
 }
 

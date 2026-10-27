@@ -31,6 +31,9 @@ export function filterEntries(entries, filters = {}, { doc = null, parents = {} 
     return entries.filter((e) => {
         if (q && !text(e).includes(q)) return false;
         if (filters.tag && !(e.meta?.tags ?? []).includes(filters.tag)) return false;
+        // Lore: bloodlines only, or none of them (src/library/bloodlines.js).
+        if (filters.bloodline === 'only' && e.meta?.bloodline?.on !== true) return false;
+        if (filters.bloodline === 'none' && e.meta?.bloodline?.on === true) return false;
         if (filters.status && chatStatusOf(e.id, doc) !== filters.status) return false;
         if (filters.within) {
             const place = placeOf(e);
