@@ -13,7 +13,7 @@ import {
 } from '../library/bloodlines.js';
 import { setBloodline } from '../library/bloodline-store.js';
 import { cultureChoices } from '../naming/cultures.js';
-import { ws, rerender, openSheet } from './ws.js';
+import { ws, rerender, openSheet, markDirty } from './ws.js';
 import { h, icon, button, select, field } from './dom.js';
 
 const after = () => { void syncNow(); rerender({ force: true }); };
@@ -113,15 +113,21 @@ export function bloodlineCard(entry, all) {
 
 // ---- a character: their bloodline
 
-export function lineageCard(type, entry, all) {
+// isNew: an unsaved character - kept in the draft, saved with it.
+export function lineageCard(type, entry, all, { isNew = false } = {}) {
     if (type.id !== 'character') return null;
     const { settingId } = ws.ctx;
     const bloodlines = bloodlinesOf(all.lore ?? []);
     if (!bloodlines.length) return null;
     const choices = choicesOf(bloodlines);
-    const own = normalizeLineage(entry.meta?.lineage);
-    const now = lineageOf(entry, bloodlines);
-    const save = (patch) => { setEntryMeta(settingId, entry.id, { lineage: normalizeLineage({ ...own, ...patch }) }); after(); };
+    const own = normalizeLineage(isNew ? ws.draft?.meta?.lineage : entry.meta?.lineage);
+    const now = isNew ? { ids: own.ids, guessed: false } : lineageOf(entry, bloodlines);
+    const save = (patch) => {
+        const lineage = normalizeLineage({ ...own, ...patch });
+        if (isNew) { ws.draft.meta.lineage = lineage; markDirty(); rerender({ force: true }); return; }
+        setEntryMeta(settingId, entry.id, { lineage });
+        after();
+    };
     const byId = new Map(choices.map((b) => [b.id, b]));
     const first = own.ids[0] ?? '';
     const mixes = first && (normalizeBloodline(byId.get(first)?.meta?.bloodline).canMix || first === HUMANS);
@@ -135,7 +141,7 @@ export function lineageCard(type, entry, all) {
             h('small', { class: 'sb-hint' }, `Read from their description: ${now.ids.map((id) => nameOf(byId.get(id))).join(' and ')}.`),
             button('That is right', () => save({ ids: now.ids }), { iconName: 'fa-check' })) : null,
         field('Their own story', commitInput(own.note, (x) => save({ note: x }), { placeholder: 'e.g. raised human; had her ears clipped at fourteen' })),
-        first && byId.get(first)?.id !== HUMANS ? h('small', { class: 'sb-hint sb-link', onclick: () => openSheet(first, 'lore') }, icon('fa-arrow-up-right-from-square'), ` About the ${wordsOf(byId.get(first)).plural}`) : null);
+        !isNew && first && byId.get(first)?.id !== HUMANS ? h('small', { class: 'sb-hint sb-link', onclick: () => openSheet(first, 'lore') }, icon('fa-arrow-up-right-from-square'), ` About the ${wordsOf(byId.get(first)).plural}`) : null);
 }
 
 // ---- a place's mix, a faction's members

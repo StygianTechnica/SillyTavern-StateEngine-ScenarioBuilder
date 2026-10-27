@@ -51,6 +51,7 @@ import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
 import { directorPlan, takeBeats, markActive } from '../planner/run.js';
 import { livePoolFor, takeFromPool, byType, rollNameFor, markNameUsed } from '../naming/run.js';
 import { poolLine, swapInvented, applySwaps } from '../naming/live.js';
+import { bloodlinesOf, decideLineage, mixFor } from '../library/bloodlines.js';
 
 export const DIRECTOR_EVENT = 'scenario_builder_director';
 
@@ -176,6 +177,13 @@ export function factionsAtPlay(factions, { cast = [], placeIds = [], relations =
 // duplicate of something the library already has.
 async function createNeeded(chatId, chatKey, settingId, created, locationId, chain = [], places = []) {
     const made = [];
+    // A new person's bloodline (docs/DESIGN - BLOODLINES.md, phase 2): the
+    // one its own words give ("an elf courier"), else rolled from who lives
+    // where the scene is. A kind the world has no bloodline for is left as
+    // the story wrote it.
+    const bloodlines = created.some((i) => i.kind === 'character') ? bloodlinesOf(await listEntries(chatId, settingId, 'lore').catch(() => [])) : [];
+    const doc = getSettingDoc(settingId);
+    const mix = bloodlines.length ? mixFor({ world: doc.overview.population, parents: getParents(settingId), metaById: doc.entries, placeId: locationId }).mix : [];
     for (const item of created) {
         try {
             if ((await findSimilar(chatId, settingId, item.kind, item.name)).length) continue;
@@ -194,7 +202,8 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
                 const field = at ? await locationFieldOf(settingId, item.kind) : null;
                 if (field) data[field] = at;
             }
-            const obj = await createEntry(chatId, settingId, item.kind, data, { origin: 'director', ...(item.provisional ? { provisional: true } : {}) });
+            const kin = item.kind === 'character' && bloodlines.length ? decideLineage({ brief: `${item.name}. ${item.description}`, bloodlines, mix }) : null;
+            const obj = await createEntry(chatId, settingId, item.kind, data, { origin: 'director', ...(item.provisional ? { provisional: true } : {}), ...(kin?.ids.length ? { lineage: { ids: kin.ids, note: '' } } : {}) });
             if (!obj) continue;
             const parent = item.kind === 'location' ? parentForNewPlace(item, chain) : null;
             if (parent) setParent(settingId, obj.id, parent);

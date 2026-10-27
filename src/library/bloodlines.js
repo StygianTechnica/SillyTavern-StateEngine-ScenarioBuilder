@@ -313,6 +313,9 @@ export function onlyRule(world, byId = {}) {
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // Where `word` first stands as a whole word in `text` (lower case), or -1.
 const wordAt = (text, word) => (word.length >= 3 ? text.search(new RegExp(`(^|[^\\p{L}])${escape(word)}(?=$|[^\\p{L}])`, 'u')) : -1);
+// The same in the text as written: a proper word ("Grey", "Vaskari") only
+// with its capital, so "a grey coat" is not one of the Greys.
+const foundAt = (text, word) => (/^\p{Lu}/u.test(word) ? wordAt(text, word) : wordAt(text.toLowerCase(), word.toLowerCase()));
 
 // The bloodline a character's own words give ("an elven fixer"), when
 // nobody set one: its role, and the first sentence of its description,
@@ -320,12 +323,12 @@ const wordAt = (text, word) => (word.length >= 3 ? text.search(new RegExp(`(^|[^
 // never guessed (they are what is left). -> [id] (at most two)
 export function guessLineage({ role = '', description = '' } = {}, bloodlines = []) {
     const first = clean(description).split(/(?<=[.!?])\s+/)[0] ?? '';
-    const text = `${clean(role)} \n ${first}`.toLowerCase();
+    const text = `${clean(role)} \n ${first}`;
     const hits = [];
     for (const b of bloodlines ?? []) {
         if (normalizeBloodline(b.meta?.bloodline).kind === 'human') continue;
         const w = wordsOf(b);
-        const at = [w.singular, w.adjective].map((x) => wordAt(text, clean(x).toLowerCase())).filter((i) => i >= 0);
+        const at = [w.singular, w.adjective].map((x) => foundAt(text, clean(x))).filter((i) => i >= 0);
         if (at.length) hits.push({ id: b.id, at: Math.min(...at) });
     }
     return hits.sort((a, b) => a.at - b.at).slice(0, 2).map((x) => x.id);
@@ -388,4 +391,115 @@ export function visualFor(entry) {
     // unless "human" is kept out.
     if (clean(v.body) && !/humanoid|human-like|human sized|human-sized/i.test(v.body)) negative.push('human');
     return { lead, tags: clean(v.tags), details: details.map((d) => d.replace(/[.!]+$/, '')), negative: [...new Set(negative)] };
+}
+
+// ---- a new character (phase 2: Generate and the director)
+
+// Words for kinds of being a brief may use that the world has no bloodline
+// for - "a troll bouncer" in a world without trolls is used as given and
+// offered as a new bloodline. The presets' words are added by the caller.
+export const KIND_WORDS = Object.freeze([
+    'elf', 'dwarf', 'halfling', 'gnome', 'orc', 'goblin', 'hobgoblin', 'kobold', 'troll', 'ogre', 'centaur', 'satyr', 'faun', 'minotaur',
+    'merfolk', 'mermaid', 'merman', 'naga', 'lizardfolk', 'dragonborn', 'tiefling', 'aasimar', 'genasi', 'changeling', 'shapeshifter', 'fey', 'fae', 'faerie',
+    'nymph', 'dryad', 'vampire', 'werewolf', 'lycanthrope', 'ghoul', 'ghost', 'wraith', 'lich', 'revenant', 'android', 'robot', 'synth', 'cyborg', 'clone',
+    'mutant', 'alien', 'insectoid', 'reptilian', 'golem', 'angel', 'demon',
+]);
+
+// The bloodlines a brief names ("an elf hacker", "one of the Vaskari",
+// "a half-orc"), by each one's singular, plural and adjective, in the
+// order they come; and a kind of being it names that the world has no
+// bloodline for. -> { ids: [id] (at most two), unknown: 'troll' | '' }
+export function matchBrief(text, bloodlines = [], extraWords = []) {
+    const raw = clean(text);
+    const t = raw.toLowerCase();
+    if (!t) return { ids: [], unknown: '' };
+    const hits = [];
+    const covered = new Set();
+    for (const b of bloodlines ?? []) {
+        const w = wordsOf(b);
+        const words = [...new Set([w.singular, w.plural, w.adjective].map(clean).filter(Boolean))];
+        for (const x of words) covered.add(x.toLowerCase());
+        const at = words.map((x) => foundAt(raw, x)).filter((i) => i >= 0);
+        if (at.length) hits.push({ id: b.id, at: Math.min(...at) });
+    }
+    const ids = hits.sort((a, b) => a.at - b.at).slice(0, 2).map((x) => x.id);
+    // "A half-orc": half human, when nothing else is named with it.
+    if (ids.length === 1) {
+        const w = wordsOf((bloodlines ?? []).find((x) => x.id === ids[0]));
+        const human = humansOf(bloodlines).id;
+        if (ids[0] !== human && [w.singular, w.adjective].some((x) => foundAt(raw, `half-${clean(x)}`) >= 0 || foundAt(raw, `half ${clean(x)}`) >= 0)) ids.push(human);
+    }
+    // Only when nothing the world knows was named: "an elf and a troll"
+    // is an elf. A proper word ("Grey") counts only with its capital.
+    let unknown = '';
+    if (!ids.length) {
+        const words = [...new Set([...KIND_WORDS, ...extraWords.map(clean)])].filter((x) => x && !covered.has(x.toLowerCase()));
+        const found = words.map((x) => ({ x, at: Math.min(...[x, `${x}s`, singularPlural(x)].map((y) => foundAt(raw, y)).filter((i) => i >= 0).concat(Infinity)) })).filter((f) => f.at < Infinity).sort((a, b) => a.at - b.at)[0];
+        unknown = found?.x ?? '';
+    }
+    return { ids, unknown };
+}
+const singularPlural = (x) => ({ elf: 'elves', dwarf: 'dwarves', fey: 'fey', fae: 'fae', merfolk: 'merfolk', lizardfolk: 'lizardfolk' }[x] ?? `${x}s`);
+
+// A new character's bloodline: the one chosen, else the ones the brief
+// names, else rolled from the mix where they will be. A kind the brief
+// names that the world has no bloodline for wins over a roll: it is used
+// as given. -> { ids, how: 'chosen' | 'brief' | 'rolled' | '', unknown }
+export function decideLineage({ chosen = '', brief = '', bloodlines = [], mix = [], extraWords = [], random = Math.random } = {}) {
+    if (chosen) return { ids: [chosen], how: 'chosen', unknown: '' };
+    const m = matchBrief(brief, bloodlines, extraWords);
+    if (m.ids.length) return { ids: m.ids, how: 'brief', unknown: '' };
+    if (m.unknown) return { ids: [], how: '', unknown: m.unknown };
+    const rolled = rollBloodline(mix, random);
+    return rolled ? { ids: [rolled], how: 'rolled', unknown: '' } : { ids: [], how: '', unknown: '' };
+}
+
+// The naming culture a character's bloodline gives, by its mode: their own
+// wherever they live; the place's ('' - the usual order decides); or
+// either, weighted toward their own. Mixed heritage takes the first that
+// has one. -> culture id or ''.
+export function cultureOfLineage(ids = [], byId = {}, random = Math.random) {
+    for (const id of ids ?? []) {
+        const b = normalizeBloodline(byId[id]?.meta?.bloodline);
+        if (!b.culture) continue;
+        const mode = b.naming || 'own';
+        if (mode === 'own') return b.culture;
+        if (mode === 'either') return random() < 0.65 ? b.culture : '';
+        return '';
+    }
+    return '';
+}
+
+const articled = (w) => `${/^[aeiou]/i.test(w) ? 'an' : 'a'} ${w}`;
+
+// What a writer is told about a new character's bloodline: who they are,
+// what their bloodline is like here, and - for one image models and the
+// reader cannot picture - the features to put into their appearance.
+// unknown: a kind the world has no bloodline for. '' when there is nothing.
+export function lineageBriefLine(ids = [], byId = {}, unknown = '') {
+    if (!ids?.length) return unknown ? `They are ${articled(unknown)}, as asked - a kind of being this world has not described yet; keep them true to the setting.` : '';
+    const label = lineageLabel(ids, byId);
+    const first = byId[ids[0]];
+    if (!label || !first) return '';
+    if (normalizeBloodline(first.meta?.bloodline).kind === 'human' && ids.length === 1) return `They are ${articled(label)}.`;
+    const lines = [`They are ${articled(label)}.`];
+    for (const id of ids) {
+        const brief = bloodlineBrief(byId[id]);
+        if (brief) lines.push(brief);
+    }
+    const v = visualFor(first);
+    if (v && normalizeBloodline(first.meta?.bloodline).visual.known !== 'well' && v.details.length) lines.push(`Put what marks them as ${articled(wordsOf(first).singular)} into their appearance: ${v.details.join('; ')}.`);
+    return lines.join(' ');
+}
+
+// What a writer is told about who lives where a new place or faction
+// is: the mix in words and its notes, the bloodlines never met there, and
+// the world's "only" rule. '' when the mix is plain or not said.
+export function populationBriefLine(at, byId = {}, world = null) {
+    const lines = [];
+    const who = whoIsAboutLine(at, byId).replace(/^Who is about here:/, 'Who lives here:');
+    if (who) lines.push(who);
+    const only = world ? onlyRule(world, byId) : '';
+    if (only) lines.push(only);
+    return lines.join(' ');
 }

@@ -102,6 +102,8 @@ function startDraft(entry, defs) {
             climate: entry.meta?.climate ?? '',
             sky: entry.meta?.sky ?? '',
             realm: { worldType: '', magic: '', tech: '', notes: '', ...(entry.meta?.realm ?? {}) },
+            // A generated new character's bloodline, saved with it.
+            lineage: entry.meta?.lineage ?? null,
         },
     };
     ws.draftFor = entry.id ?? 'new';
@@ -109,8 +111,9 @@ function startDraft(entry, defs) {
     ws.generatedFields = new Set();
     // A generated new entry (catalog "Generate") arrives as a prefill.
     if (!entry.id && ws.prefill) {
-        const { values, parentId } = ws.prefill;
+        const { values, parentId, lineage } = ws.prefill;
         applyGenerated(values, 'create');
+        if (lineage?.length) ws.draft.meta.lineage = { ids: lineage, note: '' };
         if (parentId) {
             if (entry.type === 'location') ws.draft.meta.parentId = parentId;
             else if ('location' in ws.draft.fields && !ws.draft.fields.location) ws.draft.fields.location = parentId;
@@ -507,7 +510,10 @@ function nameDice(type, all) {
     return diceButton(() => {
         const d = ws.draft;
         if (ws.rolledName && d.name === ws.rolledName) markNameDeclined(ws.ctx.settingId, ws.rolledName);
-        const name = rollEntryName({ ctx: ws.ctx, type, brief: [d.name === ws.rolledName ? '' : d.name, d.description].filter(Boolean).join(' '), all, parentId: d.meta.parentId || null, fields: d.fields });
+        // A character's bloodline names them (their culture, by its mode).
+        const saved = genCtx?.entry?.id ? getSettingDoc(ws.ctx.settingId).entries[genCtx.entry.id] ?? {} : { lineage: d.meta.lineage };
+        const lineage = type.id === 'character' ? lineageOf({ ...(genCtx?.entry ?? {}), description: d.description, meta: saved }, bloodlinesOf(all.lore ?? [])).ids : [];
+        const name = rollEntryName({ ctx: ws.ctx, type, brief: [d.name === ws.rolledName ? '' : d.name, d.description].filter(Boolean).join(' '), all, parentId: d.meta.parentId || null, fields: d.fields, naming: { lineage } });
         if (!name) return toast('info', `Nothing to roll for this ${type.noun} - name it in plain words.`);
         ws.rolledName = name;
         set('name', name);
@@ -572,7 +578,10 @@ function overviewTab({ type, entry, isNew, defs, doc, all }) {
         return h('div', { class: 'sb-tabpane' },
             h('div', { dataset: { field: 'description' } }, fieldWithTools('Description', textArea('description', ws.draft.description, 5), [spark('description', ws.draft.description)], 'The setting\'s description - true in every chat on this setting.', genClass('description'))),
             !isNew && type.scope === 'world' ? field('Current description (this chat)', textArea('narrative', ws.draft.narrative, 4, { placeholder: 'Only when the story has changed it - a forest after the fire. Replaces the description above in this chat.' }),
-                'Used instead of the description in this chat\'s guidance and image prompts. Leave empty to use the description.') : null);
+                'Used instead of the description in this chat\'s guidance and image prompts. Leave empty to use the description.') : null,
+            // Saves at once, apart from the draft - so it can be set while
+            // editing too; a new character's goes with the draft.
+            lineageCard(type, entry, all, { isNew }));
     }
     const base = h('div', {},
         h('div', { class: 'sb-section-title' }, 'Description', h('span', { class: 'sb-spacer' }), readSpark('description', entry.description)),
@@ -1373,6 +1382,7 @@ async function saveSheet(type, entry, defs, isNew) {
     // Whose names a place (and the places inside) or a faction uses.
     if (type.id === 'location' || type.id === 'faction') meta.culture = d.meta.culture ?? '';
     if (type.id === 'character') meta.nsfw = d.meta.nsfw ?? '';
+    if (type.id === 'character' && isNew && d.meta.lineage?.ids?.length) meta.lineage = d.meta.lineage;
     // Which fields came from generation (SB-136), shown on the GM tab.
     if (ws.generatedFields?.size) meta.generated = [...new Set([...(entry.meta?.generated ?? []), ...ws.generatedFields])].filter((f) => f !== 'name');
     if (isNew) meta.origin = 'user';

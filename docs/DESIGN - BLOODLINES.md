@@ -12,8 +12,8 @@ live *in this world*, how common they are where, and whose names they
 carry. They come from presets, from the premise, from the user's own
 invention, or from the story itself, like everything else.
 
-Status: phase 1 built (2026-10-27) - see "Phase 1 as built" at the end.
-Phases 2-4 not yet. Called "Peoples" in the first draft; renamed so it is
+Status: phases 1 and 2 built (2026-10-27) - see "Phase 1 as built" and
+"Phase 2 as built" at the end. Phases 3-4 not yet. Called "Peoples" in the first draft; renamed so it is
 not confused with characters and suits the book's theming.
 
 ## 1. What a bloodline is
@@ -400,8 +400,50 @@ entry), `meta.lineage` (a character's), `meta.population` (a place's mix),
 - **Catalog.** The Lore chapter has a Bloodlines / Not bloodlines filter
   once the world has one.
 
-Not yet: everything in phases 2-4 - rolling a bloodline in Generate and
-matching briefs, names by bloodline (section 5), the mix in location and
-faction prompts and the director's NEW lines, the premise call, lorebook
-import, story-led bloodlines, "Rewrite for this world" and "Describe how
-they look", lifespans in ages and prejudice per place.
+Since built: phase 2, below.
+
+## Phase 2 as built (2026-10-27)
+
+No extra model calls: everything is decided in code and told to the model.
+
+- **A new character's bloodline** (`decideLineage` in bloodlines.js,
+  `bloodlineContext` in generate/run.js), decided before the name:
+  - the one picked in the Generate panel (a new **Bloodline** box, shown
+    once the world has two or more to choose from);
+  - else the ones the idea names (`matchBrief`): "an elven hacker", "one
+    of the Vaskari", "a half-orc" (half human too, unless another is named);
+    a proper bloodline ("Grey") only with its capital, so "a grey coat" is
+    not one;
+  - else a kind of being the world has no bloodline for ("a troll
+    bouncer"): written as asked, nothing rolled, and a toast says it can be
+    added on the Bloodlines tab;
+  - else rolled from the mix where they will be: their faction's members
+    (a faction their fields tie them to), else the place they are generated
+    in, else the world.
+  The new sheet opens with it on the Bloodline card (changeable before
+  saving), and it is saved with the character.
+- **What the model is told** (`lineageBriefLine`, the prompt's "# Who
+  they are"): "They are an elf.", the bloodline's look and how they live
+  here, and for one image models do not know well, the body, skin and
+  features to put into their appearance. A saved character's own bloodline
+  is told the same way when its fields are filled or enriched.
+- **Names by bloodline** (`cultureOfLineage`): a bloodline's culture names
+  them - always (own), never (local: the place's, as before), or about two
+  times in three (either). A culture picked in the Generate panel still
+  wins. The sheet's Name dice use the character's bloodline too. Mixed
+  heritage takes the first bloodline that has a culture (given and family
+  names from each parent is phase 4).
+- **Places and factions** (`populationBriefLine`, the prompt's "# Who
+  lives there"): who lives where it is - a place's own mix, a faction's
+  members, else the place's - and the world's "only" rule; nothing for a
+  mix of humans alone.
+- **The director**: when it may add things, its NEW-line instructions carry
+  who is about here and the "only" rule, and ask that a new character's
+  description say which bloodline they are. A character it adds gets the
+  bloodline its own words give, else one rolled from the scene's mix; a
+  kind the world lacks is left as the story wrote it (phase 3 takes those
+  in). Its rolled names still come from the place's culture pool.
+
+Not yet: phases 3-4 - the premise call, lorebook import, story-led new
+bloodlines through review, "Rewrite for this world" and "Describe how they
+look", mixed heritage done fully, prejudice per place, lifespans in ages.

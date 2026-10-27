@@ -170,6 +170,12 @@ export function buildGenerationPrompt(input) {
         if (place.factions?.length) lines.push(...place.factions.map((f) => `- Tied to it: ${f.name} (faction)${f.description ? ` - ${cut(f.description, 240)}` : ''}`));
         parts.push(`# Where it is (it belongs to this place - what it is like, who holds it and whose side it is on follow from here)\n${lines.join('\n')}`);
     }
+    // Bloodlines (src/library/bloodlines.js): who a character is, who lives
+    // where a place or faction is.
+    if (input.bloodlineLine) parts.push(`# Who they are
+${input.bloodlineLine}`);
+    if (input.populationLine) parts.push(`# Who lives there
+${input.populationLine} Let what you write fit this mix.`);
     if (input.neighbours?.length) {
         parts.push(`# Related entries already in the setting\n${input.neighbours.slice(0, 16).map((n) => `- ${n.relation ? `${n.relation}: ` : ''}${n.name} (${n.type})${n.description ? ` - ${cut(n.description, 160)}` : ''}`).join('\n')}`);
     }

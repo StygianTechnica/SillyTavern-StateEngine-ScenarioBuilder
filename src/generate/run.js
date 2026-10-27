@@ -27,6 +27,38 @@ import { rollNameFor, namePoolFor } from '../naming/run.js';
 import { PROMPT_CLICHES } from '../naming/registry.js';
 import { parentFrame, surpriseKind, placeRuleFor } from './fit-place.js';
 import { isLaterAge } from '../library/world-options.js';
+import { bloodlinesOf, choicesOf, decideLineage, cultureOfLineage, lineageOf, lineageBriefLine, populationBriefLine, mixFor } from '../library/bloodlines.js';
+import { BLOODLINE_PRESETS } from '../library/bloodline-presets.js';
+
+// Every kind-of-being word the presets know, for spotting one a brief names
+// that the world has no bloodline for - not those that are also plain words
+// ("a giant of a man", "a witch hunter").
+const PRESET_WORDS = BLOODLINE_PRESETS.map((p) => p.singular).filter((w) => !['human', 'giant', 'witch', 'spacer', 'uplift'].includes(w));
+
+// What a generation knows of bloodlines (docs/DESIGN - BLOODLINES.md,
+// phase 2): a new character's bloodline - chosen, named in the brief, or
+// rolled from the mix where they will be - and the culture it names them
+// in; a saved character's own; and, for a place or faction, who lives
+// there. Nothing when the world has no bloodlines.
+// -> { ids, how, unknown, cultureId, line, populationLine }
+export function bloodlineContext({ settingId, type, task, entry = null, all, brief = '', placeId = null, factionIds = [], chosen = '', random = Math.random }) {
+    const none = { ids: [], how: '', unknown: '', cultureId: '', line: '', populationLine: '' };
+    const bloodlines = bloodlinesOf(all?.lore ?? []);
+    if (!bloodlines.length) return none;
+    const byId = Object.fromEntries(choicesOf(bloodlines).map((b) => [b.id, b]));
+    const doc = getSettingDoc(settingId);
+    const parents = getParents(settingId);
+    const mixAtOf = (p, f) => mixFor({ world: doc.overview.population, parents, metaById: doc.entries, placeId: p, factionId: f });
+    if (type.id === 'character') {
+        const decided = task === 'create' && !entry?.id
+            ? decideLineage({ chosen, brief, bloodlines, mix: mixAtOf(placeId, factionIds[0] ?? null).mix, extraWords: PRESET_WORDS, random })
+            : { ...lineageOf(entry, bloodlines), how: 'own', unknown: '' };
+        return { ...none, ids: decided.ids, how: decided.how, unknown: decided.unknown, cultureId: cultureOfLineage(decided.ids, byId, random), line: lineageBriefLine(decided.ids, byId, decided.unknown) };
+    }
+    if (type.id === 'location') return { ...none, populationLine: populationBriefLine(mixAtOf(entry?.id ?? placeId, null), byId, doc.overview.population) };
+    if (type.id === 'faction') return { ...none, populationLine: populationBriefLine(mixAtOf(placeId, entry?.id ?? null), byId, doc.overview.population) };
+    return none;
+}
 
 const lower = (s) => String(s ?? '').trim().toLowerCase();
 
@@ -130,9 +162,12 @@ export function placeContext(placeId, all, parents, relations = []) {
 //   fields: the type's field defs (editor kinds: { name, label, kind, values, refType })
 //   entry: the saved entry or null (new); draft: { name, aliases, description, fields }
 //   all: { typeId: entries[] }; targetField; brief; parentId
-//   naming: { name, cultureId, gender } - a name the user gave, and the
-//     culture and gender to roll one in (src/naming/)
-// -> { values, dropped } (values: name?, description?, aliases?, and type fields)
+//   naming: { name, cultureId, gender, bloodlineId } - a name the user gave,
+//     the culture and gender to roll one in (src/naming/), and the
+//     bloodline the user picked for a new character
+// -> { values, dropped, lineage: { ids, how, unknown } } (values: name?,
+//    description?, aliases?, and type fields; lineage: a new character's
+//    bloodline, decided here)
 // Throws with a readable reason.
 export async function generateEntry({ task, type, ctx, fields, entry = null, draft = null, all, targetField = null, brief = '', parentId = null, naming = {} }) {
     const gate = canGenerateFor(ctx.settingId, entry?.id);
@@ -193,6 +228,10 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     // rolled one. The model is told the name; it does not make one up.
     // The factions its fields already tie it to: their culture names it.
     const factionIds = factionIdsOf(draft?.fields ?? entry?.base ?? {}, all);
+    // A new character's bloodline is decided before the name, which its
+    // culture shapes (docs/DESIGN - BLOODLINES.md, section 5).
+    const kin = bloodlineContext({ settingId: ctx.settingId, type, task, entry, all, brief: picked || brief, placeId: parentForPrompt, factionIds, chosen: naming.bloodlineId ?? '' });
+    const nameCulture = naming.cultureId || kin.cultureId;
     let fixedName = '';
     let nameMeaning = '';
     let nameFrom = null;
@@ -201,7 +240,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         if (naming.name) fixedName = naming.name;
         else {
             const placeText = parentForPrompt ? pathOf(parents, parentForPrompt).map((id) => allEntries.find((e) => e.id === id)).filter(Boolean).map((e) => `${e.name} ${e.description ?? e.base?.description ?? ''}`).join(' ') : '';
-            const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief: picked || brief, purpose: frame?.purpose ?? '', cultureId: naming.cultureId, gender: naming.gender, hasParent: Boolean(parentForPrompt), placeText, placeId: parentForPrompt, factionIds }, all);
+            const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief: picked || brief, purpose: frame?.purpose ?? '', cultureId: nameCulture, gender: naming.gender, hasParent: Boolean(parentForPrompt), placeText, placeId: parentForPrompt, factionIds }, all);
             nameApart = plan.apart ?? '';
             if (plan.mode === 'rolled' || plan.mode === 'given') {
                 fixedName = plan.name;
@@ -236,6 +275,9 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         // A quest is the heroes' own: who pursues it, so its objectives are
         // written from their side - never the side they fight.
         questSide: type.id === 'quest' ? questSide(entry, all, ctx.settingId, nameOfId) : null,
+        // A character's bloodline, and who lives where a place or faction is.
+        bloodlineLine: kin.line,
+        populationLine: kin.populationLine,
     };
     const narrative = entry?.id ? getChatDoc(ctx.chatKey).narrative[entry.id]?.text ?? '' : '';
     const promptWith = (t, field, name, vals) => buildGenerationPrompt({ ...base, task: t, targetField: field, entry: { name, values: vals, narrative } });
@@ -293,7 +335,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
             return other ? { otherId: other.id, name: other.name, kind: String((typeof r === 'object' && r?.kind) || 'knows').toLowerCase().slice(0, 40) } : null;
         }).filter(Boolean).slice(0, 3);
     }
-    return { values: result.values, dropped: result.dropped };
+    return { values: result.values, dropped: result.dropped, lineage: { ids: kin.ids, how: kin.how, unknown: kin.unknown } };
 }
 
 // The faction ids among an entry's field values.
@@ -306,8 +348,11 @@ function factionIdsOf(fields, all) {
 // one the brief gives, one built from the entry it is tied to, or a rolled
 // one. '' when none fits (a room, a quest). The Name dice and the Name
 // field's generation use it.
+// naming.lineage: a character's bloodline ids - their culture names them.
 export function rollEntryName({ ctx, type, brief = '', all, parentId = null, naming = {}, fields = {} }) {
-    const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId: naming.cultureId, gender: naming.gender, hasParent: Boolean(parentId), placeId: parentId || (typeof fields.location === 'string' ? fields.location : null), factionIds: factionIdsOf(fields, all) }, all);
+    const byId = Object.fromEntries(choicesOf(bloodlinesOf(all?.lore ?? [])).map((b) => [b.id, b]));
+    const cultureId = naming.cultureId || (type.id === 'character' ? cultureOfLineage(naming.lineage ?? [], byId) : '');
+    const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief, cultureId, gender: naming.gender, hasParent: Boolean(parentId), placeId: parentId || (typeof fields.location === 'string' ? fields.location : null), factionIds: factionIdsOf(fields, all) }, all);
     if (plan.mode === 'rolled' || plan.mode === 'given') return plan.name;
     return plan.mode === 'derived' ? plan.candidates[0] : '';
 }

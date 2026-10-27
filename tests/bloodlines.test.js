@@ -3,7 +3,10 @@ import {
     HUMANS, normalizeBloodline, normalizeLineage, normalizeMix, normalizePopulation, normalizePlacePopulation,
     singularOf, wordsOf, choicesOf, humansOf, mixAt, mixFor, rollBloodline, mixText, isPlainMix,
     whoIsAboutLine, onlyRule, guessLineage, lineageOf, lineageLabel, bloodlineBrief, visualFor,
+    matchBrief, decideLineage, cultureOfLineage, lineageBriefLine, populationBriefLine,
 } from '../src/library/bloodlines.js';
+import { buildGenerationPrompt } from '../src/generate/prompt.js';
+import { buildDirectorPrompt } from '../src/director/prompt.js';
 import { BLOODLINE_PRESETS, fromPreset, presetGroups } from '../src/library/bloodline-presets.js';
 import { normalizeSettingDoc, normalizeEntryMeta } from '../src/store/schema.js';
 import { buildGuidance, buildCast } from '../src/guidance/build.js';
@@ -207,5 +210,73 @@ describe('image prompts', () => {
     it('has nothing to draw for humans', () => {
         expect(visualFor({ id: HUMANS })).toBe(null);
         expect(visualFor(line('h', 'Humans', { kind: 'human' }))).toBe(null);
+    });
+});
+
+describe('phase 2: a new character\'s bloodline', () => {
+    const greys = line('grey1', 'Greys', { kind: 'species', singular: 'Grey', plural: 'Greys' });
+    it('matches a brief by singular, plural and adjective', () => {
+        expect(matchBrief('an elven hacker', all)).toEqual({ ids: ['elf1'], unknown: '' });
+        expect(matchBrief('one of the Vaskari, a trader', all).ids).toEqual(['vas1']);
+        expect(matchBrief('a half-elf raised by androids', all).ids).toEqual(['elf1', 'and1']);
+    });
+    it('keeps a proper bloodline to its capital', () => {
+        expect(matchBrief('a smuggler in a grey coat', [greys]).ids).toEqual([]);
+        expect(matchBrief('a Grey envoy', [greys]).ids).toEqual(['grey1']);
+    });
+    it('spots a kind the world has no bloodline for', () => {
+        expect(matchBrief('a troll bouncer', all)).toEqual({ ids: [], unknown: 'troll' });
+        expect(matchBrief('two goblins who run a shop', all).unknown).toBe('goblin');
+        expect(matchBrief('an elf and a troll', all)).toEqual({ ids: ['elf1'], unknown: '' });
+        expect(matchBrief('a smuggler with a conscience', all)).toEqual({ ids: [], unknown: '' });
+        // A proper word from the presets ("Grey") is a kind only with its capital.
+        expect(matchBrief('a grey-haired detective', all, ['Grey'])).toEqual({ ids: [], unknown: '' });
+        expect(matchBrief('a Grey diplomat', all, ['Grey']).unknown).toBe('Grey');
+    });
+    it('reads a half-blood as half human', () => {
+        expect(matchBrief('a half-elf mercenary', all).ids).toEqual(['elf1', HUMANS]);
+        expect(matchBrief('a half elf raised by androids', all).ids).toEqual(['elf1', 'and1']);
+    });
+    it('decides: chosen, then the brief, then the mix', () => {
+        const mix = [{ id: 'and1', share: 'most' }];
+        expect(decideLineage({ chosen: 'vas1', brief: 'an elf', bloodlines: all, mix })).toEqual({ ids: ['vas1'], how: 'chosen', unknown: '' });
+        expect(decideLineage({ brief: 'an elf', bloodlines: all, mix }).how).toBe('brief');
+        expect(decideLineage({ brief: 'a smuggler', bloodlines: all, mix, random: () => 0.1 })).toEqual({ ids: ['and1'], how: 'rolled', unknown: '' });
+        expect(decideLineage({ brief: 'a troll bouncer', bloodlines: all, mix })).toEqual({ ids: [], how: '', unknown: 'troll' });
+        expect(decideLineage({ brief: '', bloodlines: all, mix: [] }).ids).toEqual([]);
+    });
+    it('names them in their bloodline\'s culture, by its mode', () => {
+        const ids = (naming, culture = 'preset:elves') => ({ e: line('e', 'Elves', { culture, naming }) });
+        expect(cultureOfLineage(['e'], ids('own'))).toBe('preset:elves');
+        expect(cultureOfLineage(['e'], ids('local'))).toBe('');
+        expect(cultureOfLineage(['e'], ids(''))).toBe('preset:elves');
+        expect(cultureOfLineage(['e'], ids('either'), () => 0.1)).toBe('preset:elves');
+        expect(cultureOfLineage(['e'], ids('either'), () => 0.9)).toBe('');
+        expect(cultureOfLineage(['x', 'e'], { x: line('x', 'X', {}), ...ids('own') })).toBe('preset:elves');
+    });
+    it('tells the writer who they are, and what marks an invented one', () => {
+        expect(lineageBriefLine(['elf1'], byId)).toBe('They are an elf. Elves: tall, pointed ears. How they live here: old money in the arcologies.');
+        expect(lineageBriefLine(['vas1'], byId)).toMatch(/^They are a Vaskari\. Put what marks them as a Vaskari into their appearance: four-armed; slate-grey scales; three amber eyes in a row\.$/);
+        expect(lineageBriefLine([], byId, 'troll')).toMatch(/^They are a troll, as asked/);
+        expect(lineageBriefLine([HUMANS], byId)).toBe('They are a human.');
+        expect(lineageBriefLine([], byId)).toBe('');
+    });
+    it('tells a place or faction who lives there', () => {
+        const at = { mix: [{ id: HUMANS, share: 'most' }, { id: 'elf1', share: 'some' }] };
+        expect(populationBriefLine(at, byId, { ...at, only: true })).toBe('Who lives here: mostly humans; some elves. The only peoples in this world are humans and elves. Never introduce any other race, species or kind of being as a people of this world, not even as a rumour.');
+        expect(populationBriefLine({ mix: [{ id: HUMANS, share: 'most' }] }, byId)).toBe('');
+    });
+    it('puts both in the generation prompt', () => {
+        const type = { id: 'character', noun: 'character' };
+        const { user } = buildGenerationPrompt({ task: 'create', type, fields: [], fixedName: 'Kiri', bloodlineLine: 'They are an elf.' });
+        expect(user).toContain('# Who they are\nThey are an elf.');
+        const place = buildGenerationPrompt({ task: 'create', type: { id: 'location', noun: 'location' }, fields: [], fixedName: 'Arcadia', populationLine: 'Who lives here: mostly humans; some elves.' });
+        expect(place.user).toContain('# Who lives there\nWho lives here: mostly humans; some elves. Let what you write fit this mix.');
+    });
+    it('tells the director who a new character may be', () => {
+        const { prompt } = buildDirectorPrompt({ allowCreate: true, location: { path: ['Arcadia'], whoIsAbout: 'Who is about here: mostly humans; some elves.' }, bloodlines: { only: 'The only peoples in this world are humans and elves.' } });
+        expect(prompt).toContain('Who is about here: mostly humans; some elves. The only peoples in this world are humans and elves. A new character is one of the bloodlines here');
+        const off = buildDirectorPrompt({ allowCreate: false, location: { path: ['Arcadia'], whoIsAbout: 'Who is about here: mostly humans; some elves.' } });
+        expect(off.prompt).not.toContain('A new character is one of the bloodlines');
     });
 });

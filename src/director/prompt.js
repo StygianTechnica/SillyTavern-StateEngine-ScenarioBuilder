@@ -527,6 +527,10 @@ export function buildDirectorPrompt(input) {
             'Most replies need no NEW lines. Never add something at random or just for colour, and never add something that already exists above. Only when the story needs a new plot point may you invent one - and then it must grow out of what is above (tie it to a person, place, faction or thread by name), fit the setting and its rules, and be named in your briefing.',
             // Names rolled for the culture here (src/naming/live.js).
             ...(clean(input.namePoolLine) ? [clean(input.namePoolLine)] : []),
+            // Who lives here, and the world's "only these" (src/library/bloodlines.js).
+            ...(clean(input.location?.whoIsAbout) || clean(input.bloodlines?.only)
+                ? [[clean(input.location?.whoIsAbout), clean(input.bloodlines?.only), 'A new character is one of the bloodlines here unless the story says otherwise: say which in their description (e.g. "an elf courier who...").'].filter(Boolean).join(' ')]
+                : []),
         );
     } else {
         parts.push('', 'Use only the places, people, creatures, factions, lore, events, quests and items named above; do not invent new named ones.');

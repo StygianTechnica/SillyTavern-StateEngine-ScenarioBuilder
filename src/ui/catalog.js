@@ -21,6 +21,7 @@ import {
     eraGroups, randomFor, techForEra, splitList, joinList,
 } from '../library/world-options.js';
 import { generateOverview, generateEntry, rollEntryName } from '../generate/run.js';
+import { bloodlinesOf, choicesOf } from '../library/bloodlines.js';
 import { premiseOffer, dismissPremiseOffer } from '../naming/run.js';
 import { cultureOptions, markNameDeclined } from '../naming/run.js';
 import { fieldDefs, wantsNsfwNote } from './sheet.js';
@@ -448,7 +449,10 @@ function chapterPage(type, all, doc, board = null) {
 function generatePanel(type, all, pathLabel) {
     const busy = ws.generating?.scope === 'create';
     const placed = type.id === 'location' || PLACED.has(type.id);
-    const g = ws.genInput ?? (ws.genInput = { brief: '', parentId: '', name: '', rolled: '', culture: '', gender: '' });
+    const g = ws.genInput ?? (ws.genInput = { brief: '', parentId: '', name: '', rolled: '', culture: '', gender: '', bloodline: '' });
+    // A character's bloodline: picked, or (left empty) from the idea or rolled from the mix.
+    const bloodlines = type.id === 'character' ? choicesOf(bloodlinesOf(all.lore ?? [])) : [];
+    if (bloodlines.length < 2) g.bloodline = '';
     const brief = h('textarea', { class: 'text_pole', rows: 2, placeholder: `What do you want? e.g. "${EXAMPLES[type.id] ?? 'something unexpected'}" - or leave empty for a surprise`, oninput: (e) => { g.brief = e.target.value; } });
     brief.value = g.brief;
     const locations = (all.location ?? []).map((l) => ({ value: l.id, label: pathLabel(l.id) || l.name })).sort((a, b) => a.label.localeCompare(b.label));
@@ -457,7 +461,7 @@ function generatePanel(type, all, pathLabel) {
     const nameBox = h('input', { class: 'text_pole', value: g.name ?? '', placeholder: 'Leave empty to roll one when it is generated', oninput: (e) => { g.name = e.target.value; } });
     const reroll = () => {
         if (g.rolled && g.name === g.rolled) markNameDeclined(ws.ctx.settingId, g.rolled);
-        const name = rollEntryName({ ctx: ws.ctx, type, brief: g.brief, all, parentId: g.parentId || null, naming: { cultureId: g.culture, gender: g.gender } });
+        const name = rollEntryName({ ctx: ws.ctx, type, brief: g.brief, all, parentId: g.parentId || null, naming: { cultureId: g.culture, gender: g.gender, lineage: g.bloodline ? [g.bloodline] : [] } });
         if (!name) return toast('info', `Nothing to roll for this ${type.noun} - the model will name it in plain words.`);
         g.name = name;
         g.rolled = name;
@@ -468,11 +472,13 @@ function generatePanel(type, all, pathLabel) {
         rerender();
         try {
             const fields = await fieldDefs(type);
-            const naming = { name: (g.name ?? '').trim(), cultureId: g.culture, gender: g.gender };
-            const { values, dropped } = await generateEntry({ task: 'create', type, ctx: ws.ctx, fields, all, brief: useBrief ? g.brief : '', parentId: g.parentId || null, naming });
+            const naming = { name: (g.name ?? '').trim(), cultureId: g.culture, gender: g.gender, bloodlineId: g.bloodline };
+            const { values, dropped, lineage } = await generateEntry({ task: 'create', type, ctx: ws.ctx, fields, all, brief: useBrief ? g.brief : '', parentId: g.parentId || null, naming });
             g.name = '';
             g.rolled = '';
-            ws.prefill = { values, parentId: g.parentId || null };
+            ws.prefill = { values, parentId: g.parentId || null, lineage: lineage?.ids ?? [] };
+            // A kind of being the world has no bloodline for: used as asked, and offered.
+            if (lineage?.unknown) toast('info', `"${lineage.unknown}" is not one of this world's bloodlines yet - written as asked. Add it on the Bloodlines tab to describe how they look and live here.`);
             // Its intimate-scene note follows on the sheet, when the setting writes one.
             ws.pendingNsfw = type.id === 'character' && wantsNsfwNote();
             ws.genPanel = null;
@@ -492,7 +498,8 @@ function generatePanel(type, all, pathLabel) {
         h('div', { class: 'sb-row' },
             field('Name', h('div', { class: 'sb-row sb-gen-name' }, nameBox, diceButton(reroll, 'Roll a name in this culture - never one already used'))),
             field('Culture', select(cultureOptions(ws.ctx.settingId), g.culture, { onchange: (e) => { g.culture = e.target.value; } }), 'Whose names it takes'),
-            type.id === 'character' ? field('Gender', select([{ value: '', label: 'From the idea, or either' }, { value: 'f', label: 'Female' }, { value: 'm', label: 'Male' }], g.gender, { onchange: (e) => { g.gender = e.target.value; } })) : null),
+            type.id === 'character' ? field('Gender', select([{ value: '', label: 'From the idea, or either' }, { value: 'f', label: 'Female' }, { value: 'm', label: 'Male' }], g.gender, { onchange: (e) => { g.gender = e.target.value; } })) : null,
+            bloodlines.length > 1 ? field('Bloodline', select([{ value: '', label: 'From the idea, or by who lives there' }, ...bloodlines.map((b) => ({ value: b.id, label: b.name }))], g.bloodline, { onchange: (e) => { g.bloodline = e.target.value; } }), 'Its culture names them, unless you pick one') : null),
         h('div', { class: 'sb-row' },
             placed && locations.length ? field(type.id === 'location' ? 'Inside' : 'Located in', select([{ value: '', label: type.id === 'location' ? '(a new region)' : '(anywhere)' }, ...locations], g.parentId, { onchange: (e) => { g.parentId = e.target.value; } })) : null,
             h('div', { class: 'sb-actions sb-push' },
