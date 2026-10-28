@@ -172,11 +172,15 @@ export function factionsAtPlay(factions, { cast = [], placeIds = [], relations =
     return out;
 }
 
+// Kinds that are something the story did, not something in the world:
+// written from the chat, never made up.
+const STORY_KINDS = ['event', 'scene'];
+
 // Adds what the briefing says the scene needs. Places go under the current
 // location; items, creatures and people who are here are placed in it;
 // what a new thing is tied to becomes its related entries. Never adds a
 // duplicate of something the library already has.
-async function createNeeded(chatId, chatKey, settingId, created, locationId, chain = [], places = []) {
+async function createNeeded(chatId, chatKey, settingId, created, locationId, chain = [], places = [], recentText = '') {
     const made = [];
     // A new person's bloodline (docs/DESIGN - BLOODLINES.md, phase 2): the
     // one its own words give ("an elf courier"), else rolled from who lives
@@ -191,7 +195,10 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
             // Checked again here, just before making it: State Engine's review
             // may have taken the same person in while the briefing was written.
             if ((await findSimilar(chatId, settingId, item.kind, item.name, { pending: true })).length) continue;
-            const data = { name: item.name, description: item.description };
+            // An event or scene the story just had: the director's own line
+            // is its description when it gave no other, so the enrichment
+            // never starts from a title alone.
+            const data = { name: item.name, description: item.description || (STORY_KINDS.includes(item.kind) ? item.name : '') };
             if (item.tiedIds?.length) data.related_entity_ids = [...new Set(item.tiedIds)];
             if (item.kind === 'quest') data.startValues = { status: 'Active' };
             // Only people and creatures the briefing has here are put in the
@@ -234,7 +241,8 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
         d.adopted = [...d.adopted, ...adopted.filter((a) => !known.has(a.objectId))];
     });
     if (getSettings().generation.autoEnrich) {
-        for (const a of adopted) enqueueEnrichment({ settingId, chatId, chatKey, objectId: a.objectId, name: a.name, adoptedId: a.id });
+        // An event or scene is written from the chat it came from, not made up.
+        for (const a of adopted) enqueueEnrichment({ settingId, chatId, chatKey, objectId: a.objectId, name: a.name, adoptedId: a.id, ...(STORY_KINDS.includes(a.type) && recentText ? { story: recentText } : {}) });
     }
     return made;
 }
@@ -401,7 +409,7 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
         if (Array.isArray(value)) runtimeFactions.set(o.id, value);
     }
     const factions = settingId ? factionsAtPlay(factionList, { cast: (guidance.cast ?? []).filter((c) => c.id), placeIds, relations: getSettingDoc(settingId).relations, runtimeOf: (id) => runtimeFactions.get(id) ?? [] }) : [];
-    const eventObjects = settingId ? (await listEntries(chatId, settingId, 'event').catch(() => [])).slice(-8).map((e) => ({ name: e.name, description: e.base?.description ?? e.description ?? '', when: e.base?.when ?? e.when ?? e.base?.date ?? '' })) : [];
+    const eventObjects = settingId ? (await listEntries(chatId, settingId, 'event').catch(() => [])).slice(-8).map((e) => ({ name: e.name, description: e.base?.description ?? e.description ?? '', when: e.base?.when ?? e.when ?? e.base?.date ?? e.base?.timestamp ?? e.timestamp ?? '' })) : [];
     const scenes = settingId ? (await listEntries(chatId, settingId, 'scene').catch(() => [])).map((x) => ({ name: x.name, description: x.base?.description ?? x.description ?? '' })) : [];
     return { characters, castIds, nearby, elsewhere, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes };
 }
@@ -620,7 +628,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         try { takeFromPool(settingId, live.key, swapped.used); } catch { /* the pool tops itself up next time */ }
     }
     const made = settingId && settings.director.allowCreate && !canonOnly
-        ? await createNeeded(chatId, chatKey, settingId, wanted, guidance.location?.id ?? null, placeIds.map((id) => ({ id, names: [known.find((e) => e.id === id)?.name, ...(known.find((e) => e.id === id)?.aliases ?? [])].filter(Boolean) })), known.filter((e) => e.type === 'location'))
+        ? await createNeeded(chatId, chatKey, settingId, wanted, guidance.location?.id ?? null, placeIds.map((id) => ({ id, names: [known.find((e) => e.id === id)?.name, ...(known.find((e) => e.id === id)?.aliases ?? [])].filter(Boolean) })), known.filter((e) => e.type === 'location'), recentText)
         : [];
     if (settingId) enrichThin(chatId, chatKey, settingId, guidance);
     if (settingId && isNewTurn(type)) await renameNamed(chatId, chatKey, settingId, parsed.renames, characters, recentText);

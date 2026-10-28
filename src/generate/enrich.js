@@ -58,7 +58,8 @@ function setItem(job, enrich, error = '') {
     });
 }
 
-// job: { settingId, chatId, chatKey, objectId, name, adoptedId? }
+// job: { settingId, chatId, chatKey, objectId, name, adoptedId?, story? }
+// story: the chat an event or scene came from - it is written from that.
 export function enqueueEnrichment(job) {
     if (queue.some((j) => j.objectId === job.objectId) || current?.objectId === job.objectId) return;
     queue.push(job);
@@ -107,7 +108,7 @@ async function enrichOne(job) {
         for (const t of await getObjectTypes()) all[t.id] = await listEntries(chatId, settingId, t.id);
         const base = obj.base ?? obj;
         const draft = { name: obj.name, aliases: base.aliases ?? [], description: base.description ?? '', fields: Object.fromEntries(fields.map((f) => [f.name, base[f.name] ?? null])) };
-        const { values } = await generateEntry({ task: 'fill', type, ctx: { chatId, chatKey: job.chatKey, settingId }, fields, entry: obj, draft, all });
+        const { values } = await generateEntry({ task: 'fill', type, ctx: { chatId, chatKey: job.chatKey, settingId }, fields, entry: obj, draft, all, story: job.story ?? '' });
 
         // Re-read: only what is STILL empty is written.
         const fresh = await getObject(chatId, job.objectId);

@@ -111,6 +111,10 @@ function jsonTemplate(entries) {
 
 const REPLY_PLAIN = '# Reply\nReply with ONLY the text for this field. No title, no field name, no quotation marks, no JSON, nothing before or after it.';
 
+// An event or scene the story had (src/director/run.js): told as it
+// happened, never made up.
+const STORY_RULE = 'This happened in the story above. Write only what happened there - the people, places and moment it shows. Bring in no one and nothing else, invent no names, and give no time or place the story does not.';
+
 // The rule for names the text mentions (docs/DESIGN - NAMING.md, 4.1): the
 // model writes plain words and names already in the setting; any new
 // person or place it brings up takes a name from the pool, never one of
@@ -138,7 +142,8 @@ function namingRule(input) {
 //     nameApart                        an entry it stands apart from (a rival)
 //     namePool: { people, places }    names for anyone or anywhere else
 //     avoidNames                       overused names never to write
-//   sides: [{ name, description, ties: [line] }]   the factions it is one of }
+//   sides: [{ name, description, ties: [line] }]   the factions it is one of
+//   story: the chat an event or scene came from - written from it alone }
 // -> { system, user, keys, plain } (plain: one field, answered as text)
 export function buildGenerationPrompt(input) {
     const { task, type, entry = { values: {} } } = input;
@@ -192,6 +197,8 @@ ${input.populationLine} Let what you write fit this mix.`);
         parts.push(`# Whose quest it is\nIt is pursued by ${who}. Its objectives are the concrete steps THEY take toward its goal, in order. Write them from their side: never the aims of the enemies, monsters or powers they oppose, and never steps that would serve those enemies.`);
     }
     if (input.memories?.length) parts.push(`# What the story so far says about it\n${input.memories.slice(0, 12).map((m) => `- ${cut(m, 220)}`).join('\n')}`);
+    // What the story did (an event, a scene): the chat it came from.
+    if (clean(input.story)) parts.push(`# What happened in the story (this ${type?.noun ?? 'entry'} is taken from it)\n${cut(input.story, 3000)}`);
     if (input.gmNotes) parts.push(`# Secret GM notes (let them shape what you write, but never reveal them outright)\n${cut(input.gmNotes, 500)}`);
 
     if (task !== 'create' || entry.name) {
@@ -218,6 +225,7 @@ ${input.populationLine} Let what you write fit this mix.`);
                 : (isText(f) ? `Length: ${length}.` : form.prose),
             input.creating && !entry.name && f.name !== 'name' ? 'This is a brand-new entry being created now.' : '',
             f.name !== 'name' && isText(f) ? namesRule : '',
+            clean(input.story) ? STORY_RULE : '',
             placeRule,
             input.brief ? `${input.creating ? 'What the user wants' : "The user's direction"}: ${cut(input.brief, 400)}` : '',
         ].filter(Boolean).join('\n');
@@ -248,6 +256,7 @@ ${input.populationLine} Let what you write fit this mix.`);
     }
     if (input.brief && task !== 'create') job += `\nThe user's direction: ${cut(input.brief, 400)}`;
     if (placeRule) job += `\n${placeRule}`;
+    if (clean(input.story)) job += `\n${STORY_RULE}`;
     if (namesRule) job += `\n${namesRule}`;
     // A person is a he or a she, decided in code (generate/run.js genderOf):
     // left open, a model writes "they" for one person.

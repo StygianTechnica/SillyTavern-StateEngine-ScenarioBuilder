@@ -219,7 +219,9 @@ export function sidesOf(entry, { fields = {}, brief = '', all, relations = [] })
 //    description?, aliases?, and type fields; lineage: a new character's
 //    bloodline, decided here)
 // Throws with a readable reason.
-export async function generateEntry({ task, type, ctx, fields, entry = null, draft = null, all, targetField = null, brief = '', parentId = null, naming = {} }) {
+// story: the chat an event or scene came from (src/director/run.js) - what
+// is written is what happened there, with no one made up.
+export async function generateEntry({ task, type, ctx, fields, entry = null, draft = null, all, targetField = null, brief = '', parentId = null, naming = {}, story = '' }) {
     const gate = canGenerateFor(ctx.settingId, entry?.id);
     if (!gate.ok) throw new Error(gate.reason);
 
@@ -319,9 +321,10 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     // Those its side has ties to come first among the entries it may relate to.
     const tiedIds = new Set(sides.flatMap((s) => [s.id, ...s.ties.map((t) => t.otherId)]));
     const others = allEntries.filter((e) => e.id !== entry?.id);
-    const namePool = namePoolFor(ctx.settingId, all, { cultureId: naming.cultureId, placeId: parentForPrompt, factionIds });
+    // Nothing in a story's own event needs a new name: no pool, so none is offered.
+    const namePool = story ? null : namePoolFor(ctx.settingId, all, { cultureId: naming.cultureId, placeId: parentForPrompt, factionIds });
     const base = {
-        fixedName, nameMeaning, nameFrom, nameApart, namePool, avoidNames: PROMPT_CLICHES,
+        fixedName, nameMeaning, nameFrom, nameApart, namePool, avoidNames: PROMPT_CLICHES, story,
         type, fields, brief,
         // The world as it holds where the entry is: a place's own realm, or
         // the place an entry lies in (a planet at TL12, a dead-magic zone).
