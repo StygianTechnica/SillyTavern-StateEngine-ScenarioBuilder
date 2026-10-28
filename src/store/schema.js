@@ -162,6 +162,9 @@ export function normalizeEntryMeta(meta) {
         // story names them (src/director/: RENAME).
         provisional: m.provisional === true,
         generated: strList(m.generated),
+        // When its description was last changed on the sheet (ISO): the image
+        // prompt draws from it, or from a chat's newer current description.
+        descriptionAt: str(m.descriptionAt),
         source: str(m.source),
         quest: normalizeQuestMeta(m.quest),
         // Lore made from or linked to Archivist (src/library/lore-sync.js):

@@ -31,7 +31,9 @@ async function useFile(entry, file) {
     }
 }
 
-export function renderImagePanel({ type, entry, narrative, environment, overview, knownNames = [], surroundings = {}, bloodline = null }) {
+// source: { from: 'chat' | 'saved', pick } when the chat has its own current
+// description - which one the picture is drawn from; null when it has none.
+export function renderImagePanel({ type, entry, narrative, environment, overview, knownNames = [], surroundings = {}, bloodline = null, source = null }) {
     const settings = getSettings();
     const opts = settings.imagePrompts;
     const src = safeImageSrc(entry.image);
@@ -141,7 +143,13 @@ export function renderImagePanel({ type, entry, narrative, environment, overview
 
     const promptCol = h('div', { class: 'sb-prompt-col' },
         h('div', { class: 'sb-section-title' }, icon('fa-pen-fancy'), ' Image prompt'),
-        h('small', { class: 'sb-hint' }, `Written from ${narrative ? 'the current description' : 'the description'}, the setting's era and tone, and your style. Names are left out unless you include them.`),
+        h('small', { class: 'sb-hint' }, `Written from ${narrative ? 'this chat\'s current description' : 'the saved description'}, the setting's era and tone, and your style. Names are left out unless you include them. Changed the description? Save the sheet - the prompt follows.`),
+        // The story has its own current look for it (a new scar, other
+        // clothes): draw that, or the saved description - the newer by default.
+        source ? field('Drawn from', select([
+            { value: 'saved', label: 'The saved description' },
+            { value: 'chat', label: 'How this chat describes it now' },
+        ], source.from, { onchange: (e) => source.pick(e.target.value) }), 'The story keeps its own current description in this chat (changes the story made). The newer of the two is used unless you pick.') : null,
         h('div', { class: 'sb-row' },
             field('For', select(PROVIDERS.map((p) => ({ value: p.id, label: p.label })), opts.provider, { onchange: (e) => { opts.provider = e.target.value; save(); } })),
             field('Style', select(STYLES.map((s) => ({ value: s.id, label: s.label })), opts.style, { onchange: (e) => { opts.style = e.target.value; save(); } })),

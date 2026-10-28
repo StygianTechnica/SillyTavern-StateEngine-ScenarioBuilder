@@ -20,7 +20,7 @@ import { getSettings } from '../settings.js';
 import { safeImageSrc } from '../images/attach.js';
 import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
-import { placeSurroundings } from '../images/prompt.js';
+import { placeSurroundings, imageSourceFor } from '../images/prompt.js';
 import { renderQuestTab } from './quest-board.js';
 import { renderMissionsTab, GIVER_TYPES } from './missions-tab.js';
 import { isDead, markDead, bringBack, setDeathHow } from '../state/death.js';
@@ -1349,9 +1349,14 @@ async function imageTab({ type, entry, isNew, doc, parents }) {
     const surroundings = entry.type === 'location'
         ? placeSurroundings({ own: { description: entry.base?.description ?? entry.description ?? '', climate: envById[entry.id]?.climate ?? '' }, path: pathOf(parents, entry.id).slice(0, -1).reverse().map(placeOf), others: knownNames })
         : null;
+    // The chat's current look or the saved description: picked, else the newer.
+    const told = doc.narrative[entry.id];
+    const picks = ws.imageFrom ?? (ws.imageFrom = {});
+    const from = imageSourceFor({ narrative: told?.text, narrativeAt: told?.updatedAt, descriptionAt: entry.meta?.descriptionAt, picked: picks[entry.id] });
     return renderImagePanel({
         type, entry,
-        narrative: doc.narrative[entry.id]?.text ?? '',
+        narrative: from === 'chat' ? told?.text ?? '' : '',
+        source: told?.text ? { from, pick: (v) => { picks[entry.id] = v; rerender({ force: true }); } } : null,
         environment: { climate: surroundings ? surroundings.climate : inherited.climate?.value ?? '', lighting: inherited.lighting?.value ?? '' },
         surroundings: surroundings ?? {},
         overview: getPlaceOverview(ws.ctx.settingId, entry.type === 'location' ? entry.id : (entry.base?.location ?? entry.location ?? null)),
@@ -1417,6 +1422,7 @@ async function saveSheet(type, entry, defs, isNew) {
     // Which fields came from generation (SB-136), shown on the GM tab.
     if (ws.generatedFields?.size) meta.generated = [...new Set([...(entry.meta?.generated ?? []), ...ws.generatedFields])].filter((f) => f !== 'name');
     if (isNew) meta.origin = 'user';
+    if (isNew || d.description !== (entry.base?.description ?? entry.description ?? '')) meta.descriptionAt = new Date().toISOString();
     if (type.id === 'location') Object.assign(meta, { environment: d.meta.environment, climate: d.meta.climate, sky: d.meta.sky, realm: d.meta.realm });
     try {
         if (isNew) {

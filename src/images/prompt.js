@@ -427,6 +427,16 @@ export function styleOf(options, overview = {}, { provider = '' } = {}) {
     return [text, clean(options.customStyle)].filter(Boolean).join(', ');
 }
 
+// Which description a picture is drawn from: the chat's current one (the
+// story changed how they look) or the saved one - the one picked, else the
+// newer of the two. A saved description with no date (from before dates
+// were kept) is older. -> 'chat' | 'saved'
+export function imageSourceFor({ narrative = '', narrativeAt = '', descriptionAt = '', picked = '' } = {}) {
+    if (!String(narrative).trim()) return 'saved';
+    if (picked === 'chat' || picked === 'saved') return picked;
+    return descriptionAt && descriptionAt > narrativeAt ? 'saved' : 'chat';
+}
+
 // Inputs: entry (State Engine object: type, name, aliases, description,
 // fields), `narrative` (the chat's current description, used instead of
 // the base one when set), `environment` ({ climate, lighting } values,
