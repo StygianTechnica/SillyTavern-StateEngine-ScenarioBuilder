@@ -231,8 +231,9 @@ export async function gatherInputs(chatId, chatKey) {
         names.set(id, obj.name);
         const base = obj.base ?? obj;
         const text = (v) => (Array.isArray(v) ? v.join(', ') : (typeof v === 'string' ? v : ''));
-        // Their bloodline: set on the sheet, else read from their description.
-        const lineage = bloodlines.length ? lineageOf({ ...obj, meta: library.entries?.[id] ?? {} }, bloodlines) : { ids: [], note: '' };
+        // Their bloodline: set on the sheet, else read from their description,
+        // else the world's default for anyone not set.
+        const lineage = bloodlines.length ? lineageOf({ ...obj, meta: library.entries?.[id] ?? {} }, bloodlines, { population: library.overview?.population }) : { ids: [], note: '' };
         // Runtime values by field role (SB-441); GM notes are never read here (SB-123).
         cast.push({
             name: obj.name,

@@ -9,7 +9,7 @@
 //     overview: { premise, worldType, tone, themes, era, rules,
 //                 magic: { presence, power, kinds, absent, restrictions, notes },
 //                 tech: { level, levelFromEra, flavors, spread, absent, notes },
-//                 population: { mix: [{ id, share }], notes, only } },
+//                 population: { mix: [{ id, share }], notes, only, views, unset } },
 //                                   (src/library/bloodlines.js)
 //                 (src/library/world-options.js; the old single magicLevel migrates)
 //     canonOnly,                    the setting is fixed canon (e.g. from a published

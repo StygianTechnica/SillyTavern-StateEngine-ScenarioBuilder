@@ -161,14 +161,18 @@ export function normalizeViews(views) {
 }
 
 export function emptyPopulation() {
-    return { mix: [], notes: '', only: false, views: [] };
+    return { mix: [], notes: '', only: false, views: [], unset: 'most' };
 }
 
 // The world's: who lives in it, whether these and no others do, and how
 // each is seen.
 export function normalizePopulation(p) {
     const x = isObject(p) ? p : {};
-    return { mix: normalizeMix(x.mix), notes: str(x.notes), only: x.only === true, views: normalizeViews(x.views) };
+    // unset: what a character with no bloodline set (and none in their
+    // description) is - 'most' (the world's most common), 'story' (left to
+    // the story) or a bloodline id.
+    const unset = typeof x.unset === 'string' && x.unset.trim() ? x.unset.trim() : 'most';
+    return { mix: normalizeMix(x.mix), notes: str(x.notes), only: x.only === true, views: normalizeViews(x.views), unset };
 }
 
 // A place's: its own mix, replacing the one above or adjusting it ("as
@@ -398,17 +402,33 @@ export function guessLineage({ role = '', description = '' } = {}, bloodlines = 
     return hits.sort((a, b) => a.at - b.at).slice(0, 2).map((x) => x.id);
 }
 
-// A character's bloodline ids: set on the sheet, else guessed.
-// -> { ids, note, guessed }
-export function lineageOf(entry, bloodlines = []) {
+// The bloodline of a character no one set one for, by the world's
+// population (its `unset`): the most common in the world's mix, the one
+// picked, or none (left to the story). -> [id] or []
+export function defaultLineage(population, bloodlines = []) {
+    const p = normalizePopulation(population);
+    if (p.unset === 'story') return [];
+    const known = new Set([HUMANS, ...(bloodlines ?? []).map((b) => b.id)]);
+    if (p.unset !== 'most') return known.has(p.unset) ? [p.unset] : [];
+    const rows = p.mix.filter((r) => known.has(r.id) && SHARE_ORDER.includes(r.share));
+    rows.sort((a, b) => SHARE_ORDER.indexOf(a.share) - SHARE_ORDER.indexOf(b.share));
+    return rows.length ? [rows[0].id] : [];
+}
+
+// A character's bloodline ids: set on the sheet, else guessed from their
+// description, else the world's default (population given).
+// -> { ids, note, guessed, defaulted }
+export function lineageOf(entry, bloodlines = [], { population = null } = {}) {
     const own = normalizeLineage(entry?.meta?.lineage);
     const known = new Set([HUMANS, ...(bloodlines ?? []).map((b) => b.id)]);
     const ids = own.ids.filter((id) => known.has(id));
-    if (ids.length) return { ids, note: own.note, guessed: false };
+    if (ids.length) return { ids, note: own.note, guessed: false, defaulted: false };
     const base = entry?.base ?? entry ?? {};
     const role = Array.isArray(base.role) ? base.role.join(', ') : str(base.role);
     const guessed = guessLineage({ role, description: str(entry?.description ?? base.description) }, bloodlines);
-    return { ids: guessed, note: own.note, guessed: guessed.length > 0 };
+    if (guessed.length || !population) return { ids: guessed, note: own.note, guessed: guessed.length > 0, defaulted: false };
+    const fallback = defaultLineage(population, bloodlines);
+    return { ids: fallback, note: own.note, guessed: false, defaulted: fallback.length > 0 };
 }
 
 const isHuman = (id, byId) => id === HUMANS || normalizeBloodline(byId[id]?.meta?.bloodline).kind === 'human';
@@ -690,12 +710,12 @@ const articled = (w) => `${/^[aeiou]/i.test(w) ? 'an' : 'a'} ${w}`;
 // reader cannot picture - the features to put into their appearance.
 // unknown: a kind the world has no bloodline for. '' when there is nothing.
 export function lineageBriefLine(ids = [], byId = {}, unknown = '') {
-    if (!ids?.length) return unknown ? `They are ${articled(unknown)}, as asked - a kind of being this world has not described yet; keep them true to the setting.` : '';
+    if (!ids?.length) return unknown ? `This character is ${articled(unknown)}, as asked - a kind of being this world has not described yet; keep this character true to the setting.` : '';
     const label = lineageLabel(ids, byId);
     const first = byId[ids[0]];
     if (!label || !first) return '';
-    if (normalizeBloodline(first.meta?.bloodline).kind === 'human' && ids.length === 1) return `They are ${articled(label)}.`;
-    const lines = [`They are ${articled(label)}.`];
+    if (normalizeBloodline(first.meta?.bloodline).kind === 'human' && ids.length === 1) return `This character is ${articled(label)}.`;
+    const lines = [`This character is ${articled(label)}.`];
     for (const id of ids) {
         const brief = bloodlineBrief(byId[id]);
         if (brief) lines.push(brief);
@@ -703,13 +723,13 @@ export function lineageBriefLine(ids = [], byId = {}, unknown = '') {
     if (ids.length > 1 && ids[0] !== ids[1]) {
         // Mixed heritage: something of each parent, neither all of one.
         const v = lineageVisual(ids, byId);
-        lines.push(`Write them as of both: something of each parent in their looks and upbringing${v?.details.length > 1 ? ` (${v.details.slice(0, -1).join('; ')})` : ''}, and how each side sees one of mixed blood.`);
+        lines.push(`Write this character as of both: something of each parent in the looks and upbringing${v?.details.length > 1 ? ` (${v.details.slice(0, -1).join('; ')})` : ''}, and how each side sees one of mixed blood.`);
         const span = ids.map((id) => normalizeBloodline(byId[id]?.meta?.bloodline).lifespan).find((l) => l && l !== 'human');
-        if (span === 'long' || span === 'ageless') lines.push('They age more slowly than a human, but not as slowly as their longer-lived parent. Give an age that fits.');
+        if (span === 'long' || span === 'ageless') lines.push('This character ages more slowly than a human, but not as slowly as the longer-lived parent. Give an age that fits.');
         return lines.join(' ');
     }
     const v = visualFor(first);
-    if (v && normalizeBloodline(first.meta?.bloodline).visual.known !== 'well' && v.details.length) lines.push(`Put what marks them as ${articled(wordsOf(first).singular)} into their appearance: ${v.details.join('; ')}.`);
+    if (v && normalizeBloodline(first.meta?.bloodline).visual.known !== 'well' && v.details.length) lines.push(`Put what marks this character as ${articled(wordsOf(first).singular)} into the appearance: ${v.details.join('; ')}.`);
     const span = lifespanLine(first);
     if (span) lines.push(span);
     return lines.join(' ');

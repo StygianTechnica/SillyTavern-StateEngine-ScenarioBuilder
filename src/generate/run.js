@@ -54,7 +54,7 @@ export function bloodlineContext({ settingId, type, task, entry = null, all, bri
     if (type.id === 'character') {
         const decided = task === 'create' && !entry?.id
             ? decideLineage({ chosen, brief, bloodlines, mix: mixAtOf(placeId, factionIds[0] ?? null).mix, extraWords: PRESET_WORDS, random })
-            : { ...lineageOf(entry, bloodlines), how: 'own', unknown: '' };
+            : { ...lineageOf(entry, bloodlines, { population: doc.overview.population }), how: 'own', unknown: '' };
         const names = namesOfLineage(decided.ids, byId, random);
         return { ...none, ids: decided.ids, how: decided.how, unknown: decided.unknown, cultureId: names.given, familyCulture: names.split ? { id: names.family } : null, line: lineageBriefLine(decided.ids, byId, decided.unknown) };
     }
@@ -286,11 +286,20 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     let nameMeaning = '';
     let nameFrom = null;
     let nameApart = '';
+    // A person is a he or a she: the one picked, else what their idea and
+    // their own text say, else - for one this rolls a name for - tossed
+    // here, so the name and the writing agree. One whose name is already
+    // someone's is left to the model to read from it (genderRule).
+    const narrativeText = entry?.id ? getChatDoc(ctx.chatKey).narrative[entry.id]?.text ?? '' : '';
+    const rollsName = task === 'create' && !(draft?.name ?? entry?.name) && !naming.name;
+    const gender = type.id === 'character'
+        ? genderOf({ chosen: naming.gender, texts: [brief, values.description, entry?.description, entry?.base?.description, narrativeText] }) || (rollsName ? (Math.random() < 0.5 ? 'f' : 'm') : '')
+        : '';
     if (task === 'create' && !(draft?.name ?? entry?.name)) {
         if (naming.name) fixedName = naming.name;
         else {
             const placeText = parentForPrompt ? pathOf(parents, parentForPrompt).map((id) => allEntries.find((e) => e.id === id)).filter(Boolean).map((e) => `${e.name} ${e.description ?? e.base?.description ?? ''}`).join(' ') : '';
-            const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief: picked || brief, purpose: frame?.purpose ?? '', cultureId: nameCulture, familyCulture: naming.cultureId ? null : kin.familyCulture, gender: naming.gender, hasParent: Boolean(parentForPrompt), placeText, placeId: parentForPrompt, factionIds }, all);
+            const plan = rollNameFor(ctx.settingId, { typeId: type.id, brief: picked || brief, purpose: frame?.purpose ?? '', cultureId: nameCulture, familyCulture: naming.cultureId ? null : kin.familyCulture, gender: gender || naming.gender, hasParent: Boolean(parentForPrompt), placeText, placeId: parentForPrompt, factionIds }, all);
             nameApart = plan.apart ?? '';
             if (plan.mode === 'rolled' || plan.mode === 'given') {
                 fixedName = plan.name;
@@ -340,8 +349,11 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         // A character's bloodline, and who lives where a place or faction is.
         bloodlineLine: kin.line,
         populationLine: kin.populationLine,
+        // he or she (prompt.js): decided, or (a person) for the model to pick and keep.
+        gender,
+        person: type.id === 'character',
     };
-    const narrative = entry?.id ? getChatDoc(ctx.chatKey).narrative[entry.id]?.text ?? '' : '';
+    const narrative = narrativeText;
     const promptWith = (t, field, name, vals) => buildGenerationPrompt({ ...base, task: t, targetField: field, entry: { name, values: vals, narrative } });
     const prompt = promptWith(task, targetField, draft?.name ?? entry?.name ?? '', values);
     if (!prompt.keys.length) throw new Error('Every field already has content - try Enrich instead.');
@@ -416,6 +428,18 @@ export function withMemberships(relations, brief, factions) {
     const own = (relations ?? []).filter((r) => !given.some((g) => g.otherId === r.otherId))
         .map((r) => (factionIds.has(r.otherId) ? { ...r, kind: memberKindOf(r.kind) ?? r.kind } : r));
     return [...given, ...own].slice(0, Math.max(3, given.length));
+}
+
+// A character's gender: the one picked ('f' | 'm'), else what the texts
+// say, first to last (their idea, then their own text). '' when none says.
+// Pure.
+export function genderOf({ chosen = '', texts = [] } = {}) {
+    if (chosen === 'f' || chosen === 'm') return chosen;
+    for (const t of texts) {
+        const g = typeof t === 'string' ? genderFrom(t) : '';
+        if (g) return g;
+    }
+    return '';
 }
 
 // The faction ids among an entry's field values.

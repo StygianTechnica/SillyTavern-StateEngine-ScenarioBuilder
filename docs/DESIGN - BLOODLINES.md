@@ -391,6 +391,12 @@ entry), `meta.lineage` (a character's), `meta.population` (a place's mix),
 - **A character with no bloodline set** is read from their role and the
   first sentence of their description, by each bloodline's singular and
   adjective (humans never guessed); the guess is used until one is set.
+  With no guess, the world's "Anyone not set is" (Bloodlines tab,
+  `population.unset`) decides: the world's most common bloodline (the
+  default), one picked, or "Left to the story" (nothing said). Without it, a
+  human with no bloodline set in a world of mostly humans and some androids
+  was told to the narrator as nothing, and came out as "the android"
+  (`defaultLineage`).
 - **Images.** A character's portrait leads with their bloodline ("portrait
   of an elf fixer"); one that image models do not know well adds its body,
   skin and features before the description; its "never draw" words and,

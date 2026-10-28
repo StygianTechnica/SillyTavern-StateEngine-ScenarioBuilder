@@ -205,7 +205,8 @@ export function lineageCard(type, entry, all, { isNew = false } = {}) {
     if (!bloodlines.length) return null;
     const choices = choicesOf(bloodlines);
     const own = normalizeLineage(isNew ? ws.draft?.meta?.lineage : entry.meta?.lineage);
-    const now = isNew ? { ids: own.ids, guessed: false } : lineageOf(entry, bloodlines);
+    const population = getSettingDoc(settingId).overview.population;
+    const now = isNew ? { ids: own.ids, guessed: false } : lineageOf(entry, bloodlines, { population });
     const save = (patch) => {
         const lineage = normalizeLineage({ ...own, ...patch });
         if (isNew) { ws.draft.meta.lineage = lineage; markDirty(); rerender({ force: true }); return; }
@@ -224,6 +225,8 @@ export function lineageCard(type, entry, all, { isNew = false } = {}) {
         now.guessed ? h('div', { class: 'sb-row' },
             h('small', { class: 'sb-hint' }, `Read from their description: ${now.ids.map((id) => nameOf(byId.get(id))).join(' and ')}.`),
             button('That is right', () => save({ ids: now.ids }), { iconName: 'fa-check' })) : null,
+        // Not set: what the world's "Anyone not set is" makes them (Bloodlines tab).
+        now.defaulted ? h('small', { class: 'sb-hint' }, `Not set - told to the narrator as ${now.ids.map((id) => nameOf(byId.get(id) ?? { id, name: id })).join(' and ')}, the world's default for anyone not set (Bloodlines tab).`) : null,
         field('Their own story', commitInput(own.note, (x) => save({ note: x }), { placeholder: 'e.g. raised human; had her ears clipped at fourteen' })),
         !isNew && first && byId.get(first)?.id !== HUMANS ? h('small', { class: 'sb-hint sb-link', onclick: () => openSheet(first, 'lore') }, icon('fa-arrow-up-right-from-square'), ` About the ${wordsOf(byId.get(first)).plural}`) : null);
 }

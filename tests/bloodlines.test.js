@@ -64,11 +64,11 @@ describe('normalizing', () => {
     });
     it('is stored with the setting and its entries', () => {
         const doc = normalizeSettingDoc({ overview: { population: { mix: [{ id: HUMANS, share: 'most' }], only: true } }, entries: { x: { lineage: { ids: ['elf1'] }, bloodline: { on: true } } } });
-        expect(doc.overview.population).toEqual({ mix: [{ id: HUMANS, share: 'most' }], notes: '', only: true, views: [] });
+        expect(doc.overview.population).toEqual({ mix: [{ id: HUMANS, share: 'most' }], notes: '', only: true, views: [], unset: 'most' });
         expect(doc.entries.x.lineage.ids).toEqual(['elf1']);
         expect(doc.entries.x.bloodline.on).toBe(true);
         expect(normalizeEntryMeta({}).population).toEqual({ mode: 'adjust', mix: [], notes: '', views: [] });
-        expect(normalizeSettingDoc({}).overview.population).toEqual({ mix: [], notes: '', only: false, views: [] });
+        expect(normalizeSettingDoc({}).overview.population).toEqual({ mix: [], notes: '', only: false, views: [], unset: 'most' });
     });
 });
 
@@ -131,8 +131,8 @@ describe('a character\'s bloodline', () => {
     });
     it('is the sheet\'s when set, else the guess', () => {
         const ch = { id: 'c', type: 'character', description: 'An android courier.', meta: {} };
-        expect(lineageOf(ch, all)).toEqual({ ids: ['and1'], note: '', guessed: true });
-        expect(lineageOf({ ...ch, meta: { lineage: { ids: ['elf1'], note: 'raised human' } } }, all)).toEqual({ ids: ['elf1'], note: 'raised human', guessed: false });
+        expect(lineageOf(ch, all)).toEqual({ ids: ['and1'], note: '', guessed: true, defaulted: false });
+        expect(lineageOf({ ...ch, meta: { lineage: { ids: ['elf1'], note: 'raised human' } } }, all)).toEqual({ ids: ['elf1'], note: 'raised human', guessed: false, defaulted: false });
         expect(lineageOf({ ...ch, meta: { lineage: { ids: ['gone'] } } }, all).ids).toEqual(['and1']);
     });
     it('labels one or two', () => {
@@ -262,10 +262,10 @@ describe('phase 2: a new character\'s bloodline', () => {
         expect(cultureOfLineage(['x', 'e'], { x: line('x', 'X', {}), ...ids('own') })).toBe('preset:elves');
     });
     it('tells the writer who they are, and what marks an invented one', () => {
-        expect(lineageBriefLine(['elf1'], byId)).toBe('They are an elf. Elves: tall, pointed ears. How they live here: old money in the arcologies.');
-        expect(lineageBriefLine(['vas1'], byId)).toMatch(/^They are a Vaskari\. Put what marks them as a Vaskari into their appearance: four-armed; slate-grey scales; three amber eyes in a row\.$/);
-        expect(lineageBriefLine([], byId, 'troll')).toMatch(/^They are a troll, as asked/);
-        expect(lineageBriefLine([HUMANS], byId)).toBe('They are a human.');
+        expect(lineageBriefLine(['elf1'], byId)).toBe('This character is an elf. Elves: tall, pointed ears. How they live here: old money in the arcologies.');
+        expect(lineageBriefLine(['vas1'], byId)).toMatch(/^This character is a Vaskari\. Put what marks this character as a Vaskari into the appearance: four-armed; slate-grey scales; three amber eyes in a row\.$/);
+        expect(lineageBriefLine([], byId, 'troll')).toMatch(/^This character is a troll, as asked/);
+        expect(lineageBriefLine([HUMANS], byId)).toBe('This character is a human.');
         expect(lineageBriefLine([], byId)).toBe('');
     });
     it('tells a place or faction who lives there', () => {

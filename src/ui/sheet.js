@@ -512,7 +512,7 @@ function nameDice(type, all) {
         if (ws.rolledName && d.name === ws.rolledName) markNameDeclined(ws.ctx.settingId, ws.rolledName);
         // A character's bloodline names them (their culture, by its mode).
         const saved = genCtx?.entry?.id ? getSettingDoc(ws.ctx.settingId).entries[genCtx.entry.id] ?? {} : { lineage: d.meta.lineage };
-        const lineage = type.id === 'character' ? lineageOf({ ...(genCtx?.entry ?? {}), description: d.description, meta: saved }, bloodlinesOf(all.lore ?? [])).ids : [];
+        const lineage = type.id === 'character' ? lineageOf({ ...(genCtx?.entry ?? {}), description: d.description, meta: saved }, bloodlinesOf(all.lore ?? []), { population: getSettingDoc(ws.ctx.settingId).overview.population }).ids : [];
         const name = rollEntryName({ ctx: ws.ctx, type, brief: [d.name === ws.rolledName ? '' : d.name, d.description].filter(Boolean).join(' '), all, parentId: d.meta.parentId || null, fields: d.fields, naming: { lineage } });
         if (!name) return toast('info', `Nothing to roll for this ${type.noun} - name it in plain words.`);
         ws.rolledName = name;
@@ -1341,7 +1341,7 @@ async function imageTab({ type, entry, isNew, doc, parents }) {
     const bloodlines = bloodlinesOf(genCtx?.all?.lore ?? []);
     // A character of mixed heritage is drawn as one (lineageVisual).
     const byKind = Object.fromEntries(choicesOf(bloodlines).map((b) => [b.id, b]));
-    const bloodline = entry.type === 'character' ? lineageVisual(lineageOf(entry, bloodlines).ids, byKind) : (entry.meta?.bloodline?.on ? visualFor(bloodlines.find((b) => b.id === entry.id)) : null);
+    const bloodline = entry.type === 'character' ? lineageVisual(lineageOf(entry, bloodlines, { population: getSettingDoc(ws.ctx.settingId).overview.population }).ids, byKind) : (entry.meta?.bloodline?.on ? visualFor(bloodlines.find((b) => b.id === entry.id)) : null);
     // A place inside another: its district's character, and only the air
     // and weather of a city's climate (src/images/prompt.js placeSurroundings).
     const places = new Map((genCtx?.all?.location ?? []).map((p) => [p.id, p]));

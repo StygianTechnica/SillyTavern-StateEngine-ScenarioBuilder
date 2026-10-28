@@ -249,6 +249,14 @@ ${input.populationLine} Let what you write fit this mix.`);
     if (input.brief && task !== 'create') job += `\nThe user's direction: ${cut(input.brief, 400)}`;
     if (placeRule) job += `\n${placeRule}`;
     if (namesRule) job += `\n${namesRule}`;
+    // A person is a he or a she, decided in code (generate/run.js genderOf):
+    // left open, a model writes "they" for one person.
+    if (input.gender === 'f' || input.gender === 'm') {
+        const [noun, pronouns] = input.gender === 'f' ? ['a woman', 'she / her'] : ['a man', 'he / him'];
+        job += `\n${shownName || 'This character'} is ${noun}: write ${pronouns} everywhere - never "they" or "them" for this one person, and nothing androgynous or ungendered in their looks or manner.`;
+    } else if (input.person) {
+        job += `\n${shownName || 'This character'} is a man or a woman - whichever their name and what is written of them suggest: write he / him or she / her and keep to it - never "they" or "them" for this one person.`;
+    }
     job += `\nEach text field: ${length}.`;
 
     const template = [...(askName ? [['name', '"..."']] : []), ...targets.map((f) => [f.name, formOf(f, refNames).json])];

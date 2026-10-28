@@ -10,8 +10,16 @@ import { getSettingDoc } from '../store/setting-store.js';
 import { syncNow } from '../guidance/sync.js';
 import {
     BLOODLINE_KINDS, SHARES, STANDINGS, normalizeBloodline, normalizePopulation, normalizePlacePopulation, normalizeMembers,
-    bloodlinesOf, choicesOf, wordsOf, mixFor, mixText, rollBloodline, whoIsAboutLine, onlyRule,
+    bloodlinesOf, choicesOf, wordsOf, mixFor, mixText, rollBloodline, whoIsAboutLine, onlyRule, defaultLineage,
 } from '../library/bloodlines.js';
+
+const nameOf = (b) => b.name || wordsOf(b).plural;
+// The bloodline "the world's most common" means now, by name; '' for none.
+const mostCommon = (world, choices) => {
+    const [id] = defaultLineage({ ...world, unset: 'most' }, choices);
+    const b = choices.find((x) => x.id === id);
+    return b ? nameOf(b) : '';
+};
 import { presetGroups } from '../library/bloodline-presets.js';
 import { addBloodline, setWorldPopulation } from '../library/bloodline-store.js';
 import { resolveCulture } from '../naming/cultures.js';
@@ -86,6 +94,13 @@ function whereCard(settingId, bloodlines, all) {
             h('input', { type: 'checkbox', checked: world.only, onchange: (e) => { setWorldPopulation(settingId, { only: e.target.checked }); after(); } }),
             h('span', {}, 'These bloodlines and no others')),
         rule ? h('small', { class: 'sb-hint' }, `Told to the narrator with the world's limits: "${rule}"`) : null,
+        // Anyone whose bloodline was never set (a story arrival, one forgotten).
+        field('Anyone not set is', select([
+            { value: 'most', label: `The world's most common${mostCommon(world, choices) ? ` (now: ${mostCommon(world, choices)})` : ''}` },
+            ...choices.map((b) => ({ value: b.id, label: nameOf(b) })),
+            { value: 'story', label: 'Left to the story' },
+        ], world.unset, { onchange: (e) => { setWorldPopulation(settingId, { unset: e.target.value }); after(); } }),
+        'A character whose sheet sets no bloodline, and whose description names none, is told to the narrator as this. "Left to the story" says nothing, and the narrator may pick anyone from the mix.'),
         // How bloodlines are seen everywhere, unless a place says otherwise.
         h('div', { class: 'sb-section-title' }, 'How they are seen'),
         h('small', { class: 'sb-hint' }, 'Everywhere, unless a place says otherwise on its sheet. Told to the narrator when one of them is in the scene, so the locals react to them.'),

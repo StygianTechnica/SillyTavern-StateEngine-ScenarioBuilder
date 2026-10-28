@@ -77,7 +77,7 @@ describe('mixed heritage', () => {
     });
     it('a writer is told of both parents', () => {
         const line = lineageBriefLine(['high_elves', 'humans'], byId);
-        expect(line).toMatch(/^They are a half high elf\./);
+        expect(line).toMatch(/^This character is a half high elf\./);
         expect(line).toContain('something of each parent');
         expect(line).toContain('more slowly than a human');
     });
