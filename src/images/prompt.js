@@ -100,6 +100,9 @@ export const DEFAULT_IMAGE_OPTIONS = Object.freeze({
     customStyle: '',
     // The anime style's look (ANIME_LOOKS).
     animeLook: 'classic',
+    // How a character is shown: 'auto' (a pose from their role), 'portrait'
+    // or a POSES id.
+    pose: 'auto',
     includeNames: false,
     // Leave out of the picture what the world's limits rule out.
     respectLimits: true,
@@ -295,10 +298,127 @@ const field = (entry, name) => {
 // The subject phrase for each type: what the picture is of.
 const article = (noun) => (/^[aeiou]/i.test(noun) ? `an ${noun}` : `a ${noun}`);
 
+// Poses for a character's picture, by what they do - a flat frontal face
+// otherwise. Each family: the words in a role (or the first sentence of a
+// description) that call for it, the framing, and poses to pick from.
+export const POSES = Object.freeze([
+    {
+        id: 'fighter', label: 'Fighter - weapon drawn, mid-action',
+        words: /\b(soldier|warrior|knight|guard|guardsman|mercenary|enforcer|fighter|gladiator|bodyguard|champion|duelist|duellist|marine|trooper|brawler|bruiser|sellsword|berserker|paladin|samurai|ronin|commando|veteran|captain of the guard|swordsman|swordswoman|militia|legionnaire|ranger|cop|officer|detective|sheriff|marshal)\b/i,
+        framing: 'dynamic full-body shot',
+        poses: [
+            'dynamic action pose, mid-stride with weapon drawn, low angle, wind tugging at hair and clothes',
+            'battle-ready stance, weapon raised, dramatic low-angle shot, sparks and debris in the air',
+            'lunging forward mid-strike, motion lines, dynamic foreshortening',
+            'standing firm amid smoke after a fight, weapon lowered, breathing hard, looking past the viewer',
+        ],
+    },
+    {
+        id: 'shadow', label: 'Shadow - stealthy, half-hidden',
+        words: /\b(assassin|thief|rogue|spy|infiltrator|scout|hunter|bounty hunter|ninja|smuggler|cutpurse|burglar|operative|agent|sniper|killer|hitman|hitwoman|stalker|saboteur|courier|runner|fixer|informant|outlaw|bandit|pirate)\b/i,
+        framing: 'cinematic shot',
+        poses: [
+            'crouched on a ledge looking down at the city, coat and hair caught by the wind, high vantage point',
+            'half in shadow, glancing back over the shoulder, sharp rim light',
+            'leaning against a wall in a dark alley, arms crossed, sly sidelong look',
+            'dropping from above mid-leap, cloak flaring, dynamic angle',
+        ],
+    },
+    {
+        id: 'caster', label: 'Caster - power in hand',
+        words: /\b(mage|wizard|witch|warlock|sorcerer|sorceress|priest|priestess|cleric|shaman|druid|oracle|seer|mystic|necromancer|enchanter|enchantress|psychic|psion|monk|nun|summoner|occultist|cultist|exorcist|medium)\b/i,
+        framing: 'dramatic full-body shot',
+        poses: [
+            'casting, one hand outstretched, power swirling around them, hair and robes lifted by it',
+            'eyes closed in concentration, palms raised, light gathering between them, low angle',
+            'striding forward with a staff or focus held high, sigils glowing in the air',
+        ],
+        // A world without magic: the same people, without the glow.
+        plain: [
+            'eyes closed in quiet prayer, hands clasped, candlelight on the face',
+            'standing in a doorway with a lantern raised, robes stirring in a draught',
+        ],
+    },
+    {
+        id: 'tech', label: 'Tech - at work with machines',
+        words: /\b(hacker|netrunner|engineer|mechanic|technician|tech|pilot|driver|scientist|inventor|artificer|tinker|tinkerer|medic|doctor|surgeon|programmer|decker|rigger|machinist|gunsmith|smith|blacksmith)\b/i,
+        framing: 'cinematic medium shot',
+        poses: [
+            'hunched over glowing screens, face lit by their light, cables and gear all around',
+            'mid-work with tools in hand, sparks flying, three-quarter view',
+            'turning from a workbench toward the viewer, goggles pushed up, half-smile',
+        ],
+    },
+    {
+        id: 'leader', label: 'Leader - commanding presence',
+        words: /\b(boss|leader|king|queen|lord|lady|noble|nobleman|noblewoman|ceo|don|matriarch|patriarch|chief|chieftain|ruler|executive|president|emperor|empress|director|general|admiral|commander|warlord|baron|baroness|duke|duchess|count|countess|prince|princess|kingpin|overseer|governor|mayor|head of|founder)\b/i,
+        framing: 'cinematic shot',
+        poses: [
+            'seated in a high-backed chair, chin resting on one hand, looking down at the viewer, dramatic low angle',
+            'standing at a tall window overlooking the city, hands behind the back, glancing over the shoulder',
+            'arms crossed, commanding stance, low-angle hero shot, coat stirring',
+            'walking toward the viewer flanked by shadows, unhurried, utterly sure of themselves',
+        ],
+    },
+    {
+        id: 'social', label: 'Social - candid, mid-conversation',
+        words: /\b(merchant|trader|shopkeeper|bartender|barkeep|innkeeper|tavern|dancer|singer|bard|performer|musician|actor|actress|courtesan|host|hostess|broker|dealer|diplomat|envoy|ambassador|socialite|gambler|con artist|charlatan|grifter|journalist|reporter|healer|farmer|servant|maid|butler|cook|chef|student)\b/i,
+        framing: 'candid medium shot',
+        poses: [
+            'leaning on a counter mid-laugh, warm candid moment',
+            'mid-gesture while talking, animated expression, three-quarter view',
+            'caught turning toward the viewer with a knowing smile, background softly blurred',
+        ],
+    },
+    {
+        id: 'scholar', label: 'Scholar - thoughtful, among books',
+        words: /\b(scholar|scribe|librarian|sage|researcher|archivist|professor|teacher|alchemist|historian|cartographer|astronomer|philosopher|apprentice|clerk|analyst|investigator)\b/i,
+        framing: 'cinematic medium shot',
+        poses: [
+            'reading by lamplight surrounded by books, looking up from the page',
+            'examining a strange object up close, lit from below',
+            'standing at a cluttered desk, sleeves rolled up, mid-thought, three-quarter view',
+        ],
+    },
+]);
+
+// A pose for anyone whose role calls for none in particular.
+const ANY_POSES = Object.freeze([
+    'three-quarter view, looking over the shoulder, wind in the hair, cinematic lighting',
+    'candid mid-motion shot, turning toward the viewer, dynamic composition',
+    'walking toward the viewer with a confident stride, low angle',
+    'leaning against a railing, gazing into the distance, dramatic sky behind',
+]);
+
+// The pose family a character's role calls for ('' for none): the role
+// first, then the first sentence of what they are.
+export function poseFamilyOf(role = '', description = '') {
+    const first = clean(description).split(/(?<=[.!?])\s+/)[0] ?? '';
+    for (const text of [role, first]) {
+        const hit = POSES.find((p) => p.words.test(String(text ?? '')));
+        if (hit) return hit.id;
+    }
+    return '';
+}
+
+const hashOf = (s) => [...String(s)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+
+// How a character is shown: { framing, pose } - '' pose for a plain
+// portrait. choice: 'auto' (from their role) | 'portrait' | a POSES id;
+// variant: which of the family's poses (another roll in the image panel);
+// noMagic: a world without magic (a caster is shown without the glow).
+export function poseFor(entry, { choice = 'auto', variant = 0, noMagic = false, role = '', description = '' } = {}) {
+    if (choice === 'portrait') return { framing: 'portrait', pose: '' };
+    const family = POSES.find((p) => p.id === (choice === 'auto' || !choice ? poseFamilyOf(role, description) : choice));
+    const pool = family ? (noMagic && family.plain ? family.plain : family.poses) : ANY_POSES;
+    const pick = pool[(hashOf(entry?.id || entry?.name || '') + Number(variant || 0)) % pool.length];
+    return { framing: family?.framing ?? 'cinematic shot', pose: pick };
+}
+
 // `kind`: what one of their bloodline looks like (bloodlines.js visualFor) -
 // it leads, since models weigh the start: "portrait of an elf veteran
 // fighter", or the body and features of a bloodline no model knows.
-function subjectOf(entry, description, names = [], overview = {}, kind = null) {
+function subjectOf(entry, description, names = [], overview = {}, kind = null, shown = null) {
     const role = roleArchetype(field(entry, 'role'), [entry.name, ...(entry.aliases ?? []), ...names]);
     if (entry.type === 'lore' && kind) {
         // A feature the tags already hold ("pointed ears") is said once.
@@ -310,7 +430,10 @@ function subjectOf(entry, description, names = [], overview = {}, kind = null) {
     switch (entry.type) {
         case 'character': {
             const who = [kind?.lead, role].filter(Boolean).join(' ');
-            return [who ? `portrait of ${article(who)}` : 'character portrait', ...(kind?.details ?? []), description];
+            // Posed by what they do (poseFor), else the plain portrait.
+            const framing = shown?.framing ?? 'portrait';
+            const lead = who ? `${framing} of ${article(who)}` : framing === 'portrait' ? 'character portrait' : `${framing} of a character`;
+            return [lead, shown?.pose ?? '', ...(kind?.details ?? []), description];
         }
         case 'location': return [description || 'a place', 'establishing shot'];
         // Heraldry belongs to the castle age; a later world brands its factions.
@@ -448,7 +571,8 @@ export function imageSourceFor({ narrative = '', narrativeAt = '', descriptionAt
 // district, and the water kept out of an inland one).
 // bloodline: { lead, tags, details, negative } - a character's bloodline,
 // or a bloodline's own reference picture (src/library/bloodlines.js visualFor).
-export function buildImagePrompt({ entry, narrative = '', environment = {}, overview = {}, options = {}, knownNames = [], surroundings = {}, bloodline = null }) {
+// poseVariant: which of the pose family's poses (the panel's "Another pose").
+export function buildImagePrompt({ entry, narrative = '', environment = {}, overview = {}, options = {}, knownNames = [], surroundings = {}, bloodline = null, poseVariant = 0 }) {
     const opts = { ...DEFAULT_IMAGE_OPTIONS, ...options, midjourney: { ...DEFAULT_IMAGE_OPTIONS.midjourney, ...(options.midjourney ?? {}) } };
     const names = opts.includeNames ? [] : [entry.name, ...(entry.aliases ?? [])];
     // A place's (or thing's) name taken out leaves its kind in its stead
@@ -476,10 +600,14 @@ export function buildImagePrompt({ entry, narrative = '', environment = {}, over
     const styleText = styleOf(opts, overview, { provider: opts.provider });
     // A style that leads (anime) goes first, where the models weigh it most.
     const leads = preset?.first && opts.provider !== 'natural';
+    // A character is posed by what they do (POSES), unless a portrait is asked for.
+    const shown = entry.type === 'character'
+        ? poseFor(entry, { choice: opts.pose, variant: poseVariant, noMagic: normalizeMagic(overview?.magic).presence === 'none', role: field(entry, 'role'), description: source })
+        : null;
     const parts = [
         leads ? styleText : '',
         opts.includeNames && entry.type === 'character' ? clean(entry.name) : '',
-        ...subjectOf(entry, description, others, overview, bloodline),
+        ...subjectOf(entry, description, others, overview, bloodline, shown),
         entry.type === 'location' ? clean(surroundings.within) : '',
         entry.type === 'character' ? clean(preset?.portrait) : '',
         entry.type === 'location' || entry.type === 'scene' ? env : '',

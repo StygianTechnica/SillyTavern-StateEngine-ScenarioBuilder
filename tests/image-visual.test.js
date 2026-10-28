@@ -37,8 +37,12 @@ describe('a role as the subject', () => {
 
     it('makes the portrait prompt', () => {
         const entry = { type: 'character', name: 'Graxx', description: 'Graxx is a formidable figure with a thick grey beard. He leads the Ravagers and keeps order.', role: 'As the leader of the Ravagers, Graxx keeps order.' };
-        const { prompt } = buildImagePrompt({ entry, knownNames: others });
+        const { prompt } = buildImagePrompt({ entry, knownNames: others, options: { pose: 'portrait' } });
         expect(prompt).toMatch(/^character portrait, a formidable figure with a thick grey beard, /);
+        // Posed by default: the leader the description shows, with the story's words still out.
+        const posed = buildImagePrompt({ entry, knownNames: others }).prompt;
+        expect(posed).toMatch(/^cinematic shot of a character, /);
+        expect(posed).not.toMatch(/Ravagers|keeps order|As the leader/);
         expect(prompt).not.toMatch(/Ravagers|leads|keeps order|As the leader/);
     });
 });

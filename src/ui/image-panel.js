@@ -8,7 +8,9 @@
 import { LOG_PREFIX } from '../constants.js';
 import { getSettings, saveSettings } from '../settings.js';
 import { updateEntry } from '../library/library.js';
-import { buildImagePrompt, PROVIDERS, STYLES, MJ_VERSIONS, ANIME_LOOKS } from '../images/prompt.js';
+import { buildImagePrompt, PROVIDERS, STYLES, MJ_VERSIONS, ANIME_LOOKS, POSES, poseFamilyOf } from '../images/prompt.js';
+
+const roleOf = (entry) => { const r = entry?.base?.role ?? entry?.role; return Array.isArray(r) ? r.join(', ') : (typeof r === 'string' ? r : ''); };
 import { importImage, safeImageSrc, readClipboardImage, hasImageGenerator, generateWithImageGenerator } from '../images/attach.js';
 import { ws, rerender } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
@@ -110,8 +112,10 @@ export function renderImagePanel({ type, entry, narrative, environment, overview
     // ---- the prompt
     const promptBox = h('textarea', { class: 'text_pole sb-prompt', rows: 6, spellcheck: 'false' });
     const negativeBox = h('textarea', { class: 'text_pole', rows: 2, spellcheck: 'false' });
+    // Which of the pose family's poses this entry shows ("Another pose").
+    const variants = ws.poseVariant ?? (ws.poseVariant = {});
     const refresh = () => {
-        const result = buildImagePrompt({ entry, narrative, environment, overview, knownNames, surroundings, bloodline, options: opts });
+        const result = buildImagePrompt({ entry, narrative, environment, overview, knownNames, surroundings, bloodline, options: opts, poseVariant: variants[entry.id] ?? 0 });
         promptBox.value = result.prompt;
         negativeBox.value = result.negative;
         negativeWrap.hidden = opts.provider !== 'stable_diffusion';
@@ -155,6 +159,14 @@ export function renderImagePanel({ type, entry, narrative, environment, overview
             field('Style', select(STYLES.map((s) => ({ value: s.id, label: s.label })), opts.style, { onchange: (e) => { opts.style = e.target.value; save(); } })),
             // How cartoony or realistic the anime is.
             lookWrap),
+        // A character is posed by what they do, not a flat frontal face.
+        type.id === 'character' ? h('div', { class: 'sb-row' },
+            field('Pose', select([
+                { value: 'auto', label: `From their role${poseFamilyOf(roleOf(entry), entry.description) ? ` (${POSES.find((p) => p.id === poseFamilyOf(roleOf(entry), entry.description)).label.split(' - ')[0].toLowerCase()})` : ''}` },
+                ...POSES.map((p) => ({ value: p.id, label: p.label })),
+                { value: 'portrait', label: 'Plain portrait - head and shoulders' },
+            ], opts.pose || 'auto', { onchange: (e) => { opts.pose = e.target.value; save(); } }), 'How they are shown. "From their role" picks a cinematic pose that fits what they do.'),
+            button('Another pose', () => { variants[entry.id] = (variants[entry.id] ?? 0) + 1; refresh(); }, { iconName: 'fa-dice', title: 'Roll a different pose of the same kind' })) : null,
         field('Your style words', text(opts, 'customStyle', 'e.g. muted autumn palette, by candlelight')),
         h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: opts.includeNames, onchange: (e) => { opts.includeNames = e.target.checked; save(); } }), h('span', {}, 'Include the name')),
         h('label', { class: 'checkbox_label', title: 'Adds what the world\'s magic and technology limits rule out (arcane magic, firearms, cars...) to --no or the negative prompt.' },

@@ -192,11 +192,11 @@ describe('the guidance', () => {
 describe('image prompts', () => {
     const character = (description) => ({ id: 'c', type: 'character', name: 'Kiri', description, role: 'fixer' });
     it('leads with a well-known bloodline\'s word', () => {
-        const { prompt } = buildImagePrompt({ entry: character('Short dark hair.'), bloodline: visualFor(elves), options: { provider: 'stable_diffusion' } });
+        const { prompt } = buildImagePrompt({ entry: character('Short dark hair.'), bloodline: visualFor(elves), options: { provider: 'stable_diffusion', pose: 'portrait' } });
         expect(prompt).toMatch(/^portrait of an elf fixer, pointed ears, tailored suits/);
     });
     it('spells out an invented one, and keeps a human out', () => {
-        const { prompt, negative } = buildImagePrompt({ entry: character('Short dark hair.'), bloodline: visualFor(vaskari), options: { provider: 'stable_diffusion' } });
+        const { prompt, negative } = buildImagePrompt({ entry: character('Short dark hair.'), bloodline: visualFor(vaskari), options: { provider: 'stable_diffusion', pose: 'portrait' } });
         expect(prompt).toMatch(/^portrait of a Vaskari fixer, four-armed, slate-grey scales, three amber eyes in a row/);
         expect(negative).toContain('human face');
         expect(negative).toMatch(/\bhuman\b/);

@@ -10,7 +10,7 @@ describe('image prompts', () => {
     });
 
     it('builds a Midjourney prompt with parameters', () => {
-        const { prompt } = buildImagePrompt({ entry: mira, overview });
+        const { prompt } = buildImagePrompt({ entry: mira, overview, options: { pose: 'portrait' } });
         expect(prompt).toMatch(/^portrait of an innkeeper, /);
         expect(prompt).not.toContain('Mira');
         expect(prompt).toContain('late medieval, gritty mood');
@@ -51,7 +51,7 @@ describe('image prompts', () => {
     });
 
     it('can keep names when asked', () => {
-        expect(buildImagePrompt({ entry: mira, options: { includeNames: true } }).prompt.startsWith('Mira Vane, portrait')).toBe(true);
+        expect(buildImagePrompt({ entry: mira, options: { includeNames: true } }).prompt.startsWith('Mira Vane, candid medium shot')).toBe(true);
     });
 });
 
