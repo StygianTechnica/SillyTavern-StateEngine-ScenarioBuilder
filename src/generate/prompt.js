@@ -115,6 +115,12 @@ const REPLY_PLAIN = '# Reply\nReply with ONLY the text for this field. No title,
 // happened, never made up.
 const STORY_RULE = 'This happened in the story above. Write only what happened there - the people, places and moment it shows. Bring in no one and nothing else, invent no names, and give no time or place the story does not.';
 
+// Lore is knowledge about the world, not one of the people it concerns -
+// left unsaid, a model writes a person's nicknames and roles for it - and
+// lore the story brought up keeps to what the story says of it.
+const LORE_RULE = 'This is lore: a piece of knowledge about the world - a fact, a belief, a rumour, a suspicion, a custom or a piece of history - not a person, place or group. Write about the knowledge itself: what it says, who holds or spreads it, how sure they are and why it matters. Its other names are what this knowledge itself is called (a legend\'s other titles, a scandal\'s nickname) - never the names, nicknames or titles of the people it concerns; leave them empty when it has none. Every other field describes the knowledge too, never a person it is about.';
+const LORE_STORY_RULE = 'The story passages above are where this lore comes from: keep to what they say. Who believes it and how sure they are stay as the story has them - a suspicion stays a suspicion, a rumour a rumour, never proven fact. Add only detail that fits them and contradicts nothing in them.';
+
 // The rule for names the text mentions (docs/DESIGN - NAMING.md, 4.1): the
 // model writes plain words and names already in the setting; any new
 // person or place it brings up takes a name from the pool, never one of
@@ -143,7 +149,8 @@ function namingRule(input) {
 //     namePool: { people, places }    names for anyone or anywhere else
 //     avoidNames                       overused names never to write
 //   sides: [{ name, description, ties: [line] }]   the factions it is one of
-//   story: the chat an event or scene came from - written from it alone }
+//   story: the chat an event or scene came from - written from it alone
+//   loreStory: the chat passages a lore entry comes from }
 // -> { system, user, keys, plain } (plain: one field, answered as text)
 export function buildGenerationPrompt(input) {
     const { task, type, entry = { values: {} } } = input;
@@ -187,9 +194,13 @@ ${input.populationLine} Let what you write fit this mix.`);
     }
     // The factions it is one of, and how each stands with others
     // (src/generate/run.js sidesOf): it shares their friends and enemies.
+    // With no side of its own, the sides of those it is tied to (tiedSides).
     if (input.sides?.length) {
-        const lines = input.sides.map((s) => [`- ${s.name} (faction)${s.description ? ` - ${cut(s.description, 200)}` : ''}`, ...s.ties.map((t) => `  - ${cut(t, 200)}`)].join('\n'));
-        parts.push(`# Its side (it is one of these - their friends are its friends, their rivals and enemies are its rivals and enemies, unless the user's direction says otherwise, as for a spy or a traitor)\n${lines.join('\n')}`);
+        const lines = input.sides.map((s) => [`- ${s.name} (faction)${s.through ? `, which ${s.through} is one of` : ''}${s.description ? ` - ${cut(s.description, 200)}` : ''}`, ...s.ties.map((t) => `  - ${cut(t, 200)}`)].join('\n'));
+        const through = [...new Set(input.sides.map((s) => s.through).filter(Boolean))];
+        parts.push(through.length
+            ? `# Its side (through ${through.join(' and ')}, whom it is tied to: someone close to them - a protégé, a friend, a partner - stands with their side and works where they work, sharing its friends and enemies, unless what is written or the user's direction says otherwise, as for a spy or a rival)\n${lines.join('\n')}`
+            : `# Its side (it is one of these - their friends are its friends, their rivals and enemies are its rivals and enemies, unless the user's direction says otherwise, as for a spy or a traitor)\n${lines.join('\n')}`);
     }
     if (type?.id === 'quest' && input.questSide) {
         const { player, with: allies = [] } = input.questSide;
@@ -199,6 +210,8 @@ ${input.populationLine} Let what you write fit this mix.`);
     if (input.memories?.length) parts.push(`# What the story so far says about it\n${input.memories.slice(0, 12).map((m) => `- ${cut(m, 220)}`).join('\n')}`);
     // What the story did (an event, a scene): the chat it came from.
     if (clean(input.story)) parts.push(`# What happened in the story (this ${type?.noun ?? 'entry'} is taken from it)\n${cut(input.story, 3000)}`);
+    // Where the chat brings up a lore entry (src/library/lore.js lorePassages).
+    if (clean(input.loreStory)) parts.push(`# Where the story brings it up (the passages this ${type?.noun ?? 'entry'} comes from)\n${cut(input.loreStory, 3200)}`);
     if (input.gmNotes) parts.push(`# Secret GM notes (let them shape what you write, but never reveal them outright)\n${cut(input.gmNotes, 500)}`);
 
     if (task !== 'create' || entry.name) {
@@ -226,6 +239,8 @@ ${input.populationLine} Let what you write fit this mix.`);
             input.creating && !entry.name && f.name !== 'name' ? 'This is a brand-new entry being created now.' : '',
             f.name !== 'name' && isText(f) ? namesRule : '',
             clean(input.story) ? STORY_RULE : '',
+            type?.id === 'lore' ? LORE_RULE : '',
+            clean(input.loreStory) ? LORE_STORY_RULE : '',
             placeRule,
             input.brief ? `${input.creating ? 'What the user wants' : "The user's direction"}: ${cut(input.brief, 400)}` : '',
         ].filter(Boolean).join('\n');
@@ -257,6 +272,8 @@ ${input.populationLine} Let what you write fit this mix.`);
     if (input.brief && task !== 'create') job += `\nThe user's direction: ${cut(input.brief, 400)}`;
     if (placeRule) job += `\n${placeRule}`;
     if (clean(input.story)) job += `\n${STORY_RULE}`;
+    if (type?.id === 'lore') job += `\n${LORE_RULE}`;
+    if (clean(input.loreStory)) job += `\n${LORE_STORY_RULE}`;
     if (namesRule) job += `\n${namesRule}`;
     // A person is a he or a she, decided in code (generate/run.js genderOf):
     // left open, a model writes "they" for one person.

@@ -20,6 +20,7 @@ import { genderFrom } from '../naming/classify.js';
 import { callModel } from './llm.js';
 import { storyRelationships, relationshipLine } from '../library/story-relations.js';
 import { relationsFor, pairCovered, authoredLine } from '../library/relations-edit.js';
+import { lorePassages } from '../library/lore.js';
 import { getSettingDoc } from '../store/setting-store.js';
 import { useStateEngineJsonParser } from './json.js';
 import { LOG_PREFIX } from '../constants.js';
@@ -106,7 +107,11 @@ export function neighboursOf(entry, all, parents, parentId) {
     const out = [];
     const add = (id, relation) => {
         const e = byId.get(id);
-        if (e && e.id !== entry?.id && !out.some((o) => o.name === e.name)) out.push({ relation, type: e.type, name: e.name, description: e.description ?? e.base?.description ?? '' });
+        if (!e || e.id === entry?.id || out.some((o) => o.name === e.name)) return;
+        // A person's role first: their description is often looks only.
+        const role = e.type === 'character' ? String(e.role ?? e.base?.role ?? '').trim() : '';
+        const description = String(e.description ?? e.base?.description ?? '').trim();
+        out.push({ relation, type: e.type, name: e.name, description: [role, description].filter(Boolean).join(' - ') });
     };
     if (entry?.id) {
         const rel = relationsOf(entry, allEntries, parents);
@@ -206,6 +211,27 @@ export function sidesOf(entry, { fields = {}, brief = '', all, relations = [] })
     });
 }
 
+// The sides of the people an entry is tied to, for one with no side of its
+// own: a protégée, a friend or a partner stands where they stand - without
+// this, Galice's protégée came out working for the corporation Galice's
+// group fights. Its direct ties only (related entries, its link fields).
+// Pure. -> sidesOf()'s shape plus through (the person's name), at most two
+export function tiedSides(entry, { all, relations = [] }) {
+    if (!entry?.id) return [];
+    const allEntries = Object.values(all).flat();
+    const byId = new Map(allEntries.map((e) => [e.id, e]));
+    const base = entry.base ?? entry;
+    const ids = [...(base.related_entity_ids ?? []), ...relationsOf(entry, allEntries).outgoing.flatMap((o) => o.ids)];
+    const people = [...new Set(ids)].map((id) => byId.get(id)).filter((e) => e?.type === 'character' && e.id !== entry.id);
+    const out = [];
+    for (const p of people) {
+        for (const s of sidesOf(p, { all, relations })) {
+            if (!out.some((o) => o.id === s.id)) out.push({ ...s, through: p.name, ties: s.ties.filter((t) => t.otherId !== entry.id) });
+        }
+    }
+    return out.slice(0, 2);
+}
+
 // Generates for one entry of `type`.
 //   task: 'field' | 'fill' | 'enrich' | 'create'
 //   ctx: { chatId, chatKey, settingId }
@@ -219,6 +245,18 @@ export function sidesOf(entry, { fields = {}, brief = '', all, relations = [] })
 //    description?, aliases?, and type fields; lineage: a new character's
 //    bloodline, decided here)
 // Throws with a readable reason.
+// The open chat's passages that bring a lore entry up (src/library/lore.js).
+function chatPassagesFor(entry, draft) {
+    try {
+        const chat = SillyTavern.getContext().chat ?? [];
+        const messages = chat.filter((m) => !m.is_system).map((m) => ({ name: m.name, text: m.mes }));
+        const base = entry.base ?? entry;
+        return lorePassages(messages, { name: draft?.name ?? entry.name, aliases: draft?.aliases ?? base.aliases ?? [], description: draft?.description ?? base.description ?? '' });
+    } catch {
+        return '';
+    }
+}
+
 // story: the chat an event or scene came from (src/director/run.js) - what
 // is written is what happened there, with no one made up.
 export async function generateEntry({ task, type, ctx, fields, entry = null, draft = null, all, targetField = null, brief = '', parentId = null, naming = {}, story = '' }) {
@@ -313,7 +351,8 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     // Its side: the factions it is one of, and how each stands with others -
     // the user's ties, the link fields, then the story's for pairs not covered.
     const authored = getSettingDoc(ctx.settingId).relations;
-    const sides = sidesOf(entry, { fields: draft?.fields ?? {}, brief, all, relations: authored });
+    const own = sidesOf(entry, { fields: draft?.fields ?? {}, brief, all, relations: authored });
+    const sides = own.length ? own : tiedSides(entry, { all, relations: authored });
     for (const side of sides) {
         const story = (await storyRelationships({ id: side.id, name: side.name })).filter((x) => !(x.otherId && pairCovered(side.id, x.otherId, authored)) && x.otherId !== entry?.id);
         for (const r of story.slice(0, Math.max(0, 8 - side.ties.length))) side.ties.push({ otherId: r.otherId, line: relationshipLine(side.name, r) });
@@ -321,10 +360,12 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     // Those its side has ties to come first among the entries it may relate to.
     const tiedIds = new Set(sides.flatMap((s) => [s.id, ...s.ties.map((t) => t.otherId)]));
     const others = allEntries.filter((e) => e.id !== entry?.id);
+    // Lore is written from where the chat brings it up (its passages).
+    const loreStory = type.id === 'lore' && entry?.id && !story ? chatPassagesFor(entry, draft) : '';
     // Nothing in a story's own event needs a new name: no pool, so none is offered.
     const namePool = story ? null : namePoolFor(ctx.settingId, all, { cultureId: naming.cultureId, placeId: parentForPrompt, factionIds });
     const base = {
-        fixedName, nameMeaning, nameFrom, nameApart, namePool, avoidNames: PROMPT_CLICHES, story,
+        fixedName, nameMeaning, nameFrom, nameApart, namePool, avoidNames: PROMPT_CLICHES, story, loreStory,
         type, fields, brief,
         // The world as it holds where the entry is: a place's own realm, or
         // the place an entry lies in (a planet at TL12, a dead-magic zone).
@@ -341,7 +382,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         creating: task === 'create',
         relationNames: [...others.filter((e) => tiedIds.has(e.id)), ...others.filter((e) => !tiedIds.has(e.id))].map((e) => e.name).slice(0, 25),
         place: placeCtx,
-        sides: sides.map((s) => ({ name: s.name, description: s.description, ties: s.ties.map((t) => t.line) })),
+        sides: sides.map((s) => ({ name: s.name, description: s.description, ties: s.ties.map((t) => t.line), ...(s.through ? { through: s.through } : {}) })),
         // A place inside another: what that place is for, and whether what
         // is in it is its owners' (a fortress's rooms) or its own (a club on
         // the Neon Mile, not another Omicron site).

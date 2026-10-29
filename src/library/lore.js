@@ -175,3 +175,34 @@ export function loreUpdate(entry, world, synced = '') {
     if (add.length) patch.related_entity_ids = [...have, ...add];
     return { patch, synced: nextSynced };
 }
+
+// ---------------------------------------------------------------- enrichment
+
+// Words too common to say which passage a lore entry comes from.
+const PLAIN = new Set('about after again also because been before being both could does doing done down each even ever from have having here into just know like made make many more most much must never only other over said same says seem should some such than that their them then there these they this those through very want were what when where which while will with would your'.split(' '));
+
+// The chat passages a lore entry came from, for writing it: the messages
+// that name it or share the most of its distinctive words, in story order.
+// Words found in most messages (the player character's name) say nothing.
+// messages: [{ name, text }]; lore: { name, aliases, description }.
+// -> text ('' when nothing fits)
+export function lorePassages(messages, lore, { max = 4, chars = 700 } = {}) {
+    const list = (messages ?? []).filter((m) => String(m?.text ?? '').trim());
+    if (!list.length) return '';
+    const names = [lore?.name, ...(lore?.aliases ?? [])].filter((n) => lower(n).length >= 3);
+    const wordsOf = (t) => new Set((lower(t).match(/[\p{L}\p{N}]+/gu) ?? []).map((w) => w.replace(/'s$/, '')).filter((w) => w.length >= 4 && !STOP.has(w) && !PLAIN.has(w)));
+    const per = list.map((m) => wordsOf(m.text));
+    const seenIn = (w) => per.filter((s) => s.has(w)).length;
+    const keys = [...wordsOf([...names, lore?.description].join(' '))].filter((w) => list.length < 4 || seenIn(w) <= list.length * 0.4);
+    const scored = list.map((m, i) => {
+        const hits = keys.filter((w) => per[i].has(w));
+        return { m, i, hits, score: hits.length + (names.some((n) => namedIn(m.text, n)) ? 3 : 0) };
+    }).filter((x) => x.score >= 2);
+    const best = scored.sort((a, b) => b.score - a.score || b.i - a.i).slice(0, max).sort((a, b) => a.i - b.i);
+    return best.map(({ m, hits }) => {
+        // The paragraphs that bear on it, else the start.
+        const paras = String(m.text).split(/\n\s*\n/).filter((p) => hits.some((w) => wordsOf(p).has(w)));
+        const text = (paras.length ? paras.join('\n') : String(m.text)).trim();
+        return `${String(m.name ?? '').trim() || 'Narrator'}: ${text.length > chars ? `${text.slice(0, chars).replace(/\s+\S*$/, '')}...` : text}`;
+    }).join('\n\n');
+}

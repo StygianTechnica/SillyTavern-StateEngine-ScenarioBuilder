@@ -1,4 +1,4 @@
-import { neighboursOf, runtimeRefs, sidesOf } from '../src/generate/run.js';
+import { neighboursOf, runtimeRefs, sidesOf, tiedSides } from '../src/generate/run.js';
 import { buildGenerationPrompt } from '../src/generate/prompt.js';
 
 // A location whose factions are set in the chat (State Engine's per-chat
@@ -68,5 +68,53 @@ describe('the side a new member takes', () => {
         expect(user).toContain('# Its side');
         expect(user).toContain('  - Iron Hand → Marcus Vane: rival');
         expect(user).toContain("never a friend, ally or confidant of its side's rival or enemy");
+    });
+});
+
+describe('the side of those it is tied to', () => {
+    // Cyberpunk: Galice is one of White Cerberus (its members field); her
+    // protégée, tied to her, has no side of her own.
+    const city = {
+        faction: [
+            { id: 'fac_wc', type: 'faction', name: 'White Cerberus', description: 'Rebels against Omicron.', base: { members: ['chr_galice'], enemies: ['fac_omicron'] } },
+            { id: 'fac_omicron', type: 'faction', name: 'Omicron Innovations' },
+        ],
+        character: [
+            { id: 'chr_galice', type: 'character', name: 'Galice Buckar', role: 'Lead Cyberdeck Developer for White Cerberus', description: 'Petite, dark hair.' },
+            { id: 'chr_mari', type: 'character', name: 'Mari Owe', related_entity_ids: ['chr_galice'] },
+            { id: 'chr_kat', type: 'character', name: 'Kathar Pott', related_entity_ids: ['chr_galice'], base: { faction: 'fac_omicron' } },
+        ],
+    };
+
+    it('takes the factions of the people it is tied to, with whom it comes through', () => {
+        const [side] = tiedSides(city.character[1], { all: city });
+        expect(side).toMatchObject({ name: 'White Cerberus', through: 'Galice Buckar' });
+        expect(side.ties.map((t) => t.line)).toContain('White Cerberus → Omicron Innovations: Enemies');
+        // Its own side, where it has one, is what counts (sidesOf).
+        expect(sidesOf(city.character[2], { all: city }).map((s) => s.name)).toEqual(['Omicron Innovations']);
+        expect(tiedSides({ id: 'chr_x', type: 'character', name: 'Loner' }, { all: city })).toEqual([]);
+    });
+
+    it('works for a fantasy apprentice tied by a link field too', () => {
+        const realm = {
+            faction: [{ id: 'fac_order', type: 'faction', name: 'Order of the Lantern', base: { leader: 'chr_maren' } }],
+            character: [
+                { id: 'chr_maren', type: 'character', name: 'High Seer Maren' },
+                { id: 'chr_pip', type: 'character', name: 'Pip', base: { mentor: 'chr_maren' } },
+            ],
+        };
+        expect(tiedSides(realm.character[1], { all: realm }).map((s) => `${s.name} via ${s.through}`)).toEqual(['Order of the Lantern via High Seer Maren']);
+    });
+
+    it('shows a tied person\'s role, and tells the model to stand where they stand', () => {
+        const out = neighboursOf(city.character[1], city, {}, null);
+        expect(out[0]).toMatchObject({ name: 'Galice Buckar', description: 'Lead Cyberdeck Developer for White Cerberus - Petite, dark hair.' });
+        const { user } = buildGenerationPrompt({
+            task: 'fill', type: { id: 'character', label: 'Character', noun: 'character' }, fields: [], entry: { name: 'Mari Owe', values: {} },
+            sides: [{ name: 'White Cerberus', description: '', ties: [], through: 'Galice Buckar' }],
+        });
+        expect(user).toContain('- White Cerberus (faction), which Galice Buckar is one of');
+        expect(user).toContain('# Its side (through Galice Buckar, whom it is tied to');
+        expect(user).toContain('works where they work');
     });
 });

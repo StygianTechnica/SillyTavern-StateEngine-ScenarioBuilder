@@ -1,4 +1,5 @@
-import { relevantLore, namedIn, planLore, loreUpdate, involvedIds } from '../src/library/lore.js';
+import { relevantLore, namedIn, planLore, loreUpdate, involvedIds, lorePassages } from '../src/library/lore.js';
+import { buildGenerationPrompt } from '../src/generate/prompt.js';
 
 // As stored in the God War chat's library: a long name, aliases joined
 // with commas.
@@ -90,5 +91,49 @@ describe('lore from Archivist', () => {
 
     it('never links lore to itself as involved', () => {
         expect(involvedIds({ entity: { id: 'lor_x', type: 'lore' }, involved: [{ id: 'chr_a', type: 'character' }] })).toEqual(['chr_a']);
+    });
+});
+
+describe('lore written from the story', () => {
+    const lore = { id: 'lore', noun: 'lore entry', label: 'Lore', plural: 'Lore' };
+    // The player character is in every message: their name says nothing.
+    const cyberpunk = [
+        { name: 'Cyril', text: 'Cyril walks into the armory.' },
+        { name: 'Narrator', text: 'Vex hands Cyril a pistol and talks about the weather over the seawall.' },
+        { name: 'Narrator', text: 'Riven blocks the door. "Your family legacy is tied to Omicron Innovations," he spits at Cyril.\n\nThe lights hum.' },
+        { name: 'Cyril', text: 'Cyril shrugs and checks the gear.' },
+        { name: 'Narrator', text: 'Riven still suspects Cyril of dealings with Omicron.' },
+    ];
+    it('finds the passages that bring it up, in story order, skipping words every message has', () => {
+        const out = lorePassages(cyberpunk, { name: "Cyril's Complicity with Omicron Innovations", description: 'Riven suspects Cyril of dealings with Omicron Innovations due to his family legacy.' });
+        expect(out.split('\n\n')[0]).toMatch(/^Narrator: Riven blocks the door/);
+        expect(out).toContain('Riven still suspects');
+        expect(out).not.toContain('The lights hum');
+        expect(out).not.toContain('weather');
+    });
+    it('works the same in other worlds, and gives nothing when the chat never brings it up', () => {
+        const fantasy = [
+            { name: 'Remus', text: 'Remus kneels at the shrine.' },
+            { name: 'Narrator', text: 'The priest whispers that the Ember Covenant was broken the night the old king died.' },
+            { name: 'Narrator', text: 'Snow falls on the pass.' },
+        ];
+        expect(lorePassages(fantasy, { name: 'The Ember Covenant', description: 'An old oath between the crown and the fire priests.' })).toMatch(/^Narrator: The priest whispers/);
+        const scifi = [{ name: 'Narrator', text: 'The freighter docks at Ceres.' }, { name: 'Narrator', text: 'Ops logs show the Halvorsen Drift anomaly again; the crew calls it the ghost signal.' }];
+        expect(lorePassages(scifi, { name: 'The Halvorsen Drift', aliases: ['the ghost signal'], description: '' })).toContain('ghost signal');
+        const realWorld = [{ name: 'Narrator', text: 'Detroit, 1967. The diner is quiet.' }];
+        expect(lorePassages(realWorld, { name: 'The Packard Plant Fire', description: 'A fire nobody admits to starting.' })).toBe('');
+        expect(lorePassages([], { name: 'Anything' })).toBe('');
+    });
+    it('tells the model lore is knowledge, not a person, and to keep to the story', () => {
+        const fields = [{ name: 'category', label: 'Category', kind: 'text' }];
+        const { user } = buildGenerationPrompt({ task: 'fill', type: lore, entry: { name: "Cyril's Complicity", values: {} }, fields, loreStory: 'Narrator: Riven blocks the door.' });
+        expect(user).toContain('# Where the story brings it up');
+        expect(user).toContain('never the names, nicknames or titles of the people it concerns');
+        expect(user).toContain('a suspicion stays a suspicion');
+        const none = buildGenerationPrompt({ task: 'fill', type: lore, entry: { name: 'The Ember Covenant', values: {} }, fields }).user;
+        expect(none).toContain('This is lore');
+        expect(none).not.toContain('Where the story brings it up');
+        const other = buildGenerationPrompt({ task: 'fill', type: { id: 'faction', noun: 'faction' }, entry: { name: 'White Cerberus', values: {} }, fields }).user;
+        expect(other).not.toContain('This is lore');
     });
 });
