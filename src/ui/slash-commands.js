@@ -7,6 +7,10 @@
 //                   rolls names from the name generator for the open chat's
 //                   world - "a tavern", "a smuggler woman" (docs/DESIGN -
 //                   NAMING.md); returns them, one per line
+//   /sb-world       what the world meanwhile has made public (docs/DESIGN -
+//                   THE WORLD MEANWHILE.md); /sb-world rumour <text> gives
+//                   the world something to react to; /sb-world quiet <days>
+//                   lets nothing surface for a while (quiet 0: stir again)
 // Registered best-effort: the slash command API varies between SillyTavern
 // versions, and a failure never stops the extension from loading.
 
@@ -18,6 +22,8 @@ import { getBoundSettingId, getObjectTypes, listEntries } from '../library/libra
 import { namesForCommand, cultureNamed, byType } from '../naming/run.js';
 import { URGENCIES, openRequests } from '../planner/model.js';
 import { queueRequest } from '../planner/run.js';
+import { publicLines, isQuiet } from '../world/model.js';
+import { isWorldOn, addUserRipple, quietFor } from '../world/run.js';
 import { toast } from './dom.js';
 
 const URGENCY_IDS = URGENCIES.map(([id]) => id);
@@ -75,6 +81,54 @@ export async function listCommand() {
     const text = open.map((r) => `- ${r.text} (${r.urgency}, ${r.status})`).join('\n');
     toast('info', `Requests for the game master:\n${text}`);
     return text;
+}
+
+// text: '' (what is public), 'rumour <text>', or 'quiet <days>'. -> what
+// it did, or the public lines, one per line.
+export async function worldCommand(args, text) {
+    const quiet = String(args?.quiet ?? '').toLowerCase() === 'true';
+    const say = (kind, message) => { if (!quiet || kind === 'warning') toast(kind, message); };
+    const why = await blocked() || (isWorldOn() ? '' : 'The world meanwhile is off (GM Plan tab → The world meanwhile).');
+    if (why) {
+        say('warning', why);
+        return '';
+    }
+    const chatKey = chatKeyFor(getCurrentChatRef());
+    const [, verb = '', rest = ''] = /^\s*(\S*)\s*([\s\S]*)$/.exec(String(text ?? '')) ?? [];
+    const what = verb.toLowerCase();
+    if (what === 'rumour' || what === 'rumor') {
+        if (!rest.trim()) {
+            say('warning', 'Usage: /sb-world rumour what people are saying');
+            return '';
+        }
+        const made = addUserRipple(chatKey, rest.trim());
+        say(made ? 'success' : 'info', made ? 'The world will react to it.' : 'That is already waiting for the world.');
+        return made?.id ?? '';
+    }
+    if (what === 'quiet') {
+        const days = Number.parseInt(rest, 10);
+        if (!Number.isInteger(days) || days < 0) {
+            say('warning', 'Usage: /sb-world quiet <days> (0 lets the world stir again)');
+            return '';
+        }
+        quietFor(chatKey, Math.min(days, 60));
+        say('success', days ? `The world keeps quiet for ${days} day${days === 1 ? '' : 's'}.` : 'The world may stir again.');
+        return String(days);
+    }
+    if (what) {
+        say('warning', 'Usage: /sb-world, /sb-world rumour <text>, or /sb-world quiet <days>');
+        return '';
+    }
+    const doc = getChatDoc(chatKey);
+    const lines = publicLines(doc.gm.world, doc.canonical.day);
+    const note = isQuiet(doc.gm.world, doc.canonical.day) ? ' (the world is keeping quiet)' : '';
+    if (!lines.length) {
+        say('info', `Nothing the world has made public yet${note}.`);
+        return '';
+    }
+    const out = lines.map((l) => `- ${l}`).join('\n');
+    say('info', `The world meanwhile${note}:\n${out}`);
+    return out;
 }
 
 const NAME_TYPES = ['character', 'location', 'faction', 'item', 'creature'];
@@ -140,6 +194,15 @@ export function registerSlashCommands() {
                 named({ name: 'quiet', description: 'true: no toast', typeList: ARGUMENT_TYPE ? [ARGUMENT_TYPE.BOOLEAN] : undefined, defaultValue: 'false' }),
             ].filter(Boolean),
             helpString: 'Roll names from the Scenario Builder name generator for this chat’s world - never the model, never one already used. Examples: <code>/sb-name a tavern</code>, <code>/sb-name culture=Vaskari count=3 a smuggler woman</code>, <code>/sb-name type=faction a mercenary company</code>.',
+        }));
+        SlashCommandParser.addCommandObject(SlashCommand.fromProps({
+            name: 'sb-world',
+            callback: (args, value) => worldCommand(args, value),
+            returns: 'what the world has made public, one per line',
+            namedArgumentList: [
+                named({ name: 'quiet', description: 'true: no toast', typeList: ARGUMENT_TYPE ? [ARGUMENT_TYPE.BOOLEAN] : undefined, defaultValue: 'false' }),
+            ].filter(Boolean),
+            helpString: 'The Scenario Builder world meanwhile: what people and factions off scene have made public. <code>/sb-world rumour someone saw Cyril on the quay</code> gives the world something to react to; <code>/sb-world quiet 3</code> lets nothing surface for three in-game days (<code>quiet 0</code>: stir again).',
         }));
         SlashCommandParser.addCommandObject(SlashCommand.fromProps({
             name: 'sb-requests',

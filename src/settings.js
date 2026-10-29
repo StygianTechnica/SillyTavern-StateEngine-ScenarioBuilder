@@ -120,9 +120,11 @@ const DEFAULTS = {
     // the day plan is shown in the GM Plan tab (off: veiled).
     planner: { enabled: true, level: 'moderate', checkEvery: null, dayExpire: null, outlineEvery: null, ideasEvery: null, pacing: 'gentle', showSpoilers: false, maxTokens: 1200, steerObjects: true },
     // The world meanwhile (docs/DESIGN - THE WORLD MEANWHILE.md): people and
-    // factions off scene pursue schemes of their own, moved on by the
-    // planner's DAY pass. level: 'off' | 'quiet' (no call of its own);
-    // surfacing: 'all' | 'talk' (rumours and news only) | 'log' (side log only).
+    // factions off scene pursue schemes of their own. level: 'off' |
+    // 'quiet' (moved by the planner's DAY pass - no call of its own) |
+    // 'lively' | 'turbulent' (a WORLD pass of its own - src/world/model.js
+    // LEVEL_LIMITS); surfacing: 'all' | 'talk' (rumours and news only) |
+    // 'log' (side log only).
     world: { level: 'off', surfacing: 'all' },
     // Settings migrations already applied.
     migrated: [],

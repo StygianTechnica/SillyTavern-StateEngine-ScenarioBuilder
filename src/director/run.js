@@ -35,7 +35,7 @@ import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
 import { whoCouldTurnUp } from './whereabouts.js';
 import { arrivals } from '../world/model.js';
-import { isWorldOn } from '../world/run.js';
+import { isWorldOn, takeHeard } from '../world/run.js';
 import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from '../library/powers.js';
 import { namedAtAll } from '../validate/drift.js';
 import { circling } from './loops.js';
@@ -968,6 +968,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // no change as idle.
     if (isNewTurn(type) && settingId) {
         takeBeats(chatKey, parsed.beats);
+        takeHeard(chatKey, parsed.heard);
         if (made.length || movedFrom || moves.in.length || moves.out.length) markActive(chatKey);
     }
 

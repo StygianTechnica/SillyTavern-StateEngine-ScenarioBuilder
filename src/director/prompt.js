@@ -506,6 +506,15 @@ export function buildDirectorPrompt(input) {
             'BEAT | <moment id> | skipped | <why, a few words>',
         );
     }
+    // The world meanwhile (src/world/model.js): its lines carry their
+    // scheme's id; the player character learning of one is reported back.
+    if (/^MEANWHILE\b/m.test(plan) && /\[s_[a-z0-9]+\]/i.test(plan)) {
+        parts.push(
+            '',
+            'If the latest chat shows the player character learning of something from MEANWHILE - told it, overhearing it, finding it - a line for each (its id as given, e.g. s_ab12):',
+            'HEARD | <its id> | <how they learned it, a few words>',
+        );
+    }
     if (creating) {
         parts.push(
             '',
@@ -678,7 +687,7 @@ export function isPlaceholder(value) {
 }
 
 // A format line, whether or not it could be read - never left in the prose.
-const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|AWAY|BACK|NEW|RENAME|BEAT)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|AWAY|BACK|NEW|RENAME|BEAT|HEARD)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
@@ -699,6 +708,7 @@ export function parseDirectorNote(raw) {
     const enters = [];
     const leaves = [];
     const beats = [];
+    const heard = [];
     const fights = [];
     const deaths = [];
     const risings = [];
@@ -751,6 +761,12 @@ export function parseDirectorNote(raw) {
         if (fg) {
             const name = clean(fg[1]).replace(/^["'*]+|["'*.]+$/g, '');
             if (name && !isPlaceholder(name) && !isPlaceholder(fg[2]) && !/^(none|no one|nobody|-)$/i.test(name) && fights.length < 8) fights.push({ name, condition: clean(fg[2]), side: clean(fg[3]) });
+            continue;
+        }
+        // HEARD | <scheme id> | <how> (src/world/model.js hearScheme)
+        const hd = line.match(/^\s*(?:[-*]\s*)?\**HEARD\**\s*:?\s*\|\s*\[?(s_[a-z0-9]+)\]?\s*(?:\|\s*(.*?)\s*)?$/i);
+        if (hd) {
+            if (!heard.some((x) => x.id === hd[1].toLowerCase()) && heard.length < 4) heard.push({ id: hd[1].toLowerCase(), how: hd[2] && !isPlaceholder(hd[2]) ? clean(hd[2]) : '' });
             continue;
         }
         const bt = line.match(/^\s*(?:[-*]\s*)?\**BEAT\**\s*:?\s*\|\s*\[?(m\d+)\]?\s*\|\s*(done|skipped)\s*(?:\|\s*(.*?)\s*)?$/i);
@@ -841,7 +857,7 @@ export function parseDirectorNote(raw) {
     // A briefing cut off or told as story lost its "Next:" end; any other
     // paragraph is not direction.
     const parts = tidy.flaws.length && !MARKER.test(text) ? { summary: text, direction: '' } : splitNote(text);
-    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, fights, deaths, risings, powers, bargains, away, back };
+    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, fights, deaths, risings, powers, bargains, away, back };
 }
 
 // The first library entry `text` names that nothing the scene stands on

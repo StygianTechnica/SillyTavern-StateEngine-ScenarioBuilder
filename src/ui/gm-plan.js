@@ -749,8 +749,9 @@ export async function renderGmPlan() {
     const places = await listEntries(ws.ctx.chatId, settingId, 'location').catch(() => []);
     const people = await listEntries(ws.ctx.chatId, settingId, 'character').catch(() => []);
     const creatures = await listEntries(ws.ctx.chatId, settingId, 'creature').catch(() => []);
+    const factions = await listEntries(ws.ctx.chatId, settingId, 'faction').catch(() => []);
     return h('div', { class: 'sb-gm-plan' },
         h('div', { class: 'sb-scene-cols' },
             h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), starterCard(), volumesCard(gm), ideasCard(gm), todayCard(gm, show), agendaCard(gm, show), eventCard(places, [...people, ...creatures]), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
-            h('div', { class: 'sb-gm-col' }, paceCard(gm), worldCard(gm, show), settingsCard(gm))));
+            h('div', { class: 'sb-gm-col' }, paceCard(gm), worldCard(gm, show, [...people, ...factions]), settingsCard(gm))));
 }

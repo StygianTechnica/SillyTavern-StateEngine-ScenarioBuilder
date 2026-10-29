@@ -49,7 +49,8 @@ import {
 import { povRule } from '../director/perspective.js';
 import { livePoolFor, byType } from '../naming/run.js';
 import { poolLine } from '../naming/live.js';
-import { worldForDay, noteRipples, meanwhileFor } from '../world/run.js';
+import { worldForDay, worldMoves, worldDueNow, noteRipples, meanwhileFor } from '../world/run.js';
+import { buildWorldPrompt, readWorld } from '../world/prompts.js';
 
 export const PLANNER_EVENT = 'scenario_builder_planner';
 
@@ -333,9 +334,63 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             d.gm.checkWanted = false;
         });
         const moved = world && plan.world ? world.apply(plan.world) : null;
-        const worldNote = moved && (moved.moved || moved.started) ? `; the world: ${moved.moved + moved.started} scheme${moved.moved + moved.started === 1 ? '' : 's'} moved${moved.surfaced ? `, ${moved.surfaced} surfacing` : ''}` : '';
+        if (moved) await takeWorldHooks(chatId, chatKey, settingId, moved.extras);
+        const worldNote = moved && (moved.moved || moved.started) ? `; the world: ${worldWords(moved)}` : '';
         return `${plan.moments.length} moment${plan.moments.length === 1 ? '' : 's'} planned${worldNote}`;
     });
+}
+
+// What a pass did to the world, in a few words.
+function worldWords(moved) {
+    const n = moved.moved + moved.started;
+    return `${n} scheme${n === 1 ? '' : 's'} moved${moved.started ? ` (${moved.started} new)` : ''}${moved.surfaced ? `, ${moved.surfaced} surfacing` : ''}`;
+}
+
+// The world meanwhile's own pass (Lively and Turbulent - src/world/): the
+// people and factions off scene move their schemes on, and some of it
+// surfaces. Quiet moves the world in the DAY pass instead.
+export async function runWorld(chatId, chatKey) {
+    return runPass('world', chatKey, async () => {
+        const settingId = await getBoundSettingId(chatId);
+        if (!settingId) return 'no setting';
+        const doc = getChatDoc(chatKey);
+        const world = await worldMoves(chatId, chatKey, settingId, { aim: storyState(doc.gm).aim, userName: userName(), ownPass: true });
+        if (!world) return 'nothing to move';
+        const inputs = await gatherInputs(chatId, chatKey);
+        const guidance = inputs.guidance;
+        const { sceneContext } = await import('../director/run.js');
+        const ctx = await sceneContext(chatId, chatKey, settingId, guidance);
+        const answer = readWorld(await ask(buildWorldPrompt({
+            dossier: await dossierWithNames(chatId, settingId, guidance, ctx),
+            messages: chatMessages(4),
+            userName: userName(),
+            dateText: guidance.clock?.words ?? '',
+            story: storyWords(doc.gm),
+            world: world.part,
+        })));
+        const moved = world.apply(answer ?? { schemes: [] });
+        await takeWorldHooks(chatId, chatKey, settingId, moved.extras);
+        return moved.moved || moved.started ? worldWords(moved) : 'nobody acted';
+    });
+}
+
+// Quest hooks the world surfaced: GM ideas like the ideas pass's own -
+// proposed, or made at once in a setting set to add silently - never a
+// second thing of a known name.
+async function takeWorldHooks(chatId, chatKey, settingId, extras) {
+    const hooks = (extras ?? []).filter((x) => x.way === 'hook');
+    if (!hooks.length || !settingId || isCanonOnly(settingId)) return;
+    try {
+        const known = await knownEntries(chatId, settingId);
+        const ideas = hooks.filter((x) => !knownAs(x.name, known)).map((x) => ({ kind: 'quest', name: x.name, text: x.text, why: x.why, ties: x.ties }));
+        if (!ideas.length) return;
+        if (creationMode(settingId) === 'silent') {
+            for (const idea of ideas) await applyIdea(chatId, chatKey, settingId, idea, { silent: true });
+            updateChatDoc(chatKey, (d) => { for (const idea of addIdeas(d.gm, ideas)) resolveIdea(d.gm, idea.id, 'accepted'); });
+        } else updateChatDoc(chatKey, (d) => { addIdeas(d.gm, ideas); });
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not take in the quest hooks from the world', err);
+    }
 }
 
 // Keeps the day's plan in step with the story.
@@ -444,6 +499,9 @@ export async function afterReply(chatId, chatKey) {
         void (async () => {
             // What has happened that people off scene would react to (no call).
             await noteRipples(chatId, chatKey, settingId);
+            // A world with a pass of its own moves before the day is planned,
+            // so the day plan takes in what it brings (src/world/).
+            if (worldDueNow(chatKey) && !stillWaiting(getChatDoc(chatKey).suspended, getChatDoc(chatKey).turn).length) await runWorld(chatId, chatKey);
             if (due.includes('outline')) await runOutline(chatId, chatKey);
             if (due.includes('ideas')) await runIdeas(chatId, chatKey);
             if (due.includes('day')) await runDay(chatId, chatKey);

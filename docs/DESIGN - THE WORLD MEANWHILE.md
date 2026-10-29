@@ -5,7 +5,15 @@ schemes moved by the DAY pass at the Quiet level (no call of its own), the
 side log, MEANWHILE lines (rumours, news, traces, approaches - an approach
 lets its people turn up, director/whereabouts.js), and the World card on
 the GM Plan tab with the level and surfacing settings (src/world/,
-src/ui/world-card.js). Phases 2-4 are still design.
+src/ui/world-card.js). **Phase 2 built** (2026-10-29): the Lively and
+Turbulent levels with a WORLD pass of their own (src/planner/run.js
+runWorld, before the day plan so it takes in what the world brings);
+arrivals, happenings on the agenda (an approach too, at those levels) and
+quest hooks into GM ideas; the stir budget from the tension aim
+(model.js stirOf); quieting the world for some days and leaving people
+alone; HEARD lines from the director; `/sb-world`. Traces stay MEANWHILE
+lines kept to their place rather than story triggers - no State Engine
+variable needed. Phases 3-4 are still design.
 
 The GM planner (docs/DESIGN - GM PLANNER.md) thinks ahead about the
 *story*: the outline, today's moments, ideas and the agenda. Its day plan
