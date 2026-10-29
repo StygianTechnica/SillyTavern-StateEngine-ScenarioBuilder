@@ -547,9 +547,10 @@ function plannedSection(chatKey, messages) {
         const story = storyState(gm);
         const tense = (tensionNow(gm).now?.overall ?? 0) >= TENSE;
         const pace = paceAim(gm, { level: p.pacing, recentUser, tense, pull });
-        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '' }, motifs: motifsOf(gm, 3) });
-        // The world meanwhile: nothing while the scene is tense or lingering.
-        const meanwhile = meanwhileFor(chatKey, getChatDoc(chatKey).settingId, { aim: story.aim?.word ?? '', quiet: tense || pace.aim === 'linger', userIndex: latestUserIndex() });
+        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3) });
+        // The world meanwhile: nothing while the scene is tense or lingering;
+        // the lead into what comes next while it moves on or builds.
+        const meanwhile = meanwhileFor(chatKey, getChatDoc(chatKey).settingId, { aim: story.aim?.word ?? '', quiet: tense || pace.aim === 'linger', lead: pace.aim === 'move on' || story.aim?.word === 'build', userIndex: latestUserIndex() });
         return [plan, meanwhile].filter(Boolean).join('\n\n');
     } catch (err) {
         console.warn(LOG_PREFIX, 'no GM plan for the director', err);

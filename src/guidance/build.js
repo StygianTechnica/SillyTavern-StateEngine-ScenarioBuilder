@@ -127,6 +127,8 @@ export function aloneText(input) {
     const creatures = (input.location?.creatures ?? []).filter((x) => clean(x.name) && x.active !== false).map((x) => creatureLabel(x.name, { form: x.form, count: x.count }));
     const lines = [
         'When no NPCs are present, the reply is not empty. The world itself reacts. Describe ONLY:',
+        '- what the latest action did - its consequences, what changed because of it',
+        '- what there is to notice here - a detail, something out of place, something that was not there before',
         '- the environment',
         '- the weather',
         '- sounds',
@@ -134,6 +136,7 @@ export function aloneText(input) {
         '- distant movement',
         `- creatures acting independently${creatures.length ? ` (here: ${andList(creatures)})` : ''}`,
         '- divine or supernatural forces',
+        'Never add actions, words, thoughts or feelings for the player character: the reply stops where their next choice begins.',
     ];
     return lines.join('\n');
 }

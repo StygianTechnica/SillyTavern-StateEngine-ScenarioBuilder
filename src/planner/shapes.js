@@ -128,8 +128,9 @@ export function shapeCurve(shape, steps = 40) {
 
 // The aim. reading: { threat, uncertainty, emotional, overall } (the
 // newest), recent: the readings before it, oldest first.
-// -> { word: 'build' | 'hold' | 'ease', lean, why, band } or null without
-//    a reading.
+// -> { word: 'build' | 'hold' | 'ease', lean, why, band, short } or null
+//    without a reading. short: how far the reading falls below the band
+//    (0 unless building).
 export function tensionAim(shape, pos, reading, recent = []) {
     if (!shape || !reading || !Number.isFinite(reading.overall)) return null;
     const band = targetAt(shape, pos);
@@ -141,15 +142,15 @@ export function tensionAim(shape, pos, reading, recent = []) {
     let high = 0;
     for (const r of run) { if (Number.isFinite(r?.overall) && r.overall >= band.max - 0.2) high++; else break; }
     if (high >= shape.breather && reading.overall >= 2.5) {
-        return { word: 'ease', lean: highest, why: 'the story has been at full stretch for a while and wants a breather - a quiet moment, a relief or a small win', band };
+        return { word: 'ease', lean: highest, why: 'the story has been at full stretch for a while and wants a breather - a quiet moment, a relief or a small win', band, short: 0 };
     }
     if (reading.overall < band.min) {
         // Build along the shape's lean, unless that is already high.
         const lean = parts.includes(shape.lean) && reading[shape.lean] < band.max ? shape.lean : lowest;
-        return { word: 'build', lean, why: BUILD_WHY[lean] ?? BUILD_WHY.threat, band };
+        return { word: 'build', lean, why: BUILD_WHY[lean] ?? BUILD_WHY.threat, band, short: round1(band.min - reading.overall) };
     }
-    if (reading.overall > band.max) return { word: 'ease', lean: highest, why: EASE_WHY[highest] ?? EASE_WHY.threat, band };
-    return { word: 'hold', lean: shape.lean, why: 'the tension is where the story wants it - keep it there', band };
+    if (reading.overall > band.max) return { word: 'ease', lean: highest, why: EASE_WHY[highest] ?? EASE_WHY.threat, band, short: 0 };
+    return { word: 'hold', lean: shape.lean, why: 'the tension is where the story wants it - keep it there', band, short: 0 };
 }
 
 const BUILD_WHY = Object.freeze({

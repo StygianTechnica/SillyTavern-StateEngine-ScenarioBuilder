@@ -491,10 +491,12 @@ const LINE = {
 // they fit, not shown too often. Nothing while the scene is tense or the
 // user is lingering; nothing hostile while the story eases or the world is
 // quieted. Each line carries its scheme's id, for the director's HEARD line.
+// While the scene moves on or the story builds (lead), one of them is the
+// way into what comes next: it is meant to reach the scene, not wait.
 // opts: { day, userIndex, placeIds (the place and the places it is in),
-// present: ids in the scene, aim, quiet (tense or lingering), max }.
+// present: ids in the scene, aim, quiet (tense or lingering), lead, max }.
 // -> { text, ids } - ids: the items shown (markShown records them).
-export function meanwhileSection(world, { day, userIndex = null, placeIds = [], present = [], aim = '', quiet = false, max = 2 } = {}) {
+export function meanwhileSection(world, { day, userIndex = null, placeIds = [], present = [], aim = '', quiet = false, lead = false, max = 2 } = {}) {
     if (quiet || !Number.isInteger(day)) return { text: '', ids: [] };
     const here = new Set(placeIds);
     const now = new Set(present);
@@ -512,7 +514,9 @@ export function meanwhileSection(world, { day, userIndex = null, placeIds = [], 
     const shown = live.sort((a, b) => order(a) - order(b)).slice(0, max);
     if (!shown.length) return { text: '', ids: [] };
     return {
-        text: ['MEANWHILE (private - what the world beyond the scene is doing; use a line only where it fits the scene and the people in it, and never for the player character)',
+        text: [lead
+            ? 'MEANWHILE (private - what the world beyond the scene is doing; never write for the player character. The story wants something new now: let one of these reach the scene in this reply - someone lets it drop, it is found, or the one coming arrives - so the player character has something to take up.)'
+            : 'MEANWHILE (private - what the world beyond the scene is doing; use a line only where it fits the scene and the people in it, and never for the player character)',
             ...shown.map((x) => `${LINE[x.way](x.text)}${x.schemeId ? ` [${x.schemeId}]` : ''}`)].join('\n'),
         ids: shown.map((x) => x.id),
     };

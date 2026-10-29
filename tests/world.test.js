@@ -169,6 +169,8 @@ describe('the world meanwhile - what the director reads', () => {
         const first = meanwhileSection(w, { day: 2, userIndex: 5 });
         expect(first.text).toMatch(/^MEANWHILE/);
         expect(first.text).toContain('- Coming: Ines Moriarty is in the city asking after Cyril.');
+        expect(first.text).not.toContain('let one of these reach the scene');
+        expect(meanwhileSection(w, { day: 2, userIndex: 5, lead: true }).text).toContain('let one of these reach the scene in this reply');
         markShown(w, first.ids, 5);
         markShown(w, first.ids, 5);
         markShown(w, first.ids, 7);

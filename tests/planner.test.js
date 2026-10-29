@@ -152,6 +152,8 @@ describe('the director\'s private section', () => {
         expect(text).toMatch(/^GM PLAN \(private/);
         expect(text).toContain('Pace: move on - the talk has run its course');
         expect(text).toContain('Never decide for the player character');
+        expect(text).toContain('lead straight into the next one');
+        expect(text).not.toContain('something calls them away');
         expect(text).toContain('[m1]: An envoy');
         expect(text).toContain('[m2]: Niamh');
         expect(text).not.toContain('[m3]');

@@ -439,15 +439,16 @@ export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null
 
 // The private GM PLAN section, or '' when there is nothing to say.
 // pace: paceAim(); aim: shapes.js tensionAim(); story: { shape (label),
-// act (title) } for the outline's line; motifs: [text].
+// act (title), next (the beat after this one) } for the outline's line;
+// motifs: [text].
 export function planSection(gm, { pace = null, aim = null, story = null, motifs = [] } = {}) {
     const lines = [];
     const beat = activeBeat(gm.outline);
-    if (beat) lines.push(`- Story: ${story?.shape ? `${story.shape}, ` : ''}${story?.act ? `in "${story.act}" - ` : ''}the beat now: ${beat.text}`);
-    if (aim) lines.push(`- Aim: ${aim.word} (${aim.lean}) - ${aim.why}.`);
+    if (beat) lines.push(`- Story: ${story?.shape ? `${story.shape}, ` : ''}${story?.act ? `in "${story.act}" - ` : ''}the beat now: ${beat.text}${story?.next ? ` (then: ${story.next})` : ''}`);
+    if (aim) lines.push(aimLine(aim, story?.act));
     if (pace && pace.aim !== 'steady') {
         lines.push(pace.aim === 'move on'
-            ? `- Pace: move on - ${pace.why}. Bring the scene to a natural close from the world's side (the others wrap up, something calls them away, night falls) and let time pass to the next moment worth playing, with a TIME line that covers it. End on a hook that hands the choice back to the player. Never decide for the player character.`
+            ? `- Pace: move on - ${pace.why}. Close this scene and lead straight into the next one; never leave the player character alone with nothing to answer. Let the scene wind down from the world's side and pass time with a TIME line if the next scene starts later. Then open the next scene by bringing something to the player character: pull on an open thread or the beat now; bring in someone who belongs at this place and has a reason to seek them out, new to the story if need be; or let something from MEANWHILE reach them as news, a rumour, a find or a visitor. End with that in front of them - someone to answer, a question, somewhere to go - and the choice theirs. Never decide for the player character.`
             : `- Pace: linger - ${pace.why}. Give the scene room; let time move only as the story says.`);
     }
     const coming = (gm.day?.moments ?? []).filter((m) => m.status === 'pending').slice(0, 2);
@@ -462,6 +463,18 @@ export function planSection(gm, { pace = null, aim = null, story = null, motifs 
     if (m.length) lines.push(`- Motifs to echo, as images rather than events: ${m.join('; ')}.`);
     if (!lines.length) return '';
     return ['GM PLAN (private - never mention it; it guides what you choose, it is not a script. The scene as it stands comes first: use the plan only where it fits the place, the people present and what they are doing now - never move the scene, rename the place or change what people are doing to fit it. A coming moment happens only where the player leaves room for it; drop one that no longer fits.)', ...lines].join('\n');
+}
+
+// The tension aim as the director reads it. Building reaches the player
+// character - trouble only out of their sight builds nothing for them -
+// and the further short of the shape the story is, the plainer it is said.
+const FAR_SHORT = 1;
+function aimLine(aim, act) {
+    const line = `- Aim: ${aim.word} (${aim.lean}) - ${aim.why}.`;
+    if (aim.word !== 'build') return line;
+    const reach = ' Bring it to the player character: it happens to them, in front of them or reaches them as word, not only out of their sight.';
+    const far = aim.short >= FAR_SHORT ? ` The story is well short of where ${act ? `"${act}"` : 'this part of it'} wants it: this reply needs a real turn, not more of the same.` : '';
+    return line + reach + far;
 }
 
 // The fired story triggers the game master must play now (src/triggers/),

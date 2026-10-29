@@ -42,6 +42,10 @@ describe('director prompt', () => {
         expect(dossierText(alone)).toContain('- No one else is here.');
         const { prompt } = buildDirectorPrompt(alone);
         expect(prompt).toContain('No NPCs are present, so the reply is not empty: the world itself reacts.');
+        expect(prompt).toContain('latest action did - its consequences');
+        expect(prompt).toContain('the reply stops where their next choice begins');
+        expect(prompt).not.toContain('The GM PLAN says to move on');
+        expect(buildDirectorPrompt({ ...alone, gmPlan: 'GM PLAN (private)\n- Pace: move on - idle.' }).prompt).toContain('The GM PLAN says to move on: that is such a call');
         expect(buildDirectorPrompt({ ...alone, othersTracked: true }).prompt).not.toContain('No NPCs are present');
         expect(prompt).not.toContain('what the people around Remus want');
         expect(buildDirectorPrompt({ cast: [...alone.cast, { name: 'Varyn' }] }).prompt).toContain('what the people around Remus want');

@@ -179,13 +179,13 @@ export async function worldForDay(chatId, chatKey, settingId, opts = {}) {
 // The MEANWHILE section for the director ('' when off or nothing fits).
 // opts: { aim: the tension aim word, quiet: the scene is tense or the
 // user is lingering, userIndex: the player's message the reply answers }.
-export function meanwhileFor(chatKey, settingId, { aim = '', quiet = false, userIndex = null } = {}) {
+export function meanwhileFor(chatKey, settingId, { aim = '', quiet = false, lead = false, userIndex = null } = {}) {
     try {
         if (!isWorldOn()) return '';
         const doc = getChatDoc(chatKey);
         const locationId = doc.canonical.locationId;
         const placeIds = locationId && settingId ? pathOf(getParents(settingId), locationId) : locationId ? [locationId] : [];
-        const { text, ids } = meanwhileSection(doc.gm.world, { day: doc.canonical.day, userIndex, placeIds, present: doc.canonical.castIds, aim, quiet });
+        const { text, ids } = meanwhileSection(doc.gm.world, { day: doc.canonical.day, userIndex, placeIds, present: doc.canonical.castIds, aim, quiet, lead });
         if (ids.length) updateChatDoc(chatKey, (d) => markShown(d.gm.world, ids, userIndex));
         return text;
     } catch (err) {

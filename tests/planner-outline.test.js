@@ -175,7 +175,25 @@ describe('the story in the plans', () => {
         const gm = outlined();
         const text = planSection(gm, { aim: { word: 'build', lean: 'uncertainty', why: 'raise questions' }, story: { shape: 'Adventure serial', act: 'The call' } });
         expect(text).toContain('- Story: Adventure serial, in "The call" - the beat now: Elyon\'s priests demand Remus return');
-        expect(text).toContain('- Aim: build (uncertainty) - raise questions.');
+        expect(text).toContain('- Aim: build (uncertainty) - raise questions. Bring it to the player character');
+        expect(text).not.toContain('well short');
+    });
+
+    it('says plainly when the story is well short of its shape, and names the beat after', () => {
+        const gm = outlined();
+        const text = planSection(gm, { aim: { word: 'build', lean: 'threat', why: 'bring in danger', short: 1.5 }, story: { shape: 'Adventure serial', act: 'The great danger', next: 'The pass is closed' } });
+        expect(text).toContain('(then: The pass is closed)');
+        expect(text).toContain('well short of where "The great danger" wants it: this reply needs a real turn');
+        const hold = planSection(gm, { aim: { word: 'hold', lean: 'threat', why: 'keep it there', short: 0 } });
+        expect(hold).toContain('- Aim: hold (threat) - keep it there.');
+        expect(hold).not.toContain('Bring it to the player character');
+    });
+
+    it('measures how far short a build is', () => {
+        const thriller = shapeOf('thriller');
+        const aim = tensionAim(thriller, 0.4, { threat: 1, uncertainty: 0.5, emotional: 1, overall: 0.8 });
+        expect(aim.short).toBeCloseTo(targetAt(thriller, 0.4).min - 0.8, 1);
+        expect(tensionAim(thriller, 0.4, { threat: 5, uncertainty: 5, emotional: 5, overall: 5 }).short).toBe(0);
     });
 
     it('the day prompt carries the story, and the check asks about the beat and the tension', () => {
