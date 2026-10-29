@@ -47,8 +47,10 @@
 //   join: { act, note }                         a story already under way: the chapter (act
 //                                               index, -1 = let the planner judge) it is in
 //                                               now, and the user's note on the story so far
+//   world                                       the world meanwhile (src/world/model.js)
 // }
 import { normalizeTriggers, triggerLines } from '../triggers/model.js';
+import { emptyWorld, normalizeWorld } from '../world/model.js';
 
 export const URGENCIES = Object.freeze([['soon', 'Soon'], ['today', 'Today'], ['whenever', 'Whenever it fits']]);
 export const LEVELS = Object.freeze([['light', 'Light'], ['moderate', 'Moderate'], ['heavy', 'Heavy']]);
@@ -102,6 +104,7 @@ export function emptyGm() {
         ideas: [],
         dismissedIdeas: [],
         agenda: [],
+        world: emptyWorld(),
     };
 }
 
@@ -181,6 +184,8 @@ export function normalizeGm(value) {
         agenda: trimAgenda((Array.isArray(g.agenda) ? g.agenda : []).map(normalizeHappening).filter(Boolean)),
         // Story triggers (src/triggers/): conditions watched through State Engine variables.
         triggers: normalizeTriggers(g.triggers),
+        // The world meanwhile (src/world/model.js): schemes off scene.
+        world: normalizeWorld(g.world),
     };
 }
 

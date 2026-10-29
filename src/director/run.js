@@ -34,6 +34,8 @@ import { combatOptions, stanceFor, protectionOf, powerRatingOf, mayDie, protecte
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
 import { whoCouldTurnUp } from './whereabouts.js';
+import { arrivals } from '../world/model.js';
+import { isWorldOn } from '../world/run.js';
 import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from '../library/powers.js';
 import { namedAtAll } from '../validate/drift.js';
 import { circling } from './loops.js';
@@ -391,6 +393,8 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
     const { near: nearby, elsewhere } = whoCouldTurnUp({
         characters: characters.filter((c) => !isPower(c)), castIds, locationId: doc.canonical.locationId || guidance.location?.id || '', parents,
         history: doc.history, current: doc.canonical, inPlay: doc.inPlay, tiesOf: (id) => relationsFor(id, relations),
+        // Those the world meanwhile has brought near (src/world/model.js).
+        arrived: isWorldOn() ? arrivals(doc.gm.world, doc.canonical.day) : [],
     });
     const placeName = new Map((settingId ? await listEntries(chatId, settingId, 'location').catch(() => []) : []).map((p) => [p.id, p.name]));
     for (const e of elsewhere) e.lastAt = placeName.get(e.lastAt) ?? '';

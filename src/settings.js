@@ -119,6 +119,11 @@ const DEFAULTS = {
     // 'brisk' | 'fast' (how readily an idle scene moves on); showSpoilers:
     // the day plan is shown in the GM Plan tab (off: veiled).
     planner: { enabled: true, level: 'moderate', checkEvery: null, dayExpire: null, outlineEvery: null, ideasEvery: null, pacing: 'gentle', showSpoilers: false, maxTokens: 1200, steerObjects: true },
+    // The world meanwhile (docs/DESIGN - THE WORLD MEANWHILE.md): people and
+    // factions off scene pursue schemes of their own, moved on by the
+    // planner's DAY pass. level: 'off' | 'quiet' (no call of its own);
+    // surfacing: 'all' | 'talk' (rumours and news only) | 'log' (side log only).
+    world: { level: 'off', surfacing: 'all' },
     // Settings migrations already applied.
     migrated: [],
     // { [settingId]: library document } - src/store/setting-store.js.
@@ -151,6 +156,8 @@ export function getSettings() {
     for (const [key, value] of Object.entries(DEFAULTS.time)) settings.time[key] ??= value;
     settings.planner ??= structuredClone(DEFAULTS.planner);
     for (const [key, value] of Object.entries(DEFAULTS.planner)) if (settings.planner[key] === undefined) settings.planner[key] = value;
+    settings.world ??= {};
+    for (const [key, value] of Object.entries(DEFAULTS.world)) settings.world[key] ??= value;
     // The old 600-token default was far too small for a narrative briefing.
     if (!settings.migrated.includes('budget-2000')) {
         if (settings.tokenBudget === 600) settings.tokenBudget = DEFAULTS.tokenBudget;

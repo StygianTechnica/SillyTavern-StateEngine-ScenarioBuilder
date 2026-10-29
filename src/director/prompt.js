@@ -666,11 +666,15 @@ export function tidyBriefing(note) {
 // A value the model copied from the format instead of filling in: a
 // <...> placeholder, "none", or one of the words the format used to show.
 const PLACEHOLDER = /^(?:none|n\/?a|null|nothing|no|-+|—|same|unchanged|unknown|not applicable|(?:place|location) ?names?|name of (?:the )?(?:place|location)|names?|name, name|the debt comes due)$/i;
+// "None needed", "nothing new", "no new location for now": an answer that
+// there is nothing, in more words (a location named "None needed." was made).
+// Only filler after the first word - "No Man's Land" is a place.
+const NOTHING_SAID = /^(?:none|nothing|no|not)(?:\s+(?:new|needed|required|necessary|yet|now|for|here|at|this|that|the|time|turn|reply|moment|change[sd]?|applicable|added|today|so|far|location|place|room|character|person|one|item|thing|creature|faction|lore|event|quest|scene|move|moved))+$/i;
 export function isPlaceholder(value) {
-    const v = clean(value).replace(/^["'*]+|["'*.]+$/g, '');
+    const v = clean(value).replace(/^["'*]+|["'*.!]+$/g, '');
     // "[Place name]", "place_name", "Place-Name" are the same template words.
     const bare = clean(v.replace(/^[[({]+|[\])}]+$/g, '').replace(/[_-]+/g, ' '));
-    return !v || /[<>]/.test(v) || PLACEHOLDER.test(v) || PLACEHOLDER.test(bare);
+    return !v || /[<>]/.test(v) || PLACEHOLDER.test(v) || PLACEHOLDER.test(bare) || NOTHING_SAID.test(bare);
 }
 
 // A format line, whether or not it could be read - never left in the prose.

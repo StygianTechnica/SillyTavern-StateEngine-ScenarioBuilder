@@ -51,8 +51,10 @@ export function placesNear(a, b, parents = {}) {
 // not seen in a long while, or only tied to someone here, who cannot.
 // characters: [{ id, name, role }]; relations: [{ otherId, kind }] per id
 // (relationsFor); recent: how many history entries back still counts as
-// "not long ago".
-export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '', parents = {}, history = [], current = null, inPlay = [], tiesOf = () => [], recent = 120 } = {}) {
+// "not long ago"; arrived: those the world meanwhile has brought near
+// (src/world/model.js arrivals - someone who came looking), who can turn up
+// wherever they were last seen.
+export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '', parents = {}, history = [], current = null, inPlay = [], tiesOf = () => [], recent = 120, arrived = [] } = {}) {
     const present = new Set(castIds);
     const seen = lastSeen(history, current);
     const total = (history ?? []).length;
@@ -60,16 +62,19 @@ export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '',
     const near = [];
     const elsewhere = [];
     const placed = new Set();
+    const came = new Set(arrived);
     const put = (id, why) => {
         if (present.has(id) || placed.has(id) || !named.has(id)) return;
         placed.add(id);
         const c = named.get(id);
+        if (came.has(id)) { near.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', why: 'came looking, off scene' }); return; }
         const s = seen.get(id);
         const fresh = s && total - s.index <= recent;
         // Not knowing where the scene is, nothing can be ruled out.
         if (!locationId || (fresh && placesNear(s.locationId, locationId, parents))) near.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', why });
         else elsewhere.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', lastAt: s?.locationId ?? '', why: s ? (fresh ? 'left behind elsewhere' : 'not seen in a long while') : why });
     };
+    for (const id of arrived) put(id, 'came looking, off scene');
     for (const id of inPlay ?? []) put(id, 'seen earlier in this story');
     for (const id of castIds) for (const r of tiesOf(id)) put(r.otherId, `tied to someone here (${r.kind})`);
     return { near, elsewhere };

@@ -199,6 +199,12 @@ describe('copied format lines', () => {
         expect(parsed.enters).toEqual(['Niamh']);
         expect(isPlaceholder('The Junkyard')).toBe(false);
     });
+    it('reads "None needed." and the like as nothing, and keeps real names that start the same', () => {
+        for (const v of ['None needed.', 'none required', 'Nothing new', 'No new location for now', 'Not needed', 'None at this time', 'No change']) expect(isPlaceholder(v)).toBe(true);
+        for (const v of ["No Man's Land", 'Nothing Hill', 'Noneshire', 'The None']) expect(isPlaceholder(v)).toBe(false);
+        expect(parseDirectorNote('x\nNEW location | None needed. | - | -').created).toEqual([]);
+        expect(parseDirectorNote('x\nMOVE | None needed | | ').move).toBeNull();
+    });
 });
 
 describe('never a second thing of a name the library has', () => {

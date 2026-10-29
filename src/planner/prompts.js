@@ -12,6 +12,8 @@
 //            shape and tension (src/planner/shapes.js)
 //   INSPIRE  distils an inspiration text into motifs - never its plot
 
+import { readWorld } from '../world/prompts.js';
+
 const clean = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
 const cut = (v, n) => { const t = clean(v); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 // A sentence to follow a comma: lower-case start, no closing stop.
@@ -77,6 +79,10 @@ export function buildDayPrompt(input) {
         for (const x of happenings) parts.push(`- [${x.id}] ${clean(x.text)} - ${x.due === 'tomorrow' ? 'tomorrow' : 'today'}${clean(x.when) ? `, ${clean(x.when)}` : ''}`);
     }
     const happeningField = happenings.length ? ',"happening":"<the calendar id it plays out, or empty>"' : '';
+    // The world meanwhile (src/world/prompts.js worldPart): its schemes take
+    // the place of free off-screen lines.
+    const world = clean(input.world?.text) ? input.world : null;
+    if (world) parts.push('', world.text);
     parts.push(
         '',
         `PLAN ${input.rest ? 'THE REST OF THE DAY' : 'THE DAY'}${clean(input.dateText) ? ` - ${clean(input.dateText)}` : ''}${clean(input.dayPart) ? `, starting ${clean(input.dayPart)}` : ''}`,
@@ -85,8 +91,8 @@ export function buildDayPrompt(input) {
         'Answer in this JSON shape:',
         `{"moments":[{"text":"<what happens, one sentence>","when":"<morning|midday|afternoon|evening|night|any time>","trigger":"<the condition, e.g. 'if the scene is at the forge'; empty if none>","ties":["<names of the people, places, factions or threads it involves>"],"droppable":true${happeningField}}],`,
         ' "agendas":[{"who":"<a person who matters today, not the player>","wants":"<what they want>","will":"<what they will do about it>","hidden":"<what they hide, or empty>"}],',
-        ' "offscreen":["<what a faction or absent person is doing meanwhile>"],',
-        ' "requests":[{"request":"<request id>","moments":[<the number of each moment that answers it, from 1>]}]}',
+        ...(world ? [] : [' "offscreen":["<what a faction or absent person is doing meanwhile>"],']),
+        ` "requests":[{"request":"<request id>","moments":[<the number of each moment that answers it, from 1>]}]${world ? `,\n${world.field}` : ''}}`,
     );
     return { system, prompt: parts.join('\n') };
 }
@@ -113,6 +119,7 @@ export function readDayPlan(json) {
             .map((a) => ({ who: cut(a.who, 60), wants: cut(a.wants, 200), will: cut(a.will, 200), hidden: cut(a.hidden, 200) })).slice(0, 6),
         offscreen: texts(json.offscreen, 4).map((t) => cut(t, 240)),
         requests: readLinks(json.requests),
+        world: readWorld(json.world),
     };
 }
 

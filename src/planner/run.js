@@ -49,6 +49,7 @@ import {
 import { povRule } from '../director/perspective.js';
 import { livePoolFor, byType } from '../naming/run.js';
 import { poolLine } from '../naming/live.js';
+import { worldForDay, noteRipples, meanwhileFor } from '../world/run.js';
 
 export const PLANNER_EVENT = 'scenario_builder_planner';
 
@@ -304,6 +305,8 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
         const ctx = await sceneContext(chatId, chatKey, settingId, guidance);
         const doc = getChatDoc(chatKey);
         const sameDay = doc.gm.day?.day === doc.canonical.day;
+        // The world meanwhile moves with the new day (src/world/run.js).
+        const world = sameDay ? null : await worldForDay(chatId, chatKey, settingId, { aim: storyState(doc.gm).aim, userName: userName() });
         const { system, prompt } = buildDayPrompt({
             dossier: await dossierWithNames(chatId, settingId, guidance, ctx),
             dateText: guidance.clock?.words ?? '',
@@ -319,6 +322,7 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             place: (guidance.location?.path ?? []).slice(-1)[0] ?? '',
             situation: doc.canonical.sceneSummary,
             happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today' })),
+            world: world?.part ?? null,
         });
         const plan = readDayPlan(await ask({ system, prompt }));
         if (!plan) throw new Error('The plan had no moments in it.');
@@ -328,7 +332,9 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             d.gm.counters.lastCheck = new Date().toISOString();
             d.gm.checkWanted = false;
         });
-        return `${plan.moments.length} moment${plan.moments.length === 1 ? '' : 's'} planned`;
+        const moved = world && plan.world ? world.apply(plan.world) : null;
+        const worldNote = moved && (moved.moved || moved.started) ? `; the world: ${moved.moved + moved.started} scheme${moved.moved + moved.started === 1 ? '' : 's'} moved${moved.surfaced ? `, ${moved.surfaced} surfacing` : ''}` : '';
+        return `${plan.moments.length} moment${plan.moments.length === 1 ? '' : 's'} planned${worldNote}`;
     });
 }
 
@@ -436,6 +442,8 @@ export async function afterReply(chatId, chatKey) {
         for (const x of doc.gm.inspirations.filter((i) => !i.motifs.length && !i.error)) void runInspire(chatKey, x.id);
         // The outline first: the day plan follows the story's direction.
         void (async () => {
+            // What has happened that people off scene would react to (no call).
+            await noteRipples(chatId, chatKey, settingId);
             if (due.includes('outline')) await runOutline(chatId, chatKey);
             if (due.includes('ideas')) await runIdeas(chatId, chatKey);
             if (due.includes('day')) await runDay(chatId, chatKey);
@@ -481,7 +489,10 @@ function plannedSection(chatKey, messages) {
         const story = storyState(gm);
         const tense = (tensionNow(gm).now?.overall ?? 0) >= TENSE;
         const pace = paceAim(gm, { level: p.pacing, recentUser, tense, pull });
-        return planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '' }, motifs: motifsOf(gm, 3) });
+        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '' }, motifs: motifsOf(gm, 3) });
+        // The world meanwhile: nothing while the scene is tense or lingering.
+        const meanwhile = meanwhileFor(chatKey, getChatDoc(chatKey).settingId, { aim: story.aim?.word ?? '', quiet: tense || pace.aim === 'linger', userIndex: latestUserIndex() });
+        return [plan, meanwhile].filter(Boolean).join('\n\n');
     } catch (err) {
         console.warn(LOG_PREFIX, 'no GM plan for the director', err);
         return '';

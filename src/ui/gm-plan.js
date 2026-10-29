@@ -21,6 +21,7 @@ import { armTrigger, retireTrigger, clearFinishedTriggers } from '../triggers/ru
 import { listEntries, getSettingSummary } from '../library/library.js';
 import { downloadText, safeFileName } from '../store/files.js';
 import { eventCard } from './event-card.js';
+import { worldCard } from './world-card.js';
 import { ws, rerender, markDirty } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
 
@@ -751,5 +752,5 @@ export async function renderGmPlan() {
     return h('div', { class: 'sb-gm-plan' },
         h('div', { class: 'sb-scene-cols' },
             h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), starterCard(), volumesCard(gm), ideasCard(gm), todayCard(gm, show), agendaCard(gm, show), eventCard(places, [...people, ...creatures]), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
-            h('div', { class: 'sb-gm-col' }, paceCard(gm), settingsCard(gm))));
+            h('div', { class: 'sb-gm-col' }, paceCard(gm), worldCard(gm, show), settingsCard(gm))));
 }
