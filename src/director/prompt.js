@@ -196,10 +196,19 @@ export function callNames(c) {
 }
 
 // The characters `text` names, by whole words. -> [character]
+// A first or last name others share (a family name: "the Medina Syndicate",
+// "a Moriarty") names no one in particular; a full name or alias still does.
 export function peopleNamedIn(text, characters) {
     const t = String(text ?? '');
     const has = (n) => new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'iu').test(t);
-    return (characters ?? []).filter((c) => callNames(c).some(has));
+    const list = characters ?? [];
+    const owners = new Map();
+    for (const c of list) for (const n of new Set(callNames(c).map((x) => x.toLowerCase()))) owners.set(n, (owners.get(n) ?? 0) + 1);
+    const whole = (c) => new Set([c?.name, ...(c?.aliases ?? c?.base?.aliases ?? [])].map((x) => clean(x).toLowerCase()).filter(Boolean));
+    return list.filter((c) => {
+        const full = whole(c);
+        return callNames(c).some((n) => (full.has(n.toLowerCase()) || owners.get(n.toLowerCase()) === 1) && has(n));
+    });
 }
 
 // The dossier as plain facts for the director (not for the roleplay
@@ -476,7 +485,7 @@ export function buildDirectorPrompt(input) {
         'If the latest chat shows a god, a spirit or a power - or someone speaking for one - promising something in return for a task, a trial or a price (a life given back once the trials are passed), a line. Only a promise made in the latest chat, never one already under SECRETS AND OATHS; it is kept until the story fulfils or breaks it:',
         'BARGAIN | <who promises> | <what is promised> | <the price or condition>',
         '',
-        'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along). For creatures of a kind, say how many (ENTERS | 3 zombies; LEAVES | 2 zombies):',
+        'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along). Someone only talked about, remembered, read about or seen in a record, picture or screen is not in the scene: no ENTERS for them. For creatures of a kind, say how many (ENTERS | 3 zombies; LEAVES | 2 zombies):',
         'ENTERS | <name>',
         'LEAVES | <name>',
         '',

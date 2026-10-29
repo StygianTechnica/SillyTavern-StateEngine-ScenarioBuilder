@@ -263,4 +263,15 @@ describe('who the situation names', () => {
         expect(peopleNamedIn('The High priest and Niamhs cousin wait.', characters)).toEqual([]);
         expect(callNames({ name: 'High Seer Maren' })).not.toContain('High');
     });
+    it('never takes a shared family name for one person', () => {
+        const family = [
+            { id: 'c', name: 'Cyril', aliases: ['Cyril Moriarty'] },
+            { id: 't', name: 'Tiago Moriarty' },
+            { id: 'b', name: 'Bartin Medina' },
+            { id: 'e', name: 'Enrique Medina' },
+            { id: 'v', name: 'Vex Lark' },
+        ];
+        expect(peopleNamedIn('As Cyril delves into Medina Syndicate databases, Riven calls him a Moriarty.', family).map((x) => x.id)).toEqual(['c']);
+        expect(peopleNamedIn('Bartin waits while Enrique Medina and Tiago talk; Lark keeps watch.', family).map((x) => x.id)).toEqual(['t', 'b', 'e', 'v']);
+    });
 });
