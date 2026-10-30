@@ -51,4 +51,15 @@ describe('who could turn up', () => {
         expect(text).toContain('they cannot turn up in this scene');
         expect(text).toContain('- Graxx (last at Great Hall)');
     });
+
+    it('keeps the side of those out of the scene', () => {
+        const text = dossierText({
+            cast: [{ name: 'Cyril', player: true }],
+            nearby: [{ name: 'Riven', role: 'a hacker', sides: ['White Cerberus'], why: 'seen earlier in this story' }],
+            elsewhere: [{ name: 'Graxx', sides: ['Ravagers', 'Iron Hand'], lastAt: 'Great Hall' }, { name: 'Maren', sides: [] }],
+        });
+        expect(text).toContain('- Riven (a hacker), of White Cerberus - seen earlier in this story');
+        expect(text).toContain('Graxx, of Ravagers and Iron Hand (last at Great Hall)');
+        expect(text).toContain('; Maren');
+    });
 });

@@ -413,6 +413,13 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
         if (Array.isArray(value)) runtimeFactions.set(o.id, value);
     }
     const factions = settingId ? factionsAtPlay(factionList, { cast: (guidance.cast ?? []).filter((c) => c.id), placeIds, relations: getSettingDoc(settingId).relations, runtimeOf: (id) => runtimeFactions.get(id) ?? [] }) : [];
+    // Those out of the scene keep their side: without it, a member who had
+    // stepped out (Riven of White Cerberus) was briefed as a threat to it.
+    if (settingId) {
+        const memberships = libraryMemberships(factionList, getSettingDoc(settingId).relations);
+        const factionName = new Map(factionList.map((f) => [f.id, f.name]));
+        for (const c of [...nearby, ...elsewhere]) c.sides = (memberships.get(c.id) ?? []).map((id) => factionName.get(id)).filter(Boolean);
+    }
     const eventObjects = settingId ? (await listEntries(chatId, settingId, 'event').catch(() => [])).slice(-8).map((e) => ({ name: e.name, description: e.base?.description ?? e.description ?? '', when: e.base?.when ?? e.when ?? e.base?.date ?? e.base?.timestamp ?? e.timestamp ?? '' })) : [];
     const scenes = settingId ? (await listEntries(chatId, settingId, 'scene').catch(() => [])).map((x) => ({ name: x.name, description: x.base?.description ?? x.description ?? '' })) : [];
     return { characters, castIds, nearby, elsewhere, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes };

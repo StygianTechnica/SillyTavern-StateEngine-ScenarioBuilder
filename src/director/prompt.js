@@ -124,9 +124,22 @@ export function knownAs(name, known) {
     return (known ?? []).find((e) => [e.name, ...(e.aliases ?? e.base?.aliases ?? [])].some((n) => typeof n === 'string' && sameNameKey(n) === key)) ?? null;
 }
 
+// The descriptive names the director's instructions use as examples (and
+// once did): a model copies them as if the story had shown such a person -
+// "The Heavyset Man" came in on "a heavy burden". One passes only when the
+// story uses its describing word whole.
+export const EXAMPLE_UNNAMED = Object.freeze(['The Eyepatched Man', 'The Heavyset Man']);
+const exampleWord = (name) => {
+    const key = sameNameKey(String(name ?? '').replace(/\s*\(?unnamed\)?\s*$/i, ''));
+    const hit = EXAMPLE_UNNAMED.find((x) => sameNameKey(x) === key);
+    return hit ? sameNameKey(hit).split(/\s+/)[0].replace(/ed$/, '') : '';
+};
+
 // Whether a descriptive name ("The Eyepatched Man") echoes the text ("a
 // man with an eyepatch"): one of its distinctive words, or its stem, is there.
 export function echoes(name, text) {
+    const example = exampleWord(name);
+    if (example) return new RegExp(`(^|[^\\p{L}])${example}`, 'iu').test(String(text ?? ''));
     const t = String(text ?? '').toLowerCase();
     const words = String(name ?? '').toLowerCase().split(/[^a-z0-9'\u00c0-\u024f]+/).filter((w) => w.length >= 4 && !['the', 'man', 'woman', 'person', 'figure', 'with'].includes(w));
     return words.some((w) => t.includes(w) || (w.length >= 6 && t.includes(w.slice(0, w.length - 2))) || (w.length >= 7 && t.includes(w.slice(0, w.length - 3))));
@@ -380,16 +393,20 @@ export function dossierText(input) {
     const others = (input.nearby ?? []).filter((c) => clean(c?.name) && !absentSet.has(clean(c.name).toLowerCase()));
     if (others.length) {
         section('OTHERS WHO COULD TURN UP (not here now)');
-        for (const c of others.slice(0, 12)) lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${clean(c.why) ? ` - ${clean(c.why)}` : ''}`);
+        for (const c of others.slice(0, 12)) lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${sidesText(c)}${clean(c.why) ? ` - ${clean(c.why)}` : ''}`);
     }
     // Far away, or not seen in a long while (src/director/whereabouts.js).
     const away = (input.elsewhere ?? []).filter((c) => clean(c?.name) && !absentSet.has(clean(c.name).toLowerCase()));
     if (away.length) {
         section('ELSEWHERE (far from here or long out of the story - they cannot turn up in this scene; they can be thought of or talked about, and send word only if the story has set that up)');
-        lines.push(`- ${away.slice(0, 16).map((c) => `${clean(c.name)}${clean(c.lastAt) ? ` (last at ${clean(c.lastAt)})` : ''}`).join('; ')}`);
+        lines.push(`- ${away.slice(0, 16).map((c) => `${clean(c.name)}${sidesText(c)}${clean(c.lastAt) ? ` (last at ${clean(c.lastAt)})` : ''}`).join('; ')}`);
     }
     return lines.join('\n').trim();
 }
+
+// The factions someone out of the scene belongs to (src/director/run.js):
+// they stay on that side while away.
+const sidesText = (c) => ((c.sides ?? []).map(clean).filter(Boolean).length ? `, of ${c.sides.map(clean).filter(Boolean).join(' and ')}` : '');
 
 // input: the guidance input plus { messages: [{ name, text, isUser }],
 //   userName, previousNote, memories, limits, allowCreate, canonOnly }
@@ -411,7 +428,7 @@ export function buildDirectorPrompt(input) {
         here ? `The scene is at ${here}${path.length > 1 ? ` (${path.join(' > ')})` : ''}: call it by that name. Other places named in these notes - a faction's home, another settlement, somewhere the story only talked about - are elsewhere; the scene never moves there or takes their name unless a MOVE line takes it there.` : '',
         'Something that is somewhere else - a far-off place, an object kept elsewhere, a goal that needs a journey - can be talked about, worried over or planned for, but it cannot be reached, found or used in this scene until the story actually travels there. Keep the people busy with what is in front of them here.',
         `Never loop: each reply must change something that stays changed - ground taken or lost, someone down, a foe broken, a turn in the plan. Do not answer ${userName} with the same threat again (fresh waves of the same enemies, "one more time", "it is not over yet"). A fight or ordeal builds to a turn and then ends within a few replies - the enemy breaks, flees, falls or wins - and when ${userName} has spent everything or is down, the others carry it through or the story moves on; never press ${userName} to push past their limits again. The same goes for a task, trial, test or puzzle: it has an end, and once it has been done a few times it is done - never "many more await", never another wave of the same; when ${userName} asks whether it is over, it is, or exactly one final step remains.`,
-        'People act as the story has shown them: never give someone a betrayal, an attack or a hidden scheme the story has not set up.',
+        'People act as the story has shown them: never give someone a betrayal, an attack or a hidden scheme the story has not set up. Someone stays on the side of the faction they belong to, here or away: a quarrel with a newcomer does not make them their own group\'s enemy, or one of its enemies\' people.',
         `In a fight, a contest or any clash, you are the referee for everyone but ${userName}: decide how each action between the others turns out and state it as settled - who strikes, whether it lands, what it does (a wound, a crack in armour, a limb that will not bear weight, ground given), and what the one struck does in answer. "Varyn's blade finds the joint behind its knee; the leg buckles and it lurches sideways" - never "Varyn may try to strike its joints". An opponent here acts every reply - it attacks, presses, shrugs off a blow or uses what it is - it is never a still target. For a blow aimed at ${userName}, say what it is and what it threatens as it comes; how ${userName} meets it is ${userName}'s to say.`,
         'People know only what they saw, heard or were told: what happens inside someone - thoughts, dreams, visions, unspoken feelings - is theirs alone; others see only outward signs and learn the rest only if told. A secret stays hidden from those who do not know it - they never act on it, hint at it or guess it - unless the story reveals it in front of them; an oath binds those who swore it.',
         povBrief(input.pov, userName),
@@ -532,9 +549,10 @@ export function buildDirectorPrompt(input) {
             'Anything your briefing relies on that the facts above do not have - a place the characters are about to go to, a person, creature or group about to matter, a piece of lore or history, an event that is happening or coming - give it its details, mention it in the briefing, and add one line per thing (at most two). The last part says what it is TIED to: a person, place, faction or thread named above (by name), or the message that brought it up:',
             'NEW location | <name> | <one-sentence description that says where it is - a room or part of the place the scene is in names that place> | <tied to>',
             'NEW character | <name> | <one-sentence description> | <here or nearby> | <tied to>',
-            'Someone who takes part in the scene - speaks, acts, is spoken to, or is singled out by a description - but has no name yet is a character too: give them a short descriptive name from how the story describes them ("The Eyepatched Man", "The Heavyset Man") and add the word unnamed as the last part. Background crowds ("several others", "the guards") are not.',
-            'NEW character | <descriptive name, e.g. The Eyepatched Man> | <one-sentence description> | here | unnamed',
+            `Someone who takes part in the scene - speaks, acts, is spoken to, or is singled out by a description - but has no name yet is a character too: give them a short descriptive name from the words the story itself uses to describe them (a man the story calls "eyepatched" is ${EXAMPLE_UNNAMED[0]}) and add the word unnamed as the last part. The name is only an example: never use it unless the story describes someone that way. Background crowds ("several others", "the guards") are not.`,
+            'NEW character | <descriptive name from the story\'s own words> | <one-sentence description> | here | unnamed',
             'Someone the latest chat gives a name to - introduced, described, sent for or picked for a task ("Kael and Arin will go with you") - and who is not listed above is a character too, here or not: add them with what the chat says of them, "nearby" when they are not in the scene. This is not inventing; they already exist in the story.',
+            `A new person is not someone ${userName} already knows - an old friend, a relative, a past lover - unless the story says so: tie them to one of the others, who can bring them to ${userName}.`,
             'NEW creature | <name> | <one-sentence description> | <tied to>',
             'A named animal - a pet, a mount, a hound, a beast companion - is a creature, however dear to someone. Only one that talks and thinks like a person (a sentient familiar, a dragon, a bound spirit) is a character.',
             'NEW faction | <name> | <one-sentence description> | <tied to>',

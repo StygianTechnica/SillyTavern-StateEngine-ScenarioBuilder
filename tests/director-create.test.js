@@ -122,6 +122,17 @@ describe('people the story describes but has not named', () => {
         expect(relevance({ ...c, name: 'The Hooded Woman' }, { recentText: recent, quests: [], known: [] }).ok).toBe(false);
         expect(echoes('The Heavyset Man', recent)).toBe(true);
     });
+    it('never takes the instructions\' example names from a story that never describes anyone so', () => {
+        const burden = '"Knowing your past can be a heavy burden," Galice said, bent over the patched schematics.';
+        expect(echoes('The Heavyset Man', burden)).toBe(false);
+        expect(echoes('The Heavyset Man (unnamed)', burden)).toBe(false);
+        expect(relevance({ kind: 'character', name: 'The Heavyset Man', why: '', provisional: true }, { recentText: burden, quests: [], known: [] }).ok).toBe(false);
+        expect(echoes('The Eyepatched Man', burden)).toBe(false);
+        expect(echoes('The Eyepatched Man', 'A smuggler with an eyepatch leans on the bar.')).toBe(true);
+        // Other descriptive names keep the looser match.
+        expect(echoes('The Scarred Woman', 'a woman with a scar across her lip')).toBe(true);
+        expect(buildDirectorPrompt({ messages: [], allowCreate: true }).prompt).not.toContain('Heavyset');
+    });
     it('are listed as having no name yet, and renamed only to a name the chat gives', () => {
         expect(dossierText({ cast: [{ name: 'The Eyepatched Man', provisional: true }] })).toContain('- The Eyepatched Man (no name yet - known by this description)');
         expect(parseDirectorNote('x\nRENAME | The Eyepatched Man | Korrin').renames).toEqual([{ from: 'The Eyepatched Man', to: 'Korrin' }]);

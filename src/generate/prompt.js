@@ -115,6 +115,15 @@ const REPLY_PLAIN = '# Reply\nReply with ONLY the text for this field. No title,
 // happened, never made up.
 const STORY_RULE = 'This happened in the story above. Write only what happened there - the people, places and moment it shows. Bring in no one and nothing else, invent no names, and give no time or place the story does not.';
 
+// A person or group with no tie to the player character yet: the premise is
+// often about them, and left unsaid a model makes everyone new their old
+// friend or avenger. They are met in the story, through the others.
+function playerRule(input) {
+    const p = input.player;
+    if (!p?.name || p.tied || !['character', 'faction'].includes(input.type?.id)) return '';
+    return `${p.name} is the player character, played by the user. Do not make this ${input.type.noun} someone ${p.name} already knows - a friend, a relative, an old ally, a lover or an enemy - and give it no goals, grudges, debts or history about ${p.name}, unless what is written above or the user's direction says so. It may know what is common knowledge about ${p.name}, nothing more. Tie it to the other people and groups in the setting instead: how it meets ${p.name} is for the story to decide.`;
+}
+
 // Lore is knowledge about the world, not one of the people it concerns -
 // left unsaid, a model writes a person's nicknames and roles for it - and
 // lore the story brought up keeps to what the story says of it.
@@ -150,7 +159,8 @@ function namingRule(input) {
 //     avoidNames                       overused names never to write
 //   sides: [{ name, description, ties: [line] }]   the factions it is one of
 //   story: the chat an event or scene came from - written from it alone
-//   loreStory: the chat passages a lore entry comes from }
+//   loreStory: the chat passages a lore entry comes from
+//   player: { name, tied } - the player character (src/generate/run.js playerTie) }
 // -> { system, user, keys, plain } (plain: one field, answered as text)
 export function buildGenerationPrompt(input) {
     const { task, type, entry = { values: {} } } = input;
@@ -241,6 +251,7 @@ ${input.populationLine} Let what you write fit this mix.`);
             clean(input.story) ? STORY_RULE : '',
             type?.id === 'lore' ? LORE_RULE : '',
             clean(input.loreStory) ? LORE_STORY_RULE : '',
+            playerRule(input),
             placeRule,
             input.brief ? `${input.creating ? 'What the user wants' : "The user's direction"}: ${cut(input.brief, 400)}` : '',
         ].filter(Boolean).join('\n');
@@ -274,6 +285,8 @@ ${input.populationLine} Let what you write fit this mix.`);
     if (clean(input.story)) job += `\n${STORY_RULE}`;
     if (type?.id === 'lore') job += `\n${LORE_RULE}`;
     if (clean(input.loreStory)) job += `\n${LORE_STORY_RULE}`;
+    const pcRule = playerRule(input);
+    if (pcRule) job += `\n${pcRule}`;
     if (namesRule) job += `\n${namesRule}`;
     // A person is a he or a she, decided in code (generate/run.js genderOf):
     // left open, a model writes "they" for one person.

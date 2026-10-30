@@ -1,4 +1,4 @@
-import { neighboursOf, runtimeRefs, sidesOf, tiedSides } from '../src/generate/run.js';
+import { neighboursOf, runtimeRefs, sidesOf, tiedSides, playerTie } from '../src/generate/run.js';
 import { buildGenerationPrompt } from '../src/generate/prompt.js';
 
 // A location whose factions are set in the chat (State Engine's per-chat
@@ -116,5 +116,35 @@ describe('the side of those it is tied to', () => {
         expect(user).toContain('- White Cerberus (faction), which Galice Buckar is one of');
         expect(user).toContain('# Its side (through Galice Buckar, whom it is tied to');
         expect(user).toContain('works where they work');
+    });
+});
+
+describe('new people and the player character', () => {
+    const character = { id: 'character', label: 'Character', noun: 'character' };
+    const world = {
+        character: [
+            { id: 'chr_pc', type: 'character', name: 'Cyril' },
+            { id: 'chr_galice', type: 'character', name: 'Galice Buckar' },
+            { id: 'chr_mari', type: 'character', name: 'Mari Owe', related_entity_ids: ['chr_galice'] },
+            { id: 'chr_brother', type: 'character', name: 'Tiago', base: { sibling: 'chr_pc' } },
+        ],
+    };
+    it('knows whether an entry is already tied to the player character', () => {
+        expect(playerTie(world.character[2], { all: world, playerId: 'chr_pc' })).toEqual({ id: 'chr_pc', name: 'Cyril', tied: false });
+        expect(playerTie(world.character[3], { all: world, playerId: 'chr_pc' }).tied).toBe(true);
+        expect(playerTie(world.character[2], { all: world, playerId: 'chr_pc', relations: [{ id: 'r', from: 'chr_mari', to: 'chr_pc', kind: 'friend' }] }).tied).toBe(true);
+        expect(playerTie(world.character[0], { all: world, playerId: 'chr_pc' })).toBeNull();
+        expect(playerTie(world.character[2], { all: world, playerId: '' })).toBeNull();
+    });
+    it('tells the model a new person is met through the others, in any world', () => {
+        for (const name of ['Cyril', 'Remus', 'Captain Ihara', 'Dana Ruiz']) {
+            const { user } = buildGenerationPrompt({ task: 'fill', type: character, fields: [], entry: { name: 'Mari Owe', values: {} }, player: { name, tied: false } });
+            expect(user).toContain(`${name} is the player character`);
+            expect(user).toContain('Tie it to the other people and groups');
+        }
+        const tied = buildGenerationPrompt({ task: 'fill', type: character, fields: [], entry: { name: 'Tiago', values: {} }, player: { name: 'Cyril', tied: true } }).user;
+        expect(tied).not.toContain('is the player character');
+        const lore = buildGenerationPrompt({ task: 'fill', type: { id: 'lore', noun: 'lore entry' }, fields: [], entry: { name: 'x', values: {} }, player: { name: 'Cyril', tied: false } }).user;
+        expect(lore).not.toContain('is the player character');
     });
 });

@@ -232,6 +232,22 @@ export function tiedSides(entry, { all, relations = [] }) {
     return out.slice(0, 2);
 }
 
+// The player character, as it bears on writing `entry`: { id, name, tied }
+// (tied: the entry is already linked to them - a related entry, a link
+// field, a relation the user wrote), or null when there is none or the
+// entry is the player character. Pure.
+export function playerTie(entry, { all, relations = [], playerId = '' }) {
+    if (!playerId || entry?.id === playerId) return null;
+    const pc = (all.character ?? []).find((c) => c.id === playerId);
+    if (!pc) return null;
+    const allEntries = Object.values(all).flat();
+    const base = entry?.base ?? entry ?? {};
+    const tied = !!entry?.id && ((base.related_entity_ids ?? []).includes(playerId)
+        || relationsOf(entry, allEntries).outgoing.some((o) => o.ids.includes(playerId))
+        || relationsFor(entry.id, relations).some((r) => r.otherId === playerId));
+    return { id: playerId, name: pc.name, tied };
+}
+
 // Generates for one entry of `type`.
 //   task: 'field' | 'fill' | 'enrich' | 'create'
 //   ctx: { chatId, chatKey, settingId }
@@ -359,7 +375,11 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     }
     // Those its side has ties to come first among the entries it may relate to.
     const tiedIds = new Set(sides.flatMap((s) => [s.id, ...s.ties.map((t) => t.otherId)]));
-    const others = allEntries.filter((e) => e.id !== entry?.id);
+    // The player character: a new person or group is tied to the others and
+    // meets them in the story - never their friend out of nowhere - unless
+    // it is already tied to them (playerTie).
+    const player = playerTie(entry, { all, relations: authored, playerId: playerIdOf(ctx.settingId, all.character ?? []) });
+    const others = allEntries.filter((e) => e.id !== entry?.id && (!player || player.tied || e.id !== player.id));
     // Lore is written from where the chat brings it up (its passages).
     const loreStory = type.id === 'lore' && entry?.id && !story ? chatPassagesFor(entry, draft) : '';
     // Nothing in a story's own event needs a new name: no pool, so none is offered.
@@ -383,6 +403,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         relationNames: [...others.filter((e) => tiedIds.has(e.id)), ...others.filter((e) => !tiedIds.has(e.id))].map((e) => e.name).slice(0, 25),
         place: placeCtx,
         sides: sides.map((s) => ({ name: s.name, description: s.description, ties: s.ties.map((t) => t.line), ...(s.through ? { through: s.through } : {}) })),
+        player: player ? { name: player.name, tied: player.tied } : null,
         // A place inside another: what that place is for, and whether what
         // is in it is its owners' (a fortress's rooms) or its own (a club on
         // the Neon Mile, not another Omicron site).
