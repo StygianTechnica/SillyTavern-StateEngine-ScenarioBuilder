@@ -582,7 +582,7 @@ function inspirationCard(gm) {
 
 // ---- ideas (§3.4) and the agenda (§3.3)
 
-const IDEA_LABEL = { quest: ['Quest', 'fa-scroll'], enrich: ['Quest detail', 'fa-feather'], happening: ['Happening', 'fa-calendar-day'], seed: ['Seed', 'fa-seedling'], event: ['Event', 'fa-trophy'] };
+const IDEA_LABEL = { quest: ['Quest', 'fa-scroll'], enrich: ['Quest detail', 'fa-feather'], happening: ['Happening', 'fa-calendar-day'], seed: ['Seed', 'fa-seedling'], event: ['Event', 'fa-trophy'], faction: ['Breakaway faction', 'fa-people-arrows'] };
 const EVENT_IDEA_KIND = { arena: 'an arena', tournament: 'a tournament', crawl: 'a dungeon crawl', programme: 'a programme' };
 
 function ideaRow(idea, chatId, chatKey) {

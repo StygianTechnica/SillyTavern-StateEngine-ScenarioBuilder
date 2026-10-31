@@ -53,11 +53,15 @@ export function placesNear(a, b, parents = {}) {
 // (relationsFor); recent: how many history entries back still counts as
 // "not long ago"; arrived: those the world meanwhile has brought near
 // (src/world/model.js arrivals - someone who came looking), who can turn up
-// wherever they were last seen.
-export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '', parents = {}, history = [], current = null, inPlay = [], tiesOf = () => [], recent = 120, arrived = [] } = {}) {
+// wherever they were last seen; moved: the world meanwhile's changes to
+// people (src/world/situations.js overlays.people - { [id]: { locationId,
+// where, state } }): where they went off scene counts as where they were
+// last seen, now, and how they are now goes with them.
+export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '', parents = {}, history = [], current = null, inPlay = [], tiesOf = () => [], recent = 120, arrived = [], moved = {} } = {}) {
     const present = new Set(castIds);
     const seen = lastSeen(history, current);
     const total = (history ?? []).length;
+    for (const [id, m] of Object.entries(moved ?? {})) if (m?.locationId && !present.has(id)) seen.set(id, { locationId: m.locationId, index: total });
     const named = new Map(characters.map((c) => [c.id, c]));
     const near = [];
     const elsewhere = [];
@@ -67,12 +71,13 @@ export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '',
         if (present.has(id) || placed.has(id) || !named.has(id)) return;
         placed.add(id);
         const c = named.get(id);
-        if (came.has(id)) { near.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', why: 'came looking, off scene' }); return; }
+        const now = moved?.[id]?.state ? `; now ${String(moved[id].state).replace(/[.!?]+$/, '')}` : '';
+        if (came.has(id)) { near.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', why: `came looking, off scene${now}` }); return; }
         const s = seen.get(id);
         const fresh = s && total - s.index <= recent;
         // Not knowing where the scene is, nothing can be ruled out.
-        if (!locationId || (fresh && placesNear(s.locationId, locationId, parents))) near.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', why });
-        else elsewhere.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', lastAt: s?.locationId ?? '', why: s ? (fresh ? 'left behind elsewhere' : 'not seen in a long while') : why });
+        if (!locationId || (fresh && placesNear(s.locationId, locationId, parents))) near.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', why: `${why}${now}` });
+        else elsewhere.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', lastAt: s?.locationId ?? '', why: `${s ? (fresh ? 'left behind elsewhere' : 'not seen in a long while') : why}${now}` });
     };
     for (const id of arrived) put(id, 'came looking, off scene');
     for (const id of inPlay ?? []) put(id, 'seen earlier in this story');

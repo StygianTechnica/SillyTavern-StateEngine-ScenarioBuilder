@@ -1,5 +1,5 @@
 // The world meanwhile - the pure half (docs/DESIGN - THE WORLD MEANWHILE.md,
-// phases 1-2). People and factions who are not in the scene pursue things
+// phases 1-3). People and factions who are not in the scene pursue things
 // of their own: something happens (a ripple), code works out who would care
 // (the stakeholders), and a pass says what each one does about it (a
 // scheme, moved on a step at a time). At the Quiet level that pass is the
@@ -10,18 +10,22 @@
 // the player character or arriving nearby (lines the director reads in its
 // MEANWHILE section), a happening on the agenda, or a quest hook (extras the
 // runner hands to the planner). How much surfaces follows the story's
-// tension aim (stirOf). No SillyTavern imports, so all of it is
-// unit-tested; the runner is src/world/run.js.
+// tension aim (stirOf). Phase 3 - situations, the changes off-scene acts
+// leave (overlays), faction conditions and last contact - is in
+// src/world/situations.js; applyWorld takes those parts of an answer in too.
+// No SillyTavern imports, so all of it is unit-tested; the runner is
+// src/world/run.js.
 //
 // gm.world: {
 //   ripples:  [{ id, kind, text, day, ties: [id], reach, takenUp, at }]  the last RIPPLE_LIMIT
-//     kind: 'belief' | 'secret' | 'oath' | 'quest' | 'death' | 'user'
+//     kind: 'belief' | 'secret' | 'oath' | 'quest' | 'death' | 'user' | 'heart' (romance
+//       someone away would mind - src/director/jealousy.js)
 //     reach: who could know of it - 'here' (only those present), 'local', 'everyone'
 //   schemes:  [scheme]
 //     scheme = { id, who: [id], names: [name], aim, motive, from, steps: [text],
 //                done (steps done), nextDay, aboutPlayer, visibility, status, startedDay, held,
 //                heard (the player character has learned of it - the director's HEARD line), at }
-//   log:      [{ day, text, schemeId, veiled }]                         the last LOG_LIMIT
+//   log:      [{ day, text, schemeId, situationId, ties: [id], veiled }]  the last LOG_LIMIT
 //   surfaced: [{ id, way, text, where, whereId, who: [id], schemeId, fromDay, untilDay,
 //                shownFor: [userIndex], hostile }]
 //   seen:     { primed, quests: { id: status }, dead: [id], knowledge: { id: status },
@@ -34,7 +38,11 @@
 //                                                    surfaces until this day (inclusive)
 //   leftAlone: [id]                                  people and factions the user asked the
 //                                                    world to leave be: never stakeholders
+//   ...and phase 3's situations, overlays, conditions, contact, pending and
+//   canonized (src/world/situations.js)
 // }
+
+import { emptyLasting, normalizeLasting, applySituations, applyChanges, applyConditions, situationHeadlines } from './situations.js';
 
 export const WORLD_LEVELS = Object.freeze([['off', 'Off'], ['quiet', 'Quiet'], ['lively', 'Lively'], ['turbulent', 'Turbulent']]);
 export const SURFACINGS = Object.freeze([['all', 'Everything'], ['talk', 'Rumours and news only'], ['log', 'Side log only']]);
@@ -42,11 +50,13 @@ export const SURFACINGS = Object.freeze([['all', 'Everything'], ['talk', 'Rumour
 // schemes a pass may start, things that may surface per in-game day;
 // ownPass: the world has its own WORLD pass (else the DAY pass moves it);
 // extraPerDay: WORLD passes a day may add after a major ripple; every: a
-// WORLD pass after this many replies while ripples wait (0: never).
+// WORLD pass after this many replies while ripples wait (0: never);
+// situations: how many may be open at once (Quiet: none begins - those
+// under way carry on).
 export const LEVEL_LIMITS = Object.freeze({
-    quiet: Object.freeze({ schemes: 3, stakeholders: 3, start: 1, surface: 1, ownPass: false, extraPerDay: 0, every: 0 }),
-    lively: Object.freeze({ schemes: 6, stakeholders: 5, start: 2, surface: 2, ownPass: true, extraPerDay: 1, every: 0 }),
-    turbulent: Object.freeze({ schemes: 10, stakeholders: 8, start: 3, surface: 4, ownPass: true, extraPerDay: 2, every: 12 }),
+    quiet: Object.freeze({ schemes: 3, stakeholders: 3, start: 1, surface: 1, ownPass: false, extraPerDay: 0, every: 0, situations: 0 }),
+    lively: Object.freeze({ schemes: 6, stakeholders: 5, start: 2, surface: 2, ownPass: true, extraPerDay: 1, every: 0, situations: 1 }),
+    turbulent: Object.freeze({ schemes: 10, stakeholders: 8, start: 3, surface: 4, ownPass: true, extraPerDay: 2, every: 12, situations: 2 }),
 });
 export const SCHEME_STATUSES = Object.freeze(['under way', 'stalled', 'done', 'failed', 'dropped']);
 export const VISIBILITIES = Object.freeze(['hidden', 'traces', 'rumoured', 'public']);
@@ -86,7 +96,7 @@ export const limitsOf = (level) => LEVEL_LIMITS[level] ?? null;
 export const worldOn = (level) => !!limitsOf(level);
 
 export function emptyWorld() {
-    return { ripples: [], schemes: [], log: [], surfaced: [], seen: emptySeen(), dismissed: [], lastDay: null, pass: { day: null, count: 0, turn: 0 }, quietUntil: null, leftAlone: [] };
+    return { ripples: [], schemes: [], log: [], surfaced: [], seen: emptySeen(), dismissed: [], lastDay: null, pass: { day: null, count: 0, turn: 0 }, quietUntil: null, leftAlone: [], ...emptyLasting() };
 }
 
 function emptySeen() {
@@ -97,7 +107,7 @@ function normalizeRipple(r) {
     if (!isObject(r) || !clean(r.id) || !clean(r.text)) return null;
     return {
         id: clean(r.id),
-        kind: ['belief', 'secret', 'oath', 'quest', 'death', 'user'].includes(r.kind) ? r.kind : 'user',
+        kind: ['belief', 'secret', 'oath', 'quest', 'death', 'user', 'heart'].includes(r.kind) ? r.kind : 'user',
         text: cut(r.text, 300),
         day: Number.isInteger(r.day) ? r.day : null,
         ties: strList(r.ties).slice(0, 8),
@@ -161,7 +171,7 @@ export function normalizeWorld(value) {
         ripples: (Array.isArray(w.ripples) ? w.ripples : []).map(normalizeRipple).filter(Boolean).slice(-RIPPLE_LIMIT),
         schemes: (Array.isArray(w.schemes) ? w.schemes : []).map(normalizeScheme).filter(Boolean).slice(-SCHEME_LIMIT),
         log: (Array.isArray(w.log) ? w.log : []).filter((l) => isObject(l) && clean(l.text))
-            .map((l) => ({ day: Number.isInteger(l.day) ? l.day : null, text: cut(l.text, 300), schemeId: clean(l.schemeId), veiled: l.veiled !== false })).slice(-LOG_LIMIT),
+            .map((l) => ({ day: Number.isInteger(l.day) ? l.day : null, text: cut(l.text, 300), schemeId: clean(l.schemeId), situationId: clean(l.situationId), ties: strList(l.ties).slice(0, 12), veiled: l.veiled !== false })).slice(-LOG_LIMIT),
         surfaced: (Array.isArray(w.surfaced) ? w.surfaced : []).map(normalizeSurfaced).filter(Boolean).slice(-SURFACED_LIMIT),
         seen: normalizeSeen(w.seen),
         dismissed: strList(w.dismissed).slice(-DISMISSED_LIMIT),
@@ -169,7 +179,13 @@ export function normalizeWorld(value) {
         pass: { day: Number.isInteger(w.pass?.day) ? w.pass.day : null, count: int(w.pass?.count), turn: int(w.pass?.turn) },
         quietUntil: Number.isInteger(w.quietUntil) ? w.quietUntil : null,
         leftAlone: strList(w.leftAlone).slice(-LEFT_ALONE_LIMIT),
+        ...normalizeLasting(w),
     };
+}
+
+// A line for the side log.
+function logLine(world, { day, text, schemeId = '', situationId = '', ties = [], veiled = true }) {
+    world.log = [...world.log, { day, text: cut(text, 300), schemeId, situationId, ties: [...new Set(ties)].slice(0, 12), veiled }].slice(-LOG_LIMIT);
 }
 
 // ---------------------------------------------------------------- ripples (§3.1)
@@ -362,11 +378,18 @@ export const dueSchemes = (world, day) => openSchemes(world).filter((s) => s.sta
 // hooks; agenda: an approach also goes on the agenda (when the world has
 // its own pass, so the next day plan makes a moment of it); turn: the
 // reply count, for the pass record.
-// -> { moved, started, surfaced, extras } - extras for the runner to hand on:
+// Phase 3 (src/world/situations.js): `changes` - the checks for what a
+// scheme changes: { places: 'on' | 'ask' | 'off', deaths: 'ask' | 'allow' |
+// 'never', present, placeIds (the scene's own place), playerId, isPerson,
+// isFaction, mayKill }; and the answer's situations and faction conditions.
+// -> { moved, started, surfaced, changed, situations, extras } - extras for
+//    the runner to hand on:
 //    { way: 'happening', text, day, ties: [name], schemeId }
 //    { way: 'hook', name, text, why, ties: [name], schemeId }
-export function applyWorld(world, answer, { day, resolve = () => null, nameOf = () => '', placeOf = () => '', limits = LEVEL_LIMITS.quiet, aim = '', surfacing = 'all', ids = [], canonOnly = false, agenda = false, turn = 0, newId = (p) => `${p}${Math.random().toString(36).slice(2, 8)}`, at = new Date().toISOString() } = {}) {
-    const counts = { moved: 0, started: 0, surfaced: 0, extras: [] };
+//    { way: 'death', id, name, how, schemeId }  (deaths allowed without asking)
+//    { way: 'split', name, text, why, ties, schemeId }  (a breakaway faction - a proposal)
+export function applyWorld(world, answer, { day, resolve = () => null, nameOf = () => '', placeOf = () => '', limits = LEVEL_LIMITS.quiet, aim = '', surfacing = 'all', ids = [], canonOnly = false, agenda = false, turn = 0, changes = {}, newId = (p) => `${p}${Math.random().toString(36).slice(2, 8)}`, at = new Date().toISOString() } = {}) {
+    const counts = { moved: 0, started: 0, surfaced: 0, changed: 0, situations: 0, extras: [] };
     const stir = stirOf(limits, { aim, day, quietUntil: world.quietUntil });
     const allowed = new Set(ids);
     const left = new Set(world.leftAlone);
@@ -393,7 +416,14 @@ export function applyWorld(world, answer, { day, resolve = () => null, nameOf = 
         scheme.status = SCHEME_STATUSES.includes(a.status) ? a.status : scheme.status;
         if (scheme.status === 'under way' && scheme.done >= scheme.steps.length) scheme.status = 'done';
         scheme.nextDay = day + Math.min(14, Math.max(1, a.inDays ?? 1));
-        if (a.log) world.log = [...world.log, { day, text: cut(a.log, 300), schemeId: scheme.id, veiled: scheme.visibility === 'hidden' }].slice(-LOG_LIMIT);
+        if (a.log) logLine(world, { day, text: a.log, schemeId: scheme.id, ties: scheme.who, veiled: scheme.visibility === 'hidden' });
+        // What it changed in the world, checked (src/world/situations.js).
+        if (a.changes?.length) {
+            const done = applyChanges(world, a.changes, { ...changes, day, scheme, resolve, placeOf, nameOf, canonOnly, newId });
+            for (const text of done.applied) logLine(world, { day, text, schemeId: scheme.id, ties: scheme.who, veiled: scheme.visibility === 'hidden' });
+            counts.changed += done.applied.length;
+            counts.extras.push(...done.extras.map((x) => ({ ...x, schemeId: scheme.id })));
+        }
         const s = a.surface;
         const way = s?.way;
         const fits = !!s?.text && (SURFACE_WAYS.includes(way) || EXTRA_WAYS.includes(way)) && surfacing !== 'log'
@@ -416,6 +446,12 @@ export function applyWorld(world, answer, { day, resolve = () => null, nameOf = 
         // Surfacing makes it known, at least a little.
         if (scheme.visibility === 'hidden') scheme.visibility = way === 'trace' || NEAR_WAYS.has(way) ? 'traces' : 'rumoured';
     }
+    // Situations and faction conditions (phase 3). While the story eases or
+    // the world is quieted, no trouble begins or opens.
+    const sit = applySituations(world, answer?.situations, { day, resolve, placeOf, max: limits.situations ?? 0, calm: !stir.hostile, newId, at });
+    for (const l of sit.log) logLine(world, { day, text: l.text, situationId: l.situationId, ties: l.ties, veiled: false });
+    counts.situations = sit.started + sit.moved;
+    for (const l of applyConditions(world, answer?.factions, { day, resolve, nameOf, isFaction: changes.isFaction ?? (() => true) })) logLine(world, { day, text: l.text, ties: l.ties, veiled: true });
     markPass(world, { day, turn });
     trimSchemes(world);
     return counts;
@@ -464,7 +500,7 @@ export function hearScheme(world, id, how = '', { day = null } = {}) {
     if (!s || s.heard) return false;
     s.heard = true;
     if (VISIBILITIES.indexOf(s.visibility) < VISIBILITIES.indexOf('rumoured')) s.visibility = 'rumoured';
-    world.log = [...world.log, { day, text: `The player character learned of it${clean(how) ? ` - ${unstop(how)}` : ''} (${s.names.join(', ') || 'a scheme'}: ${unstop(s.aim)}).`, schemeId: s.id, veiled: false }].slice(-LOG_LIMIT);
+    logLine(world, { day, text: `The player character learned of it${clean(how) ? ` - ${unstop(how)}` : ''} (${s.names.join(', ') || 'a scheme'}: ${unstop(s.aim)}).`, schemeId: s.id, ties: s.who, veiled: false });
     return true;
 }
 
@@ -542,5 +578,5 @@ export function publicLines(world, day) {
         .map((x) => `${x.way === 'news' ? 'News' : 'Rumour'}: ${sentence(x.text)}`);
     const known = openSchemes(world).filter((s) => s.visibility === 'public' || s.visibility === 'rumoured' || s.heard)
         .map((s) => `${s.visibility === 'public' ? 'Known' : 'Whispered'}: ${s.names.join(', ') || 'someone'} - ${unstop(s.aim)}.`);
-    return [...talk, ...known];
+    return [...talk, ...situationHeadlines(world).map((t) => `In the news: ${t}`), ...known];
 }

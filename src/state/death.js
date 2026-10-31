@@ -25,8 +25,9 @@ export function normalizeDead(list) {
         // How they died, in a few words ("cut down by the Eternal Champion").
         how: clean(d.how).slice(0, 200),
         at: clean(d.at),
-        // Who said so: the director (from the story) or the user.
-        source: d.source === 'user' ? 'user' : 'director',
+        // Who said so: the director (from the story), the user, or the
+        // world meanwhile (off scene - src/world/situations.js).
+        source: d.source === 'user' || d.source === 'world' ? d.source : 'director',
         // The chat message (SillyTavern's index) of the reply they died in -
         // a story death only; taking that reply back undoes it.
         reply: Number.isInteger(d.reply) && d.reply >= 0 ? d.reply : null,

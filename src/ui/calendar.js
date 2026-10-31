@@ -115,6 +115,21 @@ async function monthGrid() {
         agendaOn.set(at, [...(agendaOn.get(at) ?? []), x]);
     }
     const agendaLabel = (x) => (x.source === 'user' || !isVeiled(gm, x.id, showSpoilers) ? x.text : 'Something is planned');
+    // The world meanwhile (src/world/): a scheme's next step on the day it
+    // is due, a situation on the days it began and ended - veiled like the
+    // World card (a hidden scheme, a situation still brewing).
+    if (getSettings().world?.level && getSettings().world.level !== 'off') {
+        const put = (day, x) => { if (Number.isInteger(day)) { const at = todayIndex + (day - c.day); agendaOn.set(at, [...(agendaOn.get(at) ?? []), x]); } };
+        for (const s of gm.world.schemes.filter((x) => x.status === 'under way' && !x.held && x.steps[x.done])) {
+            const veiled = s.visibility === 'hidden' && isVeiled(gm, `world:${s.id}`, showSpoilers);
+            put(s.nextDay, { id: `world:${s.id}`, source: veiled ? 'world' : 'user', status: 'coming', text: `${s.names.join(', ') || 'Someone'}: ${s.steps[s.done]}` });
+        }
+        for (const s of gm.world.situations) {
+            const veiled = s.stage === 'brewing' && isVeiled(gm, `world:${s.id}`, showSpoilers);
+            put(s.startedDay, { id: `world:${s.id}`, source: veiled ? 'world' : 'user', status: 'done', text: `${s.name} began` });
+            put(s.endedDay, { id: `world:${s.id}`, source: 'user', status: 'done', text: `${s.name} ended` });
+        }
+    }
     const cells = [];
     for (let i = 0; i < lead; i++) cells.push(h('div', { class: 'sb-cal-cell sb-cal-blank' }));
     for (let d = 1; d <= month.days; d++) {

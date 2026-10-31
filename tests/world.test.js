@@ -90,7 +90,7 @@ describe('the world meanwhile - schemes', () => {
         const world = emptyWorld();
         addRipple(world, { id: 'r1', text: 'A dockhand saw Cyril' });
         const counts = applyWorld(world, answer(), { day: 10, resolve, nameOf, ids: ['ines'], newId });
-        expect(counts).toEqual({ moved: 0, started: 1, surfaced: 1, extras: [] });
+        expect(counts).toEqual({ moved: 0, started: 1, surfaced: 1, changed: 0, situations: 0, extras: [] });
         const s = openSchemes(world)[0];
         expect(s).toMatchObject({ who: ['ines'], names: ['Ines Moriarty'], done: 1, nextDay: 12, visibility: 'rumoured', startedDay: 10 });
         expect(world.log[0]).toMatchObject({ day: 10, text: 'Ines took ship for Port Vael.' });

@@ -599,6 +599,23 @@ Done: the Worlds tab (src/worlds/, src/ui/worlds-tab.js).
   the Calendar.
 - [ ] GM planner, phase 5: tuning (custom shapes, per-pass budgets, how often
   planned moments land).
+- [x] The world meanwhile, phase 3 (2026-10-30, docs/DESIGN - THE WORLD
+  MEANWHILE.md): situations, changes off scene (places, people, stances,
+  splits, deaths under the user's say-so), faction conditions, last contact
+  and THE WORLD HERE NOW for the director; the World card, sheets and
+  Calendar show them.
+- [x] **Jealousy** (2026-10-30, src/director/jealousy.js): the director is
+  told who is bound to whom - romantic relationships the user wrote, the
+  story's (Archivist: romantic, or devoted +3), and vows of love - and, when
+  someone here could see the one they love favour another, to have them
+  notice and show it in their own way (HEARTS). Its JEALOUS line keeps a
+  grievance in the chat that colours the next scenes and fades over in-game
+  days (slower for someone jealous by nature) unless SOOTHED; a vow of love
+  broken makes one on its own; ROMANCE tells of someone away who would
+  mind - word may reach them (and the world meanwhile gets a ripple). On by
+  default (settings.director.jealousy, no extra call); a character's Heart
+  card on the sheet makes them jealous by nature or never jealous either
+  way. Never the player character.
 - [x] Director: a "think after each reply" mode (settings.director.thinkAhead,
   src/director/ahead.js) - done; per-character perspective briefings:
   see Perspective below. Was: a "think after each reply" mode (zero wait, written before

@@ -13,7 +13,8 @@ quest hooks into GM ideas; the stir budget from the tension aim
 (model.js stirOf); quieting the world for some days and leaving people
 alone; HEARD lines from the director; `/sb-world`. Traces stay MEANWHILE
 lines kept to their place rather than story triggers - no State Engine
-variable needed. Phases 3-4 are still design.
+variable needed. **Phase 3 built** (2026-10-30): see "Phase 3 as built" at
+the end. Phase 4 is still design.
 
 The GM planner (docs/DESIGN - GM PLANNER.md) thinks ahead about the
 *story*: the outline, today's moments, ideas and the agenda. Its day plan
@@ -593,3 +594,53 @@ leave a log line and go; the log is trimmed oldest first.
    small model may latch on to it. Proposal: a rumour line is shown at
    most three replies, only in a scene it fits, and retired once the
    narrator uses it (matched in the reply, as with BEAT lines).
+
+## Phase 3 as built (2026-10-30)
+
+The pure half is `src/world/situations.js`; `applyWorld` (model.js) takes
+the new parts of an answer through it, and `src/world/run.js` does the rest.
+
+- **Situations** (§3.4): the WORLD pass may begin one when the level has
+  room (Quiet 0, Lively 1, Turbulent 2 open at once - `LEVEL_LIMITS.situations`;
+  at Quiet, ones under way still move). A stage only goes forward; while
+  the story eases or the world is quieted no conflict, schism or crisis
+  begins or opens. Ending one drops the stances it held. A situation's
+  headline reaches `/sb-world` once it is past *brewing*.
+- **Changes** (§3.6): each scheme step may carry `changes` - `place`,
+  `whereabouts`, `state`, `death`, `stance`, `split`. Checked in code:
+  never anyone in the scene, the scene's own place or the player
+  character. Places follow the *Changes to places* setting (on / ask /
+  off); deaths the *Deaths off scene* setting (ask / allow / never) and
+  never a plot device, an unkillable character or anyone the chat's "Who
+  can die" spares. What asks waits under *Waiting for your say* on the
+  World card (let go after 7 in-game days). A death allowed is marked with
+  source `world` and stays (it is not undone by taking a reply back). A
+  split marks the faction *split*; the breakaway is always a GM idea of
+  kind `faction` (none in a canon-only setting).
+- **Make it part of the setting**: a changed place's description takes the
+  change in as a new paragraph; the old description is kept for Undo. Not
+  offered in a canon-only setting or on an entry that takes no generated
+  detail. (State Engine object variants were not used - open question 4.)
+- **Faction conditions and last contact** (§4.1): the pass gives a
+  faction's standing, leadership and mood when they change. After each
+  reply code notes contact with the people here, their factions, the
+  places the scene is in and factions tied to them by reference fields; a
+  gap of more than two replies makes the next contact a new visit.
+- **THE WORLD HERE NOW**: a section before the GM PLAN, shown even while
+  the scene is tense (they are facts): the scene's place if it changed,
+  situations touching the place or the people here, someone here the
+  world has changed, and - for the first few replies of a visit to a
+  faction or person (here, their place, or named by the player) - their
+  condition and the log lines tied to them since the last contact.
+- **Whereabouts**: someone the world moved counts as last seen there, now;
+  their state goes with them under OTHERS WHO COULD TURN UP.
+- **UI**: the World card lists situations, what waits for the user's say,
+  and the changes (Undo, Make it part of the setting, and Undo of that); a
+  sheet shows "Off scene, in this chat" for a place, person or faction; the
+  Calendar shows schemes' next steps and when situations began and ended,
+  veiled like the World card.
+- The log keeps `ties` (who a line is about) and `situationId`.
+
+Not done: the location image prompt does not read a place's change yet,
+and the places a situation touches get no effect line of their own outside
+THE WORLD HERE NOW.

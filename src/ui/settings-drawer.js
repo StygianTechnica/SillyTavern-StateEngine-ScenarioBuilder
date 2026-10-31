@@ -114,6 +114,7 @@ function renderSettings() {
     byId('sb_director_perspective').checked = settings.director.perspective !== false;
     byId('sb_director_pov').value = POV_MODES.includes(settings.director.pov) ? settings.director.pov : 'free';
     byId('sb_director_night').checked = settings.director.travelAtNight === true;
+    byId('sb_director_jealousy').checked = settings.director.jealousy !== false;
     byId('sb_changes_suggest').checked = settings.changes?.suggest !== false;
     byId('sb_changes_auto').checked = settings.changes?.auto === true;
     byId('sb_director_timeout').value = settings.director.timeout;
@@ -181,6 +182,7 @@ export async function addSettingsDrawer() {
     byId('sb_director_perspective').addEventListener('change', (e) => { settings.director.perspective = e.target.checked; saveSettings(); refresh(); });
     byId('sb_director_pov').addEventListener('change', (e) => { settings.director.pov = e.target.value; changed(); });
     byId('sb_director_night').addEventListener('change', (e) => { settings.director.travelAtNight = e.target.checked; saveSettings(); });
+    byId('sb_director_jealousy').addEventListener('change', (e) => { settings.director.jealousy = e.target.checked; saveSettings(); });
     byId('sb_changes_suggest').addEventListener('change', (e) => { settings.changes = { ...(settings.changes ?? {}), suggest: e.target.checked }; saveSettings(); });
     byId('sb_changes_auto').addEventListener('change', (e) => { settings.changes = { ...(settings.changes ?? {}), auto: e.target.checked }; saveSettings(); });
     byId('sb_director_timeout').addEventListener('change', (e) => {

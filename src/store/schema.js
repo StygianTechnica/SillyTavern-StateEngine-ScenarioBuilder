@@ -99,6 +99,7 @@ import { normalizePowerMeta, fitText, GIFTS_MAX } from '../library/powers.js';
 import { normalizeFight } from '../director/fight.js';
 import { normalizeCombatMeta, STANCES } from '../director/combat.js';
 import { normalizeSuspended } from '../director/suspended.js';
+import { emptyHearts, normalizeHearts, JEALOUSY_MODES } from '../director/jealousy.js';
 import { normalizeEvent, normalizeEventsDone, normalizeEventsComing } from '../events/model.js';
 import { normalizeTemplates } from '../events/setup.js';
 import { emptyChanges, normalizeChanges } from '../state/changes-model.js';
@@ -202,6 +203,9 @@ export function normalizeEntryMeta(meta) {
         // How they fare in a fight: a power rating and a fate (plot device,
         // unkillable, mortal) - src/director/combat.js.
         combat: normalizeCombatMeta(m.combat),
+        // Characters: jealousy - '' (the chat's default), 'jealous' or
+        // 'never' (src/director/jealousy.js).
+        jealousy: JEALOUSY_MODES.includes(m.jealousy) ? m.jealousy : '',
         // Bloodlines (src/library/bloodlines.js): a lore entry that is one
         // (its block), a character's own, a place's mix and a faction's
         // members.
@@ -502,6 +506,9 @@ export function emptyChatDoc() {
         // Scenes the story stepped away from and will come back to (a
         // vision, a trial elsewhere), the newest last (src/director/suspended.js).
         suspended: [],
+        // Jealousy: grievances still felt, and vows of love already seen
+        // broken (src/director/jealousy.js).
+        hearts: emptyHearts(),
     };
 }
 
@@ -551,6 +558,7 @@ export function normalizeChatDoc(doc) {
         powersActed: isObject(d.powersActed) ? Object.fromEntries(Object.entries(d.powersActed).filter(([k, v]) => k && Number.isInteger(v))) : {},
         wounds: isObject(d.wounds) ? Object.fromEntries(Object.entries(d.wounds).filter(([k, w]) => k && isObject(w) && typeof w.condition === 'string' && Number.isInteger(w.turn))) : {},
         suspended: normalizeSuspended(d.suspended),
+        hearts: normalizeHearts(d.hearts),
     };
 }
 

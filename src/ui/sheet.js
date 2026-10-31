@@ -6,7 +6,10 @@
 // Engine's Object API and the rest through Scenario Builder's stores.
 
 import { LOG_PREFIX } from '../constants.js';
-import { getChatDoc } from '../store/chat-store.js';
+import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
+import { JEALOUSY_MODES, JEALOUSY_LABELS, jealousyOf, isLive, grievanceLine } from '../director/jealousy.js';
+import { openSituations } from '../world/situations.js';
+import { isWorldOn } from '../world/run.js';
 import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview, getPlaceOverview, playerIdOf, setPlayerId, listEntries, allKnowledge, listKnowledge, saveKnowledge, removeKnowledge, mergeEntries } from '../library/library.js';
 import { knowledgeOf, statusesOf } from '../library/knowledge.js';
 import { pathOf, descendantsOf, inheritedEnvironment } from '../library/hierarchy.js';
@@ -603,6 +606,8 @@ function overviewTab({ type, entry, isNew, defs, doc, all }) {
         isNew ? null : populationCard(type, entry, all),
         isNew ? null : giftsCard(type, entry, all, defs),
         isNew ? null : combatCard(type, entry, all),
+        isNew ? null : heartCard(type, entry, all),
+        isNew ? null : offSceneCard(type, entry),
         isNew ? null : enrichmentCard(entry, defs));
 }
 
@@ -678,6 +683,56 @@ function giftsCard(type, entry, all, defs = []) {
                     h('span', {}, p.name))))
             : h('small', { class: 'sb-hint' }, 'No powers yet - mark a god or spirit as "A power" on its own sheet.'),
         'A power may speak to its champions, send them visions, or bless them in a fight.') : null);
+}
+
+// Jealousy (src/director/jealousy.js): whether this character can be
+// jealous - the chat's default, jealous by nature, or never - and what
+// they are still smarting over in this chat. Not for a power or the player
+// character (only the others react). Saves at once.
+function heartCard(type, entry, all) {
+    if (type.id !== 'character' || isPower(entry)) return null;
+    const { settingId, chatKey } = ws.ctx;
+    if (playerIdOf(settingId, all.character ?? []) === entry.id) return null;
+    const mode = jealousyOf(entry);
+    const on = getSettings().director.jealousy !== false;
+    const doc = chatKey ? getChatDoc(chatKey) : null;
+    const live = (doc?.hearts.grievances ?? []).filter((g) => g.who === entry.id && isLive(g, doc.canonical.day, { prone: mode === 'jealous' }));
+    const save = (value) => { setEntryMeta(settingId, entry.id, { jealousy: value }); rerender({ force: true }); };
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-heart-crack'), ' Heart'),
+        field('Jealousy', select(JEALOUSY_MODES.map((m) => ({ value: m, label: m ? JEALOUSY_LABELS[m] : `${JEALOUSY_LABELS['']} (${on ? 'can be jealous' : 'off'})` })), mode, { onchange: (e) => save(e.target.value) }),
+            'Whether they mind when someone they love, are devoted to or were promised to shows warmth to another, or breaks a vow of love. The chat\'s default is in the extension settings (Game master).'),
+        live.length ? h('div', { class: 'sb-hint' }, icon('fa-droplet'), ' In this chat:') : null,
+        ...live.map((g) => h('div', { class: 'sb-gm-row' }, h('span', {}, grievanceLine(g, { day: doc.canonical.day })),
+            h('div', { class: 'sb-iconbtn', title: 'Let it go - they are over it', onclick: () => { updateChatDoc(chatKey, (d) => { const x = d.hearts.grievances.find((y) => y.id === g.id); if (x) x.soothed = true; }); rerender(); } }, icon('fa-hand-holding-heart')))));
+}
+
+// What the world meanwhile has done to this place, person or faction in
+// this chat (docs/DESIGN - THE WORLD MEANWHILE.md §9): its change, its
+// condition, the schemes it is behind. Read-only; the World card on the GM
+// Plan tab changes them. Hidden schemes stay veiled unless spoilers show.
+function offSceneCard(type, entry) {
+    const { chatKey } = ws.ctx;
+    if (!chatKey || !isWorldOn() || !['character', 'faction', 'location'].includes(type.id)) return null;
+    const world = getChatDoc(chatKey).gm.world;
+    const show = getSettings().planner?.showSpoilers === true;
+    const lines = [];
+    const place = world.overlays.places[entry.id];
+    if (place) lines.push(`Changed (since day ${place.since ?? '?'}): ${place.text}`);
+    const person = world.overlays.people[entry.id];
+    if (person) lines.push([person.where && `Now at ${person.where}`, person.state && `Now: ${person.state}`].filter(Boolean).join('. '));
+    const cond = world.conditions[entry.id];
+    if (cond) lines.push(`${cond.standing[0].toUpperCase()}${cond.standing.slice(1)}${cond.leadership ? ` - ${cond.leadership}` : ''}${cond.mood ? `. Mood: ${cond.mood}` : ''}`);
+    for (const s of world.overlays.stances.filter((x) => x.a === entry.id || x.b === entry.id)) lines.push(`${s.a === entry.id ? s.bName : s.aName}: ${s.stance}`);
+    for (const s of openSituations(world).filter((x) => x.ties.includes(entry.id) || x.where.includes(entry.id))) lines.push(`Caught up in ${s.name} (${s.stage})`);
+    for (const s of world.schemes.filter((x) => x.who.includes(entry.id) && (x.status === 'under way' || x.status === 'stalled'))) {
+        lines.push(s.visibility === 'hidden' && !show ? 'Up to something (hidden)' : `Scheme: ${s.aim} (step ${Math.min(s.done + 1, s.steps.length)} of ${s.steps.length})`);
+    }
+    if (!lines.length) return null;
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-earth-europe'), ' Off scene, in this chat'),
+        ...lines.map((t) => h('div', { class: 'sb-gm-row' }, h('span', {}, t))),
+        h('small', { class: 'sb-hint' }, 'From the world meanwhile - see the World card on the GM Plan tab.'));
 }
 
 // How they fare in a fight (src/director/combat.js): a power rating the

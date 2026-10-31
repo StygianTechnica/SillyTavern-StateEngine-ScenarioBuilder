@@ -335,7 +335,7 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
         });
         const moved = world && plan.world ? world.apply(plan.world) : null;
         if (moved) await takeWorldHooks(chatId, chatKey, settingId, moved.extras);
-        const worldNote = moved && (moved.moved || moved.started) ? `; the world: ${worldWords(moved)}` : '';
+        const worldNote = moved && (moved.moved || moved.started || moved.situations) ? `; the world: ${worldWords(moved)}` : '';
         return `${plan.moments.length} moment${plan.moments.length === 1 ? '' : 's'} planned${worldNote}`;
     });
 }
@@ -343,7 +343,7 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
 // What a pass did to the world, in a few words.
 function worldWords(moved) {
     const n = moved.moved + moved.started;
-    return `${n} scheme${n === 1 ? '' : 's'} moved${moved.started ? ` (${moved.started} new)` : ''}${moved.surfaced ? `, ${moved.surfaced} surfacing` : ''}`;
+    return `${n} scheme${n === 1 ? '' : 's'} moved${moved.started ? ` (${moved.started} new)` : ''}${moved.surfaced ? `, ${moved.surfaced} surfacing` : ''}${moved.changed ? `, ${moved.changed} change${moved.changed === 1 ? '' : 's'}` : ''}${moved.situations ? `, ${moved.situations} situation${moved.situations === 1 ? '' : 's'}` : ''}`;
 }
 
 // The world meanwhile's own pass (Lively and Turbulent - src/world/): the
@@ -370,18 +370,23 @@ export async function runWorld(chatId, chatKey) {
         })));
         const moved = world.apply(answer ?? { schemes: [] });
         await takeWorldHooks(chatId, chatKey, settingId, moved.extras);
-        return moved.moved || moved.started ? worldWords(moved) : 'nobody acted';
+        return moved.moved || moved.started || moved.situations ? worldWords(moved) : 'nobody acted';
     });
 }
 
 // Quest hooks the world surfaced: GM ideas like the ideas pass's own -
 // proposed, or made at once in a setting set to add silently - never a
-// second thing of a known name.
+// second thing of a known name. A faction that split off (phase 3) is
+// always a proposal, whatever the creation mode: a large change to the
+// setting.
 async function takeWorldHooks(chatId, chatKey, settingId, extras) {
     const hooks = (extras ?? []).filter((x) => x.way === 'hook');
-    if (!hooks.length || !settingId || isCanonOnly(settingId)) return;
+    const splits = (extras ?? []).filter((x) => x.way === 'split');
+    if ((!hooks.length && !splits.length) || !settingId || isCanonOnly(settingId)) return;
     try {
         const known = await knownEntries(chatId, settingId);
+        const breakaways = splits.filter((x) => !knownAs(x.name, known)).map((x) => ({ kind: 'faction', name: x.name, text: x.text, why: x.why, ties: x.ties }));
+        if (breakaways.length) updateChatDoc(chatKey, (d) => { addIdeas(d.gm, breakaways); });
         const ideas = hooks.filter((x) => !knownAs(x.name, known)).map((x) => ({ kind: 'quest', name: x.name, text: x.text, why: x.why, ties: x.ties }));
         if (!ideas.length) return;
         if (creationMode(settingId) === 'silent') {
@@ -916,6 +921,15 @@ async function applyIdea(chatId, chatKey, settingId, idea, { silent = false } = 
             return made ? { ok: true, message: `On the calendar in ${idea.inDays ?? 3} days.` } : { ok: false, message: 'Could not put it on the calendar.' };
         }
         if (idea.kind === 'event') return await applyEventIdea(chatId, chatKey, settingId, idea);
+        // A faction broken away from another (the world meanwhile, phase 3).
+        if (idea.kind === 'faction') {
+            if (isCanonOnly(settingId)) return { ok: false, message: 'This setting is fixed canon: no new factions.' };
+            const known = await knownEntries(chatId, settingId);
+            if (knownAs(idea.name, known)) return { ok: false, message: `"${idea.name}" is already in the library.` };
+            const ties = [...new Set(idea.ties.map((t) => knownAs(t, known)?.id).filter(Boolean))];
+            const obj = await createEntry(chatId, settingId, 'faction', { name: idea.name, description: idea.text, ...(ties.length ? { related_entity_ids: ties } : {}) }, { origin: 'director' });
+            return obj ? { ok: true, message: `Faction "${obj.name}" added.` } : { ok: false, message: 'State Engine refused the faction.' };
+        }
         if (idea.kind === 'seed') {
             let ok = false;
             updateChatDoc(chatKey, (d) => { ok = addSeed(d.gm, { text: idea.text, payoff: idea.why }); });

@@ -106,7 +106,7 @@ const DEFAULTS = {
     // list them in Review (no call); auto - write each one's current
     // description at once (one call per change).
     changes: { suggest: true, auto: false },
-    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600, pov: 'free', travelAtNight: false, contextTokens: 8192, fightReplies: 5, powersEvery: 8 },
+    director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600, pov: 'free', travelAtNight: false, contextTokens: 8192, fightReplies: 5, powersEvery: 8, jealousy: true },
     // The clock (src/calendar/clock.js): on = Scenario Builder keeps the
     // time and weather; perTurn = how much time a reply covers when the
     // director does not say.
@@ -124,8 +124,10 @@ const DEFAULTS = {
     // 'quiet' (moved by the planner's DAY pass - no call of its own) |
     // 'lively' | 'turbulent' (a WORLD pass of its own - src/world/model.js
     // LEVEL_LIMITS); surfacing: 'all' | 'talk' (rumours and news only) |
-    // 'log' (side log only).
-    world: { level: 'off', surfacing: 'all' },
+    // 'log' (side log only); places: changes to places off scene - 'on' |
+    // 'ask' (wait on the World card) | 'off'; deaths: off-scene deaths of
+    // named characters - 'ask' | 'allow' | 'never' (src/world/situations.js).
+    world: { level: 'off', surfacing: 'all', places: 'on', deaths: 'ask' },
     // Settings migrations already applied.
     migrated: [],
     // { [settingId]: library document } - src/store/setting-store.js.

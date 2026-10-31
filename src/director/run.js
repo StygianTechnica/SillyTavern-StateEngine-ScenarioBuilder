@@ -14,7 +14,7 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, listUnconfirmed, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf, saveKnowledge, listKnowledge } from '../library/library.js';
+import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, listUnconfirmed, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf, saveKnowledge, listKnowledge, allKnowledge } from '../library/library.js';
 import { bargainItem, sameBargain, fulfilledByReturn } from '../library/knowledge.js';
 import { stillWaiting, steppedAway, suspend, returnTo, restorePatch, waitingIds, withoutWaiting, suspendedText } from './suspended.js';
 import { routesFrom, listRoutes, headingAlong, placesFurtherOn } from '../library/routes.js';
@@ -35,7 +35,9 @@ import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
 import { whoCouldTurnUp } from './whereabouts.js';
 import { arrivals } from '../world/model.js';
-import { isWorldOn, takeHeard } from '../world/run.js';
+import { isWorldOn, takeHeard, worldHereFor, noteHeartRipple } from '../world/run.js';
+import { bondsOf, heartsSection, noteBrokenVows, takeHearts, jealousyOf } from './jealousy.js';
+import { storyRelationships } from '../library/story-relations.js';
 import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from '../library/powers.js';
 import { namedAtAll } from '../validate/drift.js';
 import { circling } from './loops.js';
@@ -395,6 +397,8 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
         history: doc.history, current: doc.canonical, inPlay: doc.inPlay, tiesOf: (id) => relationsFor(id, relations),
         // Those the world meanwhile has brought near (src/world/model.js).
         arrived: isWorldOn() ? arrivals(doc.gm.world, doc.canonical.day) : [],
+        // Where the world has moved people off scene, and how they are now.
+        moved: isWorldOn() ? doc.gm.world.overlays.people : {},
     });
     const placeName = new Map((settingId ? await listEntries(chatId, settingId, 'location').catch(() => []) : []).map((p) => [p.id, p.name]));
     for (const e of elsewhere) e.lastAt = placeName.get(e.lastAt) ?? '';
@@ -423,6 +427,65 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
     const eventObjects = settingId ? (await listEntries(chatId, settingId, 'event').catch(() => [])).slice(-8).map((e) => ({ name: e.name, description: e.base?.description ?? e.description ?? '', when: e.base?.when ?? e.when ?? e.base?.date ?? e.base?.timestamp ?? e.timestamp ?? '' })) : [];
     const scenes = settingId ? (await listEntries(chatId, settingId, 'scene').catch(() => [])).map((x) => ({ name: x.name, description: x.base?.description ?? x.description ?? '' })) : [];
     return { characters, castIds, nearby, elsewhere, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes };
+}
+
+// Who is bound to whom, for the HEARTS section and for taking in the
+// JEALOUS / ROMANCE / SOOTHED lines (src/director/jealousy.js): the
+// relationships the user wrote, the story's (Archivist) for those here
+// both ways - so someone away who loves one of them is found too - and
+// vows of love. A vow of love newly broken is noted as a grievance. null
+// when jealousy is off for everyone. Never throws.
+async function heartsContext(chatKey, settingId, characters, castIds, { ahead = false } = {}) {
+    const globalOn = getSettings().director.jealousy !== false;
+    const people = characters.filter((c) => !isPower(c));
+    if (!settingId || (!globalOn && !people.some((c) => jealousyOf(c) === 'jealous'))) return null;
+    try {
+        const byId = new Map(people.map((c) => [c.id, c]));
+        const nameOf = (id) => byId.get(id)?.name ?? '';
+        const modeOf = (id) => jealousyOf(byId.get(id));
+        const playerId = playerIdOf(settingId, characters);
+        const story = [];
+        for (const id of castIds.filter((x) => byId.has(x))) {
+            for (const r of await storyRelationships({ id, name: nameOf(id) })) {
+                if (!r.otherId) continue;
+                story.push(r.direction === 'out' ? { fromId: id, toId: r.otherId, type: r.type, polarity: r.polarity, text: r.text } : { fromId: r.otherId, toId: id, type: r.type, polarity: r.polarity, text: r.text });
+            }
+        }
+        const oaths = (await allKnowledge(settingId, nameOf).catch(() => [])).filter((k) => k.kind === 'oath');
+        const bonds = bondsOf({ authored: listRelations(settingId), story, oaths, nameOf });
+        if (!ahead) updateChatDoc(chatKey, (d) => noteBrokenVows(d.hearts, oaths, { day: d.canonical.day, turn: d.turn, playerId, newId: () => newLocalId('g') }));
+        const doc = getChatDoc(chatKey);
+        const present = castIds.filter((id) => byId.has(id)).map((id) => ({ id, name: nameOf(id), player: id === playerId }));
+        const { text, report } = heartsSection({ present, bonds, grievances: doc.hearts.grievances, modeOf, globalOn, day: doc.canonical.day, userName: nameOf(playerId) || SillyTavern.getContext().name1, nameOf });
+        const resolve = (name) => {
+            const key = String(name ?? '').trim().toLowerCase();
+            if (!key) return null;
+            const hit = people.find((c) => [c.name, ...(c.aliases ?? c.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === key))
+                ?? people.find((c) => castIds.includes(c.id) && String(c.name).toLowerCase().split(/\s+/).includes(key));
+            return hit?.id ?? (key === String(SillyTavern.getContext().name1 ?? '').trim().toLowerCase() ? playerId || null : null);
+        };
+        return { text, report, bonds, modeOf, globalOn, nameOf, playerId, resolve };
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'no HEARTS for the director', err);
+        return null;
+    }
+}
+
+// The director's JEALOUS / ROMANCE / SOOTHED lines: grievances kept in the
+// chat; word that may reach someone away is also something for the world
+// meanwhile to carry (a ripple), when it is on.
+function takeHeartLines(chatKey, parsed, hearts) {
+    if (!hearts || !(parsed.jealous?.length || parsed.romance?.length || parsed.soothed?.length)) return;
+    try {
+        let out = null;
+        updateChatDoc(chatKey, (d) => {
+            out = takeHearts(d.hearts, parsed, { ...hearts, present: d.canonical.castIds, day: d.canonical.day, turn: d.turn, newId: () => newLocalId('g') });
+        });
+        for (const g of out?.added ?? []) console.info(LOG_PREFIX, `${g.whoName} is ${g.kind === 'word' ? 'away, and may hear of it' : 'jealous'}: ${g.what}`);
+        for (const w of out?.word ?? []) noteHeartRipple(chatKey, { text: `${w.what} - and ${hearts.nameOf(w.who)} would mind, if word reached them.`, ties: [w.who, w.over, w.rival] });
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not take in the jealousy lines', err);
+    }
 }
 
 // ahead: write ahead (after an AI reply) - only the model's answer is kept
@@ -494,6 +557,10 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     if (settingId && settings.director.allowCreate && !canonOnly && settings.naming.live !== false) {
         try { live = livePoolFor(settingId, byType(everything), { placeId: guidance.location?.id ?? null }); } catch (err) { console.warn(LOG_PREFIX, 'could not roll names for the director', err); }
     }
+    // Jealousy (src/director/jealousy.js) and the world as it stands here
+    // (src/world/situations.js).
+    const hearts = await heartsContext(chatKey, settingId, characters, castIds, { ahead });
+    const worldHere = settingId ? await worldHereFor(chatId, chatKey, settingId, { userText: callerText }) : '';
     // Trimmed to fit the director model's context (src/director/fit.js).
     const fitted = fitDirectorPrompt({
         ...guidance,
@@ -514,7 +581,9 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         relevant,
         timeKeeping: settings.time.enabled && !!settingId,
         askNow: settings.time.enabled && !!settingId && doc.clock.needsNow,
-        gmPlan: settingId ? directorPlan(chatKey, messages) : '',
+        gmPlan: settingId ? [worldHere, directorPlan(chatKey, messages)].filter(Boolean).join('\n\n') : '',
+        heartsText: hearts?.text ?? '',
+        heartsReport: hearts?.report ?? null,
         unknowns: await unknownsHere(guidance.cast ?? [], messages.slice(-6).map((m) => m.text).join('\n'), characters, { chatKey, messages: messages.slice(-4) }),
         pov: settings.director.pov ?? 'free',
         ahead,
@@ -976,6 +1045,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     if (isNewTurn(type) && settingId) {
         takeBeats(chatKey, parsed.beats);
         takeHeard(chatKey, parsed.heard);
+        takeHeartLines(chatKey, parsed, hearts);
         if (made.length || movedFrom || moves.in.length || moves.out.length) markActive(chatKey);
     }
 

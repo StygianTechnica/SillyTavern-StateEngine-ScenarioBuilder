@@ -19,6 +19,7 @@ import { lookLines } from '../library/world-options.js';
 import { shortTitle } from '../validate/drift.js';
 import { unknownsLines, povBrief } from './perspective.js';
 import { keptNameLines } from '../library/alias-kinds.js';
+import { heartsFormat } from './jealousy.js';
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
@@ -383,6 +384,8 @@ export function dossierText(input) {
         section('SECRETS AND OATHS (people act only on what they know)');
         for (const r of input.secrets.slice(0, 8)) lines.push(`- ${r}`);
     }
+    // Who is bound to whom, and who is still smarting (src/director/jealousy.js).
+    if (clean(input.heartsText)) { section(String(input.heartsText).trim().split('\n')[0]); lines.push(...String(input.heartsText).trim().split('\n').slice(1)); }
     const unknown = unknownsLines(input.unknowns);
     if (unknown.length) { section(unknown[0]); lines.push(...unknown.slice(1)); }
     if (input.absent?.length) {
@@ -543,6 +546,10 @@ export function buildDirectorPrompt(input) {
             'HEARD | <its id> | <how they learned it, a few words>',
         );
     }
+    // Jealousy (src/director/jealousy.js): what was seen, word that may
+    // reach someone away, a hurt made up for.
+    const hearts = clean(input.heartsText) ? heartsFormat(input.heartsReport, userName) : [];
+    if (hearts.length) parts.push('', ...hearts);
     if (creating) {
         parts.push(
             '',
@@ -581,6 +588,7 @@ export function buildDirectorPrompt(input) {
         'THEN WRITE THE BRIEFING',
         `After the format lines, in a few paragraphs of natural prose (no headings, lists or tables), tell the narrator where things stand ${input.ahead ? `as ${userName}'s turn comes` : `now that ${userName} has spoken`}${alone ? `. ${people}` : `, and ${people}`}${creatureTask ? ` ${creatureTask}` : ''} Let the place come through in a few concrete details of what can be seen, heard or smelled, and anything here that matters now. Draw on everything above that bears on this moment - factions, lore, events, threads and the other entries - but fold each into the narrative in a few words where it matters; never list them, and leave out what does not touch this moment. Vary how you open; do not start with a stock phrase.`,
         'If someone not here (OTHERS WHO COULD TURN UP) has a plan that will matter soon, say in a sentence what they are doing about it off-screen.',
+        ...(hearts.length ? [`Where HEARTS bears on this moment - someone sees the one they love favour another, or is still smarting - put it in the briefing: who notices, how it shows in them (by who they are, not a speech), and what it does to how they treat both people now. Never what ${userName} feels about it.`] : []),
         ...(unknownsLines(input.unknowns).length ? ['Where someone here does not know something that bears on this moment (WHAT EACH PERSON DOES NOT KNOW), say so plainly in the briefing, with what they did see instead (e.g. "Varyn did not see the vision - he only saw Remus sleep restlessly"), so the narrator never has them speak of it.'] : []),
         `End with a paragraph that begins "Next:" saying where this reply should probably go - one or two natural developments driven by what the other characters want${activeCreatures.length ? ' and what the creatures here do' : ''}, as direction rather than a script, leaning toward an open thread when it fits. In a fight, "Next:" names what the opponents do and how each exchange between the others ends (the arrow takes it in the shoulder; the blow to its knee drops it to one knee) - never "will likely" or "may try".`,
         'This is a briefing, not the story: never write the reply itself - no lines of dialogue in quotes, no narrating it as it happens. Say what people want and are likely to do - and in a fight, what they do and how it turns out - and let the narrator write it.',
@@ -716,7 +724,7 @@ export function isPlaceholder(value) {
 }
 
 // A format line, whether or not it could be read - never left in the prose.
-const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|AWAY|BACK|NEW|RENAME|BEAT|HEARD)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|AWAY|BACK|NEW|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
@@ -738,6 +746,9 @@ export function parseDirectorNote(raw) {
     const leaves = [];
     const beats = [];
     const heard = [];
+    const jealous = [];
+    const romance = [];
+    const soothed = [];
     const fights = [];
     const deaths = [];
     const risings = [];
@@ -790,6 +801,18 @@ export function parseDirectorNote(raw) {
         if (fg) {
             const name = clean(fg[1]).replace(/^["'*]+|["'*.]+$/g, '');
             if (name && !isPlaceholder(name) && !isPlaceholder(fg[2]) && !/^(none|no one|nobody|-)$/i.test(name) && fights.length < 8) fights.push({ name, condition: clean(fg[2]), side: clean(fg[3]) });
+            continue;
+        }
+        // JEALOUS | <who> | <the one they love> | <the rival> | <what they saw> | <how hard>
+        // ROMANCE | <one> | <the other> | <what> / SOOTHED | <who> | <how>
+        // (src/director/jealousy.js)
+        const jl = line.match(/^\s*(?:[-*]\s*)?\**(JEALOUS|ROMANCE|SOOTHED)\**\s*:?\s*\|(.*)$/i);
+        if (jl) {
+            const cells = jl[2].split('|').map((x) => clean(x).replace(/^["'*]+|["'*.]+$/g, '')).map((x) => (isPlaceholder(x) || /^(?:none|no one|nobody|-)$/i.test(x) ? '' : x));
+            const kind = jl[1].toUpperCase();
+            if (kind === 'JEALOUS' && cells[0] && cells[1] && jealous.length < 4) jealous.push({ who: cells[0], over: cells[1], rival: cells[2] ?? '', what: cells[3] ?? '', how: cells[4] ?? '' });
+            else if (kind === 'ROMANCE' && cells[0] && cells[1] && romance.length < 3) romance.push({ one: cells[0], other: cells[1], what: cells[2] ?? '' });
+            else if (kind === 'SOOTHED' && cells[0] && soothed.length < 3) soothed.push({ who: cells[0], how: cells[1] ?? '' });
             continue;
         }
         // HEARD | <scheme id> | <how> (src/world/model.js hearScheme)
@@ -886,7 +909,7 @@ export function parseDirectorNote(raw) {
     // A briefing cut off or told as story lost its "Next:" end; any other
     // paragraph is not direction.
     const parts = tidy.flaws.length && !MARKER.test(text) ? { summary: text, direction: '' } : splitNote(text);
-    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, fights, deaths, risings, powers, bargains, away, back };
+    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, jealous, romance, soothed, fights, deaths, risings, powers, bargains, away, back };
 }
 
 // The first library entry `text` names that nothing the scene stands on

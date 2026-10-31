@@ -902,7 +902,8 @@ export function hasStory(gm) {
 
 // event: a structured event the story points to (a tournament at midsummer, a
 // dungeon to delve) - set up when taken up and put on the calendar (src/events/).
-export const IDEA_KINDS = Object.freeze(['quest', 'enrich', 'happening', 'seed', 'event']);
+// faction: a breakaway from a faction that split off scene (src/world/).
+export const IDEA_KINDS = Object.freeze(['quest', 'enrich', 'happening', 'seed', 'event', 'faction']);
 const IDEA_LIMIT = 30;
 const DISMISSED_LIMIT = 120;
 const AGENDA_LIMIT = 40;
