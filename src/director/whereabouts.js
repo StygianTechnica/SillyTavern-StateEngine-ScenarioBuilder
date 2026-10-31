@@ -31,6 +31,29 @@ export function lastSeen(history = [], current = null) {
     return seen;
 }
 
+// Who has shared a scene with whom: replays the history as lastSeen does.
+// -> Map id -> Set of ids they were in the scene with.
+export function sharedScenes(history = [], current = null) {
+    const met = new Map();
+    const meet = (cast) => {
+        for (const a of cast ?? []) for (const b of cast ?? []) {
+            if (a === b) continue;
+            if (!met.has(a)) met.set(a, new Set());
+            met.get(a).add(b);
+        }
+    };
+    let cast = null;
+    for (const h of history ?? []) {
+        if (!h || h.undone) continue;
+        if (cast === null && Array.isArray(h.before?.castIds)) cast = h.before.castIds;
+        meet(cast);
+        if (Array.isArray(h.after?.castIds)) cast = h.after.castIds;
+        meet(cast);
+    }
+    if (current) meet(current.castIds);
+    return met;
+}
+
 const chainOf = (parents, id) => {
     const out = [];
     for (let p = id, guard = 0; p && guard < 30; p = parents[p], guard += 1) out.push(p);

@@ -1,5 +1,5 @@
 import { spokenOf } from '../src/guidance/spoken.js';
-import { buildGuidance, guidanceParts } from '../src/guidance/build.js';
+import { buildGuidance, guidanceParts, buildCast } from '../src/guidance/build.js';
 
 const riven = { id: 'chr_riven', name: 'Riven', aliases: ['The Ghost'], base: { role: 'A skilled hacker and information broker, operating in the shadowy underbelly of Arcadia City.' } };
 const galice = { id: 'chr_galice', name: 'Galice Buckar', base: { role: 'Lead Cyberdeck Developer' } };
@@ -46,5 +46,15 @@ describe('people spoken of but not here', () => {
         expect(text).toMatch(/never made an attacker, enemy or ally of a side/);
         expect(buildGuidance({ spoken: [] }).sections.find((s) => s.key === 'spoken').mode).toBe('empty');
         expect(buildGuidance({ spoken, sections: { spoken: false } }).text).not.toContain('Riven');
+    });
+});
+
+describe('people here who stand against each other', () => {
+    it('are told their stance holds, with the story\'s reason', () => {
+        const cast = [{ name: 'Cyril', player: true }, { name: 'Riven', relations: ['toward Cyril: rival/antagonist, antagonistic, stable - Riven accuses Cyril of complicity with Omicron Innovations due to his family\'s legacy'] }];
+        const text = buildCast({ cast });
+        expect(text).toContain('Toward Cyril: rival/antagonist, antagonistic, stable - Riven accuses Cyril of complicity with Omicron Innovations due to his family\'s legacy.');
+        expect(text).toContain('never greets the other as a stranger');
+        expect(buildCast({ cast: [{ name: 'Cyril', player: true }, { name: 'Vex' }] })).not.toContain('never greets the other as a stranger');
     });
 });

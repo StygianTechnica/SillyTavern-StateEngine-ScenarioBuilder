@@ -1,4 +1,4 @@
-import { lastSeen, placesNear, whoCouldTurnUp, belongingHere } from '../src/director/whereabouts.js';
+import { lastSeen, placesNear, whoCouldTurnUp, belongingHere, sharedScenes } from '../src/director/whereabouts.js';
 import { dossierText } from '../src/director/prompt.js';
 
 // Alvarand (the land) > Redhaven > Great Hall; Alvarand > Belatorre > Graveyard > Crypt
@@ -108,5 +108,25 @@ describe('those who belong where the scene is', () => {
         const away = whoCouldTurnUp({ characters: people, castIds: ['vex'], locationId: 'common', parents: farOff, history: left, current: { locationId: 'common', castIds: ['vex'] }, belongs });
         expect(away.near).toEqual([]);
         expect(away.elsewhere.map((c) => c.id)).toEqual(['adam']);
+    });
+});
+
+describe('someone who turns up again', () => {
+    it('knows whom they have shared a scene with', () => {
+        const met = sharedScenes(history, current);
+        expect([...met.get('graxx')].sort()).toEqual(['remus', 'varyn']);
+        expect([...met.get('arin')].sort()).toEqual(['remus', 'varyn']);
+        expect(met.has('maren')).toBe(false);
+        expect(sharedScenes([{ undone: true, before: { castIds: ['maren', 'remus'] } }]).size).toBe(0);
+    });
+
+    it('comes with whom they have met and how they stand toward them, and picks up from there', () => {
+        const text = dossierText({
+            cast: [{ name: 'Cyril', player: true }],
+            nearby: [{ name: 'Riven', why: 'seen earlier in this story', met: ['Cyril'], standing: ['Riven → Cyril: rival/antagonist, antagonistic (-2), high intensity, stable - Riven accuses Cyril of complicity with Omicron Innovations'] }],
+        });
+        expect(text).toContain('- Riven - seen earlier in this story; has met Cyril; Riven → Cyril: rival/antagonist, antagonistic (-2)');
+        expect(text).toContain('never introduce themselves again');
+        expect(dossierText({ nearby: [{ name: 'Arin', why: 'seen earlier in this story' }] })).not.toContain('never introduce themselves again');
     });
 });

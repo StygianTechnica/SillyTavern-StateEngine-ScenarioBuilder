@@ -396,7 +396,8 @@ export function dossierText(input) {
     const others = (input.nearby ?? []).filter((c) => clean(c?.name) && !absentSet.has(clean(c.name).toLowerCase()));
     if (others.length) {
         section('OTHERS WHO COULD TURN UP (not here now)');
-        for (const c of others.slice(0, 12)) lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${sidesText(c)}${clean(c.why) ? ` - ${clean(c.why)}` : ''}`);
+        for (const c of others.slice(0, 12)) lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${sidesText(c)}${clean(c.why) ? ` - ${clean(c.why)}` : ''}${historyText(c)}`);
+        if (others.slice(0, 12).some((c) => c.met?.length || c.standing?.length)) lines.push('Someone who turns up has met those they have met: they pick up where they left off - never introduce themselves again - and keep the stance they had toward them, unless the story has changed it.');
     }
     // Far away, or not seen in a long while (src/director/whereabouts.js).
     const away = (input.elsewhere ?? []).filter((c) => clean(c?.name) && !absentSet.has(clean(c.name).toLowerCase()));
@@ -410,6 +411,14 @@ export function dossierText(input) {
 // The factions someone out of the scene belongs to (src/director/run.js):
 // they stay on that side while away.
 const sidesText = (c) => ((c.sides ?? []).map(clean).filter(Boolean).length ? `, of ${c.sides.map(clean).filter(Boolean).join(' and ')}` : '');
+
+// Whom someone who could turn up has met among those here, and how the
+// story has them stand toward them (src/director/run.js sceneContext).
+const historyText = (c) => {
+    const met = (c.met ?? []).map(clean).filter(Boolean);
+    const standing = (c.standing ?? []).map((s) => cut(s, 200)).filter(Boolean);
+    return `${met.length ? `; has met ${met.join(', ')}` : ''}${standing.length ? `; ${standing.join('; ')}` : ''}`;
+};
 
 // input: the guidance input plus { messages: [{ name, text, isUser }],
 //   userName, previousNote, memories, limits, allowCreate, canonOnly }

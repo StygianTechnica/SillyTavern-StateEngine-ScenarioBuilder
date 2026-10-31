@@ -33,11 +33,11 @@ import { nextFight, fightFacts, woundsOf } from './fight.js';
 import { combatOptions, stanceFor, protectionOf, powerRatingOf, mayDie, protectedText } from './combat.js';
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
-import { whoCouldTurnUp, belongingHere } from './whereabouts.js';
+import { whoCouldTurnUp, belongingHere, sharedScenes } from './whereabouts.js';
 import { arrivals } from '../world/model.js';
 import { isWorldOn, takeHeard, worldHereFor, noteHeartRipple } from '../world/run.js';
 import { bondsOf, heartsSection, noteBrokenVows, takeHearts, jealousyOf } from './jealousy.js';
-import { storyRelationships } from '../library/story-relations.js';
+import { hasArchivist, storyRelationships, relationshipLine } from '../library/story-relations.js';
 import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from '../library/powers.js';
 import { namedAtAll } from '../validate/drift.js';
 import { circling } from './loops.js';
@@ -433,6 +433,18 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
         const memberships = libraryMemberships(factionList, getSettingDoc(settingId).relations);
         const factionName = new Map(factionList.map((f) => [f.id, f.name]));
         for (const c of [...nearby, ...elsewhere]) c.sides = (memberships.get(c.id) ?? []).map((id) => factionName.get(id)).filter(Boolean);
+    }
+    // Someone who turns up picks up where they left off with those here:
+    // whom they have met, and how the story has them stand toward them.
+    // Without it Riven, who had confronted Cyril over his family, came back
+    // to introduce himself as a cheerful stranger.
+    const met = sharedScenes(doc.history, doc.canonical);
+    const nameHere = new Map(characters.filter((c) => castIds.includes(c.id)).map((c) => [c.id, c.name]));
+    for (const c of nearby.slice(0, 12)) {
+        c.met = [...(met.get(c.id) ?? [])].map((id) => nameHere.get(id)).filter(Boolean);
+        c.standing = hasArchivist() ? (await storyRelationships({ id: c.id, name: c.name }))
+            .filter((r) => r.direction === 'out' && nameHere.has(r.otherId))
+            .map((r) => relationshipLine(c.name, r)) : [];
     }
     const eventObjects = settingId ? (await listEntries(chatId, settingId, 'event').catch(() => [])).slice(-8).map((e) => ({ name: e.name, description: e.base?.description ?? e.description ?? '', when: e.base?.when ?? e.when ?? e.base?.date ?? e.base?.timestamp ?? e.timestamp ?? '' })) : [];
     const scenes = settingId ? (await listEntries(chatId, settingId, 'scene').catch(() => [])).map((x) => ({ name: x.name, description: x.base?.description ?? x.description ?? '' })) : [];

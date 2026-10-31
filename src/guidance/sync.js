@@ -287,7 +287,8 @@ export async function gatherInputs(chatId, chatKey) {
             if (hasArchivist()) {
                 const rels = (await storyRelationships({ id: member.id, name: member.name }))
                     .filter((r) => r.direction === 'out' && present.has(r.otherId) && !pairCovered(member.id, r.otherId, authored));
-                lines.push(...rels.map((r) => `toward ${r.otherName}: ${[r.type, r.polarityLabel, r.trend].filter(Boolean).join(', ')}`));
+                // With the story's reason: "antagonistic" alone was played as banter.
+                lines.push(...rels.map((r) => `toward ${r.otherName}: ${[r.type, r.polarityLabel, r.trend].filter(Boolean).join(', ')}${r.text ? ` - ${r.text}` : ''}`));
             }
             member.relations = lines.sort();
             if (lines.length) member.why = 'canonically present; relationships';

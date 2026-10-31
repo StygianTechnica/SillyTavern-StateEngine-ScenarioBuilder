@@ -335,7 +335,7 @@ function castLine(c) {
     const now = [clean(c.mood) ? lower(unstop(c.mood)) : '', clean(c.intent) ? `means to ${unstop(firstLower(truncate(c.intent, 100))).replace(/^to /i, '')}` : ''].filter(Boolean);
     if (now.length) bits.push(`Now: ${now.join(', ')}`);
     if (clean(c.condition)) bits.push(unstop(truncate(c.condition, 80)));
-    for (const r of c.relations ?? []) bits.push(firstUpper(unstop(truncate(r, 90))));
+    for (const r of c.relations ?? []) bits.push(firstUpper(unstop(truncate(r, 200))));
     // What they know that others may not, and what binds them.
     for (const k of c.knows ?? []) bits.push(`Knows: ${unstop(truncate(k, 160))}`);
     // What they hold true that is not (src/library/knowledge.js, beliefs).
@@ -356,6 +356,7 @@ export function buildCast(input) {
     if (kinds.length) lines.push(`Bloodlines present - ${kinds.map((k) => truncate(k, 260)).join(' ')}`);
     const absent = (input.absent ?? []).map(clean).filter(Boolean);
     if (absent.length) lines.push(`Not here: ${andList(absent)}. ${absent.length === 1 ? 'They are' : 'They are'} elsewhere now; do not write ${absent.length === 1 ? 'them' : 'them'} into this reply.`);
+    if (others.some((c) => c.relations?.length)) lines.push(STANCES_HOLD);
     if (others.length) lines.push(`Write ${others.length === 1 ? clean(others[0].name) : 'each of them'} true to what they want and how they feel. ${others.length === 1 ? 'They pursue their' : 'Each pursues their'} own aims: in this reply ${others.length === 1 ? 'they take' : 'at least one of them takes'} the initiative - starting something, pressing a plan, acting on someone - instead of only reacting.${player ? ` Never write ${clean(player.name)}'s words, actions, thoughts or feelings.` : ''}`);
     else if (player) lines.push(aloneText(input));
     return `${REFERENCE_HEADER}\n${lines.join('\n')}`;
@@ -381,16 +382,19 @@ function castParagraph(c) {
     if (now.length) bits.push(`Right now ${name} ${now.join(' and ')}.`);
     if (clean(c.thought)) bits.push(`On ${name}'s mind: ${sentence(firstLower(truncate(c.thought, 140)))}`);
     if (clean(c.condition)) bits.push(`Condition: ${sentence(truncate(c.condition, 120))}`);
-    if (c.relations?.length) bits.push(c.relations.map((r) => sentence(firstUpper(truncate(r, 120)))).join(' '));
+    if (c.relations?.length) bits.push(c.relations.map((r) => sentence(firstUpper(truncate(r, 200)))).join(' '));
     return bits.join(' ');
 }
+
+// How people stand toward each other carries over from their last meeting.
+const STANCES_HOLD = 'How they stand toward each other holds from where the story left it: someone wary or hostile stays so - cold, guarded, needling - and never greets the other as a stranger or a new friend, unless something in the story changes it.';
 
 function castSection(cast) {
     const list = (cast ?? []).filter((c) => clean(c?.name));
     if (!list.length) return null;
     const names = list.map((c) => `${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}`);
     return {
-        full: [...list.map(castParagraph), 'Play each of them true to what they want and how they feel: they act on their own intentions, not only in answer to others.'].join('\n'),
+        full: [...list.map(castParagraph), 'Play each of them true to what they want and how they feel: they act on their own intentions, not only in answer to others.', ...(list.some((c) => !c.player && c.relations?.length) ? [STANCES_HOLD] : [])].join('\n'),
         compact: `Present: ${andList(names)}.`,
     };
 }
