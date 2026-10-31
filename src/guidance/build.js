@@ -37,6 +37,7 @@ export const SECTIONS = Object.freeze([
     { key: 'location', title: 'Scene', priority: 5, keep: true },
     { key: 'scene', title: 'Scene premise', priority: 3, keep: false },
     { key: 'lore', title: 'Lore', priority: 2, keep: false },
+    { key: 'spoken', title: 'Spoken of, not here', priority: 6, keep: false },
     { key: 'corrections', title: 'Corrections', priority: 6, keep: true },
     { key: 'dead', title: 'The dead', priority: 7, keep: true },
     { key: 'protected', title: 'Never killed', priority: 7, keep: true },
@@ -277,6 +278,26 @@ function loreSection(lore) {
     };
 }
 
+// People the chat speaks of who are not here (src/guidance/spoken.js):
+// their side and role, so what is said of them fits who they are.
+function spokenSection(spoken) {
+    const list = (spoken ?? []).filter((p) => clean(p?.name));
+    if (!list.length) return null;
+    const line = (p) => {
+        const bits = [
+            p.sides?.length ? `of ${andList(p.sides)}` : '',
+            clean(p.role) ? unstop(truncate(p.role, 110)).replace(/^(A|An|The)(?=\s)/, (w) => w.toLowerCase()).replace(/^[A-Z](?=[a-z])/, (w) => w.toLowerCase()) : '',
+        ].filter(Boolean).join(', ');
+        const stances = (p.stances ?? []).length ? `; ${andList(p.stances)}` : '';
+        return `${clean(p.name)} - ${bits || 'known in this setting'}${stances}.`;
+    };
+    const rule = 'Someone away keeps who they are and whose side they are on: what is said of them fits that, and they are never made an attacker, enemy or ally of a side the story has not shown them turn to.';
+    return {
+        full: ['Spoken of, but not here:', ...list.map(line), rule].join(' '),
+        compact: `Spoken of, but not here: ${list.map((p) => (p.sides?.length ? `${clean(p.name)} (of ${andList(p.sides)})` : clean(p.name))).join('; ')}. They keep their side while away.`,
+    };
+}
+
 function sceneSection(scene) {
     const title = clean(scene?.title);
     const premise = clean(scene?.premise);
@@ -446,6 +467,7 @@ const BUILDERS = {
     scene: (input) => sceneSection(input.scene),
     quests: (input) => questsSection(input.quests),
     lore: (input) => loreSection(input.lore),
+    spoken: (input) => spokenSection(input.spoken),
     corrections: (input) => correctionsSection(input.corrections),
     // What people can know - always: no one knows another's dreams, visions
     // or unspoken thoughts (Varyn knowing the vision Remus had asleep) - then
@@ -505,6 +527,7 @@ export function buildGuidance(input) {
         corrections: 'Adjustments made by validation, kept for a few replies.',
         secrets: 'Secrets and oaths touching those present - yours (on the sheets) and the story\'s (Archivist).',
         quests: (input.quests ?? []).map((q) => `${q.name}: ${q.why ?? 'active'}`).join('; ') || 'Active quests.',
+        spoken: 'Library characters the last few messages name who are not in the scene: their factions, role and stance toward factions - so the story does not recast them while they are away.',
         lore: (input.lore ?? []).filter((l) => l.why).map((l) => `${l.name}: ${l.why}`).join('; ') || 'Lore named in the last few messages, tied to someone they name, or tied to this place or the people present.',
     };
     return {
@@ -526,7 +549,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_setting', 'THE SETTING', ['overview']],
     ['guidance_rules', 'WORLD RULES', ['limits']],
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
-    ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'secrets', 'corrections', 'dead', 'protected']],
+    ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'spoken', 'secrets', 'corrections', 'dead', 'protected']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
     ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'loop', 'triggered', 'fight', 'powers', 'event', 'intimacy', 'absent', 'alone', 'names']],
 ]);

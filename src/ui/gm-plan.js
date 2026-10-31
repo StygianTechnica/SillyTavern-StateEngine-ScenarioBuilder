@@ -172,7 +172,7 @@ function shapePicker(current, onPick) {
 function beatRow(gm, beat, { veiled, chatId, chatKey, busy }) {
     if (veiled) {
         return h('div', { class: 'sb-gm-row sb-gm-veiled' }, icon('fa-mask'), h('span', { class: 'sb-muted' }, 'A beat to come'),
-            h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); peek(chatKey, beat.id); } }, 'peek'));
+            h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); peek(chatKey, beat.id); done(); } }, 'peek'));
     }
     const head = icon(BEAT_ICON[beat.status] ?? 'fa-circle');
     if (isEditing(`beat:${beat.id}`)) {
@@ -196,15 +196,15 @@ function beatRow(gm, beat, { veiled, chatId, chatKey, busy }) {
         h('div', { class: 'sb-chips' },
             beat.by === 'user' ? h('span', { class: 'sb-chip', title: 'Your beat' }, icon('fa-user-pen')) : null,
             ...beat.ties.slice(0, 3).map((t) => h('span', { class: 'sb-chip' }, t)),
-            open ? h('div', { class: 'sb-iconbtn', title: beat.locked ? 'Locked: the planner keeps it as written. Click to unlock.' : 'Lock it: the planner keeps it as written', onclick: () => lockOutlineBeat(chatKey, beat.id, !beat.locked) }, icon(beat.locked ? 'fa-lock' : 'fa-lock-open')) : null,
+            open ? h('div', { class: 'sb-iconbtn', title: beat.locked ? 'Locked: the planner keeps it as written. Click to unlock.' : 'Lock it: the planner keeps it as written', onclick: () => { lockOutlineBeat(chatKey, beat.id, !beat.locked); done(); } }, icon(beat.locked ? 'fa-lock' : 'fa-lock-open')) : null,
             open ? h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: () => startEdit(`beat:${beat.id}`, beat.text) }, icon('fa-pen')) : null,
             open ? h('div', { class: 'sb-iconbtn', title: 'Regenerate this beat', onclick: busy ? null : () => startEdit(`regen:${beat.id}`, ''), 'aria-disabled': off }, icon('fa-dice')) : null,
             // A skipped beat (the planner judged it could no longer happen):
             // bring it back, or remove it.
-            beat.status === 'skipped' ? h('div', { class: 'sb-iconbtn', title: 'Skipped by the planner - bring it back as a beat still to come', onclick: () => restoreOutlineBeat(chatKey, beat.id), 'aria-disabled': off }, icon('fa-rotate-left')) : null,
-            beat.status === 'skipped' ? h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction('Remove this skipped beat from the outline?')) removeOutlineBeat(chatKey, beat.id); } }, icon('fa-trash')) : null,
-            beat.status === 'active' ? h('div', { class: 'sb-iconbtn', title: 'The story has played this out', onclick: () => finishOutlineBeat(chatKey, beat.id), 'aria-disabled': off }, icon('fa-check')) : null,
-            open ? h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction('Remove this beat from the outline?')) removeOutlineBeat(chatKey, beat.id); } }, icon('fa-trash')) : null));
+            beat.status === 'skipped' ? h('div', { class: 'sb-iconbtn', title: 'Skipped by the planner - bring it back as a beat still to come', onclick: () => { restoreOutlineBeat(chatKey, beat.id); done(); }, 'aria-disabled': off }, icon('fa-rotate-left')) : null,
+            beat.status === 'skipped' ? h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction('Remove this skipped beat from the outline?')) { removeOutlineBeat(chatKey, beat.id); done(); } } }, icon('fa-trash')) : null,
+            beat.status === 'active' ? h('div', { class: 'sb-iconbtn', title: 'The story has played this out', onclick: () => { finishOutlineBeat(chatKey, beat.id); done(); }, 'aria-disabled': off }, icon('fa-check')) : null,
+            open ? h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction('Remove this beat from the outline?')) { removeOutlineBeat(chatKey, beat.id); done(); } } }, icon('fa-trash')) : null));
 }
 
 // Regenerate the whole outline: keep the beats the user locked or wrote, or
@@ -545,7 +545,7 @@ function queueCard(gm) {
             h('div', { class: 'sb-chips' },
                 h('span', { class: 'sb-chip' }, URGENCIES.find(([u]) => u === r.urgency)?.[1] ?? r.urgency),
                 h('span', { class: `sb-chip sb-gm-${r.status}` }, STATUS_TEXT[r.status]),
-                openRequests({ queue: [r] }).length ? h('div', { class: 'sb-iconbtn', title: 'Withdraw', onclick: () => withdrawRequest(chatKey, r.id) }, icon('fa-xmark')) : null))),
+                openRequests({ queue: [r] }).length ? h('div', { class: 'sb-iconbtn', title: 'Withdraw', onclick: () => { withdrawRequest(chatKey, r.id); done(); } }, icon('fa-xmark')) : null))),
         !list.length ? h('p', { class: 'sb-muted' }, 'Nothing queued.') : null);
 }
 
@@ -572,7 +572,7 @@ function inspirationCard(gm) {
                 h('div', { class: 'sb-actions' },
                     h('div', { class: 'sb-iconbtn', title: 'Edit the motifs', onclick: () => startEdit(`motifs:${x.id}`, x.motifs.join('\n')) }, icon('fa-pen')),
                     h('div', { class: 'sb-iconbtn', title: 'Read it again for motifs', onclick: () => void running('Reading', () => runInspire(chatKey, x.id)) }, icon('fa-rotate')),
-                    h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction(`Remove "${x.title || 'this inspiration'}"?`)) removeInspiration(chatKey, x.id); } }, icon('fa-trash')))),
+                    h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction(`Remove "${x.title || 'this inspiration'}"?`)) { removeInspiration(chatKey, x.id); done(); } } }, icon('fa-trash')))),
             isEditing(`motifs:${x.id}`) ? inlineEditor(`motifs:${x.id}`, { onSave: (text) => setMotifs(chatKey, x.id, text.split('\n').map((m) => m.trim()).filter(Boolean)), placeholder: 'One motif per line', allowEmpty: true, hint: 'One motif per line. Ctrl+Enter to save, Esc to cancel.' })
                 : x.motifs.length ? h('div', { class: 'sb-chips' }, x.motifs.map((m) => h('span', { class: 'sb-chip' }, m)))
                 : h('small', { class: 'sb-hint' }, x.error ? `Could not read it: ${x.error}` : 'Being read for motifs…'))));
@@ -603,7 +603,7 @@ function ideaRow(idea, chatId, chatKey) {
             h('span', { class: 'sb-gm-title-tools' },
                 h('div', { class: 'sb-iconbtn', title: 'Accept', onclick: () => void accept() }, icon('fa-check')),
                 h('div', { class: 'sb-iconbtn', title: 'Edit before accepting', onclick: () => startEdit(key, idea.text) }, icon('fa-pen')),
-                h('div', { class: 'sb-iconbtn', title: 'Dismiss - it won\'t be proposed again', onclick: () => dismissIdea(chatKey, idea.id) }, icon('fa-xmark')))),
+                h('div', { class: 'sb-iconbtn', title: 'Dismiss - it won\'t be proposed again', onclick: () => { dismissIdea(chatKey, idea.id); done(); } }, icon('fa-xmark')))),
         isEditing(key)
             ? inlineEditor(key, { onSave: (text) => editProposal(chatKey, idea.id, { text }), placeholder: 'The idea' })
             : h('div', { class: 'sb-gm-text' }, idea.text),
@@ -646,12 +646,12 @@ function agendaCard(gm, show) {
         }) : null,
         ...items.map((x) => (isVeiled(gm, x.id, show) && x.source !== 'user'
             ? h('div', { class: 'sb-gm-row sb-gm-veiled' }, icon('fa-mask'), h('span', { class: 'sb-muted' }, `Something is set for ${dueText(x)}`),
-                h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); peek(chatKey, x.id); } }, 'peek'))
+                h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); peek(chatKey, x.id); done(); } }, 'peek'))
             : h('div', { class: 'sb-gm-row' },
                 h('span', { class: 'sb-chip' }, icon('fa-calendar-day'), dueText(x)),
                 h('div', { class: 'sb-gm-text' }, x.text, x.when ? h('small', { class: 'sb-hint' }, ` (${x.when})`) : null),
                 x.status === 'planned' ? h('span', { class: 'sb-chip sb-gm-planned' }, 'planned') : null,
-                h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: () => removeAgendaItem(chatKey, x.id) }, icon('fa-trash'))))),
+                h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: () => { removeAgendaItem(chatKey, x.id); done(); } }, icon('fa-trash'))))),
         !items.length ? h('p', { class: 'sb-muted' }, 'Nothing on the agenda.') : null,
         past.length ? h('div', { class: 'sb-gm-sub' }, 'Recently') : null,
         ...past.map((x) => h('div', { class: 'sb-gm-row sb-gm-past' }, h('span', { class: `sb-chip sb-gm-${x.status === 'done' ? 'done' : 'skipped'}` }, x.status === 'done' ? 'happened' : 'passed'), h('div', { class: 'sb-gm-text' }, x.text))));

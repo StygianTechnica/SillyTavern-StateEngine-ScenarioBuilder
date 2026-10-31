@@ -5,6 +5,8 @@
 // those last seen near here, and not long ago, can turn up - everyone else
 // is ELSEWHERE: thought of, talked about, sending word, but not here. Pure.
 
+import { memberKindOf } from '../library/faction-sync.js';
+
 // Where each person was last in the scene: replays the history (oldest
 // first). -> Map id -> { locationId, index } (index: the entry's place in
 // the history; higher is more recent).
@@ -46,6 +48,61 @@ export function placesNear(a, b, parents = {}) {
     return !!shared && !!parents[shared];
 }
 
+// Ties that set someone against a place or put them out of it.
+const AGAINST = /\b(rival|enem|oppos|hunt|against|hate|target|former|ex-|once\b|fled|flee|exile|banish|sabotag|spy|spies|infiltrat|raid|attack|thorn)/i;
+
+// Those who belong where the scene is, though the story may never have
+// shown them: tied to the place, or a place it is in, by a relationship
+// the user wrote (The Signal Box - leader -> Adam Miller), or of a faction
+// based there (The Signal Box - occupant -> White Cerberus), its leaders
+// first. Without it the head of the crew whose headquarters this is never
+// turned up there, because he had never been in a scene. The top of the
+// tree (the world, the city everything is in) ties no one to the scene.
+// placeIds: the scene's place and the places it is in; parents: id ->
+// parent id; characters: [{ id }]; factions: [{ id, name, base? }];
+// relations: [{ from, to, kind }]; memberships: Map characterId ->
+// [factionId]; placeName(id) -> name. -> [{ id, why }]
+export function belongingHere({ placeIds = [], parents = {}, characters = [], factions = [], relations = [], memberships = new Map(), placeName = () => '' } = {}) {
+    const places = new Set((placeIds ?? []).filter((id) => id && parents[id]));
+    if (!places.size) return [];
+    const people = new Set((characters ?? []).map((c) => c.id));
+    const kindOf = (r) => String(r?.kind ?? '').replace(/\s+/g, ' ').trim();
+    const where = (id) => placeName(id) || 'here';
+    const found = [];
+    // Based at a place: a tie either way between the faction and it, or the
+    // faction's own record naming it.
+    const home = new Map();
+    for (const f of factions ?? []) {
+        const tie = (relations ?? []).find((r) => !AGAINST.test(kindOf(r)) && ((r.from === f.id && places.has(r.to)) || (r.to === f.id && places.has(r.from))));
+        const record = f.base ?? f;
+        const held = tie ? (places.has(tie.to) ? tie.to : tie.from)
+            : [...places].find((p) => Object.values(record).some((v) => (Array.isArray(v) ? v : [v]).includes(p)));
+        if (held) home.set(f.id, held);
+    }
+    for (const [factionId, placeId] of home) {
+        const f = factions.find((x) => x.id === factionId);
+        for (const c of characters ?? []) {
+            if (!(memberships.get(c.id) ?? []).includes(factionId)) continue;
+            const leads = (relations ?? []).some((r) => r.from === c.id && r.to === factionId && memberKindOf(kindOf(r)) === 'leads');
+            found.push({ id: c.id, rank: leads ? 0 : 2, why: `${leads ? 'leads' : 'of'} ${f.name}, based at ${where(placeId)}` });
+        }
+    }
+    for (const r of relations ?? []) {
+        const kind = kindOf(r);
+        if (!kind || AGAINST.test(kind)) continue;
+        const [placeId, personId] = places.has(r.from) && people.has(r.to) ? [r.from, r.to] : places.has(r.to) && people.has(r.from) ? [r.to, r.from] : [];
+        if (placeId) found.push({ id: personId, rank: 1, why: `tied to ${where(placeId)} (${kind})` });
+    }
+    const out = [];
+    const seen = new Set();
+    for (const f of found.sort((a, b) => a.rank - b.rank)) {
+        if (seen.has(f.id)) continue;
+        seen.add(f.id);
+        out.push({ id: f.id, why: f.why });
+    }
+    return out;
+}
+
 // The people not here, split: `near` - seen here or close by not long ago
 // (within the history kept), who could turn up; `elsewhere` - left far away,
 // not seen in a long while, or only tied to someone here, who cannot.
@@ -56,8 +113,10 @@ export function placesNear(a, b, parents = {}) {
 // wherever they were last seen; moved: the world meanwhile's changes to
 // people (src/world/situations.js overlays.people - { [id]: { locationId,
 // where, state } }): where they went off scene counts as where they were
-// last seen, now, and how they are now goes with them.
-export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '', parents = {}, history = [], current = null, inPlay = [], tiesOf = () => [], recent = 120, arrived = [], moved = {} } = {}) {
+// last seen, now, and how they are now goes with them. belongs: those who
+// belong here (belongingHere - [{ id, why }]): they can turn up unless the
+// story left them far away not long ago.
+export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '', parents = {}, history = [], current = null, inPlay = [], tiesOf = () => [], recent = 120, arrived = [], moved = {}, belongs = [] } = {}) {
     const present = new Set(castIds);
     const seen = lastSeen(history, current);
     const total = (history ?? []).length;
@@ -67,7 +126,7 @@ export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '',
     const elsewhere = [];
     const placed = new Set();
     const came = new Set(arrived);
-    const put = (id, why) => {
+    const put = (id, why, home = false) => {
         if (present.has(id) || placed.has(id) || !named.has(id)) return;
         placed.add(id);
         const c = named.get(id);
@@ -75,11 +134,14 @@ export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '',
         if (came.has(id)) { near.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', why: `came looking, off scene${now}` }); return; }
         const s = seen.get(id);
         const fresh = s && total - s.index <= recent;
-        // Not knowing where the scene is, nothing can be ruled out.
-        if (!locationId || (fresh && placesNear(s.locationId, locationId, parents))) near.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', why: `${why}${now}` });
+        const nearHere = fresh && placesNear(s.locationId, locationId, parents);
+        // Not knowing where the scene is, nothing can be ruled out; someone
+        // at home here is here unless the story just left them far away.
+        if (!locationId || nearHere || (home && !fresh)) near.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', why: `${why}${now}` });
         else elsewhere.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', lastAt: s?.locationId ?? '', why: `${s ? (fresh ? 'left behind elsewhere' : 'not seen in a long while') : why}${now}` });
     };
     for (const id of arrived) put(id, 'came looking, off scene');
+    for (const b of belongs ?? []) put(b.id, b.why, true);
     for (const id of inPlay ?? []) put(id, 'seen earlier in this story');
     for (const id of castIds) for (const r of tiesOf(id)) put(r.otherId, `tied to someone here (${r.kind})`);
     return { near, elsewhere };

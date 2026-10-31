@@ -1,4 +1,4 @@
-import { lastSeen, placesNear, whoCouldTurnUp } from '../src/director/whereabouts.js';
+import { lastSeen, placesNear, whoCouldTurnUp, belongingHere } from '../src/director/whereabouts.js';
 import { dossierText } from '../src/director/prompt.js';
 
 // Alvarand (the land) > Redhaven > Great Hall; Alvarand > Belatorre > Graveyard > Crypt
@@ -61,5 +61,52 @@ describe('who could turn up', () => {
         expect(text).toContain('- Riven (a hacker), of White Cerberus - seen earlier in this story');
         expect(text).toContain('Graxx, of Ravagers and Iron Hand (last at Great Hall)');
         expect(text).toContain('; Maren');
+    });
+});
+
+describe('those who belong where the scene is', () => {
+    // City > Bearville > The Signal Box > Common Room; Bearville > Safehouse
+    const tree = { bearville: 'city', box: 'bearville', common: 'box', safehouse: 'bearville' };
+    const names = { city: 'Arcadia City', bearville: 'Bearville', box: 'The Signal Box', common: 'Common Room', safehouse: 'Safehouse' };
+    const people = [{ id: 'adam', name: 'Adam Miller', role: 'Office Chief' }, { id: 'vex', name: 'Vex' }, { id: 'galice', name: 'Galice' }, { id: 'tiago', name: 'Tiago' }, { id: 'larry', name: 'Larry' }];
+    const factions = [{ id: 'wc', name: 'White Cerberus' }];
+    const relations = [
+        { from: 'adam', to: 'wc', kind: 'leads' },
+        { from: 'box', to: 'wc', kind: 'occupant' },
+        { from: 'box', to: 'adam', kind: 'leader' },
+        { from: 'tiago', to: 'box', kind: 'rival and target' },
+        { from: 'city', to: 'larry', kind: 'resident' },
+    ];
+    const memberships = new Map([['adam', ['wc']], ['vex', ['wc']], ['galice', ['wc']]]);
+    const at = (placeId) => belongingHere({ placeIds: [placeId, ...(tree[placeId] ? [tree[placeId], tree[tree[placeId]]] : [])], parents: tree, characters: people, factions, relations, memberships, placeName: (id) => names[id] ?? '' });
+
+    it('puts the leader of the faction based there first, then its other members', () => {
+        expect(at('common')).toEqual([
+            { id: 'adam', why: 'leads White Cerberus, based at The Signal Box' },
+            { id: 'vex', why: 'of White Cerberus, based at The Signal Box' },
+            { id: 'galice', why: 'of White Cerberus, based at The Signal Box' },
+        ]);
+    });
+
+    it('ties no one by a rival tie, by the top of the tree, or outside the place', () => {
+        expect(at('safehouse')).toEqual([]);
+        expect(at('common').map((b) => b.id)).not.toContain('tiago');
+        expect(at('common').map((b) => b.id)).not.toContain('larry');
+    });
+
+    it('takes a faction based there by its own record, and a person tied to the place', () => {
+        const out = belongingHere({ placeIds: ['box'], parents: tree, characters: people, factions: [{ id: 'wc', name: 'White Cerberus', base: { headquarters: 'box' } }], relations: [{ from: 'galice', to: 'box', kind: 'works at' }], memberships: new Map([['vex', ['wc']]]), placeName: (id) => names[id] });
+        expect(out).toEqual([{ id: 'galice', why: 'tied to The Signal Box (works at)' }, { id: 'vex', why: 'of White Cerberus, based at The Signal Box' }]);
+    });
+
+    it('lets someone at home here turn up though never seen, unless just left far away', () => {
+        const belongs = [{ id: 'adam', why: 'leads White Cerberus, based at The Signal Box' }];
+        const never = whoCouldTurnUp({ characters: people, castIds: ['vex'], locationId: 'common', parents: tree, history: [], current: { locationId: 'common', castIds: ['vex'] }, belongs });
+        expect(never.near).toEqual([{ id: 'adam', name: 'Adam Miller', role: 'Office Chief', why: 'leads White Cerberus, based at The Signal Box' }]);
+        const left = [{ before: { locationId: 'safehouse', castIds: ['adam'] }, after: { castIds: [] } }, { before: { locationId: 'safehouse' }, after: { locationId: 'common', castIds: ['vex'] } }];
+        const farOff = { ...tree, safehouse: 'elsewhere', elsewhere: 'far' };
+        const away = whoCouldTurnUp({ characters: people, castIds: ['vex'], locationId: 'common', parents: farOff, history: left, current: { locationId: 'common', castIds: ['vex'] }, belongs });
+        expect(away.near).toEqual([]);
+        expect(away.elsewhere.map((c) => c.id)).toEqual(['adam']);
     });
 });

@@ -33,7 +33,7 @@ import { nextFight, fightFacts, woundsOf } from './fight.js';
 import { combatOptions, stanceFor, protectionOf, powerRatingOf, mayDie, protectedText } from './combat.js';
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
-import { whoCouldTurnUp } from './whereabouts.js';
+import { whoCouldTurnUp, belongingHere } from './whereabouts.js';
 import { arrivals } from '../world/model.js';
 import { isWorldOn, takeHeard, worldHereFor, noteHeartRipple } from '../world/run.js';
 import { bondsOf, heartsSection, noteBrokenVows, takeHearts, jealousyOf } from './jealousy.js';
@@ -392,22 +392,32 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
     // whereabouts.js). Graxx in Redhaven does not walk into a crypt in Belatorre.
     const relations = settingId ? listRelations(settingId) : [];
     const parents = settingId ? getParents(settingId) : {};
+    const locationId = doc.canonical.locationId || guidance.location?.id || '';
+    const people = characters.filter((c) => !isPower(c) && !doc.dead.some((d) => d.id === c.id));
+    const factionList = settingId ? await listEntries(chatId, settingId, 'faction').catch(() => []) : [];
+    const placeName = new Map((settingId ? await listEntries(chatId, settingId, 'location').catch(() => []) : []).map((p) => [p.id, p.name]));
+    // Those at home here - the head of the crew whose headquarters this is -
+    // can turn up though no scene has shown them yet.
+    const belongs = settingId && locationId ? belongingHere({
+        placeIds: [...pathOf(parents, locationId)], parents, characters: people, factions: factionList,
+        relations: getSettingDoc(settingId).relations, memberships: libraryMemberships(factionList, getSettingDoc(settingId).relations),
+        placeName: (id) => placeName.get(id) ?? '',
+    }).filter((b) => b.id !== playerIdOf(settingId, characters)) : [];
     const { near: nearby, elsewhere } = whoCouldTurnUp({
-        characters: characters.filter((c) => !isPower(c)), castIds, locationId: doc.canonical.locationId || guidance.location?.id || '', parents,
+        characters: characters.filter((c) => !isPower(c)), castIds, locationId, parents,
         history: doc.history, current: doc.canonical, inPlay: doc.inPlay, tiesOf: (id) => relationsFor(id, relations),
         // Those the world meanwhile has brought near (src/world/model.js).
         arrived: isWorldOn() ? arrivals(doc.gm.world, doc.canonical.day) : [],
         // Where the world has moved people off scene, and how they are now.
         moved: isWorldOn() ? doc.gm.world.overlays.people : {},
+        belongs,
     });
-    const placeName = new Map((settingId ? await listEntries(chatId, settingId, 'location').catch(() => []) : []).map((p) => [p.id, p.name]));
     for (const e of elsewhere) e.lastAt = placeName.get(e.lastAt) ?? '';
     // The world's rules as they hold where the scene is.
     const overview = settingId ? getPlaceOverview(settingId, guidance.location?.id) : {};
     const limits = [...describeMagic(overview.magic).limits, ...describeTech(overview.tech).limits];
     const canonOnly = settingId ? isCanonOnly(settingId) : true;
     // Factions, events and earlier scenes: what the guidance does not carry.
-    const factionList = settingId ? await listEntries(chatId, settingId, 'faction').catch(() => []) : [];
     // The place and the places it is in.
     const placeIds = settingId && guidance.location?.id ? [...pathOf(getParents(settingId), guidance.location.id)].reverse() : [];
     const placeEntries = placeIds.length ? await listEntries(chatId, settingId, 'location').catch(() => []) : [];
