@@ -41,6 +41,7 @@ import { hasArchivist, storyRelationships, relationshipLine } from '../library/s
 import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from '../library/powers.js';
 import { namedAtAll } from '../validate/drift.js';
 import { circling } from './loops.js';
+import { shownLeaving } from './departures.js';
 
 // How many replies a broken-off fight's wounds are remembered.
 const WOUNDS_KEPT = 30;
@@ -838,6 +839,17 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         const left = new Set(parsed.leaves.map((n) => String(n).toLowerCase()));
         const seen = peopleNamedIn(parsed.situation, characters).filter((c) => !baseCast.includes(c.id) && !heldOut.has(c.id) && !waitingNow.has(c.id) && !callNames(c).some((n) => left.has(n.toLowerCase())));
         if (seen.length) parsed.enters = [...new Set([...parsed.enters, ...seen.map((c) => c.name)])];
+        // Someone the latest chat shows walking out does not come straight
+        // back in: the reply they left in still shows them there.
+        const latestText = [...messages.slice(-2).map((m) => m.text), parsed.situation ?? ''].join('\n');
+        const walkedOut = parsed.enters.filter((name) => {
+            const c = characters.find((x) => callNames(x).some((n) => n.toLowerCase() === String(name).toLowerCase()));
+            return c && !baseCast.includes(c.id) && shownLeaving(callNames(c), latestText);
+        });
+        if (walkedOut.length) {
+            console.info(LOG_PREFIX, `${walkedOut.join(', ')} walked out in the latest chat - not brought back in`);
+            parsed.enters = parsed.enters.filter((n) => !walkedOut.includes(n));
+        }
         const keptBack = parsed.enters.length - withoutWaiting(parsed.enters, characters, waitingNow).length;
         if (keptBack) {
             console.info(LOG_PREFIX, `${keptBack} named to enter wait where the story left off - kept out of the detour`);

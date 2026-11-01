@@ -514,7 +514,7 @@ export function buildDirectorPrompt(input) {
         'If the latest chat shows a god, a spirit or a power - or someone speaking for one - promising something in return for a task, a trial or a price (a life given back once the trials are passed), a line. Only a promise made in the latest chat, never one already under SECRETS AND OATHS; it is kept until the story fulfils or breaks it:',
         'BARGAIN | <who promises> | <what is promised> | <the price or condition>',
         '',
-        'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along). Someone only talked about, remembered, read about or seen in a record, picture or screen is not in the scene: no ENTERS for them. For creatures of a kind, say how many (ENTERS | 3 zombies; LEAVES | 2 zombies):',
+        'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along) - but not someone it shows walking out: they are gone until the story brings them back. Someone only talked about, remembered, read about or seen in a record, picture or screen is not in the scene: no ENTERS for them. For creatures of a kind, say how many (ENTERS | 3 zombies; LEAVES | 2 zombies):',
         'ENTERS | <name>',
         'LEAVES | <name>',
         '',
