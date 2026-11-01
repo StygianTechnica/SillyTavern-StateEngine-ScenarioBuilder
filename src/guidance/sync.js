@@ -52,6 +52,7 @@ import { libraryMemberships } from '../library/faction-sync.js';
 import { spokenOf } from './spoken.js';
 import { livePoolFor, byType } from '../naming/run.js';
 import { narratorPoolLine } from '../naming/live.js';
+import { pronounsFrom } from '../naming/classify.js';
 
 export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
 
@@ -254,6 +255,9 @@ export async function gatherInputs(chatId, chatKey) {
             keptNames: settingId ? keptNames(obj.aliases ?? base.aliases ?? [], library.entries?.[id]?.aliasInfo ?? {}, (x) => aliasUsers.get(x) ?? '', (x) => aliasUsers.has(x) && !nameById0.has(x)) : [],
             role: await readField(chatId, id, 'se__character.role', 'role'),
             description: doc.narrative[id]?.text || obj.description || '',
+            // she / he from their own prose: without it a stray "his" in the
+            // story turned a woman into a man.
+            gender: pronounsFrom([doc.narrative[id]?.text, obj.description, text(base.personality), text(base.voice), text(base.goals), text(base.background)].join(' ')),
             personality: text(base.personality),
             voice: text(base.voice),
             goals: text(base.goals),

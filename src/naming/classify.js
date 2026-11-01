@@ -107,6 +107,18 @@ export function genderFrom(text) {
     return f > m ? 'f' : m > f ? 'm' : '';
 }
 
+// How a written person is referred to, from the pronouns of their own
+// prose: 'f', 'm' or '' when it does not clearly say. Counts every use, so
+// "her brother" in a woman's description does not make her a tie - and a
+// clear lead is needed (2 to 1), or nothing is claimed.
+export function pronounsFrom(text) {
+    const t = String(text ?? '').toLowerCase();
+    const count = (re) => (t.match(re) ?? []).length;
+    const f = count(/\b(?:she|her|hers|herself)\b/g);
+    const m = count(/\b(?:he|him|his|himself)\b/g);
+    return f >= 2 && f >= m * 2 ? 'f' : m >= 2 && m >= f * 2 ? 'm' : '';
+}
+
 // -> { kind, feature?, subtype?, noun? } or null when no rolled name
 // fits (a room, a sword, a quest - the model names those in plain words).
 // kind: 'person' | 'settlement' | 'region' | 'feature' | 'building' |

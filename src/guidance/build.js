@@ -69,6 +69,35 @@ export function truncate(text, max) {
     return `${(space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:.-]+$/, '')}…`;
 }
 
+// What someone looks like, kept to max: whole sentences, those that say
+// how they look first (hair, eyes - what the model otherwise makes up),
+// then the opening one, then their skin and marks, then their build; in
+// the order written. Cut at 160 characters, "Her sharp facial…" lost
+// Doc's hair and the model gave her a long auburn ponytail.
+const FEATURES = /\b(?:hair|haired|bob|braids?|ponytail|bald|beard|moustache|mustache|eyes?|eyed|horns?|scales?|fur)\b/i;
+const MARKS = /\b(?:skin|scars?|scarred|tattoo\w*|freckle\w*|complexion)\b/i;
+const BUILD = /\b(?:tall|short|petite|slender|slight|stocky|lean|burly|build|frame|height|stands?|features|face)\b/i;
+export function looksBrief(text, max) {
+    const t = clean(text);
+    if (t.length <= max) return t;
+    const parts = (t.match(/[^.!?]+(?:[.!?]+|$)/g) ?? [t]).map((s) => s.trim()).filter(Boolean);
+    const rank = (s, i) => (FEATURES.test(s) ? 0 : i === 0 ? 1 : MARKS.test(s) ? 2 : BUILD.test(s) ? 3 : 4);
+    const order = parts.map((s, i) => ({ s, i, r: rank(s, i) })).sort((a, b) => a.r - b.r || a.i - b.i);
+    const kept = new Set();
+    let used = 0;
+    for (const p of order) {
+        const len = p.s.length + (kept.size ? 1 : 0);
+        if (used + len > max) continue;
+        kept.add(p.i);
+        used += len;
+    }
+    if (!kept.size) return truncate(order[0].s, max);
+    return parts.filter((_, i) => kept.has(i)).join(' ');
+}
+
+// How the story refers to them: "she / her".
+const pronounText = (g) => (g === 'f' ? 'she / her' : g === 'm' ? 'he / him' : '');
+
 const sentence = (text) => {
     const t = clean(text);
     return !t ? '' : /[.!?…]$/.test(t) ? t : `${t}.`;
@@ -314,16 +343,18 @@ function sceneSection(scene) {
 // would take as a cue to write for them.
 function castLine(c) {
     // The bloodline with the name: "Kiri (elf)".
-    const name = `${clean(c.name)}${clean(c.bloodline) ? ` (${clean(c.bloodline)})` : ''}`;
+    // And how they are referred to: "Doc (human; she / her)".
+    const tag = [clean(c.bloodline), pronounText(c.gender)].filter(Boolean).join('; ');
+    const name = `${clean(c.name)}${tag ? ` (${tag})` : ''}`;
     // Nicknames, codenames, titles - and who uses them (sync: knownAsText).
     const knownAs = clean(c.knownAs) ? unstop(truncate(c.knownAs, 300)) : '';
     if (c.player) {
-        const who = [clean(c.bloodline), clean(c.role)].filter(Boolean).join(', ');
+        const who = [clean(c.bloodline), pronounText(c.gender), clean(c.role)].filter(Boolean).join(', ');
         return `- ${clean(c.name)}${who ? ` (${who})` : ''}: the player character, played by the user.${clean(c.age) ? ` ${firstUpper(unstop(c.age))}.` : ''}${knownAs ? ` ${knownAs}.` : ''}`;
     }
     const bits = [];
     if (clean(c.role)) bits.push(firstUpper(unstop(c.role)));
-    if (clean(c.description)) bits.push(unstop(truncate(c.description, 160)));
+    if (clean(c.description)) bits.push(unstop(looksBrief(c.description, 360)));
     if (clean(c.lineageNote)) bits.push(firstUpper(unstop(truncate(c.lineageNote, 120))));
     // Their age for their kind (src/library/bloodlines.js ageLine).
     if (clean(c.age)) bits.push(firstUpper(unstop(c.age)));
@@ -366,9 +397,9 @@ function castParagraph(c) {
     const name = clean(c.name);
     const role = clean(c.role);
     const article = /^(the|a|an|my|his|her|their)\s/i.test(role) ? '' : 'the ';
-    const kind = clean(c.bloodline);
+    const kind = [clean(c.bloodline), pronounText(c.gender)].filter(Boolean).join('; ');
     const bits = [`${name}${kind ? ` (${kind})` : ''}${role ? `, ${article}${firstLower(role)},` : ''} is here.`];
-    if (clean(c.description)) bits.push(sentence(truncate(c.description, 320)));
+    if (clean(c.description)) bits.push(sentence(looksBrief(c.description, 420)));
     if (clean(c.lineageNote)) bits.push(sentence(firstUpper(truncate(c.lineageNote, 160))));
     if (clean(c.age)) bits.push(sentence(firstUpper(c.age)));
     if (clean(c.personality)) bits.push(`By temperament: ${sentence(firstLower(truncate(c.personality, 200)))}`);
