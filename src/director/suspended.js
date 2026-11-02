@@ -82,6 +82,12 @@ export function returnTo(list, { back = '', movePlace = '', matchesPlace = () =>
     return null;
 }
 
+// A return to the place the scene is already in: no detour to come back
+// from, so nothing is put back. Restoring the cast there dropped whoever
+// had come in since - Adam Miller, the newcomer a whole volume waited on,
+// gone the reply after he walked in, and Doc and Galice before him.
+export const returnsHere = (entry, locationId) => !!entry?.locationId && entry.locationId === locationId;
+
 // The scene put back as it was. The player character comes back with the
 // story; the dead do not. -> a canonical patch.
 export function restorePatch(entry, { playerId = '', dead = [] } = {}) {

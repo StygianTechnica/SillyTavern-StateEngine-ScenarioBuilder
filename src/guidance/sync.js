@@ -476,6 +476,8 @@ export async function gatherInputs(chatId, chatKey) {
             // Story triggers set off for this reply (src/triggers/): the
             // narrator gets them even when the director fails.
             triggered: triggerLines(doc.gm.triggers, latestUserIndex()),
+            // Who the game master brings in with this reply (src/director/).
+            arriving: settings.director.enabled ? (doc.director.moves?.in ?? []) : [],
             // Who has died in this story (src/state/death.js).
             // Only the dead the latest messages speak of.
             dead: deadText(doc, { about: whoTheyWere, recentText: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-6).map((m) => String(m.mes ?? '')).join('\n') }),

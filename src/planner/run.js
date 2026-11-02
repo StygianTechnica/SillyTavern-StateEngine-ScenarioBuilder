@@ -34,7 +34,7 @@ import { triggerSection,
     duePasses, setDayPlan, applyCheck, applyBeats, trackPace, paceAim, planSection, motifsOf, addLog,
     addRequest, setRequestStatus, waitingRequests,
     setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, restoreBeat, editBeat, lockBeat, removeBeat, addBeat,
-    mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat, unseenTies, undoUnseenBeats, newcomerWait,
+    mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat, unseenTies, undoUnseenBeats, newcomerWait, FIRM_AFTER,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText, removeChronicle,
     addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines,
 } from './model.js';
@@ -92,6 +92,23 @@ const seenTexts = (max = SEEN_MESSAGES) => chatMessages(max).map((m) => m.text);
 function beatNewcomers(gm) {
     const beat = activeBeat(gm.outline);
     return beat?.ties?.length ? unseenTies(beat.ties, seenTexts(Infinity), userName()) : [];
+}
+
+// The newcomers the beat has waited on past the firm line (FIRM_AFTER
+// replies): the director brings them into the scene itself - told to,
+// the game master only ever wrote Adam's arrival as what comes "Next". []
+// with the planner off.
+export function overdueNewcomers(chatKey) {
+    try {
+        if (plannerSettings().enabled !== true) return [];
+        const doc = getChatDoc(chatKey);
+        const beat = activeBeat(doc.gm.outline);
+        if (!beat || doc.gm.newcomer?.beatId !== beat.id || doc.turn - doc.gm.newcomer.since < FIRM_AFTER) return [];
+        return beatNewcomers(doc.gm);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not read the beat\'s newcomers', err);
+        return [];
+    }
 }
 
 // One pass at a time per chat; a pass of the same kind already queued is

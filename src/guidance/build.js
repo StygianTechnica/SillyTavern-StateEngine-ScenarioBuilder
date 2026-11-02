@@ -46,6 +46,7 @@ export const SECTIONS = Object.freeze([
     { key: 'style', title: 'How the story is run', priority: 8, keep: true },
     { key: 'direction', title: 'Where it should go', priority: 8, keep: true },
     { key: 'triggered', title: 'Set off by the story', priority: 9, keep: true },
+    { key: 'arriving', title: 'Arriving now', priority: 9, keep: true },
     { key: 'fight', title: 'The fight', priority: 9, keep: true },
     { key: 'powers', title: 'A power answers', priority: 9, keep: true },
     { key: 'names', title: 'Names for anyone new', priority: 3, keep: false },
@@ -169,6 +170,16 @@ export function aloneText(input) {
         'Never add actions, words, thoughts or feelings for the player character: the reply stops where their next choice begins.',
     ];
     return lines.join('\n');
+}
+
+// Those the game master brings into the scene in this reply: told plainly,
+// or the narrator writes around them - Adam Miller was in the cast for a
+// reply and never in the story. names: the director's arrivals.
+function arrivingSection(names) {
+    const list = [...new Set((names ?? []).map(clean).filter(Boolean))];
+    if (!list.length) return null;
+    const who = list.length === 1 ? list[0] : `${list.slice(0, -1).join(', ')} and ${list.at(-1)}`;
+    return { full: `${who} ${list.length === 1 ? 'comes' : 'come'} into the scene in this reply: write ${list.length === 1 ? 'them' : 'each of them'} arriving, where everyone can see, and taking part - they speak or act, with their own reason for coming. Not only mentioned, not left at the door.`, compact: '' };
 }
 
 function aloneSection(input) {
@@ -493,6 +504,7 @@ const BUILDERS = {
     event: (input) => (eventGuidance(input.event) ? { full: eventGuidance(input.event), compact: '' } : null),
     intimacy: (input) => intimacySection(input),
     alone: (input) => aloneSection(input),
+    arriving: (input) => arrivingSection(input.arriving),
     direction: (input) => withOutcomes(directorPart(input.director, 'direction')),
     // The user's own standing instructions (the front page).
     style: (input) => (clean(input.overview?.gmStyle) ? { full: `How this story is run: ${sentence(truncate(input.overview.gmStyle, 800))}`, compact: '' } : null),
@@ -555,6 +567,7 @@ export function buildGuidance(input) {
         powers: 'A power (a god, a spirit) called on by its champion, or over its dead champion: the narrator is told it answers.',
         fight: 'The fight the director keeps: each fighter but the player character, their condition from reply to reply, and when it ends.',
         event: 'A structured event under way (an arena, set up in the GM Plan): the stage now, and never who comes next.',
+        arriving: 'Those the game master brings into the scene in this reply: the narrator is told to write them arriving and taking part.',
         triggered: 'Story triggers the story has just set off (Story triggers in the GM Plan): played in this reply, and on a swipe of it.',
         alone: 'Shown when the player character is the only one present: the world, its creatures and the consequences carry the reply.',
         location: input.location?.path?.length ? `Canonical location, its path and inherited environment; canonical time and weather.` : 'Canonical time and weather.',
@@ -586,7 +599,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
     ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'spoken', 'secrets', 'corrections', 'dead', 'protected']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
-    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'loop', 'triggered', 'fight', 'powers', 'event', 'intimacy', 'absent', 'alone', 'names']],
+    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'arriving', 'loop', 'triggered', 'fight', 'powers', 'event', 'intimacy', 'absent', 'alone', 'names']],
 ]);
 
 // buildGuidance()'s result -> { [variable]: text } ('' for an empty part).

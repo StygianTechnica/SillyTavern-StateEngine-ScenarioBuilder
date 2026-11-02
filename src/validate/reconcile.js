@@ -13,7 +13,7 @@
 // extraction into acting twice, and Scenario Builder's own writes settle
 // at once (SB-502).
 
-import { revertPatch } from '../state/revert.js';
+import { revertPatch, namesPlace } from '../state/revert.js';
 import { LOG_PREFIX } from '../constants.js';
 import { getSettings, isActive } from '../settings.js';
 import { getCurrentChatRef, chatKeyFor, sourceMessageId, sourceIndex } from '../store/chat-ref.js';
@@ -641,6 +641,18 @@ export async function revertFromMessage(fromIndex) {
 
     // A later change by the user (the date set by hand) is not taken back.
     const patch = revertPatch(doc.history, toUndo.map((h) => h.id), doc.canonical);
+    // The place the player's own message (still standing) put the scene
+    // in stays: only the reply is undone.
+    if (patch.locationId !== undefined && doc.canonical.locationId) {
+        const here = await getObject(ref.chatId, doc.canonical.locationId).catch(() => null);
+        const chat = (SillyTavern.getContext().chat ?? []).slice(0, fromIndex);
+        const post = [...chat].reverse().find((m) => m?.is_user && !m.is_system)?.mes ?? '';
+        if (here && namesPlace(post, [here.name, ...(here.aliases ?? [])])) {
+            console.info(LOG_PREFIX, `the scene stays at ${here.name}: the player's message put it there`);
+            delete patch.locationId;
+            delete patch.indoor;
+        }
+    }
     setCanonical(chatKey, patch, {
         source: 'revert',
         note: 'A message changed or was removed - its changes were reverted',

@@ -16,7 +16,7 @@ import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
 import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, listUnconfirmed, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf, saveKnowledge, listKnowledge, allKnowledge } from '../library/library.js';
 import { bargainItem, sameBargain, fulfilledByReturn } from '../library/knowledge.js';
-import { stillWaiting, steppedAway, suspend, returnTo, restorePatch, waitingIds, withoutWaiting, suspendedText } from './suspended.js';
+import { stillWaiting, steppedAway, suspend, returnTo, returnsHere, restorePatch, waitingIds, withoutWaiting, suspendedText } from './suspended.js';
 import { routesFrom, listRoutes, headingAlong, placesFurtherOn } from '../library/routes.js';
 import { pathOf } from '../library/hierarchy.js';
 import { listRelations, relationsFor, addRelation } from '../library/relations-edit.js';
@@ -54,7 +54,7 @@ import { libraryMemberships, briefMemberships } from '../library/faction-sync.js
 import { buildPeoplePrompt, readPeople } from './people.js';
 import { unknownsFor, toldInChat, mergeTold, PERSPECTIVE_TOKENS } from './perspective.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
-import { directorPlan, takeBeats, markActive } from '../planner/run.js';
+import { directorPlan, takeBeats, markActive, overdueNewcomers } from '../planner/run.js';
 import { livePoolFor, takeFromPool, byType, rollNameFor, markNameUsed } from '../naming/run.js';
 import { poolLine, swapInvented, applySwaps } from '../naming/live.js';
 import { bloodlinesOf, decideLineage, mixFor } from '../library/bloodlines.js';
@@ -801,7 +801,12 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     let returned = null;
     if (isNewTurn(type) && settingId && waiting.length) {
         returned = returnTo(waiting, { back: parsed.back, movePlace: move?.place ?? '', matchesPlace: (name, id) => { const p = known.find((e) => e.id === id); return !!p && samePlaceName(name, p); } });
-        if (returned) {
+        if (returned && returnsHere(returned, getChatDoc(chatKey).canonical.locationId)) {
+            // Back where the scene already is: the wait ends, the cast stays.
+            updateChatDoc(chatKey, (d) => { d.suspended = stillWaiting(d.suspended, d.turn).slice(0, -1); });
+            console.info(LOG_PREFIX, `"back" to ${nameOfId(returned.locationId) || 'the scene'}, where the story already is - no one is put back or dropped`);
+            move = null;
+        } else if (returned) {
             const patch = restorePatch(returned, { playerId: playerIdOf(settingId, characters), dead: getChatDoc(chatKey).dead.map((d) => d.id) });
             if (!parsed.scene && returned.sceneTitle) patch.sceneTitle = returned.sceneTitle;
             if (!parsed.situation && returned.sceneSummary) patch.sceneSummary = returned.sceneSummary;
@@ -853,6 +858,15 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         if (walkedOut.length) {
             console.info(LOG_PREFIX, `${walkedOut.join(', ')} walked out in the latest chat - not brought back in`);
             parsed.enters = parsed.enters.filter((n) => !walkedOut.includes(n));
+        }
+        // A newcomer the beat has waited on past the firm line comes in now:
+        // the game master only ever wrote Adam's arrival as what comes next
+        // (src/planner/run.js overdueNewcomers).
+        const overdue = overdueNewcomers(chatKey).map((tie) => characters.find((c) => !isPower(c) && callNames(c).some((n) => n.toLowerCase() === tie.toLowerCase() || n.toLowerCase().startsWith(`${tie.toLowerCase()} `))))
+            .filter((c) => c && !baseCast.includes(c.id) && !heldOut.has(c.id) && !waitingNow.has(c.id) && !doc.dead.some((d) => d.id === c.id));
+        if (overdue.length) {
+            console.info(LOG_PREFIX, `${overdue.map((c) => c.name).join(', ')} brought in - the beat has waited on them too long`);
+            parsed.enters = [...new Set([...parsed.enters, ...overdue.map((c) => c.name)])];
         }
         const keptBack = parsed.enters.length - withoutWaiting(parsed.enters, characters, waitingNow).length;
         if (keptBack) {
@@ -1111,7 +1125,8 @@ export async function runDirector(chatId, chatKey, { type = 'normal', force = fa
         .catch((err) => {
             console.warn(LOG_PREFIX, 'the director could not write a briefing', err);
             const error = String(err?.message ?? err);
-            updateChatDoc(chatKey, (d) => { d.director = { ...d.director, error }; });
+            // The last reply's arrivals are not this one's (the narrator is told who arrives).
+            updateChatDoc(chatKey, (d) => { d.director = { ...d.director, error, ...(isNewTurn(type) ? { moves: { in: [], out: [] } } : {}) }; });
             status = { ...status, error };
             if (isNewTurn(type) && getSettings().time.enabled) {
                 void getBoundSettingId(chatId).then((settingId) => settingId && advanceBy(chatId, chatKey, settingId, perTurnDefault(), { planned: true, note: 'A reply\'s worth of time' })).catch(() => {});

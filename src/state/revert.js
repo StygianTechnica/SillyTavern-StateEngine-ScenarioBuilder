@@ -25,3 +25,25 @@ export function revertPatch(history, undoIds, canonical) {
     }
     return patch;
 }
+
+// Whether the player's own message names the place: its name or an alias
+// whole, or all but one of the words that make a long name ("White Cerberus
+// common room" for "Common Room in White Cerberus Headquarters"). A move
+// the player's message asked for is theirs, not the reply's: undoing the
+// reply (a regenerate, an edit) leaves the scene where they put it - twice
+// a regenerate sent Cyril back to Zane's Shack from the common room he had
+// walked into, and the story stayed in the wrong building. names: the
+// place's name and aliases.
+const LITTLE = new Set(['the', 'a', 'an', 'of', 'in', 'at', 'on', 'to', 'and']);
+const wordsOf = (t) => (String(t ?? '').toLowerCase().match(/[\p{L}\p{N}']+/gu) ?? []).filter((w) => !LITTLE.has(w));
+export function namesPlace(text, names) {
+    const said = new Set(wordsOf(text));
+    const flat = ` ${wordsOf(text).join(' ')} `;
+    return (names ?? []).some((name) => {
+        const words = wordsOf(name);
+        if (!words.length) return false;
+        if (flat.includes(` ${words.join(' ')} `)) return true;
+        const hits = words.filter((w) => said.has(w)).length;
+        return words.length >= 3 && hits >= Math.max(3, words.length - 1);
+    });
+}
