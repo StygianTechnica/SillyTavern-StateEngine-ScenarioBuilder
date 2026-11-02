@@ -319,6 +319,7 @@ export function dossierText(input) {
 
     // The people: who is here, then who could turn up.
     const cast = (input.cast ?? []).filter((c) => clean(c?.name));
+    const playerName = clean(cast.find((c) => c.player)?.name) || clean(input.userName) || 'the player character';
     section(cast.length ? 'WHO IS HERE' : 'WHO IS HERE: not known yet.');
     for (const c of cast) {
         if (c.player) {
@@ -331,6 +332,7 @@ export function dossierText(input) {
             clean(c.voice) && `voice and mannerisms: ${cut(c.voice, 200)}`,
             clean(c.goals) && `wants: ${cut(c.goals, 200)}`,
             clean(c.gifts) && cut(c.gifts, 220),
+            c.firstMeeting && `meeting ${playerName} for the first time - no shared past: they speak of none and know only what they saw or were told`,
             clean(c.mood) && `mood: ${clean(c.mood)}`,
             clean(c.intent) && `intends: ${cut(c.intent, 160)}`,
             clean(c.thought) && `thinking: ${cut(c.thought, 160)}`,
@@ -466,7 +468,7 @@ export function buildDirectorPrompt(input) {
         ? `No NPCs are present, so the reply is not empty: the world itself reacts. Lead with what ${userName}'s latest action did - its consequences, what changed because of it - and what there is to notice here: a detail, something out of place, something that was not there before. Beyond that, brief the narrator ONLY on the environment, the weather, sounds, smells, distant movement, creatures acting independently (the ones here, or ones the latest chat shows coming) and divine or supernatural forces - including what they do in answer to the latest message. Never invent an action, word, thought or feeling for ${userName}, or say what they make of what they notice: the reply stops where their next choice begins.`
         + ' If the chat shows creatures or people arriving that are not listed as here, name them with an ENTERS line below. Someone may turn up only if the story calls for it - do not invent a companion just to have someone to talk to.'
         + (/^- Pace: move on\b/m.test(plan) ? ' The GM PLAN says to move on: that is such a call - whoever or whatever opens the next scene may come to them.' : '')
-        : `what the people around ${userName} want, feel toward one another and are likely to do about it - woven together, not person by person. Give each of them an agenda of their own and show it moving: in this reply at least one of them takes the initiative - starts something, presses their own plan, pursues what they want, or acts on someone else - without waiting to be asked. They answer ${userName} only as far as it serves their own aims.`;
+        : `what the people around ${userName} want, feel toward one another and are likely to do about it - woven together, not person by person. Give each of them an agenda of their own and show it moving: in this reply at least one of them takes the initiative - starts something, presses their own plan, pursues what they want, or acts on someone else - without waiting to be asked. They answer ${userName} only as far as it serves their own aims. Each of them judges for themselves, from what they saw and what they want: people who work together do not back one another by default, and they may well disagree among themselves. Someone who walks in on a quarrel or a fight has not seen how it began - they ask, hear more than one side, and only then take one, whichever their nature and aims lead them to. Never line everyone up against ${userName}; when ${userName} has a point, someone can see it - without the story simply agreeing with ${userName} either.`;
     // Creatures in the scene act too, NPCs or not - by their nature, unasked.
     const activeCreatures = (input.location?.creatures ?? []).filter((x) => clean(x?.name) && x.active !== false).map((x) => creatureLabel(x.name, { form: x.form, count: x.count }));
     const creatureTask = activeCreatures.length

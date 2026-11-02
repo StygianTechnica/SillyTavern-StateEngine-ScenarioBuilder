@@ -36,7 +36,7 @@ import { triggerSection,
     setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, restoreBeat, editBeat, lockBeat, removeBeat, addBeat,
     mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat, unseenTies, undoUnseenBeats, newcomerWait, FIRM_AFTER,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText, removeChronicle,
-    addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines,
+    addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines, factionsOutOfPlay,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
 import { companyLines } from '../director/company.js';
@@ -280,6 +280,7 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
             startAct: startIndex >= 0 ? { index: startIndex, title: shape.acts[startIndex].title } : null,
             newVolume,
             pacing: plannerSettings().pacing,
+            untouched: await factionsToBringIn(chatId, settingId),
         }), OUTLINE_TOKENS, { salvage: (raw) => readModelJson(closeCutJson(raw)) }));
         if (!parsed) throw new Error('The outline had no beats in it.');
         // The conditions the outline wants watched: story triggers.
@@ -357,6 +358,7 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             story: storyWords(doc.gm),
             newcomers: beatNewcomers(doc.gm),
             company: companyLines(doc.company, { turn: doc.turn, player: userName() }),
+            untouched: await factionsToBringIn(chatId, settingId),
             place: (guidance.location?.path ?? []).slice(-1)[0] ?? '',
             situation: doc.canonical.sceneSummary,
             happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today' })),
@@ -877,6 +879,28 @@ async function knownEntries(chatId, settingId) {
     return out;
 }
 
+// The factions the story has hardly touched (src/planner/model.js
+// factionsOutOfPlay), for the ideas, day and outline passes - so work and
+// leads do not all go back to the one faction every quest and rivalry
+// names. Never throws: [] when it cannot tell.
+async function factionsToBringIn(chatId, settingId, known = null) {
+    if (!settingId) return [];
+    try {
+        const entries = known ?? await knownEntries(chatId, settingId);
+        const quests = await listEntries(chatId, settingId, 'quest').catch(() => []);
+        return factionsOutOfPlay({
+            factions: entries.filter((e) => e.type === 'faction'),
+            questTexts: quests.map((q) => `${q.name} ${q.base?.description ?? q.description ?? ''}`),
+            chatText: seenTexts(Infinity).join('\n'),
+            relations: getSettingDoc(settingId).relations,
+            nameOf: (id) => entries.find((e) => e.id === id)?.name ?? '',
+        });
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not tell which factions are out of play', err);
+        return [];
+    }
+}
+
 // Proactive worldbuilding: looks at the frictions, the standing quests and
 // the lore not in play, and proposes (or, in a setting set to add silently,
 // makes) new quests, quest detail, happenings and seeds.
@@ -918,6 +942,7 @@ export async function runIdeas(chatId, chatKey) {
             frictions,
             quests,
             lore,
+            untouched: await factionsToBringIn(chatId, settingId, known),
             agenda: doc.gm.agenda.filter((x) => x.status === 'coming' || x.status === 'planned').map((x) => ({ text: x.text, inDays: Math.max(0, x.day - doc.canonical.day) })),
             motifs: motifsOf(doc.gm),
             dismissed: doc.gm.ideas.filter((i) => i.status === 'dismissed').map((i) => i.name || i.text).slice(-20),

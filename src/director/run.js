@@ -33,7 +33,7 @@ import { nextFight, fightFacts, woundsOf } from './fight.js';
 import { combatOptions, stanceFor, protectionOf, powerRatingOf, mayDie, protectedText } from './combat.js';
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
-import { whoCouldTurnUp, belongingHere, sharedScenes, lastSeen } from './whereabouts.js';
+import { whoCouldTurnUp, belongingHere, sharedScenes, lastSeen, firstMeetings } from './whereabouts.js';
 import { rankNearby } from './company.js';
 import { arrivals } from '../world/model.js';
 import { isWorldOn, takeHeard, worldHereFor, noteHeartRipple } from '../world/run.js';
@@ -588,6 +588,17 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // (src/world/situations.js).
     const hearts = await heartsContext(chatKey, settingId, characters, castIds, { ahead });
     const worldHere = settingId ? await worldHereFor(chatId, chatKey, settingId, { userText: callerText }) : '';
+    // Those meeting the player character for the first time claim no shared
+    // past with them (src/director/whereabouts.js firstMeetings).
+    if (settingId) {
+        const met = firstMeetings({
+            cast: (guidance.cast ?? []).filter((c) => c.id && !c.player).map((c) => ({ id: c.id, names: callNames(characters.find((x) => x.id === c.id) ?? c) })),
+            chat: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).map((m) => String(m.mes ?? '')),
+            playerId: playerIdOf(settingId, characters),
+            relations: getSettingDoc(settingId).relations,
+        });
+        for (const c of guidance.cast ?? []) if (met.has(c.id)) c.firstMeeting = true;
+    }
     // Trimmed to fit the director model's context (src/director/fit.js).
     const fitted = fitDirectorPrompt({
         ...guidance,

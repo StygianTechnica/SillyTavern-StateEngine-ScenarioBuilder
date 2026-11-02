@@ -1148,6 +1148,58 @@ export function addSeed(gm, { text, payoff = '' }) {
     return true;
 }
 
+// At most `max` pairs, spread over everyone in them: each one once before
+// anyone twice. Taken in list order, the rivalries were all one faction's -
+// the one with 38 ties of its 147 (Omicron Innovations), and every idea
+// grew out of it.
+function spreadPairs(pairs, max) {
+    const used = new Map();
+    const picked = [];
+    for (const round of [1, 2, Infinity]) {
+        for (const r of pairs) {
+            if (picked.length >= max) return picked;
+            if (picked.includes(r) || Math.max(used.get(r.from) ?? 0, used.get(r.to) ?? 0) >= round) continue;
+            picked.push(r);
+            for (const id of [r.from, r.to]) used.set(id, (used.get(id) ?? 0) + 1);
+        }
+    }
+    return picked;
+}
+
+// The factions the story has hardly touched, for the planner to bring in:
+// fewest quests about them and mentions in the chat first, and never one
+// the story already uses at half the rate of the most used. Without them a
+// faction no quest or rivalry named was never thought of - five of nine
+// in Assassins Inc, while every job went back to Omicron. factions: [{ id,
+// name, description }]; questTexts: [text] (every quest's name and
+// description); chatText; relations: the setting's; nameOf(id) -> name.
+// -> [{ name, description, ties: [text] }], at most `limit`.
+export function factionsOutOfPlay({ factions = [], questTexts = [], chatText = '', relations = [], nameOf = () => '', limit = 4 } = {}) {
+    const core = (name) => clean(name).replace(/^the\s+/i, '');
+    const count = (text, name) => {
+        const n = core(name);
+        if (n.length < 3) return 0;
+        return (String(text ?? '').match(new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'giu')) ?? []).length;
+    };
+    const used = (Array.isArray(factions) ? factions : []).filter((f) => clean(f?.name)).map((f) => ({
+        f,
+        score: 3 * questTexts.filter((t) => count(t, f.name) > 0).length + count(chatText, f.name),
+    }));
+    if (!used.length) return [];
+    const most = Math.max(...used.map((u) => u.score));
+    // Their ties to anyone but the most used faction first: a lead that
+    // points somewhere new.
+    const top = new Set(used.filter((u) => most > 0 && u.score === most).map((u) => u.f.id));
+    const toTop = (r) => (top.has(r.from) || top.has(r.to) ? 1 : 0);
+    return used.filter((u) => most === 0 || u.score < most / 2).sort((a, b) => a.score - b.score).slice(0, limit).map(({ f }) => ({
+        name: clean(f.name),
+        description: clean(f.description).slice(0, 200),
+        ties: (Array.isArray(relations) ? relations : []).filter((r) => r?.from === f.id || r?.to === f.id).sort((a, b) => toTop(a) - toTop(b)).slice(0, 2)
+            .map((r) => ({ other: clean(nameOf(r.from === f.id ? r.to : r.from)), kind: clean(r.kind) }))
+            .filter((t) => t.other).map((t) => `tied to ${t.other}${t.kind ? ` (${t.kind})` : ''}`),
+    }));
+}
+
 // The world's frictions for the IDEAS pass: relationships gone sour or
 // volatile (Archivist's relationship map), the user's rivals and enemies,
 // secrets still kept, oaths pending or broken. cells: Archivist's
@@ -1160,7 +1212,7 @@ export function frictionLines({ cells = [], relations = [], knowledge = [], name
         .sort((a, b) => Number(a.polarity) - Number(b.polarity))
         .slice(0, 6);
     for (const c of sour) out.push(`${clean(c.from.name)} sees ${clean(c.to.name)} as ${clean(c.polarity_label) || 'a problem'}${clean(c.type) ? ` (${clean(c.type)})` : ''}${clean(c.trend) && c.trend !== 'stable' ? `, ${clean(c.trend)}` : ''}`);
-    for (const r of (Array.isArray(relations) ? relations : []).filter((x) => ['rival', 'enemy'].includes(x?.kind)).slice(0, 4)) {
+    for (const r of spreadPairs((Array.isArray(relations) ? relations : []).filter((x) => ['rival', 'enemy'].includes(x?.kind)), 4)) {
         const a = clean(nameOf(r.from));
         const b = clean(nameOf(r.to));
         if (a && b) out.push(`${a} and ${b}: ${r.kind === 'enemy' ? 'enemies' : 'rivals'}${clean(r.note) ? ` - ${clean(r.note)}` : ''}`);

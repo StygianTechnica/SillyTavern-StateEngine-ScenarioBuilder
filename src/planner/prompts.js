@@ -22,6 +22,14 @@ const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const list = (v) => (Array.isArray(v) ? v : []);
 const texts = (v, max) => list(v).map((x) => clean(typeof x === 'string' ? x : x?.text)).filter(Boolean).slice(0, max);
 
+// The factions the story has hardly touched (src/planner/model.js
+// factionsOutOfPlay), headed for the pass reading them. -> [line] or [].
+function untouchedPart(untouched, heading) {
+    const list = (Array.isArray(untouched) ? untouched : []).filter((f) => clean(f?.name));
+    if (!list.length) return [];
+    return ['', heading, ...list.map((f) => `- ${clean(f.name)}${clean(f.description) ? `: ${cut(f.description, 180)}` : ''}${(f.ties ?? []).length ? ` - ${f.ties.map(clean).join('; ')}` : ''}`)];
+}
+
 function rules(userName) {
     return [
         `${userName} is the player character, played by a human: never plan what ${userName} says, does, thinks or feels, and never make a moment depend on ${userName} choosing it. Plan what the world and the other characters do; ${userName} reacts as they please.`,
@@ -73,6 +81,7 @@ export function buildDayPrompt(input) {
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (echo them as images and turns of fate, never as literal events)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));
     const story = storyText(input.story);
     if (story) parts.push('', 'WHERE THE STORY IS GOING (let today serve this beat and this aim, without forcing it)', story);
+    parts.push(...untouchedPart(input.untouched, `FACTIONS NOT YET IN PLAY (an agenda, an off-screen move or a moment of the day may come from one of these where it fits - someone of theirs, word of them; work or an offer ${userName} is given can come from them, not always from the same faction)`));
     // The beat's people the story has not shown yet: an agenda alone keeps
     // them off stage, so the day brings them to the player.
     const newcomers = texts(input.newcomers, 4);
@@ -241,6 +250,7 @@ export function buildOutlinePrompt(input) {
             for (const b of keep) parts.push(`- [${b.id}] ${b.text} - ${b.status}${b.locked ? ' [locked]' : ''}`);
         }
     }
+    parts.push(...untouchedPart(input.untouched, 'FACTIONS NOT YET IN PLAY (beats still to come may draw on them, so the story does not keep going back to the same faction)'));
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (weave them in as recurring images, echoes and turns of fate - never as literal events or retold plot)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));
     if (fresh) {
         parts.push(
@@ -510,6 +520,7 @@ export function buildIdeasPrompt(input) {
     }
     const lore = list(input.lore).filter((l) => clean(l?.name));
     if (lore.length) parts.push('', 'LORE NOT YET IN PLAY (bring some of it in, tied to the story)', ...lore.slice(0, 10).map((l) => `- ${clean(l.name)}${clean(l.description) ? `: ${cut(l.description, 180)}` : ''}`));
+    parts.push(...untouchedPart(input.untouched, 'FACTIONS NOT YET IN PLAY (the story has hardly touched them: ground at least one idea in one of these, tied to what the story is doing now, so not every lead goes back to the same faction)'));
     const agenda = list(input.agenda).filter((a) => clean(a?.text));
     if (agenda.length) parts.push('', 'ALREADY ON THE CALENDAR', ...agenda.map((a) => `- ${clean(a.text)} (in ${a.inDays} day${a.inDays === 1 ? '' : 's'})`));
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (echo them symbolically)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));

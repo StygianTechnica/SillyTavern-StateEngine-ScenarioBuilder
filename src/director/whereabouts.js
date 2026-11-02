@@ -169,3 +169,26 @@ export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '',
     for (const id of castIds) for (const r of tiesOf(id)) put(r.otherId, `tied to someone here (${r.kind})`);
     return { near, elsewhere };
 }
+
+// Those here meeting the player character for the first time: no tie to
+// them in the setting, and the chat names them first only in its last few
+// messages (or not at all). Told so, they claim no shared past - Adam
+// Miller, on the scene for one reply, raged at Cyril for repaying all he
+// had given him. cast: [{ id, names: [name] }] (the others here);
+// chat: [text], oldest first; playerId; relations: [{ from, to }]; recent:
+// how many of the last messages count as "just now". -> Set of ids.
+export function firstMeetings({ cast = [], chat = [], playerId = '', relations = [], recent = 16 } = {}) {
+    const tied = (id) => (relations ?? []).some((r) => (r?.from === id && r?.to === playerId) || (r?.to === id && r?.from === playerId));
+    const words = (name) => (String(name ?? '').match(/[\p{L}\p{N}'’-]{3,}/gu) ?? []);
+    const named = (text, names) => names.some((n) => {
+        const w = words(n)[0];
+        return !!w && new RegExp(`(^|[^\\p{L}\\p{N}])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu').test(String(text ?? ''));
+    });
+    const before = (chat ?? []).slice(0, Math.max(0, (chat ?? []).length - recent));
+    const out = new Set();
+    for (const c of cast ?? []) {
+        if (!c?.id || c.id === playerId || tied(c.id)) continue;
+        if (!before.some((t) => named(t, c.names ?? []))) out.add(c.id);
+    }
+    return out;
+}
