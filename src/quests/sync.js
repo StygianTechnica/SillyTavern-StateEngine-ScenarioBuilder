@@ -32,7 +32,7 @@ import { PRESET_NAME } from '../preset/blueprint.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import {
     isQuestThread, threadDormant, rejectedLike, statusFromThread, typeFromThread, objectivesFromThread, mergeObjectives, tidyObjectives, foreignStepTest,
-    effectiveStatus, questProgress, currentObjective, questPriority, sortQuests, normalizeQuestMeta,
+    effectiveStatus, questProgress, currentObjective, questPriority, sortQuests, normalizeQuestMeta, conditionOf, conditionTarget,
 } from './model.js';
 
 export const QUESTS_EVENT = 'scenario_builder_quests';
@@ -138,6 +138,25 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
                 continue;
             }
             if (!create || rejectedName(thread.title) || rejectedLike(thread, rejectedQuests)) continue;
+            // A thread that only says how another quest is won or lost is no
+            // quest of its own: it fills that quest's empty end condition,
+            // when it clearly belongs to one.
+            const condition = conditionOf(thread);
+            if (condition) {
+                const candidates = quests.filter((q) => !conditionOf(threads.find((t) => links[t.id] === q.id))).map((q) => {
+                    const own = threads.find((t) => links[t.id] === q.id);
+                    return { id: q.id, texts: [q.name, q.description, ...questMeta(settingId, q.id).objectives.map((o) => o.text), own?.title, own?.goal, own?.text, ...(own?.steps ?? []).map((s) => s?.text)] };
+                });
+                const target = conditionTarget(thread, candidates);
+                const meta = target ? questMeta(settingId, target) : null;
+                if (meta && !meta[condition.field].trim()) {
+                    setEntryMeta(settingId, target, { quest: { ...meta, [condition.field]: condition.text } });
+                    console.info(LOG_PREFIX, `"${thread.title}" says how "${quests.find((q) => q.id === target)?.name}" ${condition.field === 'completion' ? 'completes' : 'fails'} - written there, not made a quest`);
+                    out.updated += 1;
+                }
+                if (meta) dismissed.add(thread.id);
+                continue;
+            }
             // Nothing new from a thread the story left behind long ago.
             if (thread.dormant && !scan) continue;
             const finished = thread.status === 'resolved' || thread.status === 'abandoned';

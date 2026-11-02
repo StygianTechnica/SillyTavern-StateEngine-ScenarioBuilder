@@ -308,3 +308,39 @@ export function rejectedLike(thread, rejected) {
         return whole.shared >= 3 && whole.jaccard >= 0.45;
     });
 }
+
+// A thread that only says how another quest is won or lost: "Cyril's success
+// conditions are extracting the asset undetected and reaching a designated
+// extraction point" (Assassins Inc) - Archivist keeps it as a plan of its
+// own, and it was made into a quest. -> { field: 'completion' | 'abandon',
+// text } or null.
+const CONDITION = [
+    /\b(?:success|win(?:ning)?|victory|completion|pass(?:ing)?|failure|fail(?:ing)?|los(?:e|ing)|lose) (?:conditions?|criteria|terms)\b/i,
+    /\b(?:conditions?|criteria) (?:for|of) (?:success|winning|victory|completion|passing|failure|failing|losing)\b/i,
+    /\b(?:will be|is|are) met (?:when|once|if)\b/i,
+    /\b(?:the |this |his |her |their )?(?:mission|test|task|quest|training|trial|exercise|simulation|job|run) (?:is (?:won|passed|complete|completed|over|failed|lost)|succeeds|ends|fails) (?:when|if|once)\b/i,
+    /^to (?:succeed|win|pass)\b/i,
+];
+const FAILURE = /\b(?:fail(?:s|ure|ing|ed)?|los(?:e|es|ing|t)|defeat)\b/i;
+export function conditionOf(thread) {
+    const texts = [thread?.title, thread?.goal, thread?.text].map(clean).filter(Boolean);
+    const hit = texts.find((t) => CONDITION.some((re) => re.test(t)));
+    if (!hit) return null;
+    const text = clean(thread?.text) || clean(thread?.goal) || hit;
+    return { field: FAILURE.test(hit) ? 'abandon' : 'completion', text };
+}
+
+// The quest a condition thread belongs to, by the words they share (the
+// people in both left out: Cyril is in every quest). candidates: [{ id,
+// texts, names }]. -> id or null when none clearly does.
+export function conditionTarget(thread, candidates) {
+    const people = new Set((thread?.involved ?? []).flatMap((e) => [...questWords(e?.name)]));
+    const own = new Set([...questWords([thread?.title, thread?.goal, thread?.text, ...(thread?.steps ?? []).map((s) => s?.text)].join(' '))].filter((w) => !people.has(w)));
+    const scored = (candidates ?? []).map((c) => {
+        const theirs = questWords((c.texts ?? []).join(' '));
+        const shared = [...own].filter((w) => theirs.has(w)).length;
+        return { id: c.id, shared };
+    }).sort((a, b) => b.shared - a.shared);
+    const [best, next] = scored;
+    return best && best.shared >= 3 && (!next || next.shared < best.shared) ? best.id : null;
+}
