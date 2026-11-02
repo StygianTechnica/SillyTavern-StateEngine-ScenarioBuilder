@@ -16,7 +16,7 @@ import { emptyCalendar } from '../store/schema.js';
 import { getSetting, updateSetting } from '../api/objects.js';
 import { setCanonical } from '../state/canonical.js';
 import { getDateTimeParts, formatDateTime, formatDateTimePartial, advanceDateTime, getCalendarDefinition } from '../api/calendar.js';
-import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance, timeOfDayFraction, storyTimeCue, cueTarget, storyDelta, storyElapsed } from './moment.js';
+import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance, timeOfDayFraction, storyTimeCue, cueTarget, storyDelta, storyElapsed, playerTimeSkip } from './moment.js';
 import { getRawValues } from '../api/variables.js';
 import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.js';
 import { weatherAt } from './weather.js';
@@ -318,6 +318,42 @@ export async function followStoryElapsed(chatId, chatKey, settingId, text, from,
     const target = await advanceFrom(settingId, Number.isFinite(from) ? from : now, span);
     if (target === null || target <= now) return null;
     return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The story says ${span} passed`, sourceMessage });
+}
+
+// Where a time skip the player's post opens with takes the clock, from
+// `from`: "the next morning" and "two days later" as any advance; "later
+// that evening" later today, or nowhere when today is already past it.
+// -> { to, text } or null.
+export async function playerSkipTarget(settingId, from, postText) {
+    const skip = playerTimeSkip(postText);
+    if (!skip || !settingId || !Number.isFinite(from)) return null;
+    if (!skip.sameDay) {
+        const to = await advanceFrom(settingId, from, skip.advance);
+        return to === null ? null : { to, text: skip.advance };
+    }
+    const { def } = await calendarFor(settingId);
+    const fraction = timeOfDayFraction(skip.advance.replace(/^until\s+/, ''), def);
+    if (fraction === null) return null;
+    const perDay = secondsPerDay(def);
+    const day = dayIndexOf(def, from);
+    const to = day * perDay + Math.round(fraction * perDay);
+    return to > from ? { to, text: skip.advance } : null;
+}
+
+// The player's post opens with a time skip: the clock goes there, counted
+// from `from` (where the turn began; now by default) - taken with, not
+// added to, what already moved it. planned: the director's advance for
+// this reply, so the story's own reading after it is not counted twice.
+// -> { from, to, text } or null.
+export async function followPlayerSkip(chatId, chatKey, settingId, postText, { from = null, planned = false, source = 'story', sourceMessage = '' } = {}) {
+    const now = planned ? await ensureClock(chatId, chatKey, settingId) : getChatDoc(chatKey).canonical.time;
+    if (!settingId || !Number.isFinite(now)) return null;
+    const start = Number.isFinite(from) ? from : now;
+    const target = await playerSkipTarget(settingId, start, postText);
+    if (!target || target.to <= now) return null;
+    await setTime(chatId, chatKey, settingId, target.to, { source, note: `The player moved time on: ${target.text}`, sourceMessage });
+    if (planned) updateChatDoc(chatKey, (d) => { d.clock.planned = { from: start, to: target.to, text: target.text }; });
+    return { from: start, to: target.to, text: target.text };
 }
 
 // The default advance for a reply nobody planned.

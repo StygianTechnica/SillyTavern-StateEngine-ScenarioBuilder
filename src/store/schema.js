@@ -100,6 +100,7 @@ import { normalizeFight } from '../director/fight.js';
 import { normalizeCombatMeta, STANCES } from '../director/combat.js';
 import { normalizeSuspended } from '../director/suspended.js';
 import { emptyHearts, normalizeHearts, JEALOUSY_MODES } from '../director/jealousy.js';
+import { emptyCompany, normalizeCompany } from '../director/company.js';
 import { normalizeEvent, normalizeEventsDone, normalizeEventsComing } from '../events/model.js';
 import { normalizeTemplates } from '../events/setup.js';
 import { emptyChanges, normalizeChanges } from '../state/changes-model.js';
@@ -509,6 +510,9 @@ export function emptyChatDoc() {
         // Jealousy: grievances still felt, and vows of love already seen
         // broken (src/director/jealousy.js).
         hearts: emptyHearts(),
+        // How the player character has felt with the others: who they want
+        // around, and the user's word on it (src/director/company.js).
+        company: emptyCompany(),
     };
 }
 
@@ -559,6 +563,7 @@ export function normalizeChatDoc(doc) {
         wounds: isObject(d.wounds) ? Object.fromEntries(Object.entries(d.wounds).filter(([k, w]) => k && isObject(w) && typeof w.condition === 'string' && Number.isInteger(w.turn))) : {},
         suspended: normalizeSuspended(d.suspended),
         hearts: normalizeHearts(d.hearts),
+        company: normalizeCompany(d.company),
     };
 }
 

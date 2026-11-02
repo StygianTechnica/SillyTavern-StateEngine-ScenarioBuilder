@@ -21,7 +21,7 @@ import { routesFrom, listRoutes, headingAlong, placesFurtherOn } from '../librar
 import { pathOf } from '../library/hierarchy.js';
 import { listRelations, relationsFor, addRelation } from '../library/relations-edit.js';
 import { setCanonical } from '../state/canonical.js';
-import { advanceBy, perTurnDefault, holdStoryWeather, setTime, travelAlong, setTimeOfDay } from '../calendar/clock.js';
+import { advanceBy, perTurnDefault, holdStoryWeather, setTime, travelAlong, setTimeOfDay, followPlayerSkip } from '../calendar/clock.js';
 import { baselineFields } from '../library/fields.js';
 import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
@@ -33,7 +33,8 @@ import { nextFight, fightFacts, woundsOf } from './fight.js';
 import { combatOptions, stanceFor, protectionOf, powerRatingOf, mayDie, protectedText } from './combat.js';
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
-import { whoCouldTurnUp, belongingHere, sharedScenes } from './whereabouts.js';
+import { whoCouldTurnUp, belongingHere, sharedScenes, lastSeen } from './whereabouts.js';
+import { rankNearby } from './company.js';
 import { arrivals } from '../world/model.js';
 import { isWorldOn, takeHeard, worldHereFor, noteHeartRipple } from '../world/run.js';
 import { bondsOf, heartsSection, noteBrokenVows, takeHearts, jealousyOf } from './jealousy.js';
@@ -404,7 +405,7 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
         relations: getSettingDoc(settingId).relations, memberships: libraryMemberships(factionList, getSettingDoc(settingId).relations),
         placeName: (id) => placeName.get(id) ?? '',
     }).filter((b) => b.id !== playerIdOf(settingId, characters)) : [];
-    const { near: nearby, elsewhere } = whoCouldTurnUp({
+    const { near: found, elsewhere } = whoCouldTurnUp({
         characters: characters.filter((c) => !isPower(c)), castIds, locationId, parents,
         history: doc.history, current: doc.canonical, inPlay: doc.inPlay, tiesOf: (id) => relationsFor(id, relations),
         // Those the world meanwhile has brought near (src/world/model.js).
@@ -414,6 +415,9 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
         belongs,
     });
     for (const e of elsewhere) e.lastAt = placeName.get(e.lastAt) ?? '';
+    // Whom to reach for when someone should come along: not those the
+    // player character has had enough of, every scene (src/director/company.js).
+    const nearby = rankNearby(found, { company: doc.company, turn: doc.turn, seen: lastSeen(doc.history, doc.canonical), total: doc.history.length, player: SillyTavern.getContext().name1 ?? '' });
     // The world's rules as they hold where the scene is.
     const overview = settingId ? getPlaceOverview(settingId, guidance.location?.id) : {};
     const limits = [...describeMagic(overview.magic).limits, ...describeTech(overview.tech).limits];
@@ -1057,8 +1061,11 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         if (settings.time.enabled) {
             // The clock just started: first the story's own time of day.
             if (getChatDoc(chatKey).clock.needsNow) await setTimeOfDay(chatId, chatKey, settingId, parsed.now);
-            const wanted = parsed.time?.text || perTurnDefault();
-            const moved = await advanceBy(chatId, chatKey, settingId, wanted, { planned: true, source: 'director', note: `Time passes: ${wanted}${parsed.time?.why ? ` (${parsed.time.why})` : ''}` })
+            // A time skip the player wrote ("Early the next morning, ...")
+            // is theirs to make: the clock follows it, whatever TIME says.
+            const skipped = await followPlayerSkip(chatId, chatKey, settingId, latestUserText, { planned: true, source: 'director' });
+            const wanted = skipped?.text || parsed.time?.text || perTurnDefault();
+            const moved = skipped ?? await advanceBy(chatId, chatKey, settingId, wanted, { planned: true, source: 'director', note: `Time passes: ${wanted}${parsed.time?.why ? ` (${parsed.time.why})` : ''}` })
                 ?? await advanceBy(chatId, chatKey, settingId, perTurnDefault(), { planned: true, source: 'director', note: `Time passes: ${perTurnDefault()}` });
             if (moved) timeText = wanted;
             // A move along a route takes at least its travel time.
@@ -1077,7 +1084,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // changed - its pace count (src/planner/model.js) treats a turn with
     // no change as idle.
     if (isNewTurn(type) && settingId) {
-        takeBeats(chatKey, parsed.beats, note);
+        takeBeats(chatKey, parsed.beats);
         takeHeard(chatKey, parsed.heard);
         takeHeartLines(chatKey, parsed, hearts);
         if (made.length || movedFrom || moves.in.length || moves.out.length) markActive(chatKey);

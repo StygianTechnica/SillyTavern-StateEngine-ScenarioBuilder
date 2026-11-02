@@ -30,6 +30,19 @@ export function isQuestThread(thread) {
     return /quest|seed|hook|goal|plan|mission|task|errand|job|vow|oath|bounty|objective/i.test(String(thread.kind ?? ''));
 }
 
+// A seed or hook nothing has come of yet: no goal, no steps, nobody taking
+// it up. Archivist notes any passing remark that might lead somewhere ("Zane
+// has an aggressive cooking style"); that is no quest until it has an end to
+// work toward or someone pursues it. The thread waits - once it gains a goal,
+// a step or goes active, the next sync makes its quest.
+export function idleSeed(thread) {
+    if (!thread || typeof thread !== 'object' || thread.entity?.type === 'quest') return false;
+    if (!/seed|hook/i.test(String(thread.kind ?? ''))) return false;
+    if (!['', 'open'].includes(String(thread.status ?? '').toLowerCase())) return false;
+    const steps = (Array.isArray(thread.steps) ? thread.steps : []).filter((s) => clean(typeof s === 'string' ? s : s?.text));
+    return !clean(thread.goal) && !steps.length;
+}
+
 export function statusFromThread(status) {
     switch (String(status ?? '').toLowerCase()) {
         case 'active': return 'Active';

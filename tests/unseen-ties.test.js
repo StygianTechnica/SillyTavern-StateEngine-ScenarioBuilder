@@ -52,7 +52,7 @@ describe('a moment done in no chat', () => {
         expect(g.day.moments.find((m) => m.id === 'm1').status).toBe('skipped');
     });
 
-    it('stays pending when the director calls it done, unless its briefing brings them in', () => {
+    it('stays pending when the director calls it done, until the chat shows them', () => {
         const g = gm();
         applyBeats(g, [{ id: 'm1', status: 'done', note: '' }], { seen: chat, player: 'Cyril' });
         expect(g.day.moments.find((m) => m.id === 'm1').status).toBe('pending');

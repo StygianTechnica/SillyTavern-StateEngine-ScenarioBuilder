@@ -29,7 +29,8 @@ import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteE
 import { setCanonical } from '../state/canonical.js';
 import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
-import { catchUpWithStory, holdStoryWeather, travelAlong, followStoryTimeOfDay, followStoryElapsed } from '../calendar/clock.js';
+import { noteMood } from '../director/company.js';
+import { catchUpWithStory, holdStoryWeather, travelAlong, followStoryTimeOfDay, followStoryElapsed, followPlayerSkip } from '../calendar/clock.js';
 import { detectDrift, decide, DEFAULT_POLICIES, namedOnlyAsOwner, namedAtAll, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
 
 export const DRIFT_CHANGED_EVENT = 'scenario_builder_drift_changed';
@@ -58,6 +59,14 @@ function latestReplyText() {
         if (chat[i] && !chat[i].is_user && !chat[i].is_system) return String(chat[i].mes ?? '');
     }
     return '';
+}
+
+// The player's last message before the latest reply.
+function latestUserPostText() {
+    const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system);
+    const replyAt = chat.map((m) => !m.is_user).lastIndexOf(true);
+    const userAt = chat.slice(0, replyAt < 0 ? chat.length : replyAt).map((m) => m.is_user).lastIndexOf(true);
+    return typeof chat[userAt]?.mes === 'string' ? chat[userAt].mes : '';
 }
 
 // The latest turn: the player's last message and the reply after it.
@@ -368,6 +377,9 @@ async function reconcileOnce() {
         if (acceptedFields.has('location') && canonical.locationId !== doc.canonical.locationId) await travelAlong(chatId, chatKey, settingId, doc.canonical.locationId, canonical.locationId, replySource, { text: [latestTurnText()] });
         const replyFrom = doc.clock.planned?.from ?? doc.canonical.time;
         if (newReply) await catchUpWithStory(chatId, chatKey, settingId, raw.scene_deltatime, replySource);
+        // A time skip the player's post opened with, if nothing took it in
+        // yet (no briefing, or one that missed it).
+        if (newReply) await followPlayerSkip(chatId, chatKey, settingId, latestUserPostText(), { from: replyFrom, sourceMessage: replySource });
         // The day turning in the reply's own words ("the sun began to set"),
         // and time it says has passed ("gone for hours").
         if (newReply) {
@@ -377,8 +389,23 @@ async function reconcileOnce() {
             updateChatDoc(chatKey, (d) => { d.clock.readTo = { source: replySource, length: text.length }; });
         }
     }
+    if (newReply && playerId) await takePlayerMood(chatId, chatKey, playerId, canonical.castIds, characterEntries, replySource);
     if (restore.size) await pushCanonicalToObserved(chatId, chatKey, { fields: [...restore] });
     if (items.length) announce(chatKey);
+}
+
+// The player character's mood as State Engine read it after this reply,
+// against who was there (src/director/company.js): who they want around.
+async function takePlayerMood(chatId, chatKey, playerId, castIds, characters, key) {
+    try {
+        const me = await getObject(chatId, playerId);
+        const values = me?.runtime?.values ?? {};
+        const present = (castIds ?? []).filter((id) => id !== playerId)
+            .map((id) => ({ id, name: characters.find((c) => c.id === id)?.name ?? '' })).filter((p) => p.name);
+        updateChatDoc(chatKey, (d) => { d.company = noteMood(d.company, { key, turn: d.turn, mood: values.mood, thought: values.thought, present }); });
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not read the player character\'s mood', err);
+    }
 }
 
 // ---- the review queue (SB-221 "ambiguous"/"ask", SB-225 candidates)

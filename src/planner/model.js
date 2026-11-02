@@ -105,6 +105,7 @@ export function emptyGm() {
         dismissedIdeas: [],
         agenda: [],
         world: emptyWorld(),
+        newcomer: null,
     };
 }
 
@@ -186,6 +187,8 @@ export function normalizeGm(value) {
         triggers: normalizeTriggers(g.triggers),
         // The world meanwhile (src/world/model.js): schemes off scene.
         world: normalizeWorld(g.world),
+        // The active beat's newcomer still awaited: since which turn.
+        newcomer: isObject(g.newcomer) && clean(g.newcomer.beatId) ? { beatId: clean(g.newcomer.beatId), since: int(g.newcomer.since) } : null,
     };
 }
 
@@ -465,13 +468,17 @@ export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null
 // pace: paceAim(); aim: shapes.js tensionAim(); story: { shape (label),
 // act (title), next (the beat after this one) } for the outline's line;
 // motifs: [text].
-// newcomers: the beat's people the story has not shown yet (unseenTies).
-export function planSection(gm, { pace = null, aim = null, story = null, motifs = [], newcomers = [] } = {}) {
+// newcomers: the beat's people the story has not shown yet (unseenTies);
+// waited: replies they have been awaited (newcomerWait) - past FIRM_AFTER
+// they come in this reply.
+export const FIRM_AFTER = 3;
+export function planSection(gm, { pace = null, aim = null, story = null, motifs = [], newcomers = [], waited = 0 } = {}) {
     const lines = [];
     const beat = activeBeat(gm.outline);
     if (beat) lines.push(`- Story: ${story?.shape ? `${story.shape}, ` : ''}${story?.act ? `in "${story.act}" - ` : ''}the beat now: ${beat.text}${story?.next ? ` (then: ${story.next})` : ''}`);
     const due = beat ? strList(newcomers) : [];
-    if (due.length) lines.push(`- Not yet in the story: ${due.join(', ')}. The beat now needs ${due.length === 1 ? 'them' : 'each of them'} to reach the player character in person - in this reply where the scene leaves any room: they arrive where the player character is, walk in on the scene, or send for them. This brings someone to the scene; it does not move it. A talk elsewhere, out of the player character's sight, does not count.`);
+    if (due.length && waited >= FIRM_AFTER) lines.push(`- Now: ${due.join(' and ')} come${due.length === 1 ? 's' : ''} into the story in this reply - the beat has waited ${waited} replies for ${due.length === 1 ? 'them' : 'them all'}. Open the reply with ${due.length === 1 ? 'them' : 'each'} reaching the player character where they are: walking in, or sending for them, with a reason that fits the beat now. Not elsewhere, not later, not only talked about.`);
+    else if (due.length) lines.push(`- Not yet in the story: ${due.join(', ')}. The beat now needs ${due.length === 1 ? 'them' : 'each of them'} to reach the player character in person - in this reply where the scene leaves any room: they arrive where the player character is, walk in on the scene, or send for them. This brings someone to the scene; it does not move it. A talk elsewhere, out of the player character's sight, does not count.`);
     if (aim) lines.push(aimLine(aim, story?.act));
     if (pace && pace.aim !== 'steady') {
         lines.push(pace.aim === 'move on'
@@ -583,7 +590,9 @@ export function sameBeat(a, b) {
 // keepLocked false (a regenerate that starts afresh): locked beats still
 // to come are dropped too - only what the story has done is kept.
 // review: the pass brought an outline up to date (not written afresh).
-export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString(), keepLocked = true, review = false } = {}) {
+// unseen(beat): the names a beat ties in that the chat never showed - a
+// review never calls such a beat done.
+export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString(), keepLocked = true, review = false, unseen = () => [] } = {}) {
     const wasDone = new Set(beatsOf(gm.outline).filter((b) => b.status === 'done').map((b) => b.id));
     // A skipped beat never happened: it is not history, and a rewrite that
     // leaves it out drops it (an old outline's "Maziel attacks" would sit
@@ -617,7 +626,8 @@ export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString()
             if (!prev && finished(i)) continue;
             if (prev && !used.has(prev.id)) {
                 used.add(prev.id);
-                const status = past(prev) ? prev.status : (BEAT_STATUSES.includes(raw.status) ? raw.status : prev.status);
+                const said = BEAT_STATUSES.includes(raw.status) ? raw.status : prev.status;
+                const status = past(prev) ? prev.status : said === 'done' && unseen(prev).length ? prev.status : said;
                 const keepWords = prev.locked || past(prev);
                 beats.push({ ...prev, text: keepWords ? prev.text : clean(raw.text) || prev.text, ties: keepWords ? prev.ties : strList(raw.ties).slice(0, 6), status });
             } else if (review && raw.status === 'done') {
@@ -726,12 +736,55 @@ export function startAt(gm, act) {
 }
 
 // A skipped beat brought back by the user: still to come again.
+// A skipped beat back as one still to come; a beat wrongly called done
+// back as the beat now, and out of the chronicle.
 export function restoreBeat(gm, id) {
     const b = beatsOf(gm.outline).find((x) => x.id === id);
-    if (!b || b.status !== 'skipped') return;
+    if (!b || (b.status !== 'skipped' && b.status !== 'done')) return;
+    const wasDone = b.status === 'done';
     b.status = 'pending';
     b.note = '';
+    if (wasDone) {
+        gm.volume.chronicle = gm.volume.chronicle.filter((c) => c.text !== `Beat: ${b.text}`);
+        for (const x of beatsOf(gm.outline)) if (x.status === 'active') x.status = 'pending';
+        b.status = 'active';
+    }
     settleActive(gm.outline);
+}
+
+// Beats called done whose people the chat never showed did not happen: a
+// pass read a moment the director only meant to play ("Adam strides into
+// the common room") as history, and the outline moved on without him.
+// They are under way again, and the chronicle forgets every line about
+// someone who never turned up. texts: the whole chat. -> the names put
+// back, [] when nothing was wrong.
+export function undoUnseenBeats(gm, texts, player = '') {
+    const back = [];
+    for (const b of beatsOf(gm.outline)) {
+        if (b.status !== 'done') continue;
+        const missing = unseenTies(b.ties, texts, player);
+        if (!missing.length) continue;
+        b.status = 'pending';
+        b.note = '';
+        back.push(...missing);
+    }
+    const missing = [...new Set(back)];
+    if (!missing.length) return [];
+    const undone = new Set(beatsOf(gm.outline).filter((b) => b.status === 'pending').map((b) => `Beat: ${b.text}`));
+    const namesMissing = (text) => missing.some((n) => !unseenTies([n], text).length);
+    gm.volume.chronicle = gm.volume.chronicle.filter((c) => !undone.has(c.text) && !namesMissing(c.text));
+    for (const b of beatsOf(gm.outline)) if (b.status === 'active') b.status = 'pending';
+    settleActive(gm.outline);
+    return missing;
+}
+
+// A newcomer the active beat is waiting on: since which turn, so the
+// director's line grows firmer the longer they keep not turning up.
+// -> replies waited (0 the first time).
+export function newcomerWait(gm, beatId, turn) {
+    if (!beatId) { gm.newcomer = null; return 0; }
+    if (gm.newcomer?.beatId !== beatId) gm.newcomer = { beatId, since: turn };
+    return Math.max(0, turn - gm.newcomer.since);
 }
 
 export function finishBeat(gm, id) {

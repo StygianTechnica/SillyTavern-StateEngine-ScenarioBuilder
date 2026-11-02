@@ -175,6 +175,45 @@ export function storyDelta(text) {
     return '';
 }
 
+// A time skip the player's own post opens a sentence with ("Early the next
+// morning, Zane drove Cyril back", "Two days later", "Later that evening")
+// - the player moves time on, and the clock follows them, not a briefing
+// that missed it. Only narration, only a sentence that starts with it, and
+// never one about what will be. -> { advance, sameDay } or null: `advance`
+// for advanceFrom; `sameDay` for "later that evening", which never runs on
+// into tomorrow.
+const SKIP_PART = String.raw`(?<part>dawn|daybreak|sunrise|morning|noon|midday|afternoon|evening|dusk|nightfall|night)`;
+const SKIP_COUNT = String.raw`(?<n>an?|one|two|three|four|five|six|seven|eight|nine|ten|twelve|a few|few|several|some|\d+)`;
+const PART_WORD = { daybreak: 'dawn', sunrise: 'dawn', midday: 'noon', dusk: 'evening', nightfall: 'evening' };
+const SKIP_OPENERS = [
+    // "Early the next morning", "The following day", "Next morning", "The morning after"
+    [new RegExp(String.raw`^(?:(?:very |quite )?(?:early|late)\s+(?:on\s+)?)?(?:on\s+)?(?:the\s+)?(?:next|following)\s+(?<part>day|dawn|daybreak|sunrise|morning|noon|midday|afternoon|evening|night)\b`), (m) => ({ advance: m.groups.part === 'day' ? 'the next morning' : `the next ${PART_WORD[m.groups.part] ?? m.groups.part}`, sameDay: false })],
+    [new RegExp(String.raw`^(?:early\s+)?the\s+(?<part>morning|day)\s+after\b`), () => ({ advance: 'the next morning', sameDay: false })],
+    [/^(?:early\s+)?tomorrow(?:\s+(?<part>morning|afternoon|evening))?\b/, (m) => ({ advance: `the next ${m.groups.part ?? 'morning'}`, sameDay: false })],
+    // "Two days later", "Hours later", "A few hours later"
+    [new RegExp(String.raw`^(?:${SKIP_COUNT}\s+)?(?<u>hours?|days?|weeks?)\s+(?:later|passed|went by)\b`), (m) => {
+        const n = String(m.groups.n ?? '').toLowerCase();
+        const unit = m.groups.u.replace(/s$/, '');
+        return { advance: !n || ['few', 'a few', 'several', 'some'].includes(n) ? `a few ${unit}s` : ['a', 'an', 'one'].includes(n) ? `one ${unit}` : `${n} ${unit}s`, sameDay: false };
+    }],
+    // "Later that evening", "That night", "By nightfall", "At dawn"
+    [new RegExp(String.raw`^(?:later\s+)?that\s+${SKIP_PART}\b`), (m) => ({ advance: `until ${PART_WORD[m.groups.part] ?? m.groups.part}`, sameDay: true })],
+    [new RegExp(String.raw`^(?:by|at|come)\s+(?:the\s+)?${SKIP_PART}\b`), (m) => ({ advance: `until ${PART_WORD[m.groups.part] ?? m.groups.part}`, sameDay: !['dawn', 'daybreak', 'sunrise', 'morning'].includes(m.groups.part) })],
+    [/^overnight\b/, () => ({ advance: 'the next morning', sameDay: false })],
+];
+export function playerTimeSkip(text) {
+    const narration = String(text ?? '').replace(SPEECH, ' ').replace(/[‘’]/g, "'").replace(/\*/g, '').replace(/\s+/g, ' ');
+    for (const sentence of narration.match(/[^.!?…]+[.!?…]*/g) ?? []) {
+        const t = sentence.trim().toLowerCase();
+        if (/\b(?:will|would|shall|going to|planned to|plans to|meant to)\b|'ll\b/.test(t)) continue;
+        for (const [re, make] of SKIP_OPENERS) {
+            const m = t.match(re);
+            if (m) return make(m);
+        }
+    }
+    return null;
+}
+
 // Time the story says has passed ("he has been gone for hours", "two hours
 // later", "after several hours") -> a span the clock can take ('a few
 // hours', 'two hours'), or ''. Only what the text tells as passed - never

@@ -18,7 +18,8 @@ import {
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
 import { armTrigger, retireTrigger, clearFinishedTriggers } from '../triggers/run.js';
-import { listEntries, getSettingSummary } from '../library/library.js';
+import { listEntries, getSettingSummary, playerIdOf } from '../library/library.js';
+import { standings, chooseFor } from '../director/company.js';
 import { downloadText, safeFileName } from '../store/files.js';
 import { eventCard } from './event-card.js';
 import { worldCard } from './world-card.js';
@@ -203,6 +204,8 @@ function beatRow(gm, beat, { veiled, chatId, chatKey, busy }) {
             // bring it back, or remove it.
             beat.status === 'skipped' ? h('div', { class: 'sb-iconbtn', title: 'Skipped by the planner - bring it back as a beat still to come', onclick: () => { restoreOutlineBeat(chatKey, beat.id); done(); }, 'aria-disabled': off }, icon('fa-rotate-left')) : null,
             beat.status === 'skipped' ? h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction('Remove this skipped beat from the outline?')) { removeOutlineBeat(chatKey, beat.id); done(); } } }, icon('fa-trash')) : null,
+            // A beat called done that never played out: back as the beat now.
+            beat.status === 'done' ? h('div', { class: 'sb-iconbtn', title: 'Not played out - bring it back as the beat now', onclick: () => { restoreOutlineBeat(chatKey, beat.id); done(); }, 'aria-disabled': off }, icon('fa-rotate-left')) : null,
             beat.status === 'active' ? h('div', { class: 'sb-iconbtn', title: 'The story has played this out', onclick: () => { finishOutlineBeat(chatKey, beat.id); done(); }, 'aria-disabled': off }, icon('fa-check')) : null,
             open ? h('div', { class: 'sb-iconbtn', title: 'Remove', onclick: async () => { if (await confirmAction('Remove this beat from the outline?')) { removeOutlineBeat(chatKey, beat.id); done(); } } }, icon('fa-trash')) : null));
 }
@@ -482,6 +485,38 @@ function paceCard(gm) {
             h('dt', {}, 'Your usual post'), h('dd', {}, p.baselineWords ? `about ${Math.round(p.baselineWords)} words` : '—')),
         h('label', { class: 'checkbox_label', title: 'Keep the game master from moving the story on until the scene changes. Writing [stay] in a post does the same.' },
             h('input', { type: 'checkbox', checked: p.hold, onchange: (e) => setHold(chatKey, e.target.checked) }), h('span', {}, 'Stay with this scene')));
+}
+
+// ---- company (src/director/company.js)
+
+// Who the player character wants around, from their mood after each reply,
+// and the user's word on it: keep someone away, or never let the tally do.
+function companyCard(people) {
+    const { chatKey, settingId } = ws.ctx;
+    const doc = getChatDoc(chatKey);
+    const player = String(SillyTavern.getContext().name1 ?? '').trim() || 'The player';
+    const playerId = playerIdOf(settingId, people);
+    const rows = [...standings(doc.company, doc.turn).values()].filter((x) => x.name && x.id !== playerId)
+        .sort((a, b) => (a.standing === 'less' ? -1 : 0) - (b.standing === 'less' ? -1 : 0) || b.score - a.score);
+    const choose = (x, choice) => { updateChatDoc(chatKey, (d) => { d.company = chooseFor(d.company, x.id, x.name, choice); }); done(); };
+    const others = people.filter((p) => p.id !== playerId && !rows.some((r) => r.id === p.id));
+    const label = { less: 'Kept away', more: 'Welcome', '': '' };
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-people-arrows'), 'Company'),
+        h('small', { class: 'sb-hint' }, `How ${player} has felt with the others (State Engine's mood after each reply). Someone ${player} is put out with again and again is kept away: they turn up only when the story needs them, and someone else comes along instead.`),
+        rows.length ? null : h('p', { class: 'sb-muted' }, 'Nothing yet - it fills in as the story goes.'),
+        ...rows.map((x) => h('div', { class: 'sb-gm-row' },
+            h('div', { class: 'sb-gm-text' }, h('b', {}, x.name),
+                h('small', { class: 'sb-hint' }, ` ${[x.sour && `put out ×${x.sour}`, x.warm && `glad ×${x.warm}`].filter(Boolean).join(', ') || 'your call'}`)),
+            h('div', { class: 'sb-chips' },
+                x.standing ? h('span', { class: `sb-chip${x.standing === 'less' ? ' sb-gm-skipped' : ' sb-gm-done'}` }, label[x.standing]) : null,
+                x.choice ? h('span', { class: 'sb-chip', title: 'Your word on it' }, icon('fa-user-pen')) : null,
+                h('div', { class: 'sb-iconbtn', title: x.choice === 'less' ? 'Kept away by you - click to let the tally decide' : 'Keep them away', onclick: () => choose(x, x.choice === 'less' ? '' : 'less') }, icon(x.choice === 'less' ? 'fa-user-slash' : 'fa-user-minus')),
+                h('div', { class: 'sb-iconbtn', title: x.choice === 'fine' ? 'Never kept away by the tally - click to let it decide' : 'Never keep them away', onclick: () => choose(x, x.choice === 'fine' ? '' : 'fine') }, icon(x.choice === 'fine' ? 'fa-user-check' : 'fa-user-shield'))))),
+        others.length ? h('div', { class: 'sb-actions' },
+            select([{ value: '', label: 'Keep someone away…' }, ...others.map((p) => ({ value: p.id, label: p.name }))], '', {
+                onchange: (e) => { const p = others.find((o) => o.id === e.target.value); if (p) choose({ id: p.id, name: p.name }, 'less'); },
+            })) : null);
 }
 
 // ---- the queue
@@ -776,5 +811,5 @@ export async function renderGmPlan() {
     return h('div', { class: 'sb-gm-plan' },
         h('div', { class: 'sb-scene-cols' },
             h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), starterCard(), volumesCard(gm), ideasCard(gm), todayCard(gm, show), agendaCard(gm, show), eventCard(places, [...people, ...creatures]), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
-            h('div', { class: 'sb-gm-col' }, paceCard(gm), worldCard(gm, show, [...people, ...factions]), settingsCard(gm))));
+            h('div', { class: 'sb-gm-col' }, paceCard(gm), companyCard(people), worldCard(gm, show, [...people, ...factions]), settingsCard(gm))));
 }

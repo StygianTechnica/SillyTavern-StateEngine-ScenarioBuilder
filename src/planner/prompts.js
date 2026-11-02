@@ -77,6 +77,9 @@ export function buildDayPrompt(input) {
     // them off stage, so the day brings them to the player.
     const newcomers = texts(input.newcomers, 4);
     if (story && newcomers.length) parts.push(`The beat brings in ${newcomers.join(', ')}, not yet seen in the story. Plan the first moment of the day as ${newcomers.length === 1 ? 'their' : 'each one\'s'} coming to ${userName} in person: they arrive where ${userName} is, walk in on the scene, or send for ${userName}. Not a talk with others out of ${userName}'s sight - an agenda alone is not enough. Its trigger is empty, its time "any time".`);
+    // Who the player has had enough of (src/director/company.js): no moment
+    // is built around them.
+    if (clean(input.company)) parts.push('', String(input.company).trim(), `No moment of the day is built around those ${userName} has had enough of, and no agenda brings them to ${userName}.`);
     const happenings = list(input.happenings).filter((x) => clean(x?.text));
     if (happenings.length) {
         parts.push('', 'ON THE CALENDAR (happenings set for these days: plan a moment for each one due today, and give that moment its id; one due tomorrow may be foreshadowed)');

@@ -31,7 +31,7 @@ import { listEntries, createEntry, updateEntry, setEntryMeta, mayAddGeneratedDet
 import { PRESET_NAME } from '../preset/blueprint.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import {
-    isQuestThread, threadDormant, rejectedLike, statusFromThread, typeFromThread, objectivesFromThread, mergeObjectives, tidyObjectives, foreignStepTest,
+    isQuestThread, idleSeed, threadDormant, rejectedLike, statusFromThread, typeFromThread, objectivesFromThread, mergeObjectives, tidyObjectives, foreignStepTest,
     effectiveStatus, questProgress, currentObjective, questPriority, sortQuests, normalizeQuestMeta, conditionOf, conditionTarget,
 } from './model.js';
 
@@ -159,6 +159,8 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
             }
             // Nothing new from a thread the story left behind long ago.
             if (thread.dormant && !scan) continue;
+            // A passing remark is no quest until something comes of it.
+            if (idleSeed(thread)) continue;
             const finished = thread.status === 'resolved' || thread.status === 'abandoned';
             if (finished && !scan) continue;
 

@@ -397,6 +397,7 @@ export function dossierText(input) {
     if (others.length) {
         section('OTHERS WHO COULD TURN UP (not here now)');
         for (const c of others.slice(0, 12)) lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${sidesText(c)}${clean(c.why) ? ` - ${clean(c.why)}` : ''}${historyText(c)}`);
+        if (others.slice(0, 12).some((c) => c.keepAway)) lines.push('When someone should come along, reach for the top of this list - someone not in a scene for a while is welcome back - and only for those marked "had enough of them" when the story truly needs them.');
         if (others.slice(0, 12).some((c) => c.met?.length || c.standing?.length)) lines.push('Someone who turns up has met those they have met: they pick up where they left off - never introduce themselves again - and keep the stance they had toward them, unless the story has changed it.');
     }
     // Far away, or not seen in a long while (src/director/whereabouts.js).
@@ -725,6 +726,10 @@ const PLACEHOLDER = /^(?:none|n\/?a|null|nothing|no|-+|—|same|unchanged|unknow
 // there is nothing, in more words (a location named "None needed." was made).
 // Only filler after the first word - "No Man's Land" is a place.
 const NOTHING_SAID = /^(?:none|nothing|no|not)(?:\s+(?:new|needed|required|necessary|yet|now|for|here|at|this|that|the|time|turn|reply|moment|change[sd]?|applicable|added|today|so|far|location|place|room|character|person|one|item|thing|creature|faction|lore|event|quest|scene|move|moved))+$/i;
+// A TIME answer that only gives the instruction back ("A few minutes for
+// talk; longer when people travel...") says nothing about this reply.
+const TIME_ECHO = /\blonger when\b|\be\.g\.|\b(?:a duration|a time of day) like\b/i;
+
 export function isPlaceholder(value) {
     const v = clean(value).replace(/^["'*]+|["'*.!]+$/g, '');
     // "[Place name]", "place_name", "Place-Name" are the same template words.
@@ -837,7 +842,7 @@ export function parseDirectorNote(raw) {
         }
         const t = line.match(/^\s*(?:[-*]\s*)?\**TIME\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
         if (t) {
-            if (!time && !isPlaceholder(t[1])) time = { text: clean(t[1]).replace(/^["']|["']$/g, ''), why: clean(t[2]) };
+            if (!time && !isPlaceholder(t[1]) && !TIME_ECHO.test(t[1])) time = { text: clean(t[1]).replace(/^["']|["']$/g, ''), why: clean(t[2]) };
             continue;
         }
         const sc = line.match(/^\s*(?:[-*]\s*)?\**SCENE\**\s*:?\s*\|\s*(.+?)\s*$/i);

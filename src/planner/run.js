@@ -34,11 +34,12 @@ import { triggerSection,
     duePasses, setDayPlan, applyCheck, applyBeats, trackPace, paceAim, planSection, motifsOf, addLog,
     addRequest, setRequestStatus, waitingRequests,
     setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, restoreBeat, editBeat, lockBeat, removeBeat, addBeat,
-    mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat, unseenTies,
+    mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat, unseenTies, undoUnseenBeats, newcomerWait,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText, removeChronicle,
     addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
+import { companyLines } from '../director/company.js';
 import { questBoard } from '../quests/sync.js';
 import { stillWaiting } from '../director/suspended.js';
 import {
@@ -267,7 +268,8 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
         // The conditions the outline wants watched: story triggers.
         await plannerTriggers(chatId, chatKey, parsed.triggers ?? []);
         updateChatDoc(chatKey, (d) => {
-            setOutline(d.gm, parsed, { turn: d.gm.counters.turn, keepLocked: !rewrite || keepLocked, review: !writing });
+            const whole = seenTexts(Infinity);
+            setOutline(d.gm, parsed, { turn: d.gm.counters.turn, keepLocked: !rewrite || keepLocked, review: !writing, unseen: (b) => unseenTies(b.ties, whole, userName()) });
             // The user said where the story is: the outline starts there,
             // whatever the model made of it.
             if (startIndex >= 0) startAt(d.gm, startIndex);
@@ -337,6 +339,7 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             rest: rest || sameDay,
             story: storyWords(doc.gm),
             newcomers: beatNewcomers(doc.gm),
+            company: companyLines(doc.company, { turn: doc.turn, player: userName() }),
             place: (guidance.location?.path ?? []).slice(-1)[0] ?? '',
             situation: doc.canonical.sceneSummary,
             happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today' })),
@@ -439,6 +442,9 @@ export async function runCheck(chatId, chatKey) {
         const seen = seenTexts();
         const beatDone = check.beatDone && beat && !beatNewcomers(doc.gm).length;
         updateChatDoc(chatKey, (d) => {
+            // Beats called done whose people never turned up are under way again.
+            const back = undoUnseenBeats(d.gm, seenTexts(Infinity), userName());
+            if (back.length) console.info(LOG_PREFIX, `beats called done without ${back.join(', ')} in the story are back under way`);
             applyCheck(d.gm, check, { seen, player: userName() });
             d.gm.counters.sinceCheck = 0;
             d.gm.counters.lastCheck = new Date().toISOString();
@@ -558,7 +564,15 @@ export function directorPlan(chatKey, messages) {
         console.warn(LOG_PREFIX, 'no story triggers for the director', err);
     }
     const plan = plannedSection(chatKey, messages);
-    return [triggered, plan].filter(Boolean).join('\n\n');
+    // Who the player character has had enough of: planner on or off.
+    let company = '';
+    try {
+        const doc = getChatDoc(chatKey);
+        company = companyLines(doc.company, { turn: doc.turn, player: userName() });
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'no company lines for the director', err);
+    }
+    return [triggered, company, plan].filter(Boolean).join('\n\n');
 }
 
 function plannedSection(chatKey, messages) {
@@ -573,7 +587,10 @@ function plannedSection(chatKey, messages) {
         const story = storyState(gm);
         const tense = (tensionNow(gm).now?.overall ?? 0) >= TENSE;
         const pace = paceAim(gm, { level: p.pacing, recentUser, tense, pull });
-        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3), newcomers: beatNewcomers(gm) });
+        const newcomers = beatNewcomers(gm);
+        let waited = 0;
+        updateChatDoc(chatKey, (d) => { waited = newcomerWait(d.gm, newcomers.length ? activeBeat(d.gm.outline)?.id : '', d.turn); });
+        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3), newcomers, waited });
         // The world meanwhile: nothing while the scene is tense or lingering;
         // the lead into what comes next while it moves on or builds.
         const meanwhile = meanwhileFor(chatKey, getChatDoc(chatKey).settingId, { aim: story.aim?.word ?? '', quiet: tense || pace.aim === 'linger', lead: pace.aim === 'move on' || story.aim?.word === 'build', userIndex: latestUserIndex() });
@@ -585,15 +602,18 @@ function plannedSection(chatKey, messages) {
 }
 
 // The director's BEAT lines: moments done or skipped. A skipped one asks
-// for a CHECK on the next pass. briefing: the director's own, which brings
-// in whoever the reply plays the moment out with.
-export function takeBeats(chatKey, beats, briefing = '') {
+// for a CHECK on the next pass. A moment done with someone the chat has not
+// shown yet waits for the CHECK after the reply.
+export function takeBeats(chatKey, beats) {
     if (!beats?.length) return;
     try {
         let done = false;
         updateChatDoc(chatKey, (d) => {
             const before = new Set((d.gm.day?.moments ?? []).filter((m) => m.status === 'done').map((m) => m.id));
-            applyBeats(d.gm, beats, { seen: [...seenTexts(), briefing], player: userName() });
+            // The chat only: the briefing says what the director means to
+            // play, not what the reply showed (Adam "strode in" there, and
+            // never in the story).
+            applyBeats(d.gm, beats, { seen: seenTexts(), player: userName() });
             done = (d.gm.day?.moments ?? []).some((m) => m.status === 'done' && !before.has(m.id));
         });
         if (done) markActive(chatKey);
