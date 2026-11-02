@@ -387,6 +387,26 @@ function castLine(c) {
 }
 
 // sb__cast: who is present. '' when nobody is known to be.
+// The note for this reply only (sb__guidance_now): the few hard orders - who
+// arrives, what the story has set off - placed in the chat itself, just
+// before the player's latest message, as a system note. The guidance ahead
+// of the chat is read as background, and a small model follows what is
+// nearest the end: told in the guidance that Adam Miller arrives, it wrote
+// a whole reply about the two already there. Orders, never story prose, so
+// there is nothing to continue. '' when there is no order (most replies).
+export function buildNow(input) {
+    const arriving = [...new Set((input.arriving ?? []).map(clean).filter(Boolean))];
+    const triggered = (input.triggered ?? []).map((l) => clean(String(l).replace(/^-\s*/, ''))).filter(Boolean);
+    if (!arriving.length && !triggered.length) return '';
+    const player = (input.cast ?? []).find((c) => c.player);
+    const orders = [];
+    if (arriving.length) orders.push(arriving.length === 1
+        ? `${arriving[0]} comes in now - they arrive where everyone can see and speak or act, with their own reason for coming.`
+        : `${andList(arriving)} come in now - each arrives where everyone can see and speaks or acts, with their own reason for coming.`);
+    if (triggered.length) orders.push(`It happens now: ${triggered.join(' ')}`);
+    return `[Game master's note for this reply, not part of the story: ${orders.join(' ')}${player ? ` Write only the others; never ${clean(player.name)}.` : ''}]`;
+}
+
 export function buildCast(input) {
     const list = (input.cast ?? []).filter((c) => clean(c?.name));
     if (!list.length && !(input.absent ?? []).length) return '';

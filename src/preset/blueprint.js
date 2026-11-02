@@ -44,7 +44,8 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 // 9: sb__scene_characters adds who the messages show here but the list lacks.
 // 13: the fight (sb__fight_*) and the structured event (sb__event_*), for
 //     panels that show them while they run.
-export const PRESET_VERSION = 14;
+// 15: sb__guidance_now, the note for this reply.
+export const PRESET_VERSION = 15;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -200,6 +201,7 @@ export const OUTPUT_VARIABLES = Object.freeze([
     ['guidance_scene', text('Guidance: scene', 'The scene now - where and when, what is here, lore and corrections. Not asked of the model.', { showInTracker: false })],
     ['guidance_summary', text('Guidance: summary', 'The game master\'s summary of where things stand. Not asked of the model.', { showInTracker: false })],
     ['guidance_direction', text('Guidance: direction', 'The game master\'s direction for this reply. Not asked of the model.', { showInTracker: false })],
+    ['guidance_now', text('Guidance: this reply', 'The hard orders for this reply only - who arrives, what the story set off - a short system note. Scenario Builder places it in the chat itself (Settings); offered to Curator too. Not asked of the model.', { showInTracker: false })],
     ['cast', text('Characters present', 'Who is in the scene, one line each, the player character marked - its own block so it can be placed above the guidance. Not asked of the model.', { showInTracker: false })],
     ['state_block', text('Canonical scene state', 'The current scene\'s canonical state - location, time, weather and who is present - one line each. Not asked of the model.', { showInTracker: false })],
 ]);

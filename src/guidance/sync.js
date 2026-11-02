@@ -31,7 +31,7 @@ import { latestUserIndex } from '../triggers/run.js';
 import { getBoundSettingId, readField, listEntries, playerIdOf, allKnowledge } from '../library/library.js';
 import { sceneKnowledge } from '../library/knowledge.js';
 import { pathOf, inheritedEnvironment } from '../library/hierarchy.js';
-import { buildGuidance, buildStateBlock, buildCast, guidanceParts, GUIDANCE_PARTS, timeText } from './build.js';
+import { buildGuidance, buildStateBlock, buildCast, buildNow, guidanceParts, GUIDANCE_PARTS, timeText } from './build.js';
 import { isIntimate } from './intimacy.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { relevantLore } from '../library/lore.js';
@@ -582,12 +582,14 @@ export async function syncGuidance() {
         if (!status.active) {
             // The preset is not bound: State Engine holds no values for it
             // in this chat, so there is nothing to write - Curator sends nothing.
+            placeNowNote('');
             last = { chatKey, guidance: { text: '', tokens: 0, sections: [] }, stateBlock: '', inert: true, reason: status.exists ? 'The Scenario State preset is not active in this chat.' : 'The Scenario State preset is missing.' };
             announce();
             return;
         }
         if (!isActive()) {
-            await writeIfChanged(ref.chatId, { guidance: '', ...Object.fromEntries(GUIDANCE_PARTS.map(([name]) => [name, ''])), cast: '', state_block: '' });
+            await writeIfChanged(ref.chatId, { guidance: '', ...Object.fromEntries(GUIDANCE_PARTS.map(([name]) => [name, ''])), cast: '', state_block: '', guidance_now: '' });
+            placeNowNote('');
             last = { chatKey, guidance: { text: '', tokens: 0, sections: [] }, stateBlock: '', inert: true, reason: getSettings().enabled ? 'Paused.' : 'Scenario Builder is disabled.' };
             announce();
             return;
@@ -598,7 +600,9 @@ export async function syncGuidance() {
         const stateBlock = getSettings().stateBlockEnabled ? buildStateBlock(inputs.stateBlock) : '';
         const cast = buildCast(inputs.guidance);
         const parts = guidanceParts(guidance);
-        await writeIfChanged(ref.chatId, { ...inputs.canonicalValues, guidance: guidance.text, ...parts, cast, state_block: stateBlock });
+        const now = buildNow(inputs.guidance);
+        await writeIfChanged(ref.chatId, { ...inputs.canonicalValues, guidance: guidance.text, ...parts, cast, state_block: stateBlock, guidance_now: now });
+        placeNowNote(now);
 
         const doc = getChatDoc(chatKey);
         if (doc.settingId !== inputs.settingId) updateChatDoc(chatKey, (d) => { d.settingId = inputs.settingId; });
@@ -607,6 +611,26 @@ export async function syncGuidance() {
         announce();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not update the guidance', err);
+    }
+}
+
+// The note for this reply (src/guidance/build.js buildNow), placed in the
+// chat itself: a system note just before the player's latest message (in
+// chat, depth 1), where SillyTavern puts the Author's Note. Curator places
+// blocks only between whole sections, never inside the chat history, so
+// Scenario Builder places this one. Off in settings, or with nothing to
+// say, it is cleared.
+const NOW_KEY = 'scenario_builder_now';
+const IN_CHAT = 1;
+const SYSTEM = 0;
+function placeNowNote(text) {
+    try {
+        const ctx = SillyTavern.getContext();
+        if (typeof ctx.setExtensionPrompt !== 'function') return;
+        const on = getSettings().nowNote === true;
+        ctx.setExtensionPrompt(NOW_KEY, on ? text : '', IN_CHAT, getSettings().nowNoteDepth ?? 1, false, SYSTEM);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not place the note for this reply', err);
     }
 }
 

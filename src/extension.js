@@ -28,7 +28,7 @@ import { registerSlashCommands } from './ui/slash-commands.js';
 import { pruneSettingDocs } from './store/setting-store.js';
 import { listAllSettings } from './library/library.js';
 
-const OUTPUTS = ['guidance', ...GUIDANCE_PARTS.map(([name]) => name), 'cast', 'state_block'].map(qualifiedName);
+const OUTPUTS = ['guidance', ...GUIDANCE_PARTS.map(([name]) => name), 'cast', 'state_block', 'guidance_now'].map(qualifiedName);
 
 // What Scenario Builder provides (SB-002, SB-310): each output offered to
 // Curator for injection, as a user message by default (the user may change
@@ -36,7 +36,8 @@ const OUTPUTS = ['guidance', ...GUIDANCE_PARTS.map(([name]) => name), 'cast', 's
 // extensions. The state block's capability is declared even when it is
 // switched off: it is then simply ''.
 const CAPABILITIES = [
-    ...OUTPUTS.flatMap((name) => [`curator.inject:${name}`, `curator.inject.role:user:${name}`]),
+    // The note for this reply is a system note, never a turn to continue.
+    ...OUTPUTS.flatMap((name) => [`curator.inject:${name}`, `curator.inject.role:${name.endsWith('guidance_now') ? 'system' : 'user'}:${name}`]),
     'scenario.library',
     'scenario.state',
 ];

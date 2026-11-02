@@ -31,6 +31,11 @@ const DEFAULTS = {
     sections: { ...DEFAULT_SECTIONS },
     // Whether sb__state_block is written (spec SB-301).
     stateBlockEnabled: true,
+    // The note for this reply (sb__guidance_now): who arrives, what the
+    // story set off - placed in the chat as a system note this many
+    // messages from the end (1: just before the player's latest message).
+    nowNote: true,
+    nowNoteDepth: 1,
     // Resolution policy per validated field: 'canonical' | 'observed' |
     // 'ask' (spec SB-222; defaults are OPEN-2 and documented in
     // src/validate/drift.js).
