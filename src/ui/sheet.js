@@ -37,7 +37,7 @@ import { recordEnrichment, enrichmentRecord, normalizeEnrichments, revertPlan, r
 import { newLocalId } from '../store/schema.js';
 import { suggestQuestEnds } from '../quests/ends.js';
 import { writeIntimacyNote } from '../generate/intimacy.js';
-import { questMeta, setQuestMeta } from '../quests/sync.js';
+import { questMeta, setQuestMeta, questBoard } from '../quests/sync.js';
 import { baselineFields } from '../library/fields.js';
 import { CLIMATES } from '../calendar/weather.js';
 import { listRoutes, routesFrom, addRoute, removeRoute, updateRoute, guessRoute } from '../library/routes.js';
@@ -446,14 +446,16 @@ async function runGen(task, field = null) {
     }
 }
 
-// Writes a quest's "completes when" / "fails when" from its objectives,
-// where they are empty. Saved at once, as the Quest tab saves.
+// Writes a quest's "completes when" / "fails when" from the story it came
+// from, where they are empty (a quest with only a "completes when" is
+// left be: not every quest can fail). Saved at once, as the Quest tab saves.
 async function fillQuestEnds(entry) {
-    const { settingId } = ws.ctx;
+    const { chatId, chatKey, settingId } = ws.ctx;
     const meta = questMeta(settingId, entry.id);
-    if (meta.completion.trim() && meta.abandon.trim()) return;
+    if (meta.completion.trim()) return;
     const objectives = ws.draft?.fields?.objectives ?? entry.base?.objectives ?? entry.objectives ?? meta.objectives.map((o) => o.text);
-    const ends = await suggestQuestEnds({ name: ws.draft?.name || entry.name, description: ws.draft?.description ?? entry.description, objectives: [...(Array.isArray(objectives) ? objectives : []), ...meta.objectives.map((o) => o.text)].filter((v, i, a) => a.indexOf(v) === i) });
+    const thread = (await questBoard(chatId, chatKey, settingId)).find((q) => q.id === entry.id)?.thread ?? null;
+    const ends = await suggestQuestEnds({ name: ws.draft?.name || entry.name, description: ws.draft?.description ?? entry.description, objectives: [...(Array.isArray(objectives) ? objectives : []), ...meta.objectives.map((o) => o.text)].filter((v, i, a) => a.indexOf(v) === i) }, { thread });
     if (!ends) return toast('warning', 'Could not write how the quest ends - try again, or write it on the Quest tab.');
     const now = questMeta(settingId, entry.id);
     setQuestMeta(settingId, entry.id, { completion: now.completion.trim() ? now.completion : ends.completion, abandon: now.abandon.trim() ? now.abandon : ends.abandon });

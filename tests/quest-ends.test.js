@@ -10,7 +10,7 @@ describe('writing how a quest ends', () => {
         const p = buildEndsPrompt(quest);
         expect(p.user).toContain('1. Travel to the ruined temple of Elyon');
         expect(p.user).toContain('2. Find the cache');
-        expect(p.user).toMatch(/DONE: <sentence>\nFAILS: <sentence>/);
+        expect(p.user).toMatch(/DONE: <sentence>\nFAILS: <sentence, or none>/);
     });
 
     it('reads the two lines, tolerating labels and markup', () => {
@@ -32,8 +32,8 @@ describe('checking the ends after a reply', () => {
     });
 
     it('reads the verdicts, leaving open ones out', () => {
-        expect(readEndCheck('1 | open\n2 | done', 2)).toEqual([{ index: 1, verdict: 'done' }]);
-        expect(readEndCheck('1: failed\n2) completed\n3 | done', 2)).toEqual([{ index: 0, verdict: 'failed' }, { index: 1, verdict: 'done' }]);
+        expect(readEndCheck('1 | open\n2 | done', 2)).toEqual([{ index: 1, verdict: 'done', quote: '' }]);
+        expect(readEndCheck('1: failed\n2) completed\n3 | done', 2)).toEqual([{ index: 0, verdict: 'failed', quote: '' }, { index: 1, verdict: 'done', quote: '' }]);
         expect(readEndCheck('1 | open\n2 | open', 2)).toEqual([]);
         expect(readEndCheck('No quest ended.', 2)).toBeNull();
     });

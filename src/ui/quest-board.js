@@ -9,6 +9,7 @@ import { getSettings } from '../settings.js';
 import { runQuestSync, questBoard, setQuestMeta, questMeta, hasQuestTracking, setupQuestTracking, hasArchivistThreads, writeActiveQuests } from '../quests/sync.js';
 import { QUEST_TYPES, QUEST_PRIORITIES, QUEST_STATUSES, OBJECTIVE_STATUSES } from '../quests/model.js';
 import { syncNow } from '../guidance/sync.js';
+import { suggestQuestEnds } from '../quests/ends.js';
 import { ws, rerender, openSheet } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
 
@@ -92,6 +93,23 @@ function missionCard(m) {
 }
 
 // The quest tab of a quest's sheet. Changes save at once.
+// Writes a quest's ends from the story it came from, over what is there.
+async function writeEnds(entry, q) {
+    const { chatId, chatKey, settingId } = ws.ctx;
+    ws.questEndsWriting = entry.id;
+    rerender();
+    try {
+        const ends = await suggestQuestEnds({ name: entry.name, description: entry.description, objectives: (q?.objectives ?? []).map((o) => o.text) }, { thread: q?.thread ?? null });
+        if (!ends) return toast('warning', 'Could not write how the quest ends - try again, or write it yourself.');
+        setQuestMeta(settingId, entry.id, { completion: ends.completion, abandon: ends.abandon, endsTried: true });
+        void syncNow();
+        void writeActiveQuests(chatId, chatKey, settingId);
+    } finally {
+        ws.questEndsWriting = null;
+        rerender();
+    }
+}
+
 export async function renderQuestTab(entry) {
     const { chatId, chatKey, settingId } = ws.ctx;
     const q = (await questBoard(chatId, chatKey, settingId)).find((x) => x.id === entry.id);
@@ -126,9 +144,15 @@ export async function renderQuestTab(entry) {
             // Removed stays removed: Archivist's rewordings of it are not added back.
             h('span', { class: 'sb-iconbtn sb-danger', title: 'Remove', onclick: () => save({ objectives: objectives.filter((_, j) => j !== i), removed: [...(meta.removed ?? []), o.text] }) }, icon('fa-xmark')))),
         newObjective),
+        // Ended by its own condition: open again (a wrong verdict).
+        q?.from === 'ends' ? h('div', { class: 'sb-callout' }, icon('fa-flag-checkered'),
+            h('span', {}, `Marked ${q.status.toLowerCase()} because the story met its end condition.`),
+            button('Reopen', () => save({ ended: '' }), { iconName: 'fa-rotate-left', title: 'Wrongly ended: open it again (its conditions are checked again after each reply)' })) : null,
         h('div', { class: 'sb-fieldgrid' },
             field('Completes when', h('textarea', { class: 'text_pole', rows: 2, placeholder: 'e.g. the ledger is in Tobin\'s hands', onchange: (e) => save({ completion: e.target.value }) }, meta.completion)),
-            field('Fails or is abandoned when', h('textarea', { class: 'text_pole', rows: 2, placeholder: 'e.g. the ledger burns, or the deadline passes', onchange: (e) => save({ abandon: e.target.value }) }, meta.abandon))),
+            field('Fails or is abandoned when', h('textarea', { class: 'text_pole', rows: 2, placeholder: 'e.g. the ledger burns, or the deadline passes - or leave empty', onchange: (e) => save({ abandon: e.target.value }) }, meta.abandon))),
+        h('div', { class: 'sb-row' },
+            button(ws.questEndsWriting === entry.id ? 'Writing…' : 'Write from the story', () => writeEnds(entry, q), { iconName: 'fa-feather', disabled: ws.questEndsWriting === entry.id, title: 'Write how it completes and fails from the part of the chat it came from - replaces what is above' })),
         q?.runtime.progress || q?.runtime.current ? h('div', { class: 'sb-card' }, h('div', { class: 'sb-card-title' }, icon('fa-chart-line'), ' What the story says now'),
             q.runtime.current ? h('div', {}, h('b', {}, 'Working on: '), q.runtime.current) : null,
             q.runtime.progress ? h('div', {}, h('b', {}, 'Progress: '), q.runtime.progress) : null) : null,
