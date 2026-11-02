@@ -34,8 +34,8 @@ import { triggerSection,
     duePasses, setDayPlan, applyCheck, applyBeats, trackPace, paceAim, planSection, motifsOf, addLog,
     addRequest, setRequestStatus, waitingRequests,
     setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, restoreBeat, editBeat, lockBeat, removeBeat, addBeat,
-    mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat,
-    volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText,
+    mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat, unseenTies,
+    volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText, removeChronicle,
     addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
@@ -81,6 +81,17 @@ function chatMessages(max = 8) {
 }
 
 const userName = () => SillyTavern.getContext().name1 ?? '';
+
+// What a pass judges done by: the chat a CHECK reads, and a little more.
+const SEEN_MESSAGES = 12;
+const seenTexts = (max = SEEN_MESSAGES) => chatMessages(max).map((m) => m.text);
+
+// The active beat's people no message of the chat names yet: the beat has
+// to bring them to the player, or it never plays out.
+function beatNewcomers(gm) {
+    const beat = activeBeat(gm.outline);
+    return beat?.ties?.length ? unseenTies(beat.ties, seenTexts(Infinity), userName()) : [];
+}
 
 // One pass at a time per chat; a pass of the same kind already queued is
 // not queued again.
@@ -325,6 +336,7 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             previous: sameDay ? doc.gm.day : null,
             rest: rest || sameDay,
             story: storyWords(doc.gm),
+            newcomers: beatNewcomers(doc.gm),
             place: (guidance.location?.path ?? []).slice(-1)[0] ?? '',
             situation: doc.canonical.sceneSummary,
             happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today' })),
@@ -422,16 +434,20 @@ export async function runCheck(chatId, chatKey) {
             askTension,
         });
         const check = readCheck(await ask({ system, prompt }));
+        // Nothing is done that the chat does not show: a moment's people,
+        // and for the beat, a person no message has named yet.
+        const seen = seenTexts();
+        const beatDone = check.beatDone && beat && !beatNewcomers(doc.gm).length;
         updateChatDoc(chatKey, (d) => {
-            applyCheck(d.gm, check);
+            applyCheck(d.gm, check, { seen, player: userName() });
             d.gm.counters.sinceCheck = 0;
             d.gm.counters.lastCheck = new Date().toISOString();
             d.gm.checkWanted = false;
             // The story's beat played out: the outline moves on.
-            if (check.beatDone && beat) finishBeat(d.gm, beat.id);
+            if (beatDone) finishBeat(d.gm, beat.id);
             if (askTension && check.tension) addOwnReading(d.gm, check.tension, { index: d.gm.counters.turn });
         });
-        return [check.done.length && `${check.done.length} done`, check.skipped.length && `${check.skipped.length} dropped`, check.add.length && `${check.add.length} added`, check.beatDone && beat && 'beat done'].filter(Boolean).join(', ') || 'plan still holds';
+        return [check.done.length && `${check.done.length} done`, check.skipped.length && `${check.skipped.length} dropped`, check.add.length && `${check.add.length} added`, beatDone && 'beat done'].filter(Boolean).join(', ') || 'plan still holds';
     });
 }
 
@@ -557,7 +573,7 @@ function plannedSection(chatKey, messages) {
         const story = storyState(gm);
         const tense = (tensionNow(gm).now?.overall ?? 0) >= TENSE;
         const pace = paceAim(gm, { level: p.pacing, recentUser, tense, pull });
-        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3) });
+        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3), newcomers: beatNewcomers(gm) });
         // The world meanwhile: nothing while the scene is tense or lingering;
         // the lead into what comes next while it moves on or builds.
         const meanwhile = meanwhileFor(chatKey, getChatDoc(chatKey).settingId, { aim: story.aim?.word ?? '', quiet: tense || pace.aim === 'linger', lead: pace.aim === 'move on' || story.aim?.word === 'build', userIndex: latestUserIndex() });
@@ -569,14 +585,16 @@ function plannedSection(chatKey, messages) {
 }
 
 // The director's BEAT lines: moments done or skipped. A skipped one asks
-// for a CHECK on the next pass.
-export function takeBeats(chatKey, beats) {
+// for a CHECK on the next pass. briefing: the director's own, which brings
+// in whoever the reply plays the moment out with.
+export function takeBeats(chatKey, beats, briefing = '') {
     if (!beats?.length) return;
     try {
         let done = false;
         updateChatDoc(chatKey, (d) => {
-            applyBeats(d.gm, beats);
-            done = beats.some((b) => b.status === 'done');
+            const before = new Set((d.gm.day?.moments ?? []).filter((m) => m.status === 'done').map((m) => m.id));
+            applyBeats(d.gm, beats, { seen: [...seenTexts(), briefing], player: userName() });
+            done = (d.gm.day?.moments ?? []).some((m) => m.status === 'done' && !before.has(m.id));
         });
         if (done) markActive(chatKey);
     } catch (err) {
@@ -788,6 +806,10 @@ export async function finishVolume(chatId, chatKey, { shape = '', direction = ''
 
 export function editFinishedVolume(chatKey, number, patch) {
     updateChatDoc(chatKey, (d) => editVolume(d.gm, number, patch));
+}
+
+export function removeChronicleLine(chatKey, index, text) {
+    updateChatDoc(chatKey, (d) => removeChronicle(d.gm, index, text));
 }
 
 // ---------------------------------------------------------------- ideas (§3.4) and the agenda (§3.3)

@@ -1077,7 +1077,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // changed - its pace count (src/planner/model.js) treats a turn with
     // no change as idle.
     if (isNewTurn(type) && settingId) {
-        takeBeats(chatKey, parsed.beats);
+        takeBeats(chatKey, parsed.beats, note);
         takeHeard(chatKey, parsed.heard);
         takeHeartLines(chatKey, parsed, hearts);
         if (made.length || movedFrom || moves.in.length || moves.out.length) markActive(chatKey);

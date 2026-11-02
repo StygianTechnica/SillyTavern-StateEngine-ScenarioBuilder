@@ -73,6 +73,10 @@ export function buildDayPrompt(input) {
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (echo them as images and turns of fate, never as literal events)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));
     const story = storyText(input.story);
     if (story) parts.push('', 'WHERE THE STORY IS GOING (let today serve this beat and this aim, without forcing it)', story);
+    // The beat's people the story has not shown yet: an agenda alone keeps
+    // them off stage, so the day brings them to the player.
+    const newcomers = texts(input.newcomers, 4);
+    if (story && newcomers.length) parts.push(`The beat brings in ${newcomers.join(', ')}, not yet seen in the story. Plan the first moment of the day as ${newcomers.length === 1 ? 'their' : 'each one\'s'} coming to ${userName} in person: they arrive where ${userName} is, walk in on the scene, or send for ${userName}. Not a talk with others out of ${userName}'s sight - an agenda alone is not enough. Its trigger is empty, its time "any time".`);
     const happenings = list(input.happenings).filter((x) => clean(x?.text));
     if (happenings.length) {
         parts.push('', 'ON THE CALENDAR (happenings set for these days: plan a moment for each one due today, and give that moment its id; one due tomorrow may be foreshadowed)');
@@ -140,6 +144,7 @@ export function buildCheckPrompt(input) {
     parts.push(
         '',
         'Which pending moments has the story already played out ("done"), and which can no longer happen or no longer fit where the story went ("skipped")? Leave the rest alone.',
+        'Only what THE LATEST CHAT shows counts as done: someone who appears nowhere in it has done nothing yet, and a moment planned for them is still pending.',
         'Add a new moment only for a request above, or when the story has opened something the plan lacks (at most two).',
     );
     if (clean(input.beat)) parts.push('Say whether the story has now played out the beat above ("beat_done": true), or not yet (false).');

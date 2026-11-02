@@ -12,7 +12,7 @@ import { SHAPES, shapeCurve, targetAt } from '../planner/shapes.js';
 import {
     getPlannerStatus, runDay, runCheck, runInspire, runOutline, runBeat, queueRequest, withdrawRequest, addInspiration, removeInspiration,
     setMotifs, peek, setHold, storyState, setShape, editOutlineBeat, lockOutlineBeat, removeOutlineBeat, addOutlineBeat,
-    finishOutlineBeat, restoreOutlineBeat, setOutlineText, setJoin, finishVolume, editFinishedVolume, steerObjects,
+    finishOutlineBeat, restoreOutlineBeat, setOutlineText, setJoin, finishVolume, editFinishedVolume, removeChronicleLine, steerObjects,
     runIdeas, acceptIdea, dismissIdea, editProposal, addAgendaItem, removeAgendaItem, setCreationMode,
     writeStarter, postStarter, starterSpeakers,
 } from '../planner/run.js';
@@ -384,6 +384,21 @@ function volumeRecord(gm, v, chatKey) {
             v.editedByUser ? h('small', { class: 'sb-hint' }, icon('fa-user-pen'), ' Edited by you') : null));
 }
 
+// The volume under way, as its chronicle has it: what the planner took to
+// have played out. A line the story never showed can be taken out, so the
+// next plan does not build on it.
+function chronicleList(gm, chatKey) {
+    const lines = gm.volume.chronicle;
+    if (!lines.length) return null;
+    return h('details', { class: 'sb-gm-volume' },
+        h('summary', {}, h('b', {}, `Volume ${gm.volume.number}, so far`), h('small', { class: 'sb-hint' }, ` ${lines.length} thing${lines.length === 1 ? '' : 's'} played out`)),
+        h('div', { class: 'sb-gm-volume-body' },
+            h('small', { class: 'sb-hint' }, 'What the game master takes to have happened. Remove a line the story never showed.'),
+            ...lines.map((c, i) => h('div', { class: 'sb-gm-row' },
+                h('div', { class: 'sb-gm-text' }, Number.isInteger(c.day) ? h('small', { class: 'sb-hint' }, `Day ${c.day}: `) : null, h('span', {}, c.text)),
+                h('div', { class: 'sb-iconbtn', title: 'Remove - it never happened', onclick: async () => { if (await confirmAction('Remove this from the story so far?')) { removeChronicleLine(chatKey, i, c.text); done(); } } }, icon('fa-trash'))))));
+}
+
 // The finished volumes, newest first, with the story so far to copy or save
 // (the volume under way included, from its first chronicle line).
 function volumesCard(gm) {
@@ -404,6 +419,7 @@ function volumesCard(gm) {
                 button('Copy', () => void copy(), { iconName: 'fa-copy', title: 'Copy every recap, and the volume under way, as Markdown' }),
                 button('Save', () => void save(), { iconName: 'fa-download', title: 'Save every recap, and the volume under way, as a Markdown file' }))),
         gm.volumes.length ? null : h('small', { class: 'sb-hint' }, 'No volume has finished yet - saving gives what the one under way has so far.'),
+        chronicleList(gm, chatKey),
         ...gm.volumes.slice().reverse().map((v) => volumeRecord(gm, v, chatKey)));
 }
 

@@ -295,12 +295,33 @@ function planRequests(gm, requests, moments) {
     }
 }
 
+// The names in `ties` the texts never show: none of a name's words (three
+// letters or more) stands in them as a word. The player's own name aside.
+// A moment can't have played out with someone in it who never turned up,
+// and a beat's person no message names is still to come into the story.
+const NAME_WORD = /[\p{L}\p{N}'’-]{3,}/gu;
+const NOT_NAME = new Set(['the', 'and', 'of', 'von', 'van', 'del', 'der', 'des']);
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export function unseenTies(ties, texts, player = '') {
+    const all = strList(Array.isArray(texts) ? texts : [texts]).join('\n');
+    const own = clean(player).toLowerCase();
+    return strList(ties).filter((name) => {
+        if (own && name.toLowerCase() === own) return false;
+        const words = (name.match(NAME_WORD) ?? []).filter((w) => !NOT_NAME.has(w.toLowerCase()));
+        if (!words.length) return false;
+        return !words.some((w) => new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRe(w)}(?![\\p{L}\\p{N}])`, 'iu').test(all));
+    });
+}
+
 // A CHECK pass's answer: { done: [id], skipped: [{ id, why }], add: [moment],
-// requests: [{ request, moments: [index into add, from 1] }] }.
-export function applyCheck(gm, check) {
+// requests: [{ request, moments: [index into add, from 1] }] }. seen: the
+// chat the pass read (with `player`); a moment it calls done whose people
+// that chat never shows stays pending - the model said so, the story did not.
+export function applyCheck(gm, check, { seen = null, player = '' } = {}) {
     if (!gm.day) return;
     const mark = (id, status, note) => {
         const m = gm.day.moments.find((x) => x.id === clean(id));
+        if (status === 'done' && m && seen && unseenTies(m.ties, seen, player).length) return;
         if (m && m.status === 'pending') {
             m.status = status;
             if (note) m.note = clean(note);
@@ -321,13 +342,16 @@ export function applyCheck(gm, check) {
 }
 
 // The director's BEAT lines: [{ id, status: 'done' | 'skipped', note }].
+// seen: the chat and the director's briefing - a moment done there has
+// its people in them (as applyCheck).
 // -> true when a beat was skipped (the plan needs a CHECK).
-export function applyBeats(gm, beats) {
+export function applyBeats(gm, beats, { seen = null, player = '' } = {}) {
     if (!gm.day || !beats?.length) return false;
     let skipped = false;
     for (const b of beats) {
         const m = gm.day.moments.find((x) => x.id === clean(b.id).toLowerCase());
         if (!m || m.status !== 'pending') continue;
+        if (b.status === 'done' && seen && unseenTies(m.ties, seen, player).length) continue;
         m.status = b.status === 'done' ? 'done' : 'skipped';
         m.note = clean(b.note);
         if (m.status === 'skipped') skipped = true;
@@ -441,10 +465,13 @@ export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null
 // pace: paceAim(); aim: shapes.js tensionAim(); story: { shape (label),
 // act (title), next (the beat after this one) } for the outline's line;
 // motifs: [text].
-export function planSection(gm, { pace = null, aim = null, story = null, motifs = [] } = {}) {
+// newcomers: the beat's people the story has not shown yet (unseenTies).
+export function planSection(gm, { pace = null, aim = null, story = null, motifs = [], newcomers = [] } = {}) {
     const lines = [];
     const beat = activeBeat(gm.outline);
     if (beat) lines.push(`- Story: ${story?.shape ? `${story.shape}, ` : ''}${story?.act ? `in "${story.act}" - ` : ''}the beat now: ${beat.text}${story?.next ? ` (then: ${story.next})` : ''}`);
+    const due = beat ? strList(newcomers) : [];
+    if (due.length) lines.push(`- Not yet in the story: ${due.join(', ')}. The beat now needs ${due.length === 1 ? 'them' : 'each of them'} to reach the player character in person - in this reply where the scene leaves any room: they arrive where the player character is, walk in on the scene, or send for them. This brings someone to the scene; it does not move it. A talk elsewhere, out of the player character's sight, does not count.`);
     if (aim) lines.push(aimLine(aim, story?.act));
     if (pace && pace.aim !== 'steady') {
         lines.push(pace.aim === 'move on'
@@ -793,6 +820,15 @@ function normalizeVolumeRecord(r) {
         closedEarly: r.closedEarly === true,
         editedByUser: r.editedByUser === true,
     };
+}
+
+// Takes a line out of the volume's chronicle - the user's call, for one
+// the story never played out. Its text guards against a list that moved on.
+export function removeChronicle(gm, index, text) {
+    const line = gm.volume.chronicle[index];
+    if (!line || (text !== undefined && line.text !== clean(text))) return false;
+    gm.volume.chronicle = gm.volume.chronicle.filter((_, i) => i !== index);
+    return true;
 }
 
 // One line in the volume's chronicle: something the story played out.
