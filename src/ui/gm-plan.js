@@ -295,7 +295,7 @@ function outlineCard(gm, show) {
         isEditing('next-volume') ? nextVolumePanel(gm, chatId, chatKey, complete) : null,
         h('div', { class: 'sb-actions' },
             button(outline ? 'Review against the story' : 'Write the outline now', () => void running(outline ? 'Reviewing the outline' : 'Writing the outline', () => runOutline(chatId, chatKey)), { iconName: 'fa-feather', disabled: busy }),
-            outline && !isEditing('regen-outline') ? button('Regenerate…', () => startEdit('regen-outline', '', true), { iconName: 'fa-dice', disabled: busy, title: 'Write the outline again - with a steer if you like' }) : null,
+            outline && !isEditing('regen-outline') ? button('Regenerate…', () => startEdit('regen-outline', gm.volume?.outlineWish ?? '', true), { iconName: 'fa-dice', disabled: busy, title: 'Write the outline again - with a steer if you like' }) : null,
             outline && !complete && !isEditing('next-volume') ? button('Close this volume…', () => startEdit('next-volume', '', state.shape.id), { iconName: 'fa-book', disabled: busy, title: 'End this arc now and go on with a new volume' }) : null),
         gm.outlineWanted && outline ? h('small', { class: 'sb-hint' }, icon('fa-clock'), ' A review is due on the next pass.') : null);
 }
@@ -323,10 +323,17 @@ function volumeSteer(gm, chatKey) {
             hint: 'The next outline pass follows it. Ctrl+Enter to save, Esc to cancel.',
         });
     }
-    if (!text) return null;
-    return h('div', { class: 'sb-gm-premise' },
-        h('div', {}, h('b', {}, 'Your steer'), ...text.split(/\n\s*\n/).map((para) => h('p', {}, para))),
-        h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: () => startEdit('vsteer', text) }, icon('fa-pen')));
+    // What the user asked of the last regenerate: every pass still follows it.
+    const wish = gm.volume?.outlineWish ?? '';
+    const wishCard = wish ? h('div', { class: 'sb-gm-premise' },
+        h('div', {}, h('b', {}, 'Your outline guidance'), ...wish.split(/\n\s*\n/).map((para) => h('p', {}, para))),
+        h('div', { class: 'sb-iconbtn', title: 'Stop following it', onclick: () => { updateChatDoc(chatKey, (d) => { d.gm.volume.outlineWish = ''; }); done(); } }, icon('fa-xmark'))) : null;
+    if (!text) return wishCard;
+    return h('div', {},
+        h('div', { class: 'sb-gm-premise' },
+            h('div', {}, h('b', {}, 'Your steer'), ...text.split(/\n\s*\n/).map((para) => h('p', {}, para))),
+            h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: () => startEdit('vsteer', text) }, icon('fa-pen'))),
+        wishCard);
 }
 
 // The next volume: its shape and an optional steer; the volume under way is

@@ -211,7 +211,12 @@ async function storySoFar(gm, guidance) {
 export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked = true, wish = '' } = {}) {
     return runPass('outline', chatKey, async () => {
         await refreshTension(chatKey);
+        // What the user asked of a regenerate is kept on the volume and
+        // asked of every pass after it: sent once, the next reviews (every
+        // few replies, without it) planned it away (Assassins Inc).
+        if (rewrite) updateChatDoc(chatKey, (d) => { d.gm.volume.outlineWish = String(wish ?? '').trim(); });
         const doc = getChatDoc(chatKey);
+        if (!String(wish ?? '').trim()) wish = doc.gm.volume.outlineWish;
         const shape = shapeOf(doc.gm.shape);
         if (!shape) return 'no story shape chosen';
         const settingId = await getBoundSettingId(chatId);

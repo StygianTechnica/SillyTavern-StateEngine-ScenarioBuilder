@@ -615,6 +615,19 @@ export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString()
         }
         return { id: `a${i + 1}`, title: clean(a.title) || clean(oldAct?.title) || `Act ${i + 1}`, beats: beats.slice(0, BEAT_LIMIT) };
     });
+    // A review that comes back with fewer chapters than the outline had (an
+    // answer cut short and salvaged, or a model that wrote only the act
+    // under way) has not planned the rest away: those chapters stay as they
+    // were, beats still to come and all. Assassins Inc lost chapters 2-4
+    // this way, one review at a time.
+    if (review) {
+        const oldActs = gm.outline?.acts ?? [];
+        for (let i = acts.length; i < oldActs.length; i++) {
+            const beats = oldActs[i].beats.filter((b) => !used.has(b.id) && b.status !== 'skipped');
+            for (const b of beats) used.add(b.id);
+            acts.push({ id: `a${i + 1}`, title: oldActs[i].title || `Act ${i + 1}`, beats: beats.slice(0, BEAT_LIMIT) });
+        }
+    }
     // Kept beats of acts the answer no longer has go to the last act.
     for (const b of old.values()) {
         if (used.has(b.id) || !kept(b) || !acts.length) continue;
@@ -742,7 +755,7 @@ const CHRONICLE_LIMIT = 80;
 const RECAP_CHARS = 8000;
 
 function emptyVolume(number, start = {}) {
-    return { number, startedTurn: start.turn ?? 0, startedDay: start.day ?? 1, startedIndex: start.index ?? 0, direction: '', chronicle: [] };
+    return { number, startedTurn: start.turn ?? 0, startedDay: start.day ?? 1, startedIndex: start.index ?? 0, direction: '', outlineWish: '', chronicle: [] };
 }
 
 function normalizeVolume(v) {
@@ -753,6 +766,9 @@ function normalizeVolume(v) {
         startedDay: Number.isInteger(v.startedDay) && v.startedDay > 0 ? v.startedDay : 1,
         startedIndex: int(v.startedIndex),
         direction: paragraphs(v.direction).slice(0, 4000),
+        // What the user asked of the last regenerate: asked of every outline
+        // pass of the volume after it.
+        outlineWish: paragraphs(v.outlineWish).slice(0, 4000),
         chronicle: (Array.isArray(v.chronicle) ? v.chronicle : []).filter((c) => isObject(c) && clean(c.text))
             .map((c) => ({ at: str(c.at), day: Number.isInteger(c.day) ? c.day : null, text: clean(c.text).slice(0, 300) })).slice(-CHRONICLE_LIMIT),
     };
