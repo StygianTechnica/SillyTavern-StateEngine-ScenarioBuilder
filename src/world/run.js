@@ -34,10 +34,11 @@ import { mayDie, stanceFor } from '../director/combat.js';
 import { addHappening } from '../planner/model.js';
 import {
     limitsOf, worldOn, findRipples, addRipple, waitingRipples, stakeholders, openSchemes, applyWorld, stirOf, worldDue, markPass,
-    meanwhileSection, markShown, settleSurfaced, dismissScheme, holdScheme, leaveAlone, hearScheme, quietWorld, offscreenOf, castFacts,
+    meanwhileSection, markShown, settleSurfaced, dismissScheme, holdScheme, leaveAlone, hearScheme, quietWorld, offscreenOf, castFacts, removeSurfaced, removeLogLine,
 } from './model.js';
 import {
     openSituations, lastingLines, settleChanges, noteContact, worldHereSection, endSituation, answerPending, undoChange, canonizePlace, uncanonize,
+    setLeadership, setPersonNow, canonizeLeadership, canonizeRole,
 } from './situations.js';
 import { worldPart } from './prompts.js';
 
@@ -190,8 +191,8 @@ export async function worldMoves(chatId, chatKey, settingId, { aim = null, userN
             present: doc.canonical.castIds, playerId, skip: [...deadIds(doc), ...world.leftAlone], schemers, limit: limits.stakeholders,
         }).map((s) => {
             const base = cast.byId.get(s.id)?.base ?? {};
-            const facts = castFacts(s.id, { byId: cast.byId, tiesOf: cast.tiesOf, memberships: cast.memberships, knowledge, playerId });
-            return { ...s, role: base.role ?? '', goals: base.goals ?? '', personality: base.personality ?? base.description ?? '', ...facts };
+            const facts = castFacts(s.id, { byId: cast.byId, tiesOf: cast.tiesOf, memberships: cast.memberships, knowledge, playerId, conditions: world.conditions, people: world.overlays.people });
+            return { ...s, role: world.overlays.people[s.id]?.role || base.role || '', goals: base.goals ?? '', personality: base.personality ?? base.description ?? '', ...facts };
         });
         const canonOnly = isCanonOnly(settingId);
         const places = await listEntries(chatId, settingId, 'location').catch(() => []);
@@ -325,6 +326,23 @@ export function endScheme(chatKey, id) {
     return done;
 }
 
+// What reached the story, or a line of the off-scene log, taken out by the
+// user. The log line goes from today's plan too.
+export function dropSurfaced(chatKey, id) {
+    let done = false;
+    updateChatDoc(chatKey, (d) => { done = removeSurfaced(d.gm.world, id); });
+    return done;
+}
+
+export function dropLogLine(chatKey, index, text) {
+    let done = false;
+    updateChatDoc(chatKey, (d) => {
+        done = removeLogLine(d.gm.world, index, text);
+        if (done && d.gm.day) d.gm.day.offscreen = d.gm.day.offscreen.filter((t) => t !== text);
+    });
+    return done;
+}
+
 export function pauseScheme(chatKey, id, paused) {
     let done = false;
     updateChatDoc(chatKey, (d) => { done = holdScheme(d.gm.world, id, paused); });
@@ -409,13 +427,65 @@ export async function makePlaceCanon(chatId, chatKey, settingId, placeId) {
     }
 }
 
-// Undo of "make it part of the setting": the old description comes back,
-// and the change is this chat's again.
+// Who leads a faction now, or what someone is now (role, state), said by
+// the user for this chat - a coup, a succession, a fall. The world hears
+// of it (a ripple) and reacts on its next pass. Empty text takes it back.
+export function setWhoLeads(chatKey, factionId, name, leadership) {
+    let set = false;
+    updateChatDoc(chatKey, (d) => {
+        set = setLeadership(d.gm.world, factionId, { name, leadership, day: d.canonical.day });
+        if (set) addRipple(d.gm.world, { id: newLocalId('r'), kind: 'user', text: `${name} is led now by ${String(leadership).trim().replace(/[.]+$/, '')}.`, day: d.canonical.day, ties: [factionId], reach: 'local' });
+    });
+    return set;
+}
+
+export function setWhatTheyAre(chatKey, personId, name, { role, state }) {
+    let set = false;
+    updateChatDoc(chatKey, (d) => {
+        set = setPersonNow(d.gm.world, personId, { name, role, state, day: d.canonical.day });
+        const now = [role, state].map((t) => String(t ?? '').trim()).filter(Boolean).join(', ');
+        if (set && now) addRipple(d.gm.world, { id: newLocalId('r'), kind: 'user', text: `${name} is now ${now.replace(/[.]+$/, '')}.`, day: d.canonical.day, ties: [personId], reach: 'local' });
+    });
+    return set;
+}
+
+// "Make it part of the setting" for who leads a faction (its description
+// says so) or someone's role (it becomes their Role) - for every chat.
+// kind: 'faction' | 'person'. -> a message.
+export async function makeChangeCanon(chatId, chatKey, settingId, kind, id) {
+    try {
+        if (!settingId || isCanonOnly(settingId) || !mayAddGeneratedDetail(settingId, id)) return { ok: false, message: 'This entry keeps to its canon: the change stays in this chat only.' };
+        const entry = await getEntry(chatId, settingId, id);
+        if (!entry) return { ok: false, message: 'That entry is not in the library any more.' };
+        const base = entry.base ?? entry;
+        let made = null;
+        if (kind === 'faction') {
+            updateChatDoc(chatKey, (d) => { made = canonizeLeadership(d.gm.world, id, base.description ?? '', { newId: newLocalId }); });
+            if (!made) return { ok: false, message: 'Nothing to make part of the setting.' };
+            await updateEntry(chatId, settingId, id, { description: made.description });
+            return { ok: true, message: `${made.record.name || 'The faction'}'s description now says who leads it.` };
+        }
+        updateChatDoc(chatKey, (d) => { made = canonizeRole(d.gm.world, id, base.role ?? '', { newId: newLocalId }); });
+        if (!made) return { ok: false, message: 'Nothing to make part of the setting.' };
+        await updateEntry(chatId, settingId, id, { role: made.role });
+        return { ok: true, message: `${made.record.name || 'Their'} Role is "${made.role}" now.` };
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not make the change part of the setting', err);
+        return { ok: false, message: 'Could not change the setting - see the console.' };
+    }
+}
+
+// Undo of "make it part of the setting": the old description (or Role)
+// comes back, and the change is this chat's again.
 export async function undoPlaceCanon(chatId, chatKey, settingId, recordId) {
     try {
         let r = null;
         updateChatDoc(chatKey, (d) => { r = uncanonize(d.gm.world, recordId, d.canonical.day); });
         if (!r) return { ok: false, message: 'Nothing to undo.' };
+        if (r.kind === 'person') {
+            await updateEntry(chatId, settingId, r.targetId, { role: r.before });
+            return { ok: true, message: `${r.name || 'They'} have their old Role back.` };
+        }
         await updateEntry(chatId, settingId, r.targetId, { description: r.before });
         return { ok: true, message: `${r.name || 'The place'} has its old description back.` };
     } catch (err) {

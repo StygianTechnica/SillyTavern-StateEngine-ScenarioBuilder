@@ -38,6 +38,7 @@ import { triggerSection,
     stampBeats, beatFrom, dueSection, setByStory, readWhen,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText, removeChronicle,
     addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines, factionsOutOfPlay,
+    removeFromDay,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
 import { companyLines } from '../director/company.js';
@@ -1142,6 +1143,14 @@ export function editProposal(chatKey, id, patch) {
 // The user's own happening, `inDays` from today.
 export function addAgendaItem(chatKey, text, inDays, when = '') {
     updateChatDoc(chatKey, (d) => addHappening(d.gm, { id: newLocalId('ag'), text, day: d.canonical.day + Math.max(0, Math.round(inDays)), when, source: 'user' }));
+}
+
+// A moment, agenda ('agenda', index) or off-screen line ('offscreen',
+// index) the user takes out of today's plan.
+export function removeDayItem(chatKey, kind, key) {
+    let done = false;
+    updateChatDoc(chatKey, (d) => { done = removeFromDay(d.gm, kind, key); });
+    return done;
 }
 
 export function removeAgendaItem(chatKey, id) {

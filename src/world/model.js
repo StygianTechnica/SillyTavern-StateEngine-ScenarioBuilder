@@ -42,7 +42,7 @@
 //   canonized (src/world/situations.js)
 // }
 
-import { emptyLasting, normalizeLasting, applySituations, applyChanges, applyConditions, situationHeadlines } from './situations.js';
+import { emptyLasting, normalizeLasting, applySituations, applyChanges, applyConditions, situationHeadlines, leadershipIn } from './situations.js';
 
 export const WORLD_LEVELS = Object.freeze([['off', 'Off'], ['quiet', 'Quiet'], ['lively', 'Lively'], ['turbulent', 'Turbulent']]);
 export const SURFACINGS = Object.freeze([['all', 'Everything'], ['talk', 'Rumours and news only'], ['log', 'Side log only']]);
@@ -315,14 +315,20 @@ export function stakeholders(ripples, { entries = [], tiesOf = () => [], members
 // from Enrique, not his father who leads it; Enrique hunted Cyril to
 // "question" him, though he is the one who shot him; and he sent his
 // brother, Cyril's old lover, to do it).
-// people: their kept secrets, and how they stand with the player character
-// and with those close to them; factions: who leads them, and who is in
-// them, with how each stands with the player character.
-// -> { secrets: [text], bonds: [text], leaders: [text], members: [text] }
+// people: their kept secrets, how they stand with the player character
+// and with those close to them, and what this chat has made of them (now);
+// factions: who leads them, and who is in them, with how each stands with
+// the player character. Who leads: the chat's own word first (a coup the
+// world or the user set - conditions), then the faction's "Leadership
+// now:" line (made part of the setting), then the members' roles and the
+// faction's ties - never a role this chat or the sheet says is over.
+// conditions: world.conditions; people: world.overlays.people.
+// -> { secrets: [text], bonds: [text], leaders: [text], members: [text], now: text }
 const LEADS = /\b(?:leader|head|boss|patriarch|matriarch|founder|chief|ruler|master|don|kingpin)\b/i;
 const LED_BY = /^(?:head|leader|boss|led by|founder|ruler|chief|own organization|owner)\b/i;
 const CLOSE = /lover|sibling|brother|sister|child|son|daughter|father|mother|parent|wife|husband|spouse|partner|friend|mentor|kin|cousin|uncle|aunt/i;
 const GONE = new Set(['revealed', 'disproven', 'exposed', 'out']);
+const OVER = /\b(?:former|deposed|ousted|overthrown|exiled|retired|late|disgraced|ex)\b|\bex-/i;
 
 // A tie in words from `name`'s side: "former lover of Cyril", or
 // "Enrique Medina (child of them)" for one recorded the other way.
@@ -332,24 +338,30 @@ function tieWords(t, otherName) {
     return back.test(kind) ? `${otherName} (${kind.replace(back, '')} them)` : `${kind} ${otherName}`;
 }
 
-export function castFacts(id, { byId = new Map(), tiesOf = () => [], memberships = new Map(), knowledge = [], playerId = '' } = {}) {
+export function castFacts(id, { byId = new Map(), tiesOf = () => [], memberships = new Map(), knowledge = [], playerId = '', conditions = {}, people = {} } = {}) {
     const e = byId.get(id);
-    const out = { secrets: [], bonds: [], leaders: [], members: [] };
+    const out = { secrets: [], bonds: [], leaders: [], members: [], now: '' };
     if (!e) return out;
+    // A person's role as this chat has it: the chat's word over the sheet's.
+    const roleOf = (p) => clean(people[p]?.role) || clean(byId.get(p)?.base?.role ?? byId.get(p)?.role);
+    const nowOf = (p) => [people[p]?.role, people[p]?.state].map(clean).filter(Boolean).join(', ');
     const nameOf = (x) => byId.get(x)?.name ?? '';
     const toPlayer = (x) => tiesOf(x).filter((t) => playerId && t.otherId === playerId).map((t) => tieWords(t, nameOf(playerId) || 'the player character'));
     if (e.type === 'faction') {
         const members = [...memberships].filter(([, fs]) => (fs ?? []).includes(id)).map(([p]) => p).filter((p) => byId.has(p) && p !== playerId);
-        const byRole = members.filter((p) => LEADS.test(byId.get(p)?.base?.role ?? ''));
-        const byTie = tiesOf(id).filter((t) => byId.get(t.otherId)?.type === 'character' && LED_BY.test(clean(t.kind).replace(/\s*\(them\)$/i, ''))).map((t) => t.otherId);
-        out.leaders = [...new Set([...byRole, ...byTie])].slice(0, 2).map((p) => {
-            const role = clean(byId.get(p)?.base?.role);
+        const said = clean(conditions[id]?.leadership) || leadershipIn(e.base?.description ?? e.description ?? '');
+        const isOver = (p) => OVER.test(roleOf(p));
+        const byRole = members.filter((p) => LEADS.test(roleOf(p)) && !isOver(p));
+        const byTie = tiesOf(id).filter((t) => byId.get(t.otherId)?.type === 'character' && LED_BY.test(clean(t.kind).replace(/\s*\(them\)$/i, '')) && !isOver(t.otherId)).map((t) => t.otherId);
+        out.leaders = said ? [cut(said, 160)] : [...new Set([...byRole, ...byTie])].slice(0, 2).map((p) => {
+            const role = roleOf(p);
             return role ? `${nameOf(p)} (${cut(role, 80)})` : nameOf(p);
         });
         out.members = members.slice(0, 8).map((p) => {
-            const role = clean(byId.get(p)?.base?.role);
+            const role = roleOf(p);
+            const state = clean(people[p]?.state);
             const ties = toPlayer(p);
-            return `${nameOf(p)}${role ? ` - ${cut(role, 60)}` : ''}${ties.length ? ` [${ties.join('; ')}]` : ''}`;
+            return `${nameOf(p)}${role ? ` - ${cut(role, 60)}` : ''}${state ? ` (now ${cut(state, 60)})` : ''}${ties.length ? ` [${ties.join('; ')}]` : ''}`;
         });
         return out;
     }
@@ -359,6 +371,7 @@ export function castFacts(id, { byId = new Map(), tiesOf = () => [], memberships
     }
     out.secrets = [...new Set(out.secrets)].slice(0, 3);
     const close = tiesOf(id).filter((t) => t.otherId !== playerId && byId.get(t.otherId)?.type === 'character' && CLOSE.test(t.kind));
+    out.now = nowOf(id);
     out.bonds = [...toPlayer(id), ...close.map((t) => {
         const ties = toPlayer(t.otherId);
         return `${tieWords(t, nameOf(t.otherId))}${ties.length ? ` - who is ${ties.join('; ')}` : ''}`;
@@ -561,6 +574,21 @@ export function hearScheme(world, id, how = '', { day = null } = {}) {
 }
 
 // The day plan's off-screen lines, from the world's log for that day.
+// The user takes out what reached the story, or a line of the off-scene
+// log (index into world.log), when it has no place in it. -> true if gone.
+export function removeSurfaced(world, id) {
+    const before = world.surfaced.length;
+    world.surfaced = world.surfaced.filter((x) => x.id !== id);
+    return world.surfaced.length < before;
+}
+
+export function removeLogLine(world, index, text = null) {
+    const l = world.log[index];
+    if (!l || (text !== null && l.text !== text)) return false;
+    world.log = world.log.filter((_, i) => i !== index);
+    return true;
+}
+
 export const offscreenOf = (world, day) => world.log.filter((l) => l.day === day).map((l) => l.text).slice(0, 4);
 
 // ---------------------------------------------------------------- what the director reads (§4)

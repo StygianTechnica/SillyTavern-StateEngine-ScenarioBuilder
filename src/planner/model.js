@@ -296,6 +296,28 @@ export function addRequest(gm, { id, text, urgency = 'whenever', at = '' }) {
     return r;
 }
 
+// The user takes a moment, an agenda or an off-screen line out of
+// today's plan. A request the moment answered waits again once nothing in
+// the plan answers it. -> true if gone.
+export function removeFromDay(gm, kind, key) {
+    const day = gm.day;
+    if (!day) return false;
+    if (kind === 'moment') {
+        if (!day.moments.some((m) => m.id === key)) return false;
+        day.moments = day.moments.filter((m) => m.id !== key);
+        for (const r of gm.queue) {
+            if (r.status !== 'planned' || !r.plannedAs?.includes(key)) continue;
+            r.plannedAs = r.plannedAs.filter((id) => id !== key);
+            if (!r.plannedAs.length) r.status = 'waiting';
+        }
+        return true;
+    }
+    const field = kind === 'agenda' ? 'agendas' : kind === 'offscreen' ? 'offscreen' : '';
+    if (!field || !day[field]?.[key]) return false;
+    day[field] = day[field].filter((_, i) => i !== key);
+    return true;
+}
+
 export function setRequestStatus(gm, id, status, extra = {}) {
     gm.queue = trimQueue(gm.queue.map((r) => (r.id === id ? { ...r, status, ...extra } : r)));
 }

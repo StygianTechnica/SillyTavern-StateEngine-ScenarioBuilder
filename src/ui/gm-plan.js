@@ -13,7 +13,7 @@ import {
     getPlannerStatus, runDay, runCheck, runInspire, runOutline, runBeat, queueRequest, withdrawRequest, addInspiration, removeInspiration,
     setMotifs, peek, setHold, storyState, setShape, editOutlineBeat, lockOutlineBeat, removeOutlineBeat, addOutlineBeat,
     finishOutlineBeat, restoreOutlineBeat, setOutlineText, setJoin, finishVolume, editFinishedVolume, removeChronicleLine, steerObjects,
-    runIdeas, acceptIdea, dismissIdea, editProposal, addAgendaItem, removeAgendaItem, setCreationMode,
+    runIdeas, acceptIdea, dismissIdea, editProposal, addAgendaItem, removeAgendaItem, removeDayItem, setCreationMode,
     writeStarter, postStarter, starterSpeakers,
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
@@ -442,7 +442,8 @@ function momentRow(gm, m, show) {
             m.trigger ? h('small', { class: 'sb-hint' }, ` - ${m.trigger}`) : null,
             // A note that only repeats the moment says nothing.
             m.note && !sameBeat(m.note, m.text) ? h('small', { class: 'sb-hint' }, ` (${m.note})`) : null),
-        h('div', { class: 'sb-chips' }, when, state, ...m.ties.map((t) => h('span', { class: 'sb-chip' }, t))));
+        h('div', { class: 'sb-chips' }, when, state, ...m.ties.map((t) => h('span', { class: 'sb-chip' }, t)),
+            h('div', { class: 'sb-iconbtn', title: 'Remove from the plan for today', onclick: () => { removeDayItem(ws.ctx.chatKey, 'moment', m.id); done(); } }, icon('fa-trash'))));
 }
 
 function todayCard(gm, show) {
@@ -459,15 +460,17 @@ function todayCard(gm, show) {
         day && !sameDay ? h('p', { class: 'sb-hint' }, icon('fa-calendar-day'), ' This plan was for an earlier day; a new one is made after the next reply.') : null,
         ...(day?.moments ?? []).map((m) => momentRow(gm, m, show)),
         day?.agendas?.length ? h('div', { class: 'sb-gm-sub' }, 'Agendas') : null,
-        ...(day?.agendas ?? []).map((a) => (isVeiled(gm, agendaId(a), show)
+        ...(day?.agendas ?? []).map((a, i) => (isVeiled(gm, agendaId(a), show)
             ? h('div', { class: 'sb-gm-row sb-gm-veiled' }, icon('fa-mask'), h('span', {}, a.who), h('span', { class: 'sb-muted' }, 'has plans of their own'),
                 h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); peek(chatKey, agendaId(a)); } }, 'peek'))
-            : h('div', { class: 'sb-gm-row' }, h('div', { class: 'sb-gm-text' }, h('b', {}, a.who), ` wants ${a.wants}${a.will ? `, and will ${a.will}` : ''}.`, a.hidden ? h('small', { class: 'sb-hint' }, ` Hidden: ${a.hidden}`) : null)))),
+            : h('div', { class: 'sb-gm-row' }, h('div', { class: 'sb-gm-text' }, h('b', {}, a.who), ` wants ${a.wants}${a.will ? `, and will ${a.will}` : ''}.`, a.hidden ? h('small', { class: 'sb-hint' }, ` Hidden: ${a.hidden}`) : null),
+                h('div', { class: 'sb-iconbtn', title: 'Remove from the plan for today', onclick: () => { removeDayItem(chatKey, 'agenda', i); done(); } }, icon('fa-trash'))))),
         day?.offscreen?.length ? h('div', { class: 'sb-gm-sub' }, 'Off-screen') : null,
         ...(day?.offscreen ?? []).map((t, i) => (isVeiled(gm, `off:${i}`, show)
             ? h('div', { class: 'sb-gm-row sb-gm-veiled' }, icon('fa-mask'), h('span', { class: 'sb-muted' }, 'Something is going on elsewhere'),
                 h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); peek(chatKey, `off:${i}`); } }, 'peek'))
-            : h('div', { class: 'sb-gm-row' }, h('span', {}, t)))),
+            : h('div', { class: 'sb-gm-row' }, h('span', {}, t),
+                h('div', { class: 'sb-iconbtn', title: 'Remove from the plan for today', onclick: () => { removeDayItem(chatKey, 'offscreen', i); done(); } }, icon('fa-trash'))))),
         h('div', { class: 'sb-actions' },
             button(day && sameDay ? 'Re-plan the rest of today' : 'Plan today now', () => void running('Planning', () => runDay(chatId, chatKey, { rest: !!sameDay })), { iconName: 'fa-wand-magic-sparkles', disabled: busy }),
             day ? button('Check against the story', () => void running('Checking', () => runCheck(chatId, chatKey)), { iconName: 'fa-list-check', disabled: busy }) : null));

@@ -15,8 +15,9 @@ import { isVeiled } from '../planner/model.js';
 import { WORLD_LEVELS, SURFACINGS, LEVEL_LIMITS, openSchemes, waitingRipples, isQuiet } from '../world/model.js';
 import { PLACE_MODES, DEATH_MODES, openSituations } from '../world/situations.js';
 import {
-    addUserRipple, endScheme, pauseScheme, leaveBe, quietFor, setWorldLevel, setWorldSurfacing, hasOwnPass,
+    addUserRipple, endScheme, pauseScheme, dropSurfaced, dropLogLine, leaveBe, quietFor, setWorldLevel, setWorldSurfacing, hasOwnPass,
     setWorldPlaces, setWorldDeaths, endSituationNow, answerChange, undoWorldChange, makePlaceCanon, undoPlaceCanon,
+    setWhoLeads, setWhatTheyAre, makeChangeCanon,
 } from '../world/run.js';
 import { isCanonOnly } from '../library/library.js';
 import { peek, runWorld, getPlannerStatus } from '../planner/run.js';
@@ -117,6 +118,7 @@ function changeRows(world, settingId) {
     const undoBtn = (kind, key) => h('div', { class: 'sb-iconbtn', title: 'Undo - as if it never happened', onclick: () => undo(kind, key) }, icon('fa-rotate-left'));
     const make = async (id) => { const out = await makePlaceCanon(chatId, chatKey, settingId, id); toast(out.ok ? 'success' : 'warning', out.message); rerender({ force: true }); };
     const unmake = async (id) => { const out = await undoPlaceCanon(chatId, chatKey, settingId, id); toast(out.ok ? 'success' : 'warning', out.message); rerender({ force: true }); };
+    const makeOther = async (kind, id) => { const out = await makeChangeCanon(chatId, chatKey, settingId, kind, id); toast(out.ok ? 'success' : 'warning', out.message); rerender({ force: true }); };
     const rows = [];
     for (const [id, o] of Object.entries(world.overlays.places)) {
         rows.push(h('div', { class: 'sb-gm-row' }, h('span', { class: 'sb-chip' }, icon('fa-house-crack')), h('span', {}, h('b', {}, o.name), ` - ${o.text}`),
@@ -126,19 +128,71 @@ function changeRows(world, settingId) {
                 undoBtn('place', id))));
     }
     for (const [id, p] of Object.entries(world.overlays.people)) {
-        rows.push(h('div', { class: 'sb-gm-row' }, h('span', { class: 'sb-chip' }, icon('fa-user-pen')), h('span', {}, h('b', {}, p.name), ` - ${[p.where && `at ${p.where}`, p.state].filter(Boolean).join('; ')}`), h('div', { class: 'sb-chips' }, undoBtn('person', id))));
+        rows.push(h('div', { class: 'sb-gm-row' }, h('span', { class: 'sb-chip' }, icon('fa-user-pen')), h('span', {}, h('b', {}, p.name), ` - ${[p.role && `now ${p.role}`, p.where && `at ${p.where}`, p.state].filter(Boolean).join('; ')}`),
+            h('div', { class: 'sb-chips' },
+                canon && p.role ? h('div', { class: 'sb-iconbtn', title: 'Make the role part of the setting - it becomes their Role (for every chat)', onclick: () => void makeOther('person', id) }, icon('fa-book-bookmark')) : null,
+                undoBtn('person', id))));
     }
     for (const s of world.overlays.stances) {
         rows.push(h('div', { class: 'sb-gm-row' }, h('span', { class: 'sb-chip' }, icon('fa-handshake-slash')), h('span', {}, `${s.aName} and ${s.bName}: ${s.stance}`), h('div', { class: 'sb-chips' }, undoBtn('stance', `${s.a}|${s.b}`))));
     }
     for (const [id, c] of Object.entries(world.conditions)) {
-        rows.push(h('div', { class: 'sb-gm-row' }, h('span', { class: 'sb-chip' }, icon('fa-flag')), h('span', {}, h('b', {}, c.name), ` - ${c.standing}${c.leadership ? `; ${c.leadership}` : ''}${c.mood ? `; mood: ${c.mood}` : ''}`), h('div', { class: 'sb-chips' }, undoBtn('condition', id))));
+        rows.push(h('div', { class: 'sb-gm-row' }, h('span', { class: 'sb-chip' }, icon('fa-flag')), h('span', {}, h('b', {}, c.name), ` - ${c.standing}${c.leadership ? `; leadership: ${c.leadership}` : ''}${c.mood ? `; mood: ${c.mood}` : ''}`),
+            h('div', { class: 'sb-chips' },
+                canon && c.leadership ? h('div', { class: 'sb-iconbtn', title: 'Make who leads it part of the setting - its description says so (for every chat)', onclick: () => void makeOther('faction', id) }, icon('fa-book-bookmark')) : null,
+                undoBtn('condition', id))));
     }
     for (const r of world.canonized.slice().reverse()) {
         rows.push(h('div', { class: 'sb-gm-row sb-gm-past' }, h('span', { class: 'sb-chip' }, icon('fa-book-bookmark')), h('span', {}, h('b', {}, r.name), ` - in the setting now: ${r.text}`),
             h('div', { class: 'sb-chips' }, h('div', { class: 'sb-iconbtn', title: 'Undo - the old description comes back, and the change is this chat\'s only', onclick: () => void unmake(r.id) }, icon('fa-rotate-left')))));
     }
     return rows;
+}
+
+// Who leads a faction now, or what someone is now - set by hand for this
+// chat (a coup, a succession, a fall). The draft lives across rerenders.
+const nowDraft = { target: '', lead: '', role: '', state: '' };
+
+function nowForm(world, people) {
+    const { chatKey } = ws.ctx;
+    const isFaction = (e) => e?.type === 'faction' || String(e?.id ?? '').startsWith('fac_');
+    const target = people.find((e) => e.id === nowDraft.target);
+    const faction = isFaction(target);
+    const pick = (id) => {
+        const e = people.find((x) => x.id === id);
+        nowDraft.target = id;
+        // What the chat already says, to change rather than retype.
+        nowDraft.lead = world.conditions[id]?.leadership ?? '';
+        nowDraft.role = world.overlays.people[id]?.role ?? '';
+        nowDraft.state = world.overlays.people[id]?.state ?? '';
+        rerender();
+        return e;
+    };
+    const save = () => {
+        if (!target) return;
+        if (faction) {
+            const set = setWhoLeads(chatKey, target.id, target.name, nowDraft.lead.trim());
+            toast(set ? 'success' : 'info', set ? `${target.name} is led now by ${nowDraft.lead.trim()} - in this chat. The world will react.` : `${target.name}'s leadership is back to what the setting says.`);
+        } else {
+            const set = setWhatTheyAre(chatKey, target.id, target.name, { role: nowDraft.role.trim(), state: nowDraft.state.trim() });
+            toast(set ? 'success' : 'info', set ? `${target.name} has changed in this chat. The world will react.` : `${target.name} is back to what the setting says.`);
+        }
+        Object.assign(nowDraft, { target: '', lead: '', role: '', state: '' });
+        ws.dirty = false;
+        rerender();
+    };
+    const input = (key, placeholder) => h('input', { class: 'text_pole', type: 'text', value: nowDraft[key], placeholder, oninput: (e) => { nowDraft[key] = e.target.value; markDirty(); } });
+    const factions = people.filter(isFaction);
+    const persons = people.filter((e) => !isFaction(e));
+    return [
+        h('div', { class: 'sb-gm-sub' }, 'Who leads, and what someone is now'),
+        h('small', { class: 'sb-hint' }, 'A coup, a succession, a fall from grace - for this chat. The book button on the change makes it part of the setting.'),
+        select([{ value: '', label: 'Which faction or person?' }, ...factions.map((f) => ({ value: f.id, label: `${f.name} (faction)` })), ...persons.map((p) => ({ value: p.id, label: p.name }))], nowDraft.target, { onchange: (e) => pick(e.target.value) }),
+        target && faction ? input('lead', 'Who leads it now - "Enrique Medina, since he ousted his father"') : null,
+        target && !faction ? input('role', `Their role now - "Deposed former head of the Medina Syndicate" (sheet: ${String(target.base?.role ?? target.role ?? '').slice(0, 60) || 'none'})`) : null,
+        target && !faction ? input('state', 'How they are now - "in hiding", "under guard" (optional)') : null,
+        target ? h('div', { class: 'sb-actions' }, button('Set', save, { iconName: 'fa-check', cls: 'sb-primary', title: 'Empty fields take the change back' })) : null,
+    ];
 }
 
 export function worldCard(gm, show, people = []) {
@@ -152,7 +206,7 @@ export function worldCard(gm, show, people = []) {
     const situations = openSituations(world);
     const changes = on ? changeRows(world, ws.ctx.settingId) : [];
     const hiddenIds = new Set(world.schemes.filter((s) => s.visibility === 'hidden').map((s) => s.id));
-    const log = world.log.slice(-12).reverse();
+    const log = world.log.map((l, index) => ({ ...l, index })).slice(-12).reverse();
     const surfaced = world.surfaced.slice().reverse();
     const waiting = waitingRipples(world).length;
     const own = hasOwnPass();
@@ -194,13 +248,16 @@ export function worldCard(gm, show, people = []) {
         on && !schemes.length ? h('p', { class: 'sb-muted' }, own ? 'Nothing under way yet. Schemes begin when something happens that others would react to.' : 'Nothing under way yet. Schemes begin when an in-game day starts after something happens that others would react to.') : null,
         on && surfaced.length ? h('div', { class: 'sb-gm-sub' }, 'Reaching the story') : null,
         ...(on ? surfaced.map((x) => h('div', { class: 'sb-gm-row' }, h('span', { class: 'sb-chip' }, WAY_TEXT[x.way] ?? x.way), h('span', {}, x.text),
-            h('small', { class: 'sb-hint' }, `${x.where ? `${x.where} · ` : ''}from day ${x.fromDay}${x.shownFor.length ? ` · shown ${x.shownFor.length}×` : ''}`))) : []),
+            h('small', { class: 'sb-hint' }, `${x.where ? `${x.where} · ` : ''}from day ${x.fromDay}${x.shownFor.length ? ` · shown ${x.shownFor.length}×` : ''}`),
+            h('div', { class: 'sb-iconbtn', title: 'Remove - it never reaches the story', onclick: () => { dropSurfaced(chatKey, x.id); rerender(); } }, icon('fa-trash')))) : []),
         on && log.length ? h('div', { class: 'sb-gm-sub' }, 'Off scene') : null,
         ...(on ? log.map((l) => (l.veiled && hiddenIds.has(l.schemeId) && isVeiled(gm, `world:${l.schemeId}`, show)
             ? veiledRow(chatKey, `world:${l.schemeId}`, `Day ${l.day ?? '?'}: something went on elsewhere`)
-            : h('div', { class: 'sb-gm-row sb-gm-log' }, h('span', { class: 'sb-chip' }, `day ${l.day ?? '?'}`), h('span', {}, l.text)))) : []),
+            : h('div', { class: 'sb-gm-row sb-gm-log' }, h('span', { class: 'sb-chip' }, `day ${l.day ?? '?'}`), h('span', {}, l.text),
+                h('div', { class: 'sb-iconbtn', title: 'Remove - it never happened', onclick: () => { dropLogLine(chatKey, l.index, l.text); rerender(); } }, icon('fa-trash'))))) : []),
         on && changes.length ? h('div', { class: 'sb-gm-sub' }, 'Changes in this chat') : null,
         ...(on ? changes : []),
+        ...(on ? nowForm(world, people) : []),
         on && world.leftAlone.length ? h('div', { class: 'sb-gm-sub' }, 'Left alone') : null,
         ...(on ? world.leftAlone.map((id) => h('div', { class: 'sb-gm-row' }, h('span', {}, nameOf(id)),
             h('div', { class: 'sb-iconbtn', title: 'Let the world move them again', onclick: () => { leaveBe(chatKey, [id], false); rerender(); } }, icon('fa-rotate-left')))) : []),

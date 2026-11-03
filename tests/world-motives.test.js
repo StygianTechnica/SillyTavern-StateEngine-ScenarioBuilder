@@ -87,3 +87,67 @@ describe('the day plan', () => {
         expect(prompt).toContain('never what THE LATEST CHAT already shows');
     });
 });
+
+// A coup: Enrique ousts his father. The chat says so first, then the
+// setting once the user makes it part of it.
+import { emptyLasting, setLeadership, setPersonNow, canonizeLeadership, canonizeRole, uncanonize, leadershipIn, lastingLines, normalizeLasting } from '../src/world/situations.js';
+
+describe('who leads, after a coup', () => {
+    it("the chat's word on who leads comes first", () => {
+        const f = castFacts('medina', { ...opts, conditions: { medina: { leadership: 'Enrique Medina, since he ousted his father' } } });
+        expect(f.leaders).toEqual(['Enrique Medina, since he ousted his father']);
+    });
+
+    it('a role this chat calls over leads no more, and shows as it is now', () => {
+        const people = { serlos: { role: 'Deposed former head of the Medina Syndicate', state: 'under guard' } };
+        const f = castFacts('medina', { ...opts, people });
+        expect(f.leaders).toEqual([]);
+        expect(f.members).toContain('Serlos Medina - Deposed former head of the Medina Syndicate (now under guard)');
+        expect(castFacts('serlos', { ...opts, people }).now).toBe('Deposed former head of the Medina Syndicate, under guard');
+    });
+
+    it('a faction description that says who leads now', () => {
+        const withLine = new Map(entries.map((e) => [e.id, e.id === 'medina' ? { ...e, base: { description: 'A syndicate.\n\nLeadership now: Enrique Medina.' } } : e]));
+        expect(castFacts('medina', { ...opts, byId: withLine }).leaders).toEqual(['Enrique Medina']);
+        expect(leadershipIn('Old text.')).toBe('');
+    });
+});
+
+describe('setting it by hand, and making it part of the setting', () => {
+    it('leadership: set, made canon in the description, and undone', () => {
+        const world = emptyLasting();
+        expect(setLeadership(world, 'medina', { name: 'Medina Syndicate', leadership: 'Enrique Medina', day: 3 })).toBe(true);
+        expect(lastingLines(world)).toContain('- Medina Syndicate: steady; Enrique Medina.');
+        const made = canonizeLeadership(world, 'medina', 'A syndicate.', { newId: () => 'wc1' });
+        expect(made.description).toBe('A syndicate.\n\nLeadership now: Enrique Medina.');
+        expect(world.conditions.medina).toBeUndefined();
+        // Made again later: the line is replaced, not added.
+        setLeadership(world, 'medina', { name: 'Medina Syndicate', leadership: 'Bartin Medina', day: 9 });
+        expect(canonizeLeadership(world, 'medina', made.description, { newId: () => 'wc2' }).description).toBe('A syndicate.\n\nLeadership now: Bartin Medina.');
+        const r = uncanonize(world, 'wc1', 10);
+        expect(r.before).toBe('A syndicate.');
+        expect(world.conditions.medina.leadership).toBe('Enrique Medina');
+    });
+
+    it('a role: set with a state, made the Role, the state stays this chat\'s', () => {
+        const world = emptyLasting();
+        setPersonNow(world, 'serlos', { name: 'Serlos Medina', role: 'Deposed former head', state: 'in hiding', day: 3 });
+        expect(lastingLines(world)).toContain('- Serlos Medina: now Deposed former head, in hiding.');
+        const made = canonizeRole(world, 'serlos', 'Founder and Leader', { newId: () => 'wc1' });
+        expect(made.role).toBe('Deposed former head');
+        expect(world.overlays.people.serlos).toMatchObject({ role: '', state: 'in hiding' });
+        expect(normalizeLasting(world).canonized[0]).toMatchObject({ kind: 'person', before: 'Founder and Leader' });
+        uncanonize(world, 'wc1', 4);
+        expect(world.overlays.people.serlos.role).toBe('Deposed former head');
+    });
+
+    it('empty text takes it back', () => {
+        const world = emptyLasting();
+        setLeadership(world, 'medina', { name: 'M', leadership: 'Enrique', day: 1 });
+        expect(setLeadership(world, 'medina', { name: 'M', leadership: '', day: 2 })).toBe(false);
+        expect(world.conditions.medina).toBeUndefined();
+        setPersonNow(world, 'serlos', { name: 'S', role: 'x', day: 1 });
+        setPersonNow(world, 'serlos', { name: 'S', role: '', state: '', day: 2 });
+        expect(world.overlays.people.serlos).toBeUndefined();
+    });
+});

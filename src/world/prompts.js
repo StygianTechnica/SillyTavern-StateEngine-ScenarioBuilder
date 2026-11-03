@@ -24,6 +24,7 @@ function stakeholderLine(s) {
         clean(s.role) ? `role: ${cut(s.role, 120)}` : '',
         clean(s.goals) ? `goals: ${cut(s.goals, 200)}` : '',
         clean(s.personality) ? `nature: ${cut(s.personality, 120)}` : '',
+        clean(s.now) ? `now: ${cut(s.now, 160)}` : '',
         clean(s.where) ? `last seen: ${cut(s.where, 80)}` : '',
         texts(s.leaders, 2).length ? `led by ${texts(s.leaders, 2).join(' and ')}` : '',
         texts(s.members, 8).length ? `members: ${texts(s.members, 8).join(', ')}` : '',

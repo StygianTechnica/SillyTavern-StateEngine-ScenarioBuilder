@@ -15,15 +15,16 @@
 //                  whereNames, headline, truth, effects: [text], ties: [id], startedDay,
 //                  endedDay, at }]
 //   overlays:   { places: { [placeId]: { name, text, since, until } },
-//                 people: { [personId]: { name, locationId, where, state, since } },
+//                 people: { [personId]: { name, locationId, where, role, state, since } },
 //                 stances: [{ a, b, aName, bName, stance, situationId, since }] }
 //   conditions: { [factionId]: { name, standing, leadership, mood, since } }
 //   contact:    { [id]: { day, turn, prevDay, visitTurn } }    the player character's
 //               last contact; prevDay: the contact before this visit
 //   pending:    [{ id, kind: 'death' | 'place', targetId, name, text, days, day, schemeId, until }]
 //               changes waiting for the user's say-so
-//   canonized:  [{ id, kind: 'place', targetId, name, before, text, at }]  changes the
-//               user made part of the setting - kept for Undo
+//   canonized:  [{ id, kind: 'place' | 'faction' | 'person', targetId, name, before, text, at }]
+//               changes the user made part of the setting - kept for Undo (before:
+//               the place's or faction's description, or the person's role)
 
 export const SITUATION_KINDS = Object.freeze(['conflict', 'schism', 'accord', 'crisis', 'contest']);
 export const STAGES = Object.freeze(['brewing', 'open', 'turning', 'ending', 'over']);
@@ -48,6 +49,7 @@ export const VISIT_REPLIES = 4;
 // A gap of more than this many replies makes the next contact a new visit.
 const VISIT_GAP = 2;
 
+const CANON_KINDS = ['place', 'faction', 'person'];
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' ? v : '');
 const clean = (v) => str(v).replace(/\s+/g, ' ').trim();
@@ -82,8 +84,8 @@ function normalizeSituation(s) {
 }
 
 const normalizePlace = (x) => (isObject(x) && clean(x.text) ? { name: cut(x.name, 120), text: cut(x.text, 300), since: intOr(x.since), until: intOr(x.until) } : null);
-const normalizePerson = (x) => (isObject(x) && (clean(x.locationId) || clean(x.state))
-    ? { name: cut(x.name, 120), locationId: clean(x.locationId), where: cut(x.where, 120), state: cut(x.state, 200), since: intOr(x.since) } : null);
+const normalizePerson = (x) => (isObject(x) && (clean(x.locationId) || clean(x.state) || clean(x.role))
+    ? { name: cut(x.name, 120), locationId: clean(x.locationId), where: cut(x.where, 120), role: cut(x.role, 200), state: cut(x.state, 200), since: intOr(x.since) } : null);
 const normalizeCondition = (x) => (isObject(x) && (STANDINGS.includes(x.standing) || clean(x.leadership) || clean(x.mood))
     ? { name: cut(x.name, 120), standing: STANDINGS.includes(x.standing) ? x.standing : 'steady', leadership: cut(x.leadership, 200), mood: cut(x.mood, 160), since: intOr(x.since) } : null);
 const normalizeContact = (x) => (isObject(x) && Number.isInteger(x.turn)
@@ -105,7 +107,7 @@ export function normalizeLasting(w) {
         pending: (Array.isArray(v.pending) ? v.pending : []).filter((x) => isObject(x) && clean(x.id) && ['death', 'place'].includes(x.kind) && clean(x.targetId))
             .map((x) => ({ id: clean(x.id), kind: x.kind, targetId: clean(x.targetId), name: cut(x.name, 120), text: cut(x.text, 300), days: intOr(x.days), day: intOr(x.day), schemeId: clean(x.schemeId), until: intOr(x.until) })).slice(-PENDING_LIMIT),
         canonized: (Array.isArray(v.canonized) ? v.canonized : []).filter((x) => isObject(x) && clean(x.id) && clean(x.targetId))
-            .map((x) => ({ id: clean(x.id), kind: 'place', targetId: clean(x.targetId), name: cut(x.name, 120), before: str(x.before).slice(0, 4000), text: cut(x.text, 300), at: str(x.at) })).slice(-CANONIZED_LIMIT),
+            .map((x) => ({ id: clean(x.id), kind: CANON_KINDS.includes(x.kind) ? x.kind : 'place', targetId: clean(x.targetId), name: cut(x.name, 120), before: str(x.before).slice(0, 4000), text: cut(x.text, 300), at: str(x.at) })).slice(-CANONIZED_LIMIT),
     };
 }
 
@@ -205,7 +207,7 @@ export function applyChanges(world, changes, ctx) {
         } else if (c.kind === 'whereabouts' || c.kind === 'state') {
             const id = resolve(c.target);
             if (!id || id === playerId || here.has(id) || !isPerson(id)) continue;
-            const prev = world.overlays.people[id] ?? { name: nameOf(id), locationId: '', where: '', state: '', since: day };
+            const prev = world.overlays.people[id] ?? { name: nameOf(id), locationId: '', where: '', role: '', state: '', since: day };
             if (c.kind === 'whereabouts') {
                 const loc = placeOf(c.where || c.text);
                 if (!loc) continue;
@@ -304,8 +306,66 @@ export function uncanonize(world, recordId, day = null) {
     const r = world.canonized.find((x) => x.id === recordId);
     if (!r) return null;
     world.canonized = world.canonized.filter((x) => x.id !== recordId);
-    setPlace(world, r.targetId, { name: r.name, text: r.text, since: day, until: null });
+    if (r.kind === 'faction') setLeadership(world, r.targetId, { name: r.name, leadership: r.text, day });
+    else if (r.kind === 'person') setPersonNow(world, r.targetId, { name: r.name, role: r.text, day });
+    else setPlace(world, r.targetId, { name: r.name, text: r.text, since: day, until: null });
     return r;
+}
+
+// ---------------------------------------------------------------- who leads, and what someone is now
+
+// The user says who leads a faction now (a coup, a succession), or what
+// someone is now - their role (deposed, the new head) and how they are -
+// for this chat. Empty text takes that part back. -> true if anything is set.
+export function setLeadership(world, id, { name = '', leadership = '', day = null } = {}) {
+    if (!clean(id)) return false;
+    const prev = world.conditions[id];
+    const next = normalizeCondition({ name: name || prev?.name, standing: prev?.standing ?? 'steady', leadership, mood: prev?.mood ?? '', since: day });
+    const keep = !!next && (!!clean(next.leadership) || !!clean(next.mood) || next.standing !== 'steady');
+    if (keep) world.conditions = { ...world.conditions, [id]: next };
+    else undoChange(world, 'condition', id);
+    return keep && !!clean(leadership);
+}
+
+export function setPersonNow(world, id, { name = '', role, state, day = null } = {}) {
+    if (!clean(id)) return false;
+    const prev = world.overlays.people[id] ?? { name, locationId: '', where: '', role: '', state: '', since: day };
+    const next = normalizePerson({ ...prev, name: name || prev.name, role: role === undefined ? prev.role : role, state: state === undefined ? prev.state : state, since: day });
+    if (next) world.overlays.people = { ...world.overlays.people, [id]: next };
+    else undoChange(world, 'person', id);
+    return !!next;
+}
+
+// What a faction's description says of who leads it now, after the user
+// made it part of the setting ('' when it says nothing).
+const LEADERSHIP_LINE = /^Leadership now: .*$/m;
+export const leadershipIn = (description) => clean((str(description).match(LEADERSHIP_LINE)?.[0] ?? '').replace(/^Leadership now:\s*/, '')).replace(/[.]+$/, '');
+
+// "Make it part of the setting" for who leads a faction: its description
+// says so in a line of its own (one it said before is replaced), and the
+// chat's leadership goes. -> { description, record } or null.
+export function canonizeLeadership(world, factionId, before, { newId = (p) => `${p}${Math.random().toString(36).slice(2, 8)}`, at = new Date().toISOString() } = {}) {
+    const c = world.conditions[factionId];
+    if (!clean(c?.leadership)) return null;
+    const line = `Leadership now: ${unstop(c.leadership)}.`;
+    const old = str(before);
+    const description = LEADERSHIP_LINE.test(old) ? old.replace(LEADERSHIP_LINE, line) : [old.trim(), line].filter(Boolean).join('\n\n');
+    const record = { id: newId('wc'), kind: 'faction', targetId: factionId, name: c.name, before: old, text: c.leadership, at };
+    world.canonized = [...world.canonized, record].slice(-CANONIZED_LIMIT);
+    setLeadership(world, factionId, { name: c.name, leadership: '', day: c.since });
+    return { description, record };
+}
+
+// "Make it part of the setting" for someone's role now: it becomes their
+// Role. Their state (wounded, in hiding) stays this chat's.
+// -> { role, record } or null.
+export function canonizeRole(world, personId, before, { newId = (p) => `${p}${Math.random().toString(36).slice(2, 8)}`, at = new Date().toISOString() } = {}) {
+    const p = world.overlays.people[personId];
+    if (!clean(p?.role)) return null;
+    const record = { id: newId('wc'), kind: 'person', targetId: personId, name: p.name, before: str(before), text: p.role, at };
+    world.canonized = [...world.canonized, record].slice(-CANONIZED_LIMIT);
+    setPersonNow(world, personId, { name: p.name, role: '', day: p.since });
+    return { role: p.role, record };
 }
 
 // ---------------------------------------------------------------- faction conditions and contact (§4.1)
@@ -389,7 +449,8 @@ export function worldHereSection(world, { day, turn = 0, placeIds = [], present 
     // Someone here the world has changed.
     for (const id of present) {
         const p = world.overlays.people[id];
-        if (p?.state) lines.push(`- ${p.name || nameOf(id)}: ${unstop(p.state)} (since ${ago(day - (p.since ?? day))}).`);
+        const now = [p?.role, p?.state].map(clean).filter(Boolean).map(unstop).join(', ');
+        if (now) lines.push(`- ${p.name || nameOf(id)}: ${now} (since ${ago(day - (p.since ?? day))}).`);
     }
     // Coming back: what has become of them since the last contact.
     for (const t of touched) {
@@ -402,7 +463,7 @@ export function worldHereSection(world, { day, turn = 0, placeIds = [], present 
         if (!changed) continue;
         const bits = [
             c ? `now ${c.standing}${c.leadership ? `; ${unstop(c.leadership)}` : ''}${c.mood ? `; mood: ${unstop(c.mood)}` : ''}` : '',
-            p?.state && !here.has(t.id) ? `now ${unstop(p.state)}` : '',
+            (p?.role || p?.state) && !here.has(t.id) ? `now ${[p.role, p.state].map(clean).filter(Boolean).map(unstop).join(', ')}` : '',
             since.length ? `since then: ${since.map((l) => unstop(l.text)).join('; ')}` : '',
         ].filter(Boolean);
         lines.push(`- Since the player character was last with ${t.name} (${ago(day - prevDay)}): ${bits.join('. ')}. Show what has become of them in what can be seen, and let people tell it as each would - a loyalist their side's version, a frightened clerk half of it, an enemy a lie - only if asked or if it is theirs to tell.`);
@@ -420,7 +481,7 @@ export function lastingLines(world, { nameOf = () => '' } = {}) {
     }
     for (const [id, c] of Object.entries(world.conditions)) lines.push(`- ${c.name || nameOf(id)}: ${c.standing}${c.leadership ? `; ${unstop(c.leadership)}` : ''}${c.mood ? `; mood: ${unstop(c.mood)}` : ''}.`);
     for (const s of world.overlays.stances) lines.push(`- ${s.aName} and ${s.bName}: ${s.stance}.`);
-    for (const [id, p] of Object.entries(world.overlays.people)) lines.push(`- ${p.name || nameOf(id)}: ${[p.where && `at ${p.where}`, p.state].filter(Boolean).map(unstop).join(', ')}.`);
+    for (const [id, p] of Object.entries(world.overlays.people)) lines.push(`- ${p.name || nameOf(id)}: ${[p.role && `now ${p.role}`, p.where && `at ${p.where}`, p.state].filter(Boolean).map(unstop).join(', ')}.`);
     for (const [id, o] of Object.entries(world.overlays.places)) lines.push(`- ${o.name || nameOf(id)}: ${unstop(o.text)}.`);
     return lines;
 }
