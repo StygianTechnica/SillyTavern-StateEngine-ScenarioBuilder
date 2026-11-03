@@ -38,7 +38,7 @@ import { triggerSection,
     stampBeats, beatFrom, dueSection, setByStory, readWhen,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText, removeChronicle,
     addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines, factionsOutOfPlay,
-    removeFromDay,
+    removeFromDay, planBehindBeat,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
 import { companyLines } from '../director/company.js';
@@ -379,7 +379,9 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             requests: waitingRequests(doc.gm).concat(doc.gm.queue.filter((r) => r.status === 'planned')),
             motifs: motifsOf(doc.gm),
             gmStyle: guidance.overview?.gmStyle ?? '',
-            previous: sameDay ? doc.gm.day : null,
+            // A plan for an earlier beat: only what played out of it, so its
+            // leftovers do not come back.
+            previous: sameDay ? (planBehindBeat(doc.gm) ? { ...doc.gm.day, moments: doc.gm.day.moments.filter((m) => m.status !== 'pending') } : doc.gm.day) : null,
             rest: rest || sameDay,
             story: storyWords(doc.gm),
             newcomers: beatNewcomers(doc.gm),

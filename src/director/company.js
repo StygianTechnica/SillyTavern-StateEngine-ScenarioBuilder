@@ -75,15 +75,33 @@ function names(text, name) {
     return words.some((w) => new RegExp(`(^|[^\\p{L}\\p{N}])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu').test(clean(text)));
 }
 
+// How the player character feels in the user's own post - the user's word,
+// not the narrator's (Assassins Inc: Cyril rolled his eyes, huffed and shot
+// Galice dirty looks while the mood read after the reply said "Playful").
+// Sour wins over warm in a sentence; those named in a sour sentence are
+// marked. -> { kind: 'sour' | 'warm' | '', named: [id] }
+const SOUR_CUES = /\b(?:roll(?:s|ed|ing)? (?:his|her|their) eyes|eye-?roll\w*|huff(?:s|ed|ing)?|grumbl\w+|scowl\w*|glar(?:e|es|ed|ing)|dirty looks?|sneer\w*|scoff\w*|snapped|seeth\w+|bristl\w+|irritat\w+|annoy\w*|resent\w*|hat(?:e|es|ed|ing)|loath\w*|despis\w+|(?:did ?n[o']?t|does ?n[o']?t|do ?n[o']?t) (?:care for|like|trust)|could ?n[o']?t stand|fed up|sick of|tired of|groan\w*|grit(?:s|ted)? (?:his|her|their) teeth|clench\w* (?:his|her|their) jaw)\b/i;
+const WARM_CUES = /\b(?:smil(?:e|es|ed|ing)|grinn?\w*|laugh\w*|chuckl\w+|admir\w+|enjoy\w*|glad|fond\w*|warmly|delight\w*|relieved)\b/i;
+export function postMood(text, present = []) {
+    const sentences = clean(text).replace(/"[^"]*"|“[^”]*”/g, ' ').split(/(?<=[.!?…])\s+/).filter(Boolean);
+    const sour = sentences.filter((t) => SOUR_CUES.test(t));
+    if (sour.length) return { kind: 'sour', named: (present ?? []).filter((p) => p?.id && sour.some((t) => names(t, p.name))).map((p) => p.id) };
+    return { kind: sentences.some((t) => WARM_CUES.test(t)) ? 'warm' : '', named: [] };
+}
+
 // The player character's mood after a reply. key: the reply (a swipe of
-// it replaces its sample); present: [{ id, name }] the others in the scene.
+// it replaces its sample); present: [{ id, name }] the others in the scene;
+// post: the user's own post - when it shows a feeling, that is the one
+// taken, over the mood read after the reply.
 // -> the company, changed or not. Moods neither sour nor warm leave no mark.
-export function noteMood(company, { key, turn, mood, thought = '', present = [] }) {
-    const kind = moodKind(mood);
+export function noteMood(company, { key, turn, mood, thought = '', present = [], post = '' }) {
+    const said = postMood(post, present);
+    const kind = said.kind || moodKind(mood);
     const samples = company.samples.filter((s) => s.key !== clean(key));
     const others = present.filter((p) => p?.id);
     if (!clean(key) || !kind || !others.length) return { ...company, samples };
-    const sample = normalizeSample({ key, turn, kind, mood, present: others, named: others.filter((p) => names(thought, p.name)).map((p) => p.id) });
+    const named = said.kind ? said.named : others.filter((p) => names(thought, p.name)).map((p) => p.id);
+    const sample = normalizeSample({ key, turn, kind, mood: said.kind ? `${said.kind} (in the post)` : mood, present: others, named });
     return { ...company, samples: [...samples, sample].slice(-SAMPLE_LIMIT) };
 }
 

@@ -143,6 +143,9 @@ function normalizeDay(d) {
         day: d.day,
         madeAt: str(d.madeAt),
         madeTurn: int(d.madeTurn),
+        // The outline's beat when the plan was made: a new beat makes the
+        // rest of the day again (duePasses).
+        beatId: str(d.beatId),
         moments: (Array.isArray(d.moments) ? d.moments : []).map(normalizeMoment).filter(Boolean).slice(0, MOMENT_LIMIT),
         agendas: (Array.isArray(d.agendas) ? d.agendas : []).filter((a) => isObject(a) && clean(a.who))
             .map((a) => ({ who: clean(a.who), wants: clean(a.wants), will: clean(a.will), hidden: clean(a.hidden) })).slice(0, 8),
@@ -345,7 +348,7 @@ export function settleRequests(gm) {
 // are marked; ids are the planner's own (m1, m2...).
 export function setDayPlan(gm, plan, { day, turn, at = new Date().toISOString() }) {
     const moments = (plan.moments ?? []).map((m, i) => normalizeMoment({ ...m, id: `m${i + 1}`, status: 'pending', source: m.happening && gm.agenda.some((x) => x.id === m.happening) ? `agenda:${m.happening}` : m.source }, i)).filter(Boolean).slice(0, MOMENT_LIMIT);
-    gm.day = normalizeDay({ day, madeAt: at, madeTurn: turn, moments, agendas: plan.agendas, offscreen: plan.offscreen });
+    gm.day = normalizeDay({ day, madeAt: at, madeTurn: turn, beatId: activeBeat(gm.outline)?.id ?? '', moments, agendas: plan.agendas, offscreen: plan.offscreen });
     // Requests planned for an earlier day that never happened wait again.
     for (const r of gm.queue) if (r.status === 'planned') { r.status = 'waiting'; r.plannedAs = []; }
     planRequests(gm, plan.requests, moments);
@@ -543,6 +546,11 @@ export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null
     const every = Number.isInteger(checkEvery) ? checkEvery : cadence.check;
     const expire = Number.isInteger(dayExpire) ? dayExpire : cadence.dayExpire;
     if (!gm.day || gm.day.day !== day || (expire > 0 && turn - gm.day.madeTurn >= expire)) return [...out, 'day'];
+    // The story moved to a new beat since the plan was made: the rest of
+    // the day is planned again around it (Assassins Inc: the plan kept
+    // steering to Doc and Galice while the beat was Adam's match between
+    // Cyril and Inji).
+    if (planBehindBeat(gm)) return [...out, 'day'];
     const pending = gm.day.moments.some((m) => m.status === 'pending');
     // Every moment played out (a day the clock has not left): a fresh plan,
     // not a finished one shown on and on.
@@ -551,6 +559,12 @@ export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null
     if (gm.checkWanted || waitingRequests(gm).some((r) => r.at > gm.counters.lastCheck)) return [...out, 'check'];
     if (every > 0 && gm.counters.sinceCheck >= every && pending) return [...out, 'check'];
     return out;
+}
+
+// Whether today's plan was made for an earlier beat than the active one.
+export function planBehindBeat(gm) {
+    const beat = activeBeat(gm.outline);
+    return !!beat && !!gm.day && gm.day.beatId !== beat.id;
 }
 
 // ---------------------------------------------------------------- the director's section (§6)
@@ -567,7 +581,7 @@ export const FIRM_AFTER = 3;
 export function planSection(gm, { pace = null, aim = null, story = null, motifs = [], newcomers = [], returning = [], waited = 0 } = {}) {
     const lines = [];
     const beat = activeBeat(gm.outline);
-    if (beat) lines.push(`- Story: ${story?.shape ? `${story.shape}, ` : ''}${story?.act ? `in "${story.act}" - ` : ''}the beat now: ${beat.text}${story?.next ? ` (then: ${story.next})` : ''}`);
+    if (beat) lines.push(`- Story: ${story?.shape ? `${story.shape}, ` : ''}${story?.act ? `in "${story.act}" - ` : ''}the beat now: ${beat.text}${story?.next ? ` (then: ${story.next})` : ''}. When the scene opens a way to it - the player character asks what comes next, a talk winds down - the beat is the answer.`);
     const due = beat ? strList(newcomers) : [];
     const back = new Set(strList(returning).map((n) => n.toLowerCase()));
     const fresh = due.filter((n) => !back.has(n.toLowerCase()));
@@ -585,7 +599,9 @@ export function planSection(gm, { pace = null, aim = null, story = null, motifs 
     // What the story set or keeps putting off has its own DUE TODAY lines
     // (dueSection): not repeated here.
     const dueIds = new Set(gm.agenda.filter((x) => (x.status === 'coming' || x.status === 'planned') && pressing(x)).map((x) => `agenda:${x.id}`));
-    const coming = (gm.day?.moments ?? []).filter((m) => m.status === 'pending' && !dueIds.has(m.source)).slice(0, 2);
+    // Moments planned for an earlier beat lead away from this one: none
+    // until the day is planned again.
+    const coming = planBehindBeat(gm) ? [] : (gm.day?.moments ?? []).filter((m) => m.status === 'pending' && !dueIds.has(m.source)).slice(0, 2);
     for (const m of coming) lines.push(`- Coming up [${m.id}]: ${m.text}${m.when ? ` (${m.when}${m.trigger ? `; ${m.trigger}` : ''})` : m.trigger ? ` (${m.trigger})` : ''}`);
     const agendas = (gm.day?.agendas ?? []).slice(0, 4);
     if (agendas.length) lines.push(`- Agendas: ${agendas.map((a) => `${a.who} wants ${a.wants}${a.will ? `, and will ${a.will}` : ''}${a.hidden ? ` (hidden: ${a.hidden})` : ''}`).join('; ')}.`);

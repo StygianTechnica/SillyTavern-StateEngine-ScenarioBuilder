@@ -156,7 +156,7 @@ describe('outline cadence', () => {
 
     it('reviews every so often, and after a compile except on Light', () => {
         const gm = outlined();
-        gm.day = { day: 1, madeTurn: 6, moments: [], agendas: [], offscreen: [] };
+        gm.day = { day: 1, madeTurn: 6, beatId: activeBeat(gm.outline)?.id ?? '', moments: [], agendas: [], offscreen: [] };
         gm.counters.lastCheck = 'z';
         expect(duePasses(gm, { day: 1, turn: 7 })).toEqual([]);
         gm.counters.sinceOutline = 15;

@@ -403,7 +403,7 @@ async function takePlayerMood(chatId, chatKey, playerId, castIds, characters, ke
         const values = me?.runtime?.values ?? {};
         const present = (castIds ?? []).filter((id) => id !== playerId)
             .map((id) => ({ id, name: characters.find((c) => c.id === id)?.name ?? '' })).filter((p) => p.name);
-        updateChatDoc(chatKey, (d) => { d.company = noteMood(d.company, { key, turn: d.turn, mood: values.mood, thought: values.thought, present }); });
+        updateChatDoc(chatKey, (d) => { d.company = noteMood(d.company, { key, turn: d.turn, mood: values.mood, thought: values.thought, present, post: latestUserPostText() }); });
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not read the player character\'s mood', err);
     }
