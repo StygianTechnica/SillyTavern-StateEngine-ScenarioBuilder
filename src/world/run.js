@@ -34,7 +34,7 @@ import { mayDie, stanceFor } from '../director/combat.js';
 import { addHappening } from '../planner/model.js';
 import {
     limitsOf, worldOn, findRipples, addRipple, waitingRipples, stakeholders, openSchemes, applyWorld, stirOf, worldDue, markPass,
-    meanwhileSection, markShown, settleSurfaced, dismissScheme, holdScheme, leaveAlone, hearScheme, quietWorld, offscreenOf,
+    meanwhileSection, markShown, settleSurfaced, dismissScheme, holdScheme, leaveAlone, hearScheme, quietWorld, offscreenOf, castFacts,
 } from './model.js';
 import {
     openSituations, lastingLines, settleChanges, noteContact, worldHereSection, endSituation, answerPending, undoChange, canonizePlace, uncanonize,
@@ -190,7 +190,8 @@ export async function worldMoves(chatId, chatKey, settingId, { aim = null, userN
             present: doc.canonical.castIds, playerId, skip: [...deadIds(doc), ...world.leftAlone], schemers, limit: limits.stakeholders,
         }).map((s) => {
             const base = cast.byId.get(s.id)?.base ?? {};
-            return { ...s, role: base.role ?? '', goals: base.goals ?? '', personality: base.personality ?? base.description ?? '' };
+            const facts = castFacts(s.id, { byId: cast.byId, tiesOf: cast.tiesOf, memberships: cast.memberships, knowledge, playerId });
+            return { ...s, role: base.role ?? '', goals: base.goals ?? '', personality: base.personality ?? base.description ?? '', ...facts };
         });
         const canonOnly = isCanonOnly(settingId);
         const places = await listEntries(chatId, settingId, 'location').catch(() => []);

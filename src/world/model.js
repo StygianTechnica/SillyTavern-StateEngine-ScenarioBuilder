@@ -310,6 +310,62 @@ export function stakeholders(ripples, { entries = [], tiesOf = () => [], members
     return [...found.values()].sort((a, b) => b.score - a.score).slice(0, Math.max(0, limit));
 }
 
+// What a pass must know of a stakeholder to judge what they would do, and
+// whom they would send (Assassins Inc: the Medina Syndicate's moves came
+// from Enrique, not his father who leads it; Enrique hunted Cyril to
+// "question" him, though he is the one who shot him; and he sent his
+// brother, Cyril's old lover, to do it).
+// people: their kept secrets, and how they stand with the player character
+// and with those close to them; factions: who leads them, and who is in
+// them, with how each stands with the player character.
+// -> { secrets: [text], bonds: [text], leaders: [text], members: [text] }
+const LEADS = /\b(?:leader|head|boss|patriarch|matriarch|founder|chief|ruler|master|don|kingpin)\b/i;
+const LED_BY = /^(?:head|leader|boss|led by|founder|ruler|chief|own organization|owner)\b/i;
+const CLOSE = /lover|sibling|brother|sister|child|son|daughter|father|mother|parent|wife|husband|spouse|partner|friend|mentor|kin|cousin|uncle|aunt/i;
+const GONE = new Set(['revealed', 'disproven', 'exposed', 'out']);
+
+// A tie in words from `name`'s side: "former lover of Cyril", or
+// "Enrique Medina (child of them)" for one recorded the other way.
+function tieWords(t, otherName) {
+    const kind = clean(t.kind);
+    const back = /\s*\(them\)$/i;
+    return back.test(kind) ? `${otherName} (${kind.replace(back, '')} them)` : `${kind} ${otherName}`;
+}
+
+export function castFacts(id, { byId = new Map(), tiesOf = () => [], memberships = new Map(), knowledge = [], playerId = '' } = {}) {
+    const e = byId.get(id);
+    const out = { secrets: [], bonds: [], leaders: [], members: [] };
+    if (!e) return out;
+    const nameOf = (x) => byId.get(x)?.name ?? '';
+    const toPlayer = (x) => tiesOf(x).filter((t) => playerId && t.otherId === playerId).map((t) => tieWords(t, nameOf(playerId) || 'the player character'));
+    if (e.type === 'faction') {
+        const members = [...memberships].filter(([, fs]) => (fs ?? []).includes(id)).map(([p]) => p).filter((p) => byId.has(p) && p !== playerId);
+        const byRole = members.filter((p) => LEADS.test(byId.get(p)?.base?.role ?? ''));
+        const byTie = tiesOf(id).filter((t) => byId.get(t.otherId)?.type === 'character' && LED_BY.test(clean(t.kind).replace(/\s*\(them\)$/i, ''))).map((t) => t.otherId);
+        out.leaders = [...new Set([...byRole, ...byTie])].slice(0, 2).map((p) => {
+            const role = clean(byId.get(p)?.base?.role);
+            return role ? `${nameOf(p)} (${cut(role, 80)})` : nameOf(p);
+        });
+        out.members = members.slice(0, 8).map((p) => {
+            const role = clean(byId.get(p)?.base?.role);
+            const ties = toPlayer(p);
+            return `${nameOf(p)}${role ? ` - ${cut(role, 60)}` : ''}${ties.length ? ` [${ties.join('; ')}]` : ''}`;
+        });
+        return out;
+    }
+    for (const k of knowledge ?? []) {
+        if (k.kind !== 'secret' || GONE.has(clean(k.status).toLowerCase())) continue;
+        if ([...peopleIds(k.knownBy), ...peopleIds(k.madeBy)].includes(id)) out.secrets.push(cut(k.truth || k.text, 200));
+    }
+    out.secrets = [...new Set(out.secrets)].slice(0, 3);
+    const close = tiesOf(id).filter((t) => t.otherId !== playerId && byId.get(t.otherId)?.type === 'character' && CLOSE.test(t.kind));
+    out.bonds = [...toPlayer(id), ...close.map((t) => {
+        const ties = toPlayer(t.otherId);
+        return `${tieWords(t, nameOf(t.otherId))}${ties.length ? ` - who is ${ties.join('; ')}` : ''}`;
+    })].slice(0, 5);
+    return out;
+}
+
 // ---------------------------------------------------------------- how much stirs (§5, §6)
 
 // How much the world may stir today: the level's limits, bent by the

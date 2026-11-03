@@ -75,7 +75,7 @@ export function buildDayPrompt(input) {
         rules(userName),
         clean(input.gmStyle) ? `How the user wants this story run - follow it: ${cut(input.gmStyle, 600)}` : '',
     ].filter(Boolean).join(' ');
-    const parts = [clean(input.dossier), '', 'THE LATEST CHAT', recentText(input.messages, userName)];
+    const parts = [clean(input.dossier), '', 'THE LATEST CHAT (all of this has already happened)', recentText(input.messages, userName)];
     if (input.previous?.moments?.length) {
         parts.push('', 'WHAT WAS PLANNED BEFORE (and how it went)');
         for (const m of input.previous.moments) parts.push(`- ${m.text} - ${m.status}${m.note ? `: ${m.note}` : ''}`);
@@ -110,8 +110,9 @@ export function buildDayPrompt(input) {
     parts.push(
         '',
         `PLAN ${input.rest ? 'THE REST OF THE DAY' : 'THE DAY'}${clean(input.dateText) ? ` - ${clean(input.dateText)}` : ''}${clean(input.dayPart) ? `, starting ${clean(input.dayPart)}` : ''}`,
-        ...(clean(input.place) ? [`The scene is at ${clean(input.place)}${clean(input.situation) ? `, where ${unstopFirst(input.situation)}` : ''}. The day starts from there and from what is going on now; moments elsewhere happen only if the story would plausibly go there today.`] : []),
+        ...(clean(input.place) ? [`The scene is at ${clean(input.place)}${clean(input.situation) ? `, where ${unstopFirst(input.situation)}` : ''}. That is where things stand - already played. The plan picks up after it; moments elsewhere happen only if the story would plausibly go there today.`] : []),
         'Two to five moments, in the order they could happen: something someone does, an arrival, news, a discovery, a complication, a quiet beat. Each grows out of what is above, moves a thread, a person\'s agenda or a request along, and leaves the player free to respond. Vary them: not every moment is a crisis.',
+        'Every moment is something that has NOT happened yet: what comes next, later today, or from somewhere else - never what THE LATEST CHAT already shows, said again or a little reworded. A talk under way is not a moment; what it leads to, once it is over, can be. Give each its time of day and the names it involves.',
         'Answer in this JSON shape:',
         `{"moments":[{"text":"<what happens, one sentence>","when":"<morning|midday|afternoon|evening|night|any time>","trigger":"<the condition, e.g. 'if the scene is at the forge'; empty if none>","ties":["<names of the people, places, factions or threads it involves>"],"droppable":true${happeningField}}],`,
         ' "agendas":[{"who":"<a person who matters today, not the player>","wants":"<what they want>","will":"<what they will do about it>","hidden":"<what they hide, or empty>"}],',

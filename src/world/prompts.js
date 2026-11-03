@@ -25,8 +25,12 @@ function stakeholderLine(s) {
         clean(s.goals) ? `goals: ${cut(s.goals, 200)}` : '',
         clean(s.personality) ? `nature: ${cut(s.personality, 120)}` : '',
         clean(s.where) ? `last seen: ${cut(s.where, 80)}` : '',
+        texts(s.leaders, 2).length ? `led by ${texts(s.leaders, 2).join(' and ')}` : '',
+        texts(s.members, 8).length ? `members: ${texts(s.members, 8).join(', ')}` : '',
+        texts(s.bonds, 5).length ? `ties: ${texts(s.bonds, 5).join('; ')}` : '',
+        texts(s.secrets, 3).length ? `hides: ${texts(s.secrets, 3).join('; ')}` : '',
     ].filter(Boolean).join('; ');
-    return `- ${clean(s.name)} (${s.type === 'faction' ? 'faction' : 'person'})${s.why?.length ? ` - ${s.why.map(clean).join('; ')}` : ''}${facts ? `. ${facts}` : ''}`;
+    return `- ${clean(s.name)} (${s.type === 'faction' ? 'faction' : 'person'})${s.why?.length ? ` - ${s.why.map(clean).filter(Boolean).join('; ')}` : ''}${facts ? `. ${facts}` : ''}`;
 }
 
 function schemeLine(s, day, userName) {
@@ -106,6 +110,9 @@ export function worldPart(input) {
         start <= 0 ? 'Start no new scheme today.'
             : `Start ${start === 1 ? 'at most one new scheme' : `at most ${start} new schemes`}, only for someone listed above who has a real reason - one of the happenings, or their own goals - and only what they could plausibly do from where they are, with travel taking its time. None is needed if nobody would act.`,
         `A scheme acts on the world around ${userName} - it may watch, seek, help or work against them - but it never decides what ${userName} does, knows or feels.`,
+        `Each acts for their own reasons, and what they hide is one of them: someone whose secret ${userName} could expose wants it kept - even from their own side - and may want ${userName} silenced or gone, not questioned.`,
+        "A faction moves on its leader's orders; a member who acts for reasons of their own does so quietly, without the leader's say.",
+        `No one sends someone close to ${userName} (a lover, an old friend, kin) on a job against them, least of all someone with a secret that person could learn.`,
         input.surfacing === 'log' || surface <= 0 ? `Nothing surfaces for ${userName} today: leave every "surface" empty.`
             : `Let at most ${surface} of them surface where ${userName} could come across it - ${ways.words}.${input.ownPass ? '' : ` If someone comes to find ${userName} today, make that one of the day's moments too.`}`,
         aim,

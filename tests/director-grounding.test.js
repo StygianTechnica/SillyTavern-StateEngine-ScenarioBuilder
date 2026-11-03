@@ -68,7 +68,7 @@ describe('the planner yields to the scene', () => {
 
     it('the day pass starts from where the scene is and what is going on', () => {
         const { system, prompt } = buildDayPrompt({ dossier: '', place: "Wall of Niamh's Fortress", situation: 'The defenders hold the breach against the undead.' });
-        expect(prompt).toContain("The scene is at Wall of Niamh's Fortress, where the defenders hold the breach against the undead. The day starts from there");
+        expect(prompt).toContain("The scene is at Wall of Niamh's Fortress, where the defenders hold the breach against the undead. That is where things stand - already played");
         expect(system).toContain('never put one place inside another');
         expect(system).toContain('no betrayals, attacks or hidden schemes the story has not set up');
         expect(buildDayPrompt({ dossier: '' }).prompt).not.toContain('The scene is at');
