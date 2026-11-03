@@ -34,7 +34,7 @@ import { mayDie, stanceFor } from '../director/combat.js';
 import { addHappening } from '../planner/model.js';
 import {
     limitsOf, worldOn, findRipples, addRipple, waitingRipples, stakeholders, openSchemes, applyWorld, stirOf, worldDue, markPass,
-    meanwhileSection, markShown, settleSurfaced, dismissScheme, holdScheme, leaveAlone, hearScheme, quietWorld, offscreenOf, castFacts, removeSurfaced, removeLogLine,
+    meanwhileSection, markShown, settleSurfaced, dismissScheme, holdScheme, leaveAlone, hearScheme, quietWorld, offscreenOf, castFacts, removeSurfaced, removeLogLine, standingStakes,
 } from './model.js';
 import {
     openSituations, lastingLines, settleChanges, noteContact, worldHereSection, endSituation, answerPending, undoChange, canonizePlace, uncanonize,
@@ -186,9 +186,12 @@ export async function worldMoves(chatId, chatKey, settingId, { aim = null, userN
         const schemes = openSchemes(world).filter((s) => !s.held);
         const schemers = [...new Set(schemes.flatMap((s) => s.who))];
         const playerId = playerIdOf(settingId, cast.characters);
+        // Those with a standing claim on the player character are in view
+        // whether or not anything new has happened to them.
+        const stakes = standingStakes({ entries: cast.entries, tiesOf: cast.tiesOf, memberships: cast.memberships, knowledge, playerId });
         const found = stakeholders(ripples, {
             entries: cast.entries, tiesOf: cast.tiesOf, memberships: cast.memberships, knowledge,
-            present: doc.canonical.castIds, playerId, skip: [...deadIds(doc), ...world.leftAlone], schemers, limit: limits.stakeholders,
+            present: doc.canonical.castIds, playerId, skip: [...deadIds(doc), ...world.leftAlone], stakes, schemers, limit: limits.stakeholders,
         }).map((s) => {
             const base = cast.byId.get(s.id)?.base ?? {};
             const facts = castFacts(s.id, { byId: cast.byId, tiesOf: cast.tiesOf, memberships: cast.memberships, knowledge, playerId, conditions: world.conditions, people: world.overlays.people });
@@ -224,12 +227,16 @@ export async function worldMoves(chatId, chatKey, settingId, { aim = null, userN
             isFaction: (id) => cast.byId.get(id)?.type === 'faction',
             mayKill: (id) => { const e = cast.byId.get(id); return !!e && !isDead(getChatDoc(chatKey), id) && mayDie(e, { stance }); },
         };
+        // A person's side: them and their factions; a faction's: it and its people.
+        const members = new Map();
+        for (const [p, fs] of cast.memberships) for (const f of fs ?? []) members.set(f, [...(members.get(f) ?? []), p]);
+        const side = (id) => [id, ...(cast.memberships.get(id) ?? []), ...(members.get(id) ?? [])];
         const apply = (answer) => {
             let counts = null;
             updateChatDoc(chatKey, (d) => {
                 counts = applyWorld(d.gm.world, answer ?? { schemes: [] }, {
                     day: d.canonical.day, turn: d.gm.counters.turn, resolve: cast.resolve, nameOf, placeOf, limits,
-                    aim: aim?.word ?? '', surfacing, ids, canonOnly, agenda: ownPass, changes, newId: newLocalId,
+                    aim: aim?.word ?? '', surfacing, ids, canonOnly, agenda: ownPass, changes, newId: newLocalId, side,
                 });
                 for (const x of counts.extras.filter((e) => e.way === 'happening')) addHappening(d.gm, { id: newLocalId('ag'), text: x.text, day: x.day, ties: x.ties, source: 'world' });
                 // The day plan's off-screen lines are the world's moves today.

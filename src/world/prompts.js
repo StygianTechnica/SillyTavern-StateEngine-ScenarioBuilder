@@ -113,6 +113,8 @@ export function worldPart(input) {
         `A scheme acts on the world around ${userName} - it may watch, seek, help or work against them - but it never decides what ${userName} does, knows or feels.`,
         `Each acts for their own reasons, and what they hide is one of them: someone whose secret ${userName} could expose wants it kept - even from their own side - and may want ${userName} silenced or gone, not questioned.`,
         "A faction moves on its leader's orders; a member who acts for reasons of their own does so quietly, without the leader's say.",
+        `Weigh everyone above, not only those already scheming: someone with a claim on ${userName} (they made or own them, are owed by them, hunt or hate them) who has no scheme yet is the likeliest to start one. A side already chasing an aim never starts the same one again under another name.`,
+        `What ${userName} has not learned - who made them, what was done to them, a secret someone keeps - stays hidden from them: what surfaces is only what ${userName} could actually see or hear (strangers asking questions, a corporate car parked too long, a face that knows them), never the truth told outright. Let the story bring it out in its own time.`,
         `No one sends someone close to ${userName} (a lover, an old friend, kin) on a job against them, least of all someone with a secret that person could learn.`,
         input.surfacing === 'log' || surface <= 0 ? `Nothing surfaces for ${userName} today: leave every "surface" empty.`
             : `Let at most ${surface} of them surface where ${userName} could come across it - ${ways.words}.${input.ownPass ? '' : ` If someone comes to find ${userName} today, make that one of the day's moments too.`}`,

@@ -269,9 +269,12 @@ const ENEMY = /enem|rival|foe|nemesis|hunt|hate|wrong|betray|murder|kill/i;
 // both ways); memberships: Map(characterId -> [factionId]); knowledge:
 // [item] with people as { id, name }; present: ids in the scene; playerId;
 // skip: ids never simulated (dead, left alone); always: ids always in
-// play; schemers: ids with a scheme under way.
-// -> [{ id, name, type, why: [text], score }], closest first, at most `limit`.
-export function stakeholders(ripples, { entries = [], tiesOf = () => [], memberships = new Map(), knowledge = [], present = [], playerId = '', skip = [], always = [], schemers = [], limit = 3 } = {}) {
+// play; stakes: [{ id, score, why }] - a standing claim on the player
+// character (standingStakes), in play with or without a ripple; schemers:
+// ids with a scheme under way - always kept, beyond the limit (their
+// schemes need them), so the limit leaves room for those not yet acting.
+// -> [{ id, name, type, why: [text], score }], closest first.
+export function stakeholders(ripples, { entries = [], tiesOf = () => [], memberships = new Map(), knowledge = [], present = [], playerId = '', skip = [], always = [], stakes = [], schemers = [], limit = 3 } = {}) {
     const byId = new Map(entries.map((e) => [e.id, e]));
     const out = new Set([...present, ...skip, ...(playerId ? [playerId] : [])]);
     const found = new Map();
@@ -305,9 +308,62 @@ export function stakeholders(ripples, { entries = [], tiesOf = () => [], members
         if (playerId && tied.has(playerId)) for (const t of tiesOf(playerId)) if (ENEMY.test(t.kind)) add(t.otherId, 2, `${clean(t.kind)} of the player character`);
     }
     for (const id of always) add(id, 1, 'always in play');
-    // Those already scheming are kept in view: their schemes need them.
-    for (const id of schemers) add(id, 0.5, '');
-    return [...found.values()].sort((a, b) => b.score - a.score).slice(0, Math.max(0, limit));
+    for (const x of stakes ?? []) add(x.id, x.score ?? 1, x.why);
+    // Those already scheming are kept in view: their schemes need them. They
+    // take no room from those with a claim who have done nothing yet (the
+    // Medina Syndicate's schemes kept Omicron, who made Cyril, out of view).
+    const busy = new Set(schemers);
+    const others = [...found.values()].filter((x) => !busy.has(x.id)).sort((a, b) => b.score - a.score).slice(0, Math.max(0, limit));
+    for (const id of schemers) add(id, 0, '');
+    return [...others, ...[...busy].map((id) => found.get(id)).filter(Boolean)];
+}
+
+// Who has a standing claim on the player character - not only when
+// something has just happened: a tie to them (a maker, a rival, a lover, a
+// parent), a secret about them, and the factions such people belong to.
+// Those who made or own the player character, hunt them or hate them count
+// most. -> [{ id, score, why }]
+const CLAIM = /creat|made|maker|\bown(?:s|er|ed)?\b|property|experiment|subject|patient|specimen|asset|bounty|captor|claim|seek|hunt|wants?\b/i;
+export function standingStakes({ entries = [], tiesOf = () => [], memberships = new Map(), knowledge = [], playerId = '' } = {}) {
+    if (!playerId) return [];
+    const byId = new Map(entries.map((e) => [e.id, e]));
+    const player = byId.get(playerId)?.name || 'the player character';
+    const words = [player, ...(byId.get(playerId)?.base?.aliases ?? byId.get(playerId)?.aliases ?? [])].map((n) => clean(n).toLowerCase()).filter((n) => n.length >= 3);
+    const score = new Map();
+    const add = (id, n, why) => {
+        if (!id || id === playerId || !byId.has(id)) return;
+        const x = score.get(id) ?? { id, score: 0, whys: [] };
+        x.score += n;
+        if (why && !x.whys.includes(why)) x.whys.push(why);
+        score.set(id, x);
+    };
+    for (const t of tiesOf(playerId)) {
+        const kind = clean(t.kind);
+        const theirs = /\s*\(them\)$/i.test(kind);
+        const bare = kind.replace(/\s*\(them\)$/i, '');
+        const why = theirs ? `${bare} ${player}` : `${player}: ${bare} them`;
+        add(t.otherId, ENEMY.test(bare) || CLAIM.test(bare) ? 2 : 1, why);
+    }
+    for (const k of knowledge ?? []) {
+        if (k.kind === 'belief') continue;
+        const about = peopleIds(k.about).includes(playerId) || words.some((w) => clean(k.truth || k.text).toLowerCase().includes(w));
+        if (!about) continue;
+        for (const id of [...peopleIds(k.knownBy), ...peopleIds(k.madeBy)]) add(id, 2, `knows: ${cut(k.truth || k.text, 100)}`);
+        // A faction the truth of it names has a stake in it ("research
+        // belonging to Omicron Innovations").
+        const flat = (t) => ` ${clean(t).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
+        const said = flat(k.truth || k.text);
+        for (const f of entries.filter((e) => e.type === 'faction')) {
+            const names = [f.name, ...(f.base?.aliases ?? f.aliases ?? [])].map(flat).filter((n) => n.trim().length >= 4);
+            if (names.some((n) => said.includes(n))) add(f.id, 2, `named in what is known of ${player}: ${cut(k.truth || k.text, 100)}`);
+        }
+    }
+    // A faction carries its people's claim.
+    for (const x of [...score.values()]) {
+        if (byId.get(x.id)?.type === 'faction') continue;
+        for (const f of memberships.get(x.id) ?? []) add(f, 1 + x.score / 2, `${byId.get(x.id).name} is one of theirs (${x.whys[0]})`);
+    }
+    return [...score.values()].map((x) => ({ id: x.id, score: x.score, why: cut(x.whys.join('; '), 220) }));
 }
 
 // What a pass must know of a stakeholder to judge what they would do, and
@@ -457,7 +513,7 @@ export const dueSchemes = (world, day) => openSchemes(world).filter((s) => s.sta
 //    { way: 'hook', name, text, why, ties: [name], schemeId }
 //    { way: 'death', id, name, how, schemeId }  (deaths allowed without asking)
 //    { way: 'split', name, text, why, ties, schemeId }  (a breakaway faction - a proposal)
-export function applyWorld(world, answer, { day, resolve = () => null, nameOf = () => '', placeOf = () => '', limits = LEVEL_LIMITS.quiet, aim = '', surfacing = 'all', ids = [], canonOnly = false, agenda = false, turn = 0, changes = {}, newId = (p) => `${p}${Math.random().toString(36).slice(2, 8)}`, at = new Date().toISOString() } = {}) {
+export function applyWorld(world, answer, { day, resolve = () => null, nameOf = () => '', placeOf = () => '', limits = LEVEL_LIMITS.quiet, aim = '', surfacing = 'all', ids = [], canonOnly = false, agenda = false, turn = 0, changes = {}, side = (id) => [id], newId = (p) => `${p}${Math.random().toString(36).slice(2, 8)}`, at = new Date().toISOString() } = {}) {
     const counts = { moved: 0, started: 0, surfaced: 0, changed: 0, situations: 0, extras: [] };
     const stir = stirOf(limits, { aim, day, quietUntil: world.quietUntil });
     const allowed = new Set(ids);
@@ -472,7 +528,11 @@ export function applyWorld(world, answer, { day, resolve = () => null, nameOf = 
             const who = [...new Set(a.who.map(resolve).filter((id) => id && allowed.has(id) && !left.has(id)))];
             if (!who.length || !a.aim || !a.steps.length || starts <= 0 || openSchemes(world).length >= limits.schemes) continue;
             const key = schemeKey(who, a.aim);
-            if (world.dismissed.includes(key) || openSchemes(world).some((s) => schemeKey(s.who, s.aim) === key || (s.who.some((id) => who.includes(id)) && sameText(s.aim, a.aim)))) continue;
+            // One side, one aim: a faction and its own people never run the
+            // same scheme twice (the Medina Syndicate and Enrique both set out
+            // to "capture Cyril alive", the same day).
+            const ours = new Set(who.flatMap(side));
+            if (world.dismissed.includes(key) || openSchemes(world).some((s) => schemeKey(s.who, s.aim) === key || (s.who.flatMap(side).some((id) => ours.has(id)) && sameText(s.aim, a.aim)))) continue;
             scheme = normalizeScheme({ id: newId('s'), who, names: who.map((id, i) => nameOf(id) || a.who[i] || '').filter(Boolean), aim: a.aim, motive: a.motive, from: a.from, steps: a.steps, done: 0, startedDay: day, at });
             world.schemes = [...world.schemes, scheme];
             starts -= 1;
@@ -635,8 +695,8 @@ export function meanwhileSection(world, { day, userIndex = null, placeIds = [], 
     if (!shown.length) return { text: '', ids: [] };
     return {
         text: [lead
-            ? 'MEANWHILE (private - what the world beyond the scene is doing; never write for the player character. The story wants something new now: let one of these reach the scene in this reply - someone lets it drop, it is found, or the one coming arrives - so the player character has something to take up.)'
-            : 'MEANWHILE (private - what the world beyond the scene is doing; use a line only where it fits the scene and the people in it, and never for the player character)',
+            ? 'MEANWHILE (private - what the world beyond the scene is doing; never write for the player character, and never tell them outright what they have not learned about themselves - only what people here could know or show. The story wants something new now: let one of these reach the scene in this reply - someone lets it drop, it is found, or the one coming arrives - so the player character has something to take up.)'
+            : 'MEANWHILE (private - what the world beyond the scene is doing; use a line only where it fits the scene and the people in it, never for the player character, and never to tell them outright what they have not learned about themselves)',
             ...shown.map((x) => `${LINE[x.way](x.text)}${x.schemeId ? ` [${x.schemeId}]` : ''}`)].join('\n'),
         ids: shown.map((x) => x.id),
     };
