@@ -46,6 +46,16 @@ describe('a beat\'s people count from when it was under way', () => {
         expect(g.volume.chronicle.map((c) => c.text)).toEqual(['Inji Miyama hands Cyril a bundle of clothes.']);
     });
 
+    it('counts who was there as the beat began', () => {
+        const g = outline();
+        stampBeats(g, 300);
+        // Adam set it going at 290, ten messages before it was called under way.
+        expect(from(beatFrom(g, activeBeat(g.outline))).some((t) => t.includes('Adam Miller'))).toBe(true);
+        expect(beatFrom(g, activeBeat(g.outline))).toBe(280);
+        // Inji, a hundred messages back, still does not.
+        expect(from(beatFrom(g, activeBeat(g.outline))).some((t) => t.includes('Inji'))).toBe(false);
+    });
+
     it('with the whole chat, as before, the old mention is enough', () => {
         const g = outline();
         g.outline.acts[0].beats[0].status = 'done';

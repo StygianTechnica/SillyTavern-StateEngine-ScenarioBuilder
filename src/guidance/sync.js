@@ -40,7 +40,7 @@ import { bloodlinesOf, choicesOf, lineageOf, lineageLabel, bloodlineBrief, mixAt
 import { timesLine, techOf, modeLabel } from '../library/travel.js';
 import { relationsFor, pairCovered } from '../library/relations-edit.js';
 import { activeQuests } from '../quests/sync.js';
-import { momentAt } from '../calendar/clock.js';
+import { momentAt, readsUnderground } from '../calendar/clock.js';
 import { routesFrom, placesFurtherOn } from '../library/routes.js';
 import { splitNote } from '../director/prompt.js';
 import { weatherText } from '../calendar/weather.js';
@@ -131,6 +131,9 @@ export async function gatherInputs(chatId, chatKey) {
 
     let location = null;
     let locationPath = [];
+    // The places this one is in, as they read (the story's own description
+    // first): whether one of them is underground (src/calendar/clock.js).
+    let placeTexts = new Map();
     if (locationId) {
         const obj = await getObject(chatId, locationId);
         if (obj) {
@@ -147,6 +150,7 @@ export async function gatherInputs(chatId, chatKey) {
             // What is here: places off it (rooms, streets), the place it is
             // part of, and the items and creatures the library puts here.
             const allLocations = await listEntries(chatId, settingId, 'location');
+            placeTexts = new Map(allLocations.map((l) => [l.id, { name: l.name, description: doc.narrative[l.id]?.text || l.base?.description || l.description || '' }]));
             const here = placeOverview(library.overview, parents, library.entries, obj.id);
             const tech = techOf({ techLevel: here?.tech?.level, laterAge: isLaterAge(here) });
             const short = (o) => ({ name: o.name, description: doc.narrative[o.id]?.text || o.description || '' });
@@ -385,7 +389,7 @@ export async function gatherInputs(chatId, chatKey) {
     let moment = null;
     if (settings.time.enabled && Number.isFinite(c.time)) {
         try {
-            moment = await momentAt(settingId, c.time, { locationId, indoor: c.indoor });
+            moment = await momentAt(settingId, c.time, { locationId, indoor: c.indoor, underground: (id) => readsUnderground(placeTexts.get(id)) });
         } catch (err) {
             console.debug(LOG_PREFIX, 'no clock for the guidance', err);
         }

@@ -854,9 +854,13 @@ export function stampBeats(gm, at) {
     for (const b of beatsOf(gm.outline)) if (b.status === 'active' && !(b.since >= 0)) b.since = at;
 }
 
-// The chat index a beat's people are looked for from: since it was under
-// way, or - not known - since the volume began.
-export const beatFrom = (gm, beat) => (beat?.since >= 0 ? beat.since : gm.volume?.startedIndex ?? 0);
+// The chat index a beat's people are looked for from: a little before it
+// was under way (BEAT_LEAD messages), or - not known - since the volume
+// began. Who was there as it began counts: Adam set the combat assessment
+// going at his desk, the beat was called under way a few replies into the
+// simulation, and the plan sent him striding into the middle of it.
+export const BEAT_LEAD = 20;
+export const beatFrom = (gm, beat) => (beat?.since >= 0 ? Math.max(0, beat.since - BEAT_LEAD) : gm.volume?.startedIndex ?? 0);
 
 // A message at `fromIndex` or later was swiped, edited or deleted: the
 // beats called done at it did not happen. They are under way again and

@@ -78,8 +78,10 @@ export async function calendarFor(settingId) {
 
 // The place whose settings apply: the nearest of the location and the places
 // it is in that sets a climate (else the setting's), and whether the sky can
-// be seen there.
-export function placeFor(settingId, locationId) {
+// be seen there. underground(id): the place reads as underground
+// (readsUnderground) - no sky there, unless the place itself, or one inside
+// the containing chain before it, sets its sky; the top place never counts.
+export function placeFor(settingId, locationId, { underground = () => false } = {}) {
     const doc = settingId ? getSettingDoc(settingId) : null;
     let climate = '';
     let regionId = '';
@@ -92,9 +94,22 @@ export function placeFor(settingId, locationId) {
         if (!meta) break;
         if (!climate && meta.climate) { climate = meta.climate; regionId = id; }
         if (!sky && meta.sky) sky = meta.sky;
+        else if (!sky && meta.parentId && underground(id)) sky = 'none';
         id = meta.parentId;
     }
     return { climateId: climate || doc?.calendar.climate || 'temperate', regionId: regionId || 'setting', open: sky !== 'none' && climate !== 'underground' };
+}
+
+// A place its own words put underground - a bunker, a cave, "a converted
+// underground electrical substation" (The Signal Box, where the narrator
+// saw "morning sunlight" in the halls) - told in its name or its first two
+// sentences. Never the underground as a scene ("an underground fight club").
+const UNDERGROUND = /\b(?:underground|subterranean|below ground|below the (?:surface|ground|streets)|beneath the (?:surface|ground|earth|streets|city)|under the (?:streets|city|ground)|caverns?|caves?|bunkers?|catacombs?|sewers?|crypts?|dungeons?|mine shafts?|windowless)\b/i;
+const NOT_A_PLACE = /\bunderground (?:fight|club|market|scene|movement|resistance|network|economy|circuit|ring|music|rave|press|figure|boss|trade|dealings?)\b/gi;
+export function readsUnderground(place) {
+    const description = String(place?.description ?? '');
+    const lead = (description.match(/[^.!?]+[.!?]*/g) ?? []).slice(0, 2).join(' ');
+    return UNDERGROUND.test(`${place?.name ?? ''} ${lead}`.replace(NOT_A_PLACE, ' '));
 }
 
 async function partsOf(calendarId, def, scalar) {
@@ -111,13 +126,13 @@ async function partsOf(calendarId, def, scalar) {
 
 // Everything about a moment, for a place: date parts and text, the sky,
 // the weather the simulation gives, holidays and what people feel.
-export async function momentAt(settingId, scalar, { locationId = '', indoor = null } = {}) {
+export async function momentAt(settingId, scalar, { locationId = '', indoor = null, underground } = {}) {
     const { calendarId, def, options } = await calendarFor(settingId);
     const parts = await partsOf(calendarId, def, scalar);
     const dayIndex = dayIndexOf(def, scalar);
     const doy = dayOfYear(def, parts);
     const yl = yearLength(def);
-    const place = placeFor(settingId, locationId);
+    const place = placeFor(settingId, locationId, { underground });
     const sky = skyAt({ parts, dayIndex, dayOfYear: doy, yearLength: yl, sky: options, where: { open: place.open, indoor: indoor === true } });
     const weather = weatherAt({ seed: `${settingId ?? ''}|${place.regionId}`, climateId: place.climateId, dayIndex, fraction: sky.fraction, dayOfYear: doy, yearLength: yl });
     const holidays = holidaysAround(options.holidays, def.months ?? [], parts.month, parts.day);
@@ -458,26 +473,32 @@ export async function travelAlong(chatId, chatKey, settingId, fromId, toId, sour
     const wanted = named?.mode || doc.canonical.travelMode || '';
     const legTime = (r) => timeFor(r, tech, wanted);
     const said = (t) => (t.mode ? `${t.text} ${modeLabel(t.mode)}` : t.text);
-    let route = routeForMove(fromId, toId, settingDoc.routes, up);
     // A guessed route longer than a guess made now allows was guessed wrong
     // (three months' walk between two rooms of the Signal Box): put right
-    // as it is used. The user's own routes are never touched.
-    if (route?.guessed) {
+    // as it is used - a leg of a longer way too (two such legs took Cyril
+    // six months from his quarters to the Chief's office). The user's own
+    // routes are never touched.
+    let places = null;
+    const rightGuess = async (r) => {
+        if (!r?.guessed) return r;
         try {
-            const places = new Map((await listEntries(chatId, settingId, 'location')).map((p) => [p.id, { name: p.name, description: p.base?.description ?? p.description ?? '' }]));
-            const fresh = guessRoute(route.from, route.to, { up, places });
-            if (fresh && travelMinutes(fresh.travel) < travelMinutes(route.travel)) {
-                console.info(LOG_PREFIX, `a guessed route of ${route.travel} put right to ${fresh.travel}`);
-                updateRoute(settingId, route.id, { travel: fresh.travel, basis: 'walk', times: {} });
-                route = { ...route, travel: fresh.travel, basis: 'walk', times: {} };
+            places ??= new Map((await listEntries(chatId, settingId, 'location')).map((p) => [p.id, { name: p.name, description: p.base?.description ?? p.description ?? '' }]));
+            const fresh = guessRoute(r.from, r.to, { up, places });
+            if (fresh && travelMinutes(fresh.travel) < travelMinutes(r.travel)) {
+                console.info(LOG_PREFIX, `a guessed route of ${r.travel} put right to ${fresh.travel}`);
+                updateRoute(settingId, r.id, { travel: fresh.travel, basis: 'walk', times: {} });
+                return { ...r, travel: fresh.travel, basis: 'walk', times: {} };
             }
         } catch (err) {
             console.debug(LOG_PREFIX, 'could not check a guessed route', err);
         }
-    }
+        return r;
+    };
+    let route = await rightGuess(routeForMove(fromId, toId, settingDoc.routes, up));
     // Somewhere further on: every route on the way, one after another -
     // never a guessed shortcut past them.
-    const legs = route ? null : pathBetween(fromId, toId, settingDoc.routes);
+    const found = route ? null : pathBetween(fromId, toId, settingDoc.routes);
+    const legs = found ? await Promise.all(found.map(rightGuess)) : null;
     const times = legs?.map(legTime);
     if (legs?.length > 1 && times.every(Boolean)) {
         let target = doc.clock.planned?.from ?? now;
@@ -491,7 +512,7 @@ export async function travelAlong(chatId, chatKey, settingId, fromId, toId, sour
     }
     if (!route) {
         try {
-            const places = new Map((await listEntries(chatId, settingId, 'location')).map((p) => [p.id, { name: p.name, description: p.base?.description ?? p.description ?? '' }]));
+            places ??= new Map((await listEntries(chatId, settingId, 'location')).map((p) => [p.id, { name: p.name, description: p.base?.description ?? p.description ?? '' }]));
             const guess = guessRoute(fromId, toId, { up, places });
             if (guess && places.has(guess.from) && places.has(guess.to)) route = addRoute(settingId, guess);
         } catch (err) {
