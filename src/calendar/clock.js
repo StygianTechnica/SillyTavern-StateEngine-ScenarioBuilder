@@ -15,8 +15,8 @@ import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { emptyCalendar } from '../store/schema.js';
 import { getSetting, updateSetting } from '../api/objects.js';
 import { setCanonical } from '../state/canonical.js';
-import { getDateTimeParts, formatDateTime, formatDateTimePartial, advanceDateTime, getCalendarDefinition } from '../api/calendar.js';
-import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, fallbackAdvance, timeOfDayFraction, storyTimeCue, cueTarget, storyDelta, storyElapsed, playerTimeSkip } from './moment.js';
+import { getDateTimeParts, formatDateTime, formatDateTimePartial, advanceDateTime, readTimeShift, getCalendarDefinition } from '../api/calendar.js';
+import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, timeOfDayFraction, cueTarget } from './moment.js';
 import { getRawValues } from '../api/variables.js';
 import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.js';
 import { weatherAt } from './weather.js';
@@ -222,16 +222,17 @@ export async function setTimeOfDay(chatId, chatKey, settingId, text, { note = ''
 }
 
 // The moment `text`'s worth of time after `from`, or null when the text
-// does not read as time passing (or reads as more than a year).
+// does not read as time passing (or reads as more than a year). State
+// Engine reads it (advanceDateTime) - the same arithmetic its own datetime
+// variables use, kept in one place.
 export async function advanceFrom(settingId, from, text) {
     const { calendarId, def } = await calendarFor(settingId);
     let to = null;
     try {
         to = await advanceDateTime(calendarId, from, text);
     } catch {
-        to = undefined;
+        to = null;
     }
-    if (to === undefined || to === null) to = fallbackAdvance(def, from, text);
     if (!Number.isFinite(to) || to <= from || to - from > yearLength(def) * secondsPerDay(def)) return null;
     return to;
 }
@@ -277,7 +278,7 @@ export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, so
     updateChatDoc(chatKey, (d) => { d.clock.planned = null; d.clock.turnFrom = null; });
     const now = doc.canonical.time;
     // A span, or a jump the story asks for - never the moment described.
-    const delta = storyDelta(deltaText);
+    const { delta } = await readTimeShift(deltaText);
     if (!Number.isFinite(now) || !delta) return null;
     const from = doc.clock.turnFrom ?? planned?.from ?? now;
     const target = await advanceFrom(settingId, from, delta);
@@ -294,7 +295,7 @@ export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, so
 export async function followStoryTimeOfDay(chatId, chatKey, settingId, replyText, sourceMessage = '') {
     const now = getChatDoc(chatKey).canonical.time;
     if (!settingId || !Number.isFinite(now)) return null;
-    const cue = storyTimeCue(replyText);
+    const cue = (await readTimeShift(replyText)).reached;
     if (!cue) return null;
     const { def } = await calendarFor(settingId);
     const perDay = secondsPerDay(def);
@@ -313,7 +314,7 @@ export async function followStoryTimeOfDay(chatId, chatKey, settingId, replyText
 export async function followStoryElapsed(chatId, chatKey, settingId, text, from, sourceMessage = '') {
     const now = getChatDoc(chatKey).canonical.time;
     if (!settingId || !Number.isFinite(now)) return null;
-    const span = storyElapsed(text);
+    const span = (await readTimeShift(text)).elapsed;
     if (!span) return null;
     const target = await advanceFrom(settingId, Number.isFinite(from) ? from : now, span);
     if (target === null || target <= now) return null;
@@ -325,7 +326,7 @@ export async function followStoryElapsed(chatId, chatKey, settingId, text, from,
 // that evening" later today, or nowhere when today is already past it.
 // -> { to, text } or null.
 export async function playerSkipTarget(settingId, from, postText) {
-    const skip = playerTimeSkip(postText);
+    const { skip } = await readTimeShift(postText);
     if (!skip || !settingId || !Number.isFinite(from)) return null;
     if (!skip.sameDay) {
         const to = await advanceFrom(settingId, from, skip.advance);

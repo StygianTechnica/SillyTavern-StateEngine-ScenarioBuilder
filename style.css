@@ -573,6 +573,8 @@
 /* GM Plan tab: ideas. */
 .sb-gm-idea { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid var(--sb-line); }
 .sb-gm-idea-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* In the idea's column, .sb-gm-text's row basis (16em) would be a height. */
+.sb-gm-idea > .sb-gm-text { flex: none; }
 .sb-cal-agenda { color: var(--sb-gold); font-style: italic; }
 
 /* ---- an older tab, covered (src/ui/tab-guard.js) */

@@ -1,5 +1,5 @@
 import { daylight, dayPartAt, skyAt, moonPhase, needsAt, holidaysAround, holidayText, seasonName, dayOfYearOf } from '../src/calendar/sky.js';
-import { fallbackAdvance, defaultStart, timeOfDayFraction, storyTimeCue, cueTarget } from '../src/calendar/moment.js';
+import { defaultStart, timeOfDayFraction, cueTarget } from '../src/calendar/moment.js';
 import { weatherAt, forecast, bandOf, weatherText, CLIMATES } from '../src/calendar/weather.js';
 
 const months = Array.from({ length: 12 }, (_, i) => ({ name: `M${i + 1}`, days: 30 }));
@@ -139,19 +139,9 @@ describe('weather', () => {
     });
 });
 
-describe('fallback time reading', () => {
-    const def = { secondsPerMinute: 60, minutesPerHour: 60, hoursPerDay: 24, months };
-    const t0 = 10 * 86400 + 22 * 3600;
-    it('reads durations and times of day', () => {
-        expect(fallbackAdvance(def, t0, '20 minutes')).toBe(t0 + 1200);
-        expect(fallbackAdvance(def, t0, 'two hours')).toBe(t0 + 7200);
-        expect(fallbackAdvance(def, t0, 'a week')).toBe(t0 + 7 * 86400);
-        const morning = fallbackAdvance(def, t0, 'the next morning');
-        expect(morning).toBeGreaterThan(t0);
-        expect((morning % 86400) / 86400).toBeCloseTo(0.33, 2);
-        expect(fallbackAdvance(def, t0, 'until dawn')).toBe(11 * 86400 + 0.25 * 86400);
-        expect(fallbackAdvance(def, t0, 'mumble')).toBeNull();
-        expect(defaultStart(def)).toBe(8 * 3600);
+describe('where a new clock starts', () => {
+    it('a little after sunrise on the first day', () => {
+        expect(defaultStart({ secondsPerMinute: 60, minutesPerHour: 60, hoursPerDay: 24, months })).toBe(8 * 3600);
     });
 });
 
@@ -176,18 +166,9 @@ describe("reading the story's time of day", () => {
     });
 });
 
-describe('the time of day the story shows', () => {
-    const reply = 'The sun began to set over the fortress walls as it turned darker and colder. It was time for them to get some rest; he had a feeling their meeting with Graxx would not end so smoothly in the morning.';
-    it('reads the day turning in plain narration', () => {
-        expect(storyTimeCue(reply)).toEqual({ phrase: 'sunset', fraction: 0.77 });
-        expect(storyTimeCue('Night fell over the wastes.')).toEqual({ phrase: 'night', fraction: 0.88 });
-        expect(storyTimeCue('Dawn broke grey and cold.')).toEqual({ phrase: 'dawn', fraction: 0.25 });
-    });
-    it('ignores what is said about later', () => {
-        expect(storyTimeCue('They would leave when the sun set.')).toBeNull();
-        expect(storyTimeCue('We ride at dawn, before the sun rises.')).toBeNull();
-        expect(storyTimeCue('Graxx paced the hall.')).toBeNull();
-    });
+// Reading the cue from a reply is State Engine's (readTimeShift); where the
+// clock goes for it is ours.
+describe('where the clock goes for a time of day the story reached', () => {
     it('moves the clock forward only, to the next day for a dawn after dark', () => {
         expect(cueTarget({ phrase: 'sunset', fraction: 0.77 }, 10.5 / 24)).toEqual({ fraction: 0.77, nextDay: false });
         expect(cueTarget({ phrase: 'sunset', fraction: 0.77 }, 0.8)).toBeNull();
