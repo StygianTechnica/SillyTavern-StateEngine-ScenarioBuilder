@@ -20,7 +20,9 @@
 //   peeked: [momentId]                          spoilers the user looked at one by one
 //   shape                                       story shape id (src/planner/shapes.js); '' = none chosen
 //   outline: { premise, themes: [text], acts: [{ id, title, beats: [beat] }],
-//              seeds: [{ id, text, payoff }], updatedAt, madeTurn } | null
+//              seeds: [seed], updatedAt, madeTurn } | null
+//     seed = { id, text, payoff, status: 'open' | 'planted' | 'dropped', plantedAt }
+//              plantedAt: the chat index of the reply that planted it (-1 not known)
 //     beat = { id, text, ties: [name], status: 'pending' | 'active' | 'done' | 'skipped',
 //              locked, by: 'planner' | 'user', note, since, doneAt }
 //              since: the chat index it was under way from (-1 not known);
@@ -214,6 +216,36 @@ function normalizeBeat(b, i) {
     };
 }
 
+const SEED_LIMIT = 8;
+const SEED_STATUSES = Object.freeze(['open', 'planted', 'dropped']);
+
+function normalizeSeed(x, i) {
+    return {
+        id: clean(x.id) || `s${i + 1}`,
+        text: clean(x.text),
+        payoff: clean(x.payoff),
+        status: SEED_STATUSES.includes(x.status) ? x.status : 'open',
+        plantedAt: chatIndex(x.plantedAt),
+    };
+}
+
+// The outline's seeds with new ones added: an outline review keeps every
+// seed it had (an accepted seed idea is the user's) and what became of it,
+// adds those it has not got, and lets the oldest settled ones go first.
+function mergeSeeds(old, fresh) {
+    const out = old.map((x, i) => normalizeSeed(x, i));
+    let n = out.reduce((top, x) => Math.max(top, Number(/^s(\d+)$/.exec(x.id)?.[1] ?? 0)), 0);
+    for (const x of fresh) {
+        if (!isObject(x) || !clean(x.text) || out.some((o) => sameBeat(o.text, x.text))) continue;
+        out.push(normalizeSeed({ text: x.text, payoff: x.payoff, id: `s${++n}` }, 0));
+    }
+    while (out.length > SEED_LIMIT) {
+        const gone = out.findIndex((x) => x.status !== 'open');
+        out.splice(gone >= 0 ? gone : 0, 1);
+    }
+    return out;
+}
+
 function normalizeOutline(o) {
     if (!isObject(o) || !Array.isArray(o.acts)) return null;
     let n = 0;
@@ -228,7 +260,7 @@ function normalizeOutline(o) {
         themes: strList(o.themes).slice(0, 8),
         acts,
         seeds: (Array.isArray(o.seeds) ? o.seeds : []).filter((x) => isObject(x) && clean(x.text))
-            .map((x, i) => ({ id: clean(x.id) || `s${i + 1}`, text: clean(x.text), payoff: clean(x.payoff) })).slice(0, 8),
+            .map((x, i) => normalizeSeed(x, i)).slice(0, SEED_LIMIT),
         updatedAt: str(o.updatedAt),
         madeTurn: int(o.madeTurn),
     };
@@ -368,8 +400,15 @@ export function applyCheck(gm, check, { seen = null, player = '' } = {}) {
 // seen: the chat and the director's briefing - a moment done there has
 // its people in them (as applyCheck).
 // -> true when a beat was skipped (the plan needs a CHECK).
-export function applyBeats(gm, beats, { seen = null, player = '' } = {}) {
+export function applyBeats(gm, beats, { seen = null, player = '', index = -1 } = {}) {
     if (!beats?.length) return false;
+    // A seed planted in passing, or one the story has left no room for.
+    for (const b of beats.filter((x) => /^s\d+$/i.test(clean(x.id)))) {
+        const x = openSeeds(gm).find((o) => o.id.toLowerCase() === clean(b.id).toLowerCase());
+        if (!x) continue;
+        x.status = b.status === 'done' ? 'planted' : 'dropped';
+        x.plantedAt = b.status === 'done' ? chatIndex(index) : -1;
+    }
     // A DUE TODAY happening (its agenda id) played out, or no longer able
     // to happen; the day's moment for it goes with it.
     for (const b of beats.filter((x) => /^ag_/i.test(clean(x.id)))) {
@@ -532,6 +571,8 @@ export function planSection(gm, { pace = null, aim = null, story = null, motifs 
     if (off.length) lines.push(`- Off-screen: ${off.join('; ')}.`);
     const soon = gm.queue.filter((r) => r.status === 'waiting' && r.urgency === 'soon').slice(0, 2);
     for (const r of soon) lines.push(`- The user would like: ${r.text} - work it in where it is natural.`);
+    const seed = openSeeds(gm)[0];
+    if (seed) lines.push(`- Plant when there is room [${seed.id}]: ${seed.text}${seed.payoff ? ` (it pays off later: ${seed.payoff})` : ''} - a small touch in passing, never the point of the scene, and never say what it is for.`);
     const m = motifs.filter(Boolean).slice(0, 3);
     if (m.length) lines.push(`- Motifs to echo, as images rather than events: ${m.join('; ')}.`);
     if (!lines.length) return '';
@@ -714,7 +755,7 @@ export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString()
         premise: clean(parsed.premise) || gm.outline?.premise || '',
         themes: parsed.themes?.length ? parsed.themes : gm.outline?.themes ?? [],
         acts,
-        seeds: parsed.seeds?.length ? parsed.seeds : gm.outline?.seeds ?? [],
+        seeds: mergeSeeds(gm.outline?.seeds ?? [], parsed.seeds ?? []),
         updatedAt: at,
         madeTurn: turn,
     });
@@ -1316,9 +1357,20 @@ export function setByStory(gm, { id, text, day, when = '', ties = [], at = new D
 // A seed for the outline (an accepted seed idea, or a silent one).
 export function addSeed(gm, { text, payoff = '' }) {
     if (!gm.outline || !clean(text)) return false;
-    const n = gm.outline.seeds.length + 1;
-    gm.outline.seeds = [...gm.outline.seeds, { id: `s${n}`, text: clean(text), payoff: clean(payoff) }].slice(-8);
+    gm.outline.seeds = mergeSeeds(gm.outline.seeds, [{ text, payoff }]);
     return true;
+}
+
+// The seeds the director is to plant, oldest first.
+export const openSeeds = (gm) => (gm.outline?.seeds ?? []).filter((x) => x.status === 'open');
+
+// Seeds planted by the reply at `fromIndex` or later are open again (a
+// swipe or an edit took that reply back). -> their ids.
+export function unplantSeedsFrom(gm, fromIndex) {
+    if (!Number.isInteger(fromIndex) || fromIndex < 0) return [];
+    const back = (gm.outline?.seeds ?? []).filter((x) => x.status === 'planted' && x.plantedAt >= fromIndex);
+    for (const x of back) { x.status = 'open'; x.plantedAt = -1; }
+    return back.map((x) => x.id);
 }
 
 // At most `max` pairs, spread over everyone in them: each one once before

@@ -544,10 +544,10 @@ export function buildDirectorPrompt(input) {
         'If the latest chat gives a name to someone listed with "no name yet", a line for each (only the name the story gives - never one of your own):',
         'RENAME | <the descriptive name> | <the name the story gives>',
     );
-    if (/\[(?:m\d+|ag_[a-z0-9]+)\]/i.test(plan)) {
+    if (/\[(?:m\d+|s\d+|ag_[a-z0-9]+)\]/i.test(plan)) {
         parts.push(
             '',
-            'For a coming moment from the GM PLAN or a happening under DUE TODAY that this reply plays out, or that can no longer happen where the story has gone, a line each (its id as given, e.g. m2):',
+            'For a coming moment or a thing to plant from the GM PLAN, or a happening under DUE TODAY, that this reply plays out, or that can no longer happen where the story has gone, a line each (its id as given, e.g. m2):',
             'BEAT | <its id> | done | <how it plays out, a few words>',
             'BEAT | <its id> | skipped | <why it can never happen now, a few words>',
             'Something DUE TODAY that is only delayed is neither: leave it, and it stays due.',
@@ -850,7 +850,7 @@ export function parseDirectorNote(raw) {
             if (!heard.some((x) => x.id === hd[1].toLowerCase()) && heard.length < 4) heard.push({ id: hd[1].toLowerCase(), how: hd[2] && !isPlaceholder(hd[2]) ? clean(hd[2]) : '' });
             continue;
         }
-        const bt = line.match(/^\s*(?:[-*]\s*)?\**BEAT\**\s*:?\s*\|\s*\[?(m\d+|ag_[a-z0-9]+)\]?\s*\|\s*(done|skipped)\s*(?:\|\s*(.*?)\s*)?$/i);
+        const bt = line.match(/^\s*(?:[-*]\s*)?\**BEAT\**\s*:?\s*\|\s*\[?(m\d+|s\d+|ag_[a-z0-9]+)\]?\s*\|\s*(done|skipped)\s*(?:\|\s*(.*?)\s*)?$/i);
         if (bt) {
             if (!beats.some((b) => b.id === bt[1].toLowerCase())) beats.push({ id: bt[1].toLowerCase(), status: bt[2].toLowerCase(), note: bt[3] && !isPlaceholder(bt[3]) ? clean(bt[3]) : '' });
             continue;

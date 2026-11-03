@@ -121,7 +121,7 @@ describe('ideas cadence and helpers', () => {
         expect(addSeed(gm, { text: 'A cracked bell' })).toBe(false);
         setOutline(gm, { acts: [{ title: 'A', beats: [{ text: 'x' }] }] });
         expect(addSeed(gm, { text: 'A cracked bell', payoff: 'the reckoning' })).toBe(true);
-        expect(gm.outline.seeds).toEqual([{ id: 's1', text: 'A cracked bell', payoff: 'the reckoning' }]);
+        expect(gm.outline.seeds).toEqual([{ id: 's1', text: 'A cracked bell', payoff: 'the reckoning', status: 'open', plantedAt: -1 }]);
     });
 });
 

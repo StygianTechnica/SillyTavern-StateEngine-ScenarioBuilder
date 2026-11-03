@@ -671,7 +671,8 @@ export function takeBeats(chatKey, beats) {
             // The chat only: the briefing says what the director means to
             // play, not what the reply showed (Adam "strode in" there, and
             // never in the story).
-            applyBeats(d.gm, beats, { seen: seenTexts(), player: userName() });
+            // A seed is planted by the reply this briefing is for.
+            applyBeats(d.gm, beats, { seen: seenTexts(), player: userName(), index: latestIndex() + 1 });
             done = (d.gm.day?.moments ?? []).some((m) => m.status === 'done' && !before.has(m.id));
         });
         if (done) markActive(chatKey);

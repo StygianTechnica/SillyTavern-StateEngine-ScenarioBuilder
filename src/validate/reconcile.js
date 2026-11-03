@@ -27,7 +27,7 @@ import { withStateEngineCast, SE_CAST, withStateEngineCreatures, SE_CREATURES } 
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry, playerIdOf, listEntries } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
-import { beatsOf, undoBeatsFrom } from '../planner/model.js';
+import { beatsOf, undoBeatsFrom, unplantSeedsFrom } from '../planner/model.js';
 import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
 import { noteMood } from '../director/company.js';
@@ -627,10 +627,12 @@ export async function revertFromMessage(fromIndex) {
     // Outline beats called done at those messages did not happen either: a
     // swiped reply had Adam praise a combat assessment that never took
     // place, and the beat stayed done (src/planner/model.js undoBeatsFrom).
-    if (beatsOf(doc.gm.outline).some((b) => b.status === 'done' && b.doneAt >= fromIndex)) {
+    // Seeds that reply planted are to plant again.
+    if (beatsOf(doc.gm.outline).some((b) => b.status === 'done' && b.doneAt >= fromIndex) || (doc.gm.outline?.seeds ?? []).some((x) => x.status === 'planted' && x.plantedAt >= fromIndex)) {
         updateChatDoc(chatKey, (d) => {
             const back = undoBeatsFrom(d.gm, fromIndex);
             if (back.length) console.info(LOG_PREFIX, `beats called done at a message that changed are under way again: ${back.join(', ')}`);
+            unplantSeedsFrom(d.gm, fromIndex);
         });
     }
     const affected = (source) => sourceIndex(source) >= fromIndex;
