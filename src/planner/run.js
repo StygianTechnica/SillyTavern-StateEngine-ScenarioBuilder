@@ -35,6 +35,7 @@ import { triggerSection,
     addRequest, setRequestStatus, waitingRequests,
     setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, restoreBeat, editBeat, lockBeat, removeBeat, addBeat,
     mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat, unseenTies, undoUnseenBeats, newcomerWait, FIRM_AFTER,
+    stampBeats, beatFrom, dueSection, setByStory, readWhen,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText, removeChronicle,
     addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines, factionsOutOfPlay,
 } from './model.js';
@@ -87,11 +88,33 @@ const userName = () => SillyTavern.getContext().name1 ?? '';
 const SEEN_MESSAGES = 12;
 const seenTexts = (max = SEEN_MESSAGES) => chatMessages(max).map((m) => m.text);
 
-// The active beat's people no message of the chat names yet: the beat has
-// to bring them to the player, or it never plays out.
+// The chat from index `from` on (SillyTavern's own indexes), its messages'
+// texts; the index of the latest message.
+function textsFrom(from = 0) {
+    const chat = SillyTavern.getContext().chat ?? [];
+    return chat.slice(Math.max(0, from)).filter((m) => m && !m.is_system && typeof m.mes === 'string').map((m) => m.mes);
+}
+const latestIndex = () => (SillyTavern.getContext().chat ?? []).length - 1;
+// Where a beat seen under way now began: the latest exchange counts for it.
+const stampIndex = () => Math.max(0, latestIndex() - 1);
+// A beat's people seen since it was under way (src/planner/model.js beatFrom).
+const beatTexts = (gm) => (beat) => textsFrom(beatFrom(gm, beat));
+
+// The beat's people the story has not shown since the beat began: the
+// beat has to bring them to the player, or it never plays out. Someone
+// named long before (Inji, a hundred messages back) still has to come for
+// this beat.
 function beatNewcomers(gm) {
     const beat = activeBeat(gm.outline);
-    return beat?.ties?.length ? unseenTies(beat.ties, seenTexts(Infinity), userName()) : [];
+    return beat?.ties?.length ? unseenTies(beat.ties, beatTexts(gm)(beat), userName()) : [];
+}
+
+// Of those, the ones the story has shown before: they come back - they are
+// no strangers to anyone they have met.
+function beatReturning(gm, newcomers = beatNewcomers(gm)) {
+    if (!newcomers.length) return [];
+    const never = new Set(unseenTies(newcomers, textsFrom(0), userName()));
+    return newcomers.filter((n) => !never.has(n));
 }
 
 // The newcomers the beat has waited on past the firm line (FIRM_AFTER
@@ -286,11 +309,13 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
         // The conditions the outline wants watched: story triggers.
         await plannerTriggers(chatId, chatKey, parsed.triggers ?? []);
         updateChatDoc(chatKey, (d) => {
-            const whole = seenTexts(Infinity);
-            setOutline(d.gm, parsed, { turn: d.gm.counters.turn, keepLocked: !rewrite || keepLocked, review: !writing, unseen: (b) => unseenTies(b.ties, whole, userName()) });
+            // A beat's people count only from when it was under way.
+            const since = beatTexts(d.gm);
+            setOutline(d.gm, parsed, { turn: d.gm.counters.turn, keepLocked: !rewrite || keepLocked, review: !writing, unseen: (b) => unseenTies(b.ties, since(b), userName()), index: latestIndex() });
             // The user said where the story is: the outline starts there,
             // whatever the model made of it.
             if (startIndex >= 0) startAt(d.gm, startIndex);
+            stampBeats(d.gm, stampIndex());
             d.gm.counters.sinceOutline = 0;
             d.gm.outlineWanted = false;
         });
@@ -357,11 +382,12 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             rest: rest || sameDay,
             story: storyWords(doc.gm),
             newcomers: beatNewcomers(doc.gm),
+            returning: beatReturning(doc.gm),
             company: companyLines(doc.company, { turn: doc.turn, player: userName() }),
             untouched: await factionsToBringIn(chatId, settingId),
             place: (guidance.location?.path ?? []).slice(-1)[0] ?? '',
             situation: doc.canonical.sceneSummary,
-            happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today' })),
+            happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today', late: x.late, promise: x.source === 'promise' })),
             world: world?.part ?? null,
         });
         const plan = readDayPlan(await ask({ system, prompt }));
@@ -462,14 +488,15 @@ export async function runCheck(chatId, chatKey) {
         const beatDone = check.beatDone && beat && !beatNewcomers(doc.gm).length;
         updateChatDoc(chatKey, (d) => {
             // Beats called done whose people never turned up are under way again.
-            const back = undoUnseenBeats(d.gm, seenTexts(Infinity), userName());
+            const back = undoUnseenBeats(d.gm, beatTexts(d.gm), userName(), textsFrom(0));
             if (back.length) console.info(LOG_PREFIX, `beats called done without ${back.join(', ')} in the story are back under way`);
             applyCheck(d.gm, check, { seen, player: userName() });
             d.gm.counters.sinceCheck = 0;
             d.gm.counters.lastCheck = new Date().toISOString();
             d.gm.checkWanted = false;
             // The story's beat played out: the outline moves on.
-            if (beatDone) finishBeat(d.gm, beat.id);
+            if (beatDone) finishBeat(d.gm, beat.id, { index: latestIndex() });
+            stampBeats(d.gm, stampIndex());
             if (askTension && check.tension) addOwnReading(d.gm, check.tension, { index: d.gm.counters.turn });
         });
         return [check.done.length && `${check.done.length} done`, check.skipped.length && `${check.skipped.length} dropped`, check.add.length && `${check.add.length} added`, beatDone && 'beat done'].filter(Boolean).join(', ') || 'plan still holds';
@@ -536,6 +563,7 @@ export async function afterReply(chatId, chatKey) {
             d.gm.counters.sinceOutline += 1;
             d.gm.counters.sinceIdeas += 1;
             settleAgenda(d.gm, d.canonical.day);
+            stampBeats(d.gm, stampIndex());
         });
         await refreshTension(chatKey);
         const doc = getChatDoc(chatKey);
@@ -583,6 +611,14 @@ export function directorPlan(chatKey, messages) {
         console.warn(LOG_PREFIX, 'no story triggers for the director', err);
     }
     const plan = plannedSection(chatKey, messages);
+    // What the story set for today or keeps putting off: planner on or off.
+    let due = '';
+    try {
+        const doc = getChatDoc(chatKey);
+        due = dueSection(doc.gm, doc.canonical.day);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'nothing due for the director', err);
+    }
     // Who the player character has had enough of: planner on or off.
     let company = '';
     try {
@@ -591,7 +627,7 @@ export function directorPlan(chatKey, messages) {
     } catch (err) {
         console.warn(LOG_PREFIX, 'no company lines for the director', err);
     }
-    return [triggered, company, plan].filter(Boolean).join('\n\n');
+    return [triggered, due, company, plan].filter(Boolean).join('\n\n');
 }
 
 function plannedSection(chatKey, messages) {
@@ -608,8 +644,11 @@ function plannedSection(chatKey, messages) {
         const pace = paceAim(gm, { level: p.pacing, recentUser, tense, pull });
         const newcomers = beatNewcomers(gm);
         let waited = 0;
-        updateChatDoc(chatKey, (d) => { waited = newcomerWait(d.gm, newcomers.length ? activeBeat(d.gm.outline)?.id : '', d.turn); });
-        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3), newcomers, waited });
+        updateChatDoc(chatKey, (d) => {
+            stampBeats(d.gm, stampIndex());
+            waited = newcomerWait(d.gm, newcomers.length ? activeBeat(d.gm.outline)?.id : '', d.turn);
+        });
+        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3), newcomers, returning: beatReturning(gm, newcomers), waited });
         // The world meanwhile: nothing while the scene is tense or lingering;
         // the lead into what comes next while it moves on or builds.
         const meanwhile = meanwhileFor(chatKey, getChatDoc(chatKey).settingId, { aim: story.aim?.word ?? '', quiet: tense || pace.aim === 'linger', lead: pace.aim === 'move on' || story.aim?.word === 'build', userIndex: latestUserIndex() });
@@ -638,6 +677,27 @@ export function takeBeats(chatKey, beats) {
         if (done) markActive(chatKey);
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not record the director\'s beats', err);
+    }
+}
+
+// The director's SET lines: what the story set for a later time (a meeting
+// agreed, a test arranged for tomorrow) goes on the agenda, so it is still
+// there when its day comes - long after the chat that set it is out of
+// every pass's sight. Adam Miller's test, agreed the evening before, was
+// gone by morning: Vex ran "training" in his place. Planner on or off.
+export function takeSets(chatKey, sets) {
+    if (!sets?.length) return;
+    try {
+        updateChatDoc(chatKey, (d) => {
+            for (const x of sets) {
+                const when = readWhen(x.when, d.canonical.dayPart);
+                const ties = x.who.split(/\s*(?:,|&|\band\b)\s*/i).map((n) => n.trim()).filter(Boolean);
+                const made = setByStory(d.gm, { id: newLocalId('ag'), text: x.what, day: d.canonical.day + when.inDays, when: when.part || x.when, ties });
+                if (made) console.info(LOG_PREFIX, `set by the story for day ${made.day}${made.when ? `, ${made.when}` : ''}: ${made.text}`);
+            }
+        });
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not record what the story set', err);
     }
 }
 
@@ -710,7 +770,7 @@ export function addOutlineBeat(chatKey, actId, text) {
 }
 
 export function restoreOutlineBeat(chatKey, id) {
-    updateChatDoc(chatKey, (d) => restoreBeat(d.gm, id));
+    updateChatDoc(chatKey, (d) => { restoreBeat(d.gm, id); stampBeats(d.gm, stampIndex()); });
 }
 
 export function finishOutlineBeat(chatKey, id) {

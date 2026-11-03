@@ -517,6 +517,9 @@ export function buildDirectorPrompt(input) {
         'If the latest chat shows a god, a spirit or a power - or someone speaking for one - promising something in return for a task, a trial or a price (a life given back once the trials are passed), a line. Only a promise made in the latest chat, never one already under SECRETS AND OATHS; it is kept until the story fulfils or breaks it:',
         'BARGAIN | <who promises> | <what is promised> | <the price or condition>',
         '',
+        `If the latest chat sets something for a later time - people agree to meet, a test, a job, a fight or a showdown is arranged, someone says they will come back for ${userName} - a line, so it still happens when its time comes. Only something set in the latest chat, not one already under DUE TODAY or SET FOR LATER - unless the latest chat moves it to another time: then SET it again with the new time. Say what rides on it, if anything:`,
+        'SET | <who is to do it> | <what is to happen, with whom, and what rides on it> | <when, e.g. tomorrow morning, tonight, in three days>',
+        '',
         'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along) - but not someone it shows walking out: they are gone until the story brings them back. Someone only talked about, remembered, read about or seen in a record, picture or screen is not in the scene: no ENTERS for them. For creatures of a kind, say how many (ENTERS | 3 zombies; LEAVES | 2 zombies):',
         'ENTERS | <name>',
         'LEAVES | <name>',
@@ -541,12 +544,13 @@ export function buildDirectorPrompt(input) {
         'If the latest chat gives a name to someone listed with "no name yet", a line for each (only the name the story gives - never one of your own):',
         'RENAME | <the descriptive name> | <the name the story gives>',
     );
-    if (/\[m\d+\]/.test(plan)) {
+    if (/\[(?:m\d+|ag_[a-z0-9]+)\]/i.test(plan)) {
         parts.push(
             '',
-            'For a coming moment from the GM PLAN that this reply plays out, or that can no longer happen where the story has gone, a line each (its id as given, e.g. m2):',
-            'BEAT | <moment id> | done | <how it plays out, a few words>',
-            'BEAT | <moment id> | skipped | <why, a few words>',
+            'For a coming moment from the GM PLAN or a happening under DUE TODAY that this reply plays out, or that can no longer happen where the story has gone, a line each (its id as given, e.g. m2):',
+            'BEAT | <its id> | done | <how it plays out, a few words>',
+            'BEAT | <its id> | skipped | <why it can never happen now, a few words>',
+            'Something DUE TODAY that is only delayed is neither: leave it, and it stays due.',
         );
     }
     // The world meanwhile (src/world/model.js): its lines carry their
@@ -740,7 +744,7 @@ export function isPlaceholder(value) {
 }
 
 // A format line, whether or not it could be read - never left in the prose.
-const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|AWAY|BACK|NEW|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|AWAY|BACK|NEW|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
@@ -770,6 +774,7 @@ export function parseDirectorNote(raw) {
     const risings = [];
     const powers = [];
     const bargains = [];
+    const sets = [];
     let away = '';
     let back = '';
     for (const line of text.split('\n')) {
@@ -788,6 +793,14 @@ export function parseDirectorNote(raw) {
             const what = isPlaceholder(bg[2]) ? '' : clean(bg[2]).replace(/^["'*]+|["'*]+$/g, '');
             const price = isPlaceholder(bg[3]) ? '' : clean(bg[3]).replace(/^(?:price|cost|condition|if|once)\s*[:\-–]\s*/i, '').replace(/^["'*]+|["'*]+$/g, '');
             if (by && what && !isPlaceholder(by) && bargains.length < 2) bargains.push({ by, what, price });
+            continue;
+        }
+        // SET | <who> | <what is to happen> | <when> (src/planner/model.js setByStory)
+        const sl = line.match(/^\s*(?:[-*]\s*)?\**SET\**\s*:?\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*$/i);
+        if (sl) {
+            const unquote = (v) => clean(v).replace(/^["'*]+|["'*.]+$/g, '');
+            const [who, what, when] = [unquote(sl[1]), unquote(sl[2]), unquote(sl[3])];
+            if (who && what && when && ![who, what, when].some(isPlaceholder) && sets.length < 2) sets.push({ who, what, when });
             continue;
         }
         // POWER | <name> | <what it did> | <its price, if any> (src/library/powers.js)
@@ -837,7 +850,7 @@ export function parseDirectorNote(raw) {
             if (!heard.some((x) => x.id === hd[1].toLowerCase()) && heard.length < 4) heard.push({ id: hd[1].toLowerCase(), how: hd[2] && !isPlaceholder(hd[2]) ? clean(hd[2]) : '' });
             continue;
         }
-        const bt = line.match(/^\s*(?:[-*]\s*)?\**BEAT\**\s*:?\s*\|\s*\[?(m\d+)\]?\s*\|\s*(done|skipped)\s*(?:\|\s*(.*?)\s*)?$/i);
+        const bt = line.match(/^\s*(?:[-*]\s*)?\**BEAT\**\s*:?\s*\|\s*\[?(m\d+|ag_[a-z0-9]+)\]?\s*\|\s*(done|skipped)\s*(?:\|\s*(.*?)\s*)?$/i);
         if (bt) {
             if (!beats.some((b) => b.id === bt[1].toLowerCase())) beats.push({ id: bt[1].toLowerCase(), status: bt[2].toLowerCase(), note: bt[3] && !isPlaceholder(bt[3]) ? clean(bt[3]) : '' });
             continue;
@@ -916,6 +929,8 @@ export function parseDirectorNote(raw) {
     }
     text = keep.join('\n')
         .replace(/^\s*(?:#+\s*)?(?:\**)?(?:gm\s+)?(?:briefing|note|director'?s note)(?:\**)?\s*:?\s*$/gim, '')
+        // A heading for the format lines left on its own ("FORMAT").
+        .replace(/^\s*(?:#+\s*)?(?:\**)?(?:the\s+)?format(?:\s+lines)?(?:\**)?\s*:?\s*$/gim, '')
         .replace(/^\s*here(?:'s| is) (?:the|my|your) briefing[^\n]*\n/i, '')
         .replace(/^\s*#+\s+/gm, '')
         .replace(/\n{3,}/g, '\n\n')
@@ -925,7 +940,7 @@ export function parseDirectorNote(raw) {
     // A briefing cut off or told as story lost its "Next:" end; any other
     // paragraph is not direction.
     const parts = tidy.flaws.length && !MARKER.test(text) ? { summary: text, direction: '' } : splitNote(text);
-    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, jealous, romance, soothed, fights, deaths, risings, powers, bargains, away, back };
+    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, jealous, romance, soothed, fights, deaths, risings, powers, bargains, sets, away, back };
 }
 
 // The first library entry `text` names that nothing the scene stands on

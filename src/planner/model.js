@@ -22,7 +22,10 @@
 //   outline: { premise, themes: [text], acts: [{ id, title, beats: [beat] }],
 //              seeds: [{ id, text, payoff }], updatedAt, madeTurn } | null
 //     beat = { id, text, ties: [name], status: 'pending' | 'active' | 'done' | 'skipped',
-//              locked, by: 'planner' | 'user', note }
+//              locked, by: 'planner' | 'user', note, since, doneAt }
+//              since: the chat index it was under way from (-1 not known);
+//              doneAt: the chat index of the message it was called done at
+//              (-1 not known, or the user's call)
 //   tension: [{ at, index, threat, uncertainty, emotional, overall, reason, source }]
 //                                               readings, oldest first (Archivist's, or the
 //                                               planner's own without it); the last TENSION_LIMIT
@@ -41,9 +44,11 @@
 //              ties: [name], target (enrich: the quest's name), objectives: [text],
 //              inDays and when (happening), status: 'proposed' | 'accepted' | 'dismissed', at }
 //   dismissedIdeas: [key]                       ideas the user turned down: never proposed again
-//   agenda: [{ id, day, when, text, ties, source, status: 'coming' | 'planned' | 'done' | 'passed', at }]
+//   agenda: [{ id, day, when, text, ties, source, status: 'coming' | 'planned' | 'done' | 'passed', at, late }]
 //                                               dated happenings (§3.3): `day` is the story's
-//                                               day count (canonical.day)
+//                                               day count (canonical.day); source 'promise':
+//                                               set by the story (SET lines); late: the days
+//                                               it has been put off
 //   join: { act, note }                         a story already under way: the chapter (act
 //                                               index, -1 = let the planner judge) it is in
 //                                               now, and the user's note on the story so far
@@ -85,6 +90,8 @@ const clean = (v) => str(v).replace(/\s+/g, ' ').trim();
 const paragraphs = (v) => str(v).replace(/\r/g, '').split(/\n\s*\n/).map(clean).filter(Boolean).join('\n\n');
 const strList = (v) => (Array.isArray(v) ? v.map(clean).filter(Boolean) : []);
 const int = (v, fallback = 0) => (Number.isInteger(v) && v >= 0 ? v : fallback);
+// A chat index, or -1 when not known.
+const chatIndex = (v) => int(v, -1);
 
 export function emptyGm() {
     return {
@@ -202,6 +209,8 @@ function normalizeBeat(b, i) {
         locked: b.locked === true,
         by: b.by === 'user' ? 'user' : 'planner',
         note: clean(b.note),
+        since: chatIndex(b.since),
+        doneAt: chatIndex(b.doneAt),
     };
 }
 
@@ -286,6 +295,17 @@ export function setDayPlan(gm, plan, { day, turn, at = new Date().toISOString() 
     // Requests planned for an earlier day that never happened wait again.
     for (const r of gm.queue) if (r.status === 'planned') { r.status = 'waiting'; r.plannedAs = []; }
     planRequests(gm, plan.requests, moments);
+    // What the story set for today, or keeps putting off, is in the day
+    // whether the plan made room for it or not: a plan written around the
+    // latest chat left Adam's promised test out and sent Vex instead.
+    const linked = new Set(gm.day.moments.map((m) => m.source));
+    const missing = dueToday(gm, day).filter((x) => !linked.has(`agenda:${x.id}`));
+    for (const x of missing) {
+        const n = gm.day.moments.length;
+        const m = normalizeMoment({ id: `m${n + 1}`, text: x.text, when: x.when || 'any time', ties: x.ties, source: `agenda:${x.id}`, droppable: false }, n);
+        if (m) gm.day.moments.push(m);
+    }
+    if (missing.length) settleAgenda(gm);
     gm.peeked = [];
 }
 
@@ -349,7 +369,17 @@ export function applyCheck(gm, check, { seen = null, player = '' } = {}) {
 // its people in them (as applyCheck).
 // -> true when a beat was skipped (the plan needs a CHECK).
 export function applyBeats(gm, beats, { seen = null, player = '' } = {}) {
-    if (!gm.day || !beats?.length) return false;
+    if (!beats?.length) return false;
+    // A DUE TODAY happening (its agenda id) played out, or no longer able
+    // to happen; the day's moment for it goes with it.
+    for (const b of beats.filter((x) => /^ag_/i.test(clean(x.id)))) {
+        const x = gm.agenda.find((a) => a.id.toLowerCase() === clean(b.id).toLowerCase() && (a.status === 'coming' || a.status === 'planned'));
+        if (!x || (b.status === 'done' && seen && unseenTies(x.ties, seen, player).length)) continue;
+        x.status = b.status === 'done' ? 'done' : 'passed';
+        for (const m of gm.day?.moments ?? []) if (m.source === `agenda:${x.id}` && m.status === 'pending') { m.status = b.status === 'done' ? 'done' : 'skipped'; m.note = clean(b.note); }
+        if (x.status === 'done') addChronicle(gm, clean(b.note) && !sameBeat(b.note, x.text) ? `${x.text} (${clean(b.note)})` : x.text);
+    }
+    if (!gm.day) return false;
     let skipped = false;
     for (const b of beats) {
         const m = gm.day.moments.find((x) => x.id === clean(b.id).toLowerCase());
@@ -468,24 +498,33 @@ export function duePasses(gm, { day, turn, level = 'moderate', checkEvery = null
 // pace: paceAim(); aim: shapes.js tensionAim(); story: { shape (label),
 // act (title), next (the beat after this one) } for the outline's line;
 // motifs: [text].
-// newcomers: the beat's people the story has not shown yet (unseenTies);
+// newcomers: the beat's people the story has not shown since it began
+// (unseenTies); returning: those of them the story has shown before;
 // waited: replies they have been awaited (newcomerWait) - past FIRM_AFTER
 // they come in this reply.
 export const FIRM_AFTER = 3;
-export function planSection(gm, { pace = null, aim = null, story = null, motifs = [], newcomers = [], waited = 0 } = {}) {
+export function planSection(gm, { pace = null, aim = null, story = null, motifs = [], newcomers = [], returning = [], waited = 0 } = {}) {
     const lines = [];
     const beat = activeBeat(gm.outline);
     if (beat) lines.push(`- Story: ${story?.shape ? `${story.shape}, ` : ''}${story?.act ? `in "${story.act}" - ` : ''}the beat now: ${beat.text}${story?.next ? ` (then: ${story.next})` : ''}`);
     const due = beat ? strList(newcomers) : [];
-    if (due.length && waited >= FIRM_AFTER) lines.push(`- Now: ${due.join(' and ')} come${due.length === 1 ? 's' : ''} into the story in this reply - the beat has waited ${waited} replies for ${due.length === 1 ? 'them' : 'them all'}. Open the reply with ${due.length === 1 ? 'them' : 'each'} reaching the player character where they are: walking in, or sending for them, with a reason that fits the beat now. Not elsewhere, not later, not only talked about.`);
-    else if (due.length) lines.push(`- Not yet in the story: ${due.join(', ')}. The beat now needs ${due.length === 1 ? 'them' : 'each of them'} to reach the player character in person - in this reply where the scene leaves any room: they arrive where the player character is, walk in on the scene, or send for them. This brings someone to the scene; it does not move it. A talk elsewhere, out of the player character's sight, does not count.`);
+    const back = new Set(strList(returning).map((n) => n.toLowerCase()));
+    const fresh = due.filter((n) => !back.has(n.toLowerCase()));
+    const again = due.filter((n) => back.has(n.toLowerCase()));
+    // Someone the story has shown before comes back as who they are.
+    const knownLine = again.length ? ` ${again.join(' and ')} ${again.length === 1 ? 'has' : 'have'} been in the story before: they know whom they have met and pick up where they left off.` : '';
+    if (due.length && waited >= FIRM_AFTER) lines.push(`- Now: ${due.join(' and ')} come${due.length === 1 ? 's' : ''} into the story in this reply - the beat has waited ${waited} replies for ${due.length === 1 ? 'them' : 'them all'}. Open the reply with ${due.length === 1 ? 'them' : 'each'} reaching the player character where they are: walking in, or sending for them, with a reason that fits the beat now. Not elsewhere, not later, not only talked about.${knownLine}`);
+    else if (due.length) lines.push(`- ${[fresh.length ? `Not yet in the story: ${fresh.join(', ')}.` : '', again.length ? `Away from the story since this beat began: ${again.join(', ')}.` : ''].filter(Boolean).join(' ')} The beat now needs ${due.length === 1 ? 'them' : 'each of them'} to reach the player character in person - in this reply where the scene leaves any room: they arrive where the player character is, walk in on the scene, or send for them. This brings someone to the scene; it does not move it. A talk elsewhere, out of the player character's sight, does not count.${knownLine}`);
     if (aim) lines.push(aimLine(aim, story?.act));
     if (pace && pace.aim !== 'steady') {
         lines.push(pace.aim === 'move on'
             ? `- Pace: move on - ${pace.why}. Close this scene and lead straight into the next one; never leave the player character alone with nothing to answer. Let the scene wind down from the world's side and pass time with a TIME line if the next scene starts later. Then open the next scene by bringing something to the player character: pull on an open thread or the beat now; bring in someone who belongs at this place and has a reason to seek them out, new to the story if need be; or let something from MEANWHILE reach them as news, a rumour, a find or a visitor. End with that in front of them - someone to answer, a question, somewhere to go - and the choice theirs. Never decide for the player character.`
             : `- Pace: linger - ${pace.why}. Give the scene room; let time move only as the story says.`);
     }
-    const coming = (gm.day?.moments ?? []).filter((m) => m.status === 'pending').slice(0, 2);
+    // What the story set or keeps putting off has its own DUE TODAY lines
+    // (dueSection): not repeated here.
+    const dueIds = new Set(gm.agenda.filter((x) => (x.status === 'coming' || x.status === 'planned') && pressing(x)).map((x) => `agenda:${x.id}`));
+    const coming = (gm.day?.moments ?? []).filter((m) => m.status === 'pending' && !dueIds.has(m.source)).slice(0, 2);
     for (const m of coming) lines.push(`- Coming up [${m.id}]: ${m.text}${m.when ? ` (${m.when}${m.trigger ? `; ${m.trigger}` : ''})` : m.trigger ? ` (${m.trigger})` : ''}`);
     const agendas = (gm.day?.agendas ?? []).slice(0, 4);
     if (agendas.length) lines.push(`- Agendas: ${agendas.map((a) => `${a.who} wants ${a.wants}${a.will ? `, and will ${a.will}` : ''}${a.hidden ? ` (hidden: ${a.hidden})` : ''}`).join('; ')}.`);
@@ -591,8 +630,9 @@ export function sameBeat(a, b) {
 // to come are dropped too - only what the story has done is kept.
 // review: the pass brought an outline up to date (not written afresh).
 // unseen(beat): the names a beat ties in that the chat never showed - a
-// review never calls such a beat done.
-export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString(), keepLocked = true, review = false, unseen = () => [] } = {}) {
+// review never calls such a beat done. index: the chat index of the
+// latest message, kept on each beat called done (a swipe of it undoes it).
+export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString(), keepLocked = true, review = false, unseen = () => [], index = -1 } = {}) {
     const wasDone = new Set(beatsOf(gm.outline).filter((b) => b.status === 'done').map((b) => b.id));
     // A skipped beat never happened: it is not history, and a rewrite that
     // leaves it out drops it (an old outline's "Maziel attacks" would sit
@@ -679,7 +719,11 @@ export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString()
         madeTurn: turn,
     });
     if (gm.outline) settleActive(gm.outline);
-    for (const b of beatsOf(gm.outline)) if (b.status === 'done' && !wasDone.has(b.id) && !b.locked) addChronicle(gm, `Beat: ${b.text}`, { at });
+    for (const b of beatsOf(gm.outline)) {
+        if (b.status !== 'done' || wasDone.has(b.id)) continue;
+        b.doneAt = chatIndex(index);
+        if (!b.locked) addChronicle(gm, `Beat: ${b.text}`, { at });
+    }
 }
 
 // The user's own changes. An edited or added beat is locked: the planner
@@ -742,38 +786,77 @@ export function restoreBeat(gm, id) {
     const b = beatsOf(gm.outline).find((x) => x.id === id);
     if (!b || (b.status !== 'skipped' && b.status !== 'done')) return;
     const wasDone = b.status === 'done';
-    b.status = 'pending';
-    b.note = '';
+    reopen(b);
     if (wasDone) {
         gm.volume.chronicle = gm.volume.chronicle.filter((c) => c.text !== `Beat: ${b.text}`);
-        for (const x of beatsOf(gm.outline)) if (x.status === 'active') x.status = 'pending';
+        for (const x of beatsOf(gm.outline)) if (x.status === 'active') reopen(x);
         b.status = 'active';
     }
     settleActive(gm.outline);
+}
+
+// A beat back as one still to come: it is under way afresh once it is the
+// beat now, and only what the story shows from then on counts for it.
+function reopen(b) {
+    b.status = 'pending';
+    b.note = '';
+    b.since = -1;
+    b.doneAt = -1;
+}
+
+// The beat under way is under way from chat index `at` on: kept the first
+// time it is seen active, so a beat's people count only once it began -
+// Inji Miyama, named in the story's first hundred messages, made the
+// combat assessment against him "done" without his ever turning up for it.
+export function stampBeats(gm, at) {
+    if (!Number.isInteger(at) || at < 0) return;
+    for (const b of beatsOf(gm.outline)) if (b.status === 'active' && !(b.since >= 0)) b.since = at;
+}
+
+// The chat index a beat's people are looked for from: since it was under
+// way, or - not known - since the volume began.
+export const beatFrom = (gm, beat) => (beat?.since >= 0 ? beat.since : gm.volume?.startedIndex ?? 0);
+
+// A message at `fromIndex` or later was swiped, edited or deleted: the
+// beats called done at it did not happen. They are under way again and
+// out of the chronicle. -> the ids put back.
+export function undoBeatsFrom(gm, fromIndex) {
+    if (!Number.isInteger(fromIndex) || fromIndex < 0) return [];
+    const back = beatsOf(gm.outline).filter((b) => b.status === 'done' && b.doneAt >= fromIndex);
+    if (!back.length) return [];
+    const lines = new Set(back.map((b) => `Beat: ${b.text}`));
+    gm.volume.chronicle = gm.volume.chronicle.filter((c) => !lines.has(c.text));
+    for (const b of beatsOf(gm.outline)) if (b.status === 'active') reopen(b);
+    for (const b of back) reopen(b);
+    settleActive(gm.outline);
+    return back.map((b) => b.id);
 }
 
 // Beats called done whose people the chat never showed did not happen: a
 // pass read a moment the director only meant to play ("Adam strides into
 // the common room") as history, and the outline moved on without him.
 // They are under way again, and the chronicle forgets every line about
-// someone who never turned up. texts: the whole chat. -> the names put
-// back, [] when nothing was wrong.
-export function undoUnseenBeats(gm, texts, player = '') {
+// someone who never turned up. texts: the chat, or (beat) => the chat
+// since that beat was under way - then `whole` is the whole chat, and only
+// lines about someone it never shows go (Inji, away from the beat, still
+// came into the story before it). -> the names put back, [] when nothing
+// was wrong.
+export function undoUnseenBeats(gm, texts, player = '', whole = null) {
     const back = [];
     for (const b of beatsOf(gm.outline)) {
         if (b.status !== 'done') continue;
-        const missing = unseenTies(b.ties, texts, player);
+        const missing = unseenTies(b.ties, typeof texts === 'function' ? texts(b) : texts, player);
         if (!missing.length) continue;
-        b.status = 'pending';
-        b.note = '';
+        reopen(b);
         back.push(...missing);
     }
     const missing = [...new Set(back)];
     if (!missing.length) return [];
     const undone = new Set(beatsOf(gm.outline).filter((b) => b.status === 'pending').map((b) => `Beat: ${b.text}`));
-    const namesMissing = (text) => missing.some((n) => !unseenTies([n], text).length);
+    const never = typeof texts === 'function' ? (whole ? unseenTies(missing, whole, player) : []) : missing;
+    const namesMissing = (text) => never.some((n) => !unseenTies([n], text).length);
     gm.volume.chronicle = gm.volume.chronicle.filter((c) => !undone.has(c.text) && !namesMissing(c.text));
-    for (const b of beatsOf(gm.outline)) if (b.status === 'active') b.status = 'pending';
+    for (const b of beatsOf(gm.outline)) if (b.status === 'active') reopen(b);
     settleActive(gm.outline);
     return missing;
 }
@@ -787,10 +870,13 @@ export function newcomerWait(gm, beatId, turn) {
     return Math.max(0, turn - gm.newcomer.since);
 }
 
-export function finishBeat(gm, id) {
+// index: the chat index of the message the story played it out at (-1:
+// the user's call, which no swipe takes back).
+export function finishBeat(gm, id, { index = -1 } = {}) {
     const b = beatsOf(gm.outline).find((x) => x.id === id);
     if (!b || b.status === 'done') return;
     b.status = 'done';
+    b.doneAt = chatIndex(index);
     addChronicle(gm, `Beat: ${b.text}`);
     settleActive(gm.outline);
 }
@@ -1098,6 +1184,7 @@ function normalizeHappening(x) {
         source: clean(x.source),
         status: ['coming', 'planned', 'done', 'passed'].includes(x.status) ? x.status : 'coming',
         at: str(x.at),
+        late: int(x.late),
     };
 }
 
@@ -1125,19 +1212,105 @@ export function dueHappenings(gm, day, ahead = 1) {
 }
 
 // The agenda follows the day plan: a happening a moment is planned for is
-// planned, one played out is done; one whose day went by without it has
-// passed (`today`: the story's day count, when known).
+// planned, one played out is done. One whose day went by without it is put
+// off to today, later each time (`late`) - the Medina Syndicate's try at
+// Cyril was dated to a day the calendar skipped past, and fizzled out
+// unseen. Only a dated event's opening (a festival begins on its day) and
+// one put off past MAX_LATE days pass. `today`: the story's day count,
+// when known.
+export const MAX_LATE = 7;
+const carries = (x) => !x.source.startsWith('event:');
 export function settleAgenda(gm, today = null) {
     const moments = gm.day?.moments ?? [];
     for (const x of gm.agenda) {
         if (x.status === 'done' || x.status === 'passed') continue;
         const mine = moments.filter((m) => m.source === `agenda:${x.id}`);
         if (mine.some((m) => m.status === 'done')) x.status = 'done';
-        else if (mine.some((m) => m.status === 'pending')) x.status = 'planned';
-        else if (Number.isInteger(today) && x.day < today) x.status = 'passed';
+        else if (Number.isInteger(today) && x.day < today) {
+            const late = x.late + (today - x.day);
+            if (!carries(x) || late > MAX_LATE) x.status = 'passed';
+            else Object.assign(x, { day: today, late, status: mine.some((m) => m.status === 'pending') ? 'planned' : 'coming' });
+        } else if (mine.some((m) => m.status === 'pending')) x.status = 'planned';
         else if (x.status === 'planned' && !mine.length) x.status = 'coming';
     }
     gm.agenda = trimAgenda(gm.agenda);
+}
+
+// A happening that must not slip: one the story set, or one already put off.
+export const pressing = (x) => x.source === 'promise' || x.late > 0;
+const isOpen = (x) => x.status === 'coming' || x.status === 'planned';
+// The days it has been put off by `today` - counted here too, as the
+// agenda is settled only while the planner is on.
+const lateOn = (x, today) => x.late + Math.max(0, today - x.day);
+
+// The happenings pressing on `today` (due, and set by the story or put
+// off), each with the days it has been put off: [{ ...happening, late }].
+export function dueToday(gm, today) {
+    if (!Number.isInteger(today)) return [];
+    return gm.agenda.map((x) => ({ ...x, late: lateOn(x, today) }))
+        .filter((x) => isOpen(x) && x.day <= today && pressing(x) && (!carries(x) ? x.day === today : x.late <= MAX_LATE));
+}
+
+// How firmly a happening put off `late` days is said: firmer each day.
+export function lateWords(late) {
+    if (late >= 3) return `put off ${late} days already - it happens now: open this reply with it`;
+    if (late === 2) return 'put off twice already - bring it in this reply wherever the scene leaves any room';
+    if (late === 1) return 'put off once already - it happens today, before the day is out';
+    return '';
+}
+
+// The director's DUE TODAY section - what the story set, and what keeps
+// being put off - and what the story set for later days. Planner on or
+// off; '' when there is nothing.
+export function dueSection(gm, today) {
+    const due = dueToday(gm, today).sort((a, b) => b.late - a.late);
+    const later = Number.isInteger(today) ? gm.agenda.filter((x) => isOpen(x) && x.source === 'promise' && x.day > today).slice(0, 4) : [];
+    if (!due.length && !later.length) return '';
+    const lines = [];
+    if (due.length) {
+        lines.push('DUE TODAY (private - set earlier in the story, or put off before; it happens today. Those who set it keep it in person - nobody stands in for them, and it is not swapped for something else - unless the story shows a real reason they cannot; then it is put off, never forgotten):');
+        for (const x of due) lines.push(`- [${x.id}] ${x.text}${x.when ? ` (${x.when})` : ''}${lateWords(x.late) ? ` - ${lateWords(x.late)}` : ''}`);
+    }
+    if (later.length) {
+        lines.push('SET FOR LATER (private - what the story has set for coming days; those involved remember it and work toward it):');
+        for (const x of later) lines.push(`- ${x.day - today === 1 ? 'tomorrow' : `in ${x.day - today} days`}${x.when ? `, ${x.when}` : ''}: ${x.text}`);
+    }
+    return lines.join('\n');
+}
+
+// When a SET line's time falls, from the day it was said: { inDays, part }.
+// "tomorrow morning" -> 1, morning; "at dawn" said in the evening -> the
+// next dawn; nothing readable -> later today. nowPart: the time of day now.
+const PARTS = ['dawn', 'morning', 'midday', 'afternoon', 'evening', 'night'];
+const NUMBER = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, few: 3, several: 3, couple: 2 };
+export function readWhen(text, nowPart = '') {
+    const t = clean(text).toLowerCase();
+    const said = /\bnoon\b/.test(t) ? 'midday' : /\b(?:tonight|midnight)\b/.test(t) ? 'night' : PARTS.find((p) => new RegExp(`\\b${p}\\b`).test(t)) ?? '';
+    const count = (w) => (/^\d+$/.test(w) ? Number(w) : NUMBER[w] ?? 1);
+    const span = t.match(/\b(\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|few|several|couple)\s+(?:of\s+)?(day|week)s?\b/);
+    let inDays = null;
+    if (/\bday after tomorrow\b/.test(t)) inDays = 2;
+    else if (/\b(?:tomorrow|overnight)\b|\b(?:next|following)\s+(?:day|dawn|morning|midday|afternoon|evening|night)\b/.test(t)) inDays = 1;
+    else if (/\bnext week\b/.test(t)) inDays = 7;
+    else if (span) inDays = Math.min(60, count(span[1]) * (span[2] === 'week' ? 7 : 1));
+    else if (/\b(?:today|tonight|this\s+(?:dawn|morning|midday|afternoon|evening)|later|soon|hours?|minutes?)\b/.test(t)) inDays = 0;
+    // A bare time of day already gone by today is the next one.
+    if (inDays === null) inDays = said && PARTS.indexOf(said) < PARTS.indexOf(clean(nowPart).toLowerCase()) ? 1 : 0;
+    return { inDays, part: said };
+}
+
+// Takes a SET line in: a happening the story set for `day`. The same one
+// set again (in other words) for another time is moved there, as the story
+// moved it - not put off. -> the happening, or null.
+export function setByStory(gm, { id, text, day, when = '', ties = [], at = new Date().toISOString() }) {
+    if (!clean(text) || !Number.isInteger(day)) return null;
+    const same = gm.agenda.find((x) => isOpen(x) && sameBeat(x.text, text));
+    if (same) {
+        if (same.day !== day || (clean(when) && same.when !== clean(when))) Object.assign(same, { day, when: clean(when).slice(0, 40) || same.when, late: 0, status: 'coming' });
+        gm.agenda = trimAgenda(gm.agenda);
+        return same;
+    }
+    return addHappening(gm, { id, text, day, when, ties, source: 'promise', at });
 }
 
 // A seed for the outline (an accepted seed idea, or a silent one).

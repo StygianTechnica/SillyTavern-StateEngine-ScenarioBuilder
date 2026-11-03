@@ -214,7 +214,7 @@ describe('the director and the plan', () => {
     it('puts the GM PLAN before the chat and asks for BEAT lines only when there are moments', () => {
         const withMoments = buildDirectorPrompt({ messages: [], gmPlan: 'GM PLAN (private)\n- Coming up [m1]: An envoy arrives' }).prompt;
         expect(withMoments.indexOf('GM PLAN')).toBeLessThan(withMoments.indexOf('THE LATEST CHAT'));
-        expect(withMoments).toContain('BEAT | <moment id> | done');
+        expect(withMoments).toContain('BEAT | <its id> | done');
         const paceOnly = buildDirectorPrompt({ messages: [], gmPlan: 'GM PLAN (private)\n- Pace: linger - engaged.' }).prompt;
         expect(paceOnly).not.toContain('BEAT |');
         expect(buildDirectorPrompt({ messages: [] }).prompt).not.toContain('GM PLAN');

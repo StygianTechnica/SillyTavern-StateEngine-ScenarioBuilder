@@ -63,7 +63,10 @@ function requestsText(requests) {
 //   requests: [{ id, text, urgency }], motifs: [text], gmStyle,
 //   previous: { moments, offscreen } | null, rest: true when re-planning
 //   the rest of a day already under way, happenings: [{ id, text, when,
-//   due: 'today' | 'tomorrow' }] (the agenda's, src/planner/model.js) }
+//   due: 'today' | 'tomorrow', late: days put off, promise: set by the
+//   story }] (the agenda's, src/planner/model.js), newcomers and
+//   returning (the beat's people not seen since it began; those of them
+//   seen before) }
 export function buildDayPrompt(input) {
     const userName = clean(input.userName) || 'the player';
     const system = [
@@ -85,14 +88,19 @@ export function buildDayPrompt(input) {
     // The beat's people the story has not shown yet: an agenda alone keeps
     // them off stage, so the day brings them to the player.
     const newcomers = texts(input.newcomers, 4);
-    if (story && newcomers.length) parts.push(`The beat brings in ${newcomers.join(', ')}, not yet seen in the story. Plan the first moment of the day as ${newcomers.length === 1 ? 'their' : 'each one\'s'} coming to ${userName} in person: they arrive where ${userName} is, walk in on the scene, or send for ${userName}. Not a talk with others out of ${userName}'s sight - an agenda alone is not enough. Its trigger is empty, its time "any time".`);
+    const returning = new Set(texts(input.returning, 4).map((n) => n.toLowerCase()));
+    const seenBefore = newcomers.filter((n) => returning.has(n.toLowerCase()));
+    const seenWords = seenBefore.length === newcomers.length ? 'away from the story since this beat began - no strangers to those they have met' : seenBefore.length ? `not yet seen in this beat (${seenBefore.join(', ')} ${seenBefore.length === 1 ? 'has' : 'have'} been in the story before)` : 'not yet seen in the story';
+    if (story && newcomers.length) parts.push(`The beat brings in ${newcomers.join(', ')}, ${seenWords}. Plan the first moment of the day as ${newcomers.length === 1 ? 'their' : 'each one\'s'} coming to ${userName} in person: they arrive where ${userName} is, walk in on the scene, or send for ${userName}. Not a talk with others out of ${userName}'s sight - an agenda alone is not enough. Its trigger is empty, its time "any time".`);
     // Who the player has had enough of (src/director/company.js): no moment
     // is built around them.
     if (clean(input.company)) parts.push('', String(input.company).trim(), `No moment of the day is built around those ${userName} has had enough of, and no agenda brings them to ${userName}.`);
     const happenings = list(input.happenings).filter((x) => clean(x?.text));
     if (happenings.length) {
         parts.push('', 'ON THE CALENDAR (happenings set for these days: plan a moment for each one due today, and give that moment its id; one due tomorrow may be foreshadowed)');
-        for (const x of happenings) parts.push(`- [${x.id}] ${clean(x.text)} - ${x.due === 'tomorrow' ? 'tomorrow' : 'today'}${clean(x.when) ? `, ${clean(x.when)}` : ''}`);
+        // What the story set, and what was put off before, must not slip again.
+        const firm = (x) => [x.promise ? 'set in the story: those involved keep it themselves, no one stands in for them' : '', x.late > 0 ? `put off ${x.late} day${x.late === 1 ? '' : 's'} already - it must happen today, early` : ''].filter(Boolean).join('; ');
+        for (const x of happenings) parts.push(`- [${x.id}] ${clean(x.text)} - ${x.due === 'tomorrow' ? 'tomorrow' : 'today'}${clean(x.when) ? `, ${clean(x.when)}` : ''}${x.due !== 'tomorrow' && firm(x) ? ` (${firm(x)})` : ''}`);
     }
     const happeningField = happenings.length ? ',"happening":"<the calendar id it plays out, or empty>"' : '';
     // The world meanwhile (src/world/prompts.js worldPart): its schemes take

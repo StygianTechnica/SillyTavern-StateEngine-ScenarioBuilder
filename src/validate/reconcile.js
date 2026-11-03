@@ -27,6 +27,7 @@ import { withStateEngineCast, SE_CAST, withStateEngineCreatures, SE_CREATURES } 
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry, playerIdOf, listEntries } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
+import { beatsOf, undoBeatsFrom } from '../planner/model.js';
 import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
 import { noteMood } from '../director/company.js';
@@ -623,6 +624,15 @@ export async function revertFromMessage(fromIndex) {
     if (!ref) return;
     const chatKey = chatKeyFor(ref);
     const doc = getChatDoc(chatKey);
+    // Outline beats called done at those messages did not happen either: a
+    // swiped reply had Adam praise a combat assessment that never took
+    // place, and the beat stayed done (src/planner/model.js undoBeatsFrom).
+    if (beatsOf(doc.gm.outline).some((b) => b.status === 'done' && b.doneAt >= fromIndex)) {
+        updateChatDoc(chatKey, (d) => {
+            const back = undoBeatsFrom(d.gm, fromIndex);
+            if (back.length) console.info(LOG_PREFIX, `beats called done at a message that changed are under way again: ${back.join(', ')}`);
+        });
+    }
     const affected = (source) => sourceIndex(source) >= fromIndex;
     const toUndo = doc.history.filter((h) => !h.undone && (h.source === 'validation' || h.source === 'story') && affected(h.sourceMessage)).reverse();
     const touched = toUndo.length || doc.drift.some((d) => affected(d.source)) || doc.corrections.some((c) => affected(c.source)) || doc.candidates.some((c) => affected(c.source)) || affected(doc.lastReply);

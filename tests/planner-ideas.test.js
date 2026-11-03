@@ -1,6 +1,6 @@
 import {
     emptyGm, normalizeGm, addIdeas, resolveIdea, editIdea, ideaKey, openIdeas, addHappening, removeHappening, dueHappenings, settleAgenda,
-    setDayPlan, applyBeats, applyCheck, duePasses, frictionLines, addSeed, setOutline,
+    setDayPlan, applyBeats, applyCheck, duePasses, frictionLines, addSeed, setOutline, MAX_LATE,
 } from '../src/planner/model.js';
 import { buildIdeasPrompt, readIdeas, buildDayPrompt, readDayPlan } from '../src/planner/prompts.js';
 
@@ -55,7 +55,7 @@ describe('the agenda', () => {
         expect(gm.agenda).toHaveLength(2);
     });
 
-    it('follows the day plan: planned, then done, and passed when its day goes by', () => {
+    it('follows the day plan: planned, then done, and put off when its day goes by', () => {
         const gm = emptyGm();
         addHappening(gm, { id: 'a1', text: 'An envoy arrives', day: 5 });
         addHappening(gm, { id: 'a2', text: 'A storm', day: 5 });
@@ -66,6 +66,8 @@ describe('the agenda', () => {
         applyBeats(gm, [{ id: 'm1', status: 'done' }]);
         expect(gm.agenda.find((x) => x.id === 'a1').status).toBe('done');
         settleAgenda(gm, 6);
+        expect(gm.agenda.find((x) => x.id === 'a2')).toMatchObject({ status: 'coming', day: 6, late: 1 });
+        settleAgenda(gm, 6 + MAX_LATE);
         expect(gm.agenda.find((x) => x.id === 'a2').status).toBe('passed');
     });
 
