@@ -13,7 +13,7 @@ import {
     getPlannerStatus, runDay, runCheck, runInspire, runOutline, runBeat, queueRequest, withdrawRequest, addInspiration, removeInspiration,
     setMotifs, peek, setHold, storyState, setShape, editOutlineBeat, lockOutlineBeat, removeOutlineBeat, addOutlineBeat,
     finishOutlineBeat, restoreOutlineBeat, setOutlineText, setJoin, finishVolume, editFinishedVolume, removeChronicleLine, steerObjects,
-    runIdeas, acceptIdea, dismissIdea, editProposal, addAgendaItem, removeAgendaItem, removeDayItem, setCreationMode,
+    runIdeas, acceptIdea, dismissIdea, editProposal, addAgendaItem, removeAgendaItem, removeDayItem, addSettledItem, removeSettledItem, setCreationMode,
     writeStarter, postStarter, starterSpeakers,
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
@@ -718,6 +718,26 @@ function agendaCard(gm, show) {
         ...past.map((x) => h('div', { class: 'sb-gm-row sb-gm-past' }, h('span', { class: `sb-chip sb-gm-${x.status === 'done' ? 'done' : 'skipped'}` }, x.status === 'done' ? 'happened' : 'passed'), h('div', { class: 'sb-gm-text' }, x.text))));
 }
 
+// What the story has settled - true or agreed, never undone or argued
+// again. Planner on or off: the director and the narrator see it every reply.
+function settledCard(gm) {
+    const { chatKey } = ws.ctx;
+    const addKey = 'settled-add';
+    return h('div', { class: 'sb-card' },
+        h('div', { class: 'sb-card-title' }, icon('fa-thumbtack'), 'Settled in the story',
+            h('span', { class: 'sb-gm-title-tools' }, !isEditing(addKey) ? button('Add', () => startEdit(addKey, ''), { iconName: 'fa-plus', title: 'Something the story has made true or agreed' }) : null)),
+        h('small', { class: 'sb-hint' }, 'What a scene really was, and what was agreed or refused - kept in front of the narrator every reply, so no one acts as if it were otherwise or argues it again. The game master adds some itself.'),
+        isEditing(addKey) ? inlineEditor(addKey, {
+            onSave: (text) => { if (!addSettledItem(chatKey, text)) toast('info', 'That is already settled, or empty.'); },
+            placeholder: 'e.g. "The Novakorp run was only a training simulation - nothing real was taken" or "Adam agreed Cyril will not be sent against Omicron Innovations"', saveLabel: 'Add', saveIcon: 'fa-plus',
+        }) : null,
+        ...(gm.settled ?? []).map((x) => h('div', { class: 'sb-gm-row' },
+            h('span', { class: 'sb-chip', title: x.source === 'director' ? 'The game master noted it' : 'You added it' }, icon(x.source === 'director' ? 'fa-chess-knight' : 'fa-user')),
+            h('div', { class: 'sb-gm-text' }, x.text),
+            h('div', { class: 'sb-iconbtn', title: 'Remove - no longer holds', onclick: () => { removeSettledItem(chatKey, x.id); done(); } }, icon('fa-trash')))),
+        !(gm.settled ?? []).length ? h('p', { class: 'sb-muted' }, 'Nothing yet.') : null);
+}
+
 function settingsCard(gm) {
     const s = getSettings();
     const p = s.planner;
@@ -813,6 +833,6 @@ export async function renderGmPlan() {
     const factions = await listEntries(ws.ctx.chatId, settingId, 'faction').catch(() => []);
     return h('div', { class: 'sb-gm-plan' },
         h('div', { class: 'sb-scene-cols' },
-            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), starterCard(), volumesCard(gm), ideasCard(gm), todayCard(gm, show), agendaCard(gm, show), eventCard(places, [...people, ...creatures]), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
+            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), starterCard(), volumesCard(gm), ideasCard(gm), todayCard(gm, show), settledCard(gm), agendaCard(gm, show), eventCard(places, [...people, ...creatures]), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
             h('div', { class: 'sb-gm-col' }, paceCard(gm), companyCard(people), worldCard(gm, show, [...people, ...factions]), settingsCard(gm))));
 }

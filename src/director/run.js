@@ -54,7 +54,7 @@ import { libraryMemberships, briefMemberships } from '../library/faction-sync.js
 import { buildPeoplePrompt, readPeople } from './people.js';
 import { unknownsFor, toldInChat, mergeTold, PERSPECTIVE_TOKENS } from './perspective.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
-import { directorPlan, takeBeats, takeSets, markActive, overdueNewcomers } from '../planner/run.js';
+import { directorPlan, takeBeats, takeSets, takeSettled, markActive, overdueNewcomers } from '../planner/run.js';
 import { livePoolFor, takeFromPool, byType, rollNameFor, markNameUsed } from '../naming/run.js';
 import { poolLine, swapInvented, applySwaps } from '../naming/live.js';
 import { bloodlinesOf, decideLineage, mixFor } from '../library/bloodlines.js';
@@ -1111,6 +1111,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     if (isNewTurn(type) && settingId) {
         takeBeats(chatKey, parsed.beats);
         takeSets(chatKey, parsed.sets);
+        takeSettled(chatKey, parsed.settled);
         takeHeard(chatKey, parsed.heard);
         takeHeartLines(chatKey, parsed, hearts);
         if (made.length || movedFrom || moves.in.length || moves.out.length) markActive(chatKey);

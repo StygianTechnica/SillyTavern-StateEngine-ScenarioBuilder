@@ -38,7 +38,7 @@ import { triggerSection,
     stampBeats, beatFrom, dueSection, setByStory, readWhen,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText, removeChronicle,
     addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines, factionsOutOfPlay,
-    removeFromDay, planBehindBeat,
+    removeFromDay, planBehindBeat, addSettled, removeSettled, settledSection,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
 import { companyLines } from '../director/company.js';
@@ -242,6 +242,8 @@ async function storySoFar(gm, guidance) {
     const earlier = previousVolumesText(gm);
     if (earlier) lines.push('Earlier volumes:', earlier);
     if (gm.join.note) lines.push(`From the user: ${gm.join.note}`);
+    // What the story settled outweighs any summary that says otherwise.
+    if (gm.settled?.length) lines.push('Settled in the story (true, whatever the summary below says):', ...gm.settled.map((x) => `- ${x.text}`));
     try {
         const compiled = typeof window.StateEngineArchivist?.getCompiledMemory === 'function' ? await window.StateEngineArchivist.getCompiledMemory() : null;
         if (compiled?.story_summary) lines.push(`Summary: ${compiled.story_summary}`);
@@ -390,6 +392,7 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             untouched: await factionsToBringIn(chatId, settingId),
             place: (guidance.location?.path ?? []).slice(-1)[0] ?? '',
             situation: doc.canonical.sceneSummary,
+            settled: doc.gm.settled.map((x) => x.text),
             happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today', late: x.late, promise: x.source === 'promise' })),
             world: world?.part ?? null,
         });
@@ -613,6 +616,13 @@ export function directorPlan(chatKey, messages) {
     } catch (err) {
         console.warn(LOG_PREFIX, 'no story triggers for the director', err);
     }
+    // What the story has settled: planner on or off.
+    let settled = '';
+    try {
+        settled = settledSection(getChatDoc(chatKey).gm);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'nothing settled for the director', err);
+    }
     const plan = plannedSection(chatKey, messages);
     // What the story set for today or keeps putting off: planner on or off.
     let due = '';
@@ -630,7 +640,7 @@ export function directorPlan(chatKey, messages) {
     } catch (err) {
         console.warn(LOG_PREFIX, 'no company lines for the director', err);
     }
-    return [triggered, due, company, plan].filter(Boolean).join('\n\n');
+    return [triggered, settled, due, company, plan].filter(Boolean).join('\n\n');
 }
 
 function plannedSection(chatKey, messages) {
@@ -705,7 +715,33 @@ export function takeSets(chatKey, sets) {
     }
 }
 
+// The director's SETTLED lines: what the latest chat made true or agreed,
+// kept so it is not undone or argued again. Planner on or off.
+export function takeSettled(chatKey, lines) {
+    if (!lines?.length) return;
+    try {
+        updateChatDoc(chatKey, (d) => {
+            for (const text of lines) {
+                const made = addSettled(d.gm, { id: newLocalId('st'), text, source: 'director' });
+                if (made) console.info(LOG_PREFIX, `settled in the story: ${made.text}`);
+            }
+        });
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not record what the story settled', err);
+    }
+}
+
 // ---------------------------------------------------------------- the user's side (GM Plan tab)
+
+export function addSettledItem(chatKey, text) {
+    let made = null;
+    updateChatDoc(chatKey, (d) => { made = addSettled(d.gm, { id: newLocalId('st'), text, source: 'user' }); });
+    return made;
+}
+
+export function removeSettledItem(chatKey, id) {
+    updateChatDoc(chatKey, (d) => removeSettled(d.gm, id));
+}
 
 export function queueRequest(chatKey, text, urgency) {
     let made = null;

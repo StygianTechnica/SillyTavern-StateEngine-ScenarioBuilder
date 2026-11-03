@@ -115,6 +115,7 @@ export function emptyGm() {
         agenda: [],
         world: emptyWorld(),
         newcomer: null,
+        settled: [],
     };
 }
 
@@ -201,6 +202,8 @@ export function normalizeGm(value) {
         world: normalizeWorld(g.world),
         // The active beat's newcomer still awaited: since which turn.
         newcomer: isObject(g.newcomer) && clean(g.newcomer.beatId) ? { beatId: clean(g.newcomer.beatId), since: int(g.newcomer.since) } : null,
+        // What the story has settled (settledSection).
+        settled: (Array.isArray(g.settled) ? g.settled : []).map(normalizeSettled).filter(Boolean).slice(-SETTLED_LIMIT),
     };
 }
 
@@ -1340,6 +1343,45 @@ export function lateWords(late) {
     if (late === 2) return 'put off twice already - bring it in this reply wherever the scene leaves any room';
     if (late === 1) return 'put off once already - it happens today, before the day is out';
     return '';
+}
+
+// ---------------------------------------------------------------- what the story has settled
+
+// What the story has settled and must not undo or argue again: what a scene
+// really was (the Novakorp run was a training simulation, nothing real was
+// taken), and what was agreed or refused (Adam agreed Cyril is not sent
+// against Omicron Innovations). Assassins Inc lost both: the chat that
+// settled them scrolled out of every prompt, and Adam asked again. The user
+// adds them on the GM Plan tab; the director adds one with a SETTLED line.
+// { id, text, source: 'user' | 'director', at } - the newest last.
+export const SETTLED_LIMIT = 12;
+const normalizeSettled = (x) => (isObject(x) && clean(x.id) && clean(x.text)
+    ? { id: clean(x.id), text: clean(x.text).slice(0, 300), source: x.source === 'director' ? 'director' : 'user', at: str(x.at) } : null);
+
+// -> the new entry, or null (empty, or one already says it). The user's own
+// are kept over the director's when the list is full.
+export function addSettled(gm, { id, text, source = 'user', at = new Date().toISOString() }) {
+    const x = normalizeSettled({ id, text, source, at });
+    if (!x || gm.settled.some((s) => sameBeat(s.text, x.text))) return null;
+    let list = [...gm.settled, x];
+    while (list.length > SETTLED_LIMIT) {
+        const drop = list.findIndex((s) => s.source === 'director');
+        list = list.filter((_, i) => i !== (drop >= 0 ? drop : 0));
+    }
+    gm.settled = list;
+    return gm.settled.includes(x) ? x : null;
+}
+
+export function removeSettled(gm, id) {
+    const before = gm.settled.length;
+    gm.settled = gm.settled.filter((s) => s.id !== id);
+    return gm.settled.length < before;
+}
+
+// The director's SETTLED IN THE STORY section. '' when there is nothing.
+export function settledSection(gm) {
+    if (!gm.settled?.length) return '';
+    return ['SETTLED IN THE STORY (private - what the story has made true or agreed; keep to it. No one acts as if it were otherwise, and no one argues it or asks for it again unless the story itself gives them a new reason):', ...gm.settled.map((s) => `- ${s.text}`)].join('\n');
 }
 
 // The director's DUE TODAY section - what the story set, and what keeps

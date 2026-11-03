@@ -520,6 +520,9 @@ export function buildDirectorPrompt(input) {
         `If the latest chat sets something for a later time - people agree to meet, a test, a job, a fight or a showdown is arranged, someone says they will come back for ${userName} - a line, so it still happens when its time comes. Only something set in the latest chat, not one already under DUE TODAY or SET FOR LATER - unless the latest chat moves it to another time: then SET it again with the new time. Say what rides on it, if anything:`,
         'SET | <who is to do it> | <what is to happen, with whom, and what rides on it> | <when, e.g. tomorrow morning, tonight, in three days>',
         '',
+        `If the latest chat settles something the story must not undo or argue again - what a scene really was (it was only a simulation, a dream, a test), or something agreed or refused (${userName} will not be sent after a target, a debt is forgiven, a deal struck) - a line, in one plain sentence that will still be clear many replies from now. Only what the latest chat settles, never one already under SETTLED IN THE STORY:`,
+        'SETTLED | <what is now true or agreed, and who agreed it>',
+        '',
         'If someone or something known - a person, or a creature such as the zombies - arrives or leaves in this reply, a line for each. ENTERS also for anyone the latest chat shows in the scene who is not under WHO IS HERE (someone who came back, or was there all along) - but not someone it shows walking out: they are gone until the story brings them back. Someone only talked about, remembered, read about or seen in a record, picture or screen is not in the scene: no ENTERS for them. For creatures of a kind, say how many (ENTERS | 3 zombies; LEAVES | 2 zombies):',
         'ENTERS | <name>',
         'LEAVES | <name>',
@@ -744,7 +747,7 @@ export function isPlaceholder(value) {
 }
 
 // A format line, whether or not it could be read - never left in the prose.
-const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|AWAY|BACK|NEW|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
@@ -775,6 +778,7 @@ export function parseDirectorNote(raw) {
     const powers = [];
     const bargains = [];
     const sets = [];
+    const settled = [];
     let away = '';
     let back = '';
     for (const line of text.split('\n')) {
@@ -793,6 +797,13 @@ export function parseDirectorNote(raw) {
             const what = isPlaceholder(bg[2]) ? '' : clean(bg[2]).replace(/^["'*]+|["'*]+$/g, '');
             const price = isPlaceholder(bg[3]) ? '' : clean(bg[3]).replace(/^(?:price|cost|condition|if|once)\s*[:\-–]\s*/i, '').replace(/^["'*]+|["'*]+$/g, '');
             if (by && what && !isPlaceholder(by) && bargains.length < 2) bargains.push({ by, what, price });
+            continue;
+        }
+        // SETTLED | <what is now true or agreed> (src/planner/model.js addSettled)
+        const sd = line.match(/^\s*(?:[-*]\s*)?\**SETTLED\**\s*:?\s*\|\s*(.+?)\s*$/i);
+        if (sd) {
+            const what = clean(sd[1]).replace(/^["'*]+|["'*]+$/g, '').replace(/\s*\|\s*/g, ' - ');
+            if (what && !isPlaceholder(what) && settled.length < 2) settled.push(what);
             continue;
         }
         // SET | <who> | <what is to happen> | <when> (src/planner/model.js setByStory)
@@ -940,7 +951,7 @@ export function parseDirectorNote(raw) {
     // A briefing cut off or told as story lost its "Next:" end; any other
     // paragraph is not direction.
     const parts = tidy.flaws.length && !MARKER.test(text) ? { summary: text, direction: '' } : splitNote(text);
-    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, jealous, romance, soothed, fights, deaths, risings, powers, bargains, sets, away, back };
+    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, jealous, romance, soothed, fights, deaths, risings, powers, bargains, sets, settled, away, back };
 }
 
 // The first library entry `text` names that nothing the scene stands on

@@ -55,12 +55,21 @@ function normalizeSample(s) {
     };
 }
 
+// The reply a sample is for, whatever its swipe: keys are
+// "<chat>#<index>@<when>", and every swipe of a reply has a new "when"
+// (Assassins Inc: four swipes of one reply were four sour samples, and Adam
+// was put on "less of").
+const replyOf = (key) => clean(key).replace(/@[^#]*$/, '');
+
+// Samples of the same reply: only the newest is kept.
+const oncePerReply = (samples) => samples.filter((s, i) => !samples.slice(i + 1).some((t) => replyOf(t.key) === replyOf(s.key)));
+
 export function normalizeCompany(v) {
     const c = isObject(v) ? v : {};
     const choices = isObject(c.choices) ? Object.fromEntries(Object.entries(c.choices)
         .filter(([id, x]) => clean(id) && isObject(x) && CHOICES.includes(x.choice))
         .map(([id, x]) => [id, { name: clean(x.name).slice(0, 120), choice: x.choice }])) : {};
-    return { samples: (Array.isArray(c.samples) ? c.samples : []).map(normalizeSample).filter(Boolean).slice(-SAMPLE_LIMIT), choices };
+    return { samples: oncePerReply((Array.isArray(c.samples) ? c.samples : []).map(normalizeSample).filter(Boolean)).slice(-SAMPLE_LIMIT), choices };
 }
 
 export function moodKind(mood) {
@@ -97,7 +106,7 @@ export function postMood(text, present = []) {
 export function noteMood(company, { key, turn, mood, thought = '', present = [], post = '' }) {
     const said = postMood(post, present);
     const kind = said.kind || moodKind(mood);
-    const samples = company.samples.filter((s) => s.key !== clean(key));
+    const samples = company.samples.filter((s) => replyOf(s.key) !== replyOf(key));
     const others = present.filter((p) => p?.id);
     if (!clean(key) || !kind || !others.length) return { ...company, samples };
     const named = said.kind ? said.named : others.filter((p) => names(thought, p.name)).map((p) => p.id);

@@ -80,6 +80,8 @@ export function buildDayPrompt(input) {
         parts.push('', 'WHAT WAS PLANNED BEFORE (and how it went)');
         for (const m of input.previous.moments) parts.push(`- ${m.text} - ${m.status}${m.note ? `: ${m.note}` : ''}`);
     }
+    const settled = texts(input.settled, 12);
+    if (settled.length) parts.push('', 'SETTLED IN THE STORY (true and agreed - no moment acts as if it were otherwise, argues it again or asks for it again)', ...settled.map((t) => `- ${t}`));
     if (input.requests?.length) parts.push('', `WHAT THE USER WOULD LIKE TO SEE (fit these in where they are natural; each id is the request's)`, requestsText(input.requests));
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (echo them as images and turns of fate, never as literal events)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));
     const story = storyText(input.story);

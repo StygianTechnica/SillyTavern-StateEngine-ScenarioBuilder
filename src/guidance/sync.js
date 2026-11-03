@@ -25,6 +25,8 @@ import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.
 import { triggerLines } from '../triggers/model.js';
 import { deadText, placesTheAbsent } from '../state/death.js';
 import { circling } from '../director/loops.js';
+import { asksWhatNext } from './build.js';
+import { activeBeat } from '../planner/model.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { giftsText } from '../library/powers.js';
 import { latestUserIndex } from '../triggers/run.js';
@@ -482,6 +484,10 @@ export async function gatherInputs(chatId, chatKey) {
             triggered: triggerLines(doc.gm.triggers, latestUserIndex()),
             // Who the game master brings in with this reply (src/director/).
             arriving: settings.director.enabled ? (doc.director.moves?.in ?? []) : [],
+            // What the story has settled (src/planner/model.js settledSection).
+            settled: (doc.gm.settled ?? []).map((x) => x.text),
+            // The player asks what comes next: the outline's beat now answers.
+            next: settings.planner?.enabled === true && asksWhatNext(latestPlayerPost()) ? (activeBeat(doc.gm.outline)?.text ?? '') : '',
             // Who has died in this story (src/state/death.js).
             // Only the dead the latest messages speak of.
             dead: deadText(doc, { about: whoTheyWere, recentText: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-6).map((m) => String(m.mes ?? '')).join('\n') }),
@@ -624,6 +630,9 @@ export async function syncGuidance() {
 // blocks only between whole sections, never inside the chat history, so
 // Scenario Builder places this one. Off in settings, or with nothing to
 // say, it is cleared.
+// The player's latest post - the one the next reply answers.
+const latestPlayerPost = () => String([...(SillyTavern.getContext().chat ?? [])].reverse().find((m) => m && !m.is_system && m.is_user)?.mes ?? '');
+
 const NOW_KEY = 'scenario_builder_now';
 const IN_CHAT = 1;
 const SYSTEM = 0;

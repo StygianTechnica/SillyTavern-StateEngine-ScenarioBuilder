@@ -394,16 +394,30 @@ function castLine(c) {
 // nearest the end: told in the guidance that Adam Miller arrives, it wrote
 // a whole reply about the two already there. Orders, never story prose, so
 // there is nothing to continue. '' when there is no order (most replies).
+// Whether the player's post asks what comes next ("What do you want from
+// me next?", "So what now?", "What's the plan?") - in speech or not.
+const ASKS_NEXT = /\b(?:what(?:'s|’s|\s+is)?\s+(?:next|now|the plan)|now what|where (?:to|now|next)|what (?:do|does|should|would|will) (?:you|we|i|they)\b[^?]{0,40}\b(?:next|now|want|do)|what (?:job|mission|task|work|assignment)\b[^?]{0,30})[^?]{0,40}\?/i;
+export const asksWhatNext = (text) => ASKS_NEXT.test(clean(text));
+
 export function buildNow(input) {
     const arriving = [...new Set((input.arriving ?? []).map(clean).filter(Boolean))];
     const triggered = (input.triggered ?? []).map((l) => clean(String(l).replace(/^-\s*/, ''))).filter(Boolean);
-    if (!arriving.length && !triggered.length) return '';
+    // What the story settled, every reply: told only before the chat, it
+    // scrolled out of mind (the Novakorp simulation taken for a real raid;
+    // Adam's word on Omicron forgotten).
+    const settled = (input.settled ?? []).map(clean).filter(Boolean).slice(0, 8);
+    // The player asks what comes next: the beat now is the answer (Adam
+    // gave Cyril a job with Doc and Galice; the beat was his match with Inji).
+    const next = clean(input.next);
+    if (!arriving.length && !triggered.length && !settled.length && !next) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (arriving.length) orders.push(arriving.length === 1
         ? `${arriving[0]} comes in now - they arrive where everyone can see and speak or act, with their own reason for coming.`
         : `${andList(arriving)} come in now - each arrives where everyone can see and speaks or acts, with their own reason for coming.`);
     if (triggered.length) orders.push(`It happens now: ${triggered.join(' ')}`);
+    if (next) orders.push(`${player ? clean(player.name) : 'The player character'} asks what comes next - the answer is where the story goes now: ${unstop(next)}. Bring it in this reply.`);
+    if (settled.length) orders.push(`Keep to what the story has settled - no one acts as if it were otherwise or argues it again: ${settled.map(unstop).join('; ')}.`);
     return `[Game master's note for this reply, not part of the story: ${orders.join(' ')}${player ? ` Write only the others; never ${clean(player.name)}.` : ''}]`;
 }
 
