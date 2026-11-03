@@ -1090,7 +1090,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             // is theirs to make: the clock follows it, whatever TIME says.
             const skipped = await followPlayerSkip(chatId, chatKey, settingId, latestUserText, { planned: true, source: 'director' });
             const wanted = skipped?.text || parsed.time?.text || perTurnDefault();
-            const moved = skipped ?? await advanceBy(chatId, chatKey, settingId, wanted, { planned: true, source: 'director', note: `Time passes: ${wanted}${parsed.time?.why ? ` (${parsed.time.why})` : ''}` })
+            const moved = skipped ?? await advanceBy(chatId, chatKey, settingId, wanted, { planned: true, source: 'director', told: !skipped && !!parsed.time?.text, note: `Time passes: ${wanted}${parsed.time?.why ? ` (${parsed.time.why})` : ''}` })
                 ?? await advanceBy(chatId, chatKey, settingId, perTurnDefault(), { planned: true, source: 'director', note: `Time passes: ${perTurnDefault()}` });
             if (moved) timeText = wanted;
             // A move along a route takes at least its travel time.

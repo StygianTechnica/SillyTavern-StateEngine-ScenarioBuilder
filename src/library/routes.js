@@ -171,14 +171,17 @@ const SCALES = [
 export const SCALE_ORDER = Object.freeze(SCALES.map(([s]) => s));
 
 // A place's scale ('room' ... 'world') from its name and description, or
-// '' when nothing says.
+// '' when nothing says. A description only ever says room, building or
+// settlement: "a holographic projection system" is no star system - it made
+// a room in the Signal Box world-sized, three months' walk from the next.
+const BY_DESCRIPTION = new Set(['room', 'building', 'settlement']);
 export function scaleOf(place) {
     const words = (text) => String(text ?? '').toLowerCase().split(/[^a-z]+/).filter(Boolean);
     const name = words(place?.name);
     // The name's last word says most ("Redhaven Great Hall"), then any
     // word of it, then the description's opening.
-    for (const pool of [name.slice(-1), name, words(place?.description).slice(0, 40)]) {
-        for (const [scale, keys] of SCALES) if (pool.some((w) => keys.includes(w))) return scale;
+    for (const [pool, from] of [[name.slice(-1), 'name'], [name, 'name'], [words(place?.description).slice(0, 40), 'description']]) {
+        for (const [scale, keys] of SCALES) if ((from === 'name' || BY_DESCRIPTION.has(scale)) && pool.some((w) => keys.includes(w))) return scale;
     }
     return '';
 }
@@ -214,14 +217,29 @@ export function routePairFor(fromId, toId, up) {
     return pair[0] && pair[1] && pair[0] !== pair[1] ? pair : null;
 }
 
+// The largest scale two places inside `sharedId` can be apart: one below
+// the place both are in (two rooms in the Signal Box are a room's walk
+// apart, two districts of a city a building's), or '' with no place they
+// share. A shared place nothing names the size of is taken by its depth.
+export function scaleCapFor(sharedId, { up, places }) {
+    if (!sharedId) return '';
+    const own = scaleOf(places.get(sharedId));
+    const depth = up(sharedId).length;
+    const shared = own || ['world', 'country', 'settlement', 'building', 'room'][Math.min(4, depth - 1)];
+    return SCALE_ORDER[Math.max(0, SCALE_ORDER.indexOf(shared) - 1)];
+}
+
 // The guessed route for a move, or null. places: Map id -> { name,
-// description }; the larger of the two places' scales sets the time.
+// description }; the larger of the two places' scales sets the time, never
+// more than the place both are in allows (scaleCapFor).
 export function guessRoute(fromId, toId, { up, places }) {
     const pair = routePairFor(fromId, toId, up);
     if (!pair) return null;
     const scales = pair.map((id) => scaleOf(places.get(id))).filter(Boolean);
     // With nothing to go on, the depth says: the deeper, the closer.
     const fallback = ['country', 'region', 'settlement', 'building', 'room'][Math.min(4, up(pair[0]).length - 1)];
-    const scale = scales.length ? scales.reduce((x, y) => (SCALE_ORDER.indexOf(y) > SCALE_ORDER.indexOf(x) ? y : x)) : fallback;
+    let scale = scales.length ? scales.reduce((x, y) => (SCALE_ORDER.indexOf(y) > SCALE_ORDER.indexOf(x) ? y : x)) : fallback;
+    const cap = scaleCapFor(up(pair[0]).find((x) => up(pair[1]).includes(x)), { up, places });
+    if (cap && SCALE_ORDER.indexOf(scale) > SCALE_ORDER.indexOf(cap)) scale = cap;
     return { from: pair[0], to: pair[1], travel: guessTravel(scale), basis: 'walk', note: 'guessed - edit if wrong', guessed: true };
 }

@@ -20,7 +20,8 @@ import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, timeOfD
 import { getRawValues } from '../api/variables.js';
 import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.js';
 import { weatherAt } from './weather.js';
-import { routeForMove, pathBetween, guessRoute, addRoute } from '../library/routes.js';
+import { routeForMove, pathBetween, guessRoute, addRoute, updateRoute } from '../library/routes.js';
+import { travelMinutes } from '../ui/map-model.js';
 import { listEntries } from '../library/library.js';
 import { placeOverview, isLaterAge } from '../library/world-options.js';
 import { timeFor, techOf, readTravelMode, modeLabel } from '../library/travel.js';
@@ -256,13 +257,32 @@ export async function momentAfter(settingId, from, text) {
     return advanceFrom(settingId, from, t);
 }
 
+// A time of day on its own ("morning (10:30)", "evening") says when it is,
+// not that a night has passed: one that would carry the clock past the
+// next half day is a description, not a jump. Anything that asks for the
+// next day ("the next morning", overnight, sleep) still goes there.
+const JUMPS_A_DAY = /\b(?:next|following|tomorrow|overnight|sleep|slept|asleep|night passes|days?|weeks?|months?)\b/i;
+const DURATION = /\b(?:\d+|an?|one|two|three|four|five|six|seven|eight|nine|ten|twelve|few|several|half)\s*(?:an?\s+)?(?:minute|min|hour|hr)s?\b/i;
+export const onlyTimeOfDay = (text) => !!timeOfDayFraction(text) && !JUMPS_A_DAY.test(String(text ?? '')) && !DURATION.test(String(text ?? ''));
+const HALF_DAY = 0.5;
+
 // Moves the clock on by `text` ("20 minutes", "the next morning").
 // planned: this is the advance for the reply about to be written - kept
-// to compare with what the story then says passed. -> { from, to } or null.
-export async function advanceBy(chatId, chatKey, settingId, text, { planned = false, note = '', source = 'clock' } = {}) {
+// to compare with what the story then says passed. told: the game
+// master's TIME answer, where a bare time of day that would run on into
+// tomorrow is a description (onlyTimeOfDay) -> null; the user asking for
+// "morning" by hand means the next one. -> { from, to } or null.
+export async function advanceBy(chatId, chatKey, settingId, text, { planned = false, note = '', source = 'clock', told = false } = {}) {
     const from = await ensureClock(chatId, chatKey, settingId);
     const to = await advanceFrom(settingId, from, text);
     if (to === null) return null;
+    if (told && onlyTimeOfDay(text)) {
+        const { def } = await calendarFor(settingId);
+        if (to - from > HALF_DAY * secondsPerDay(def)) {
+            console.info(LOG_PREFIX, `"${text}" says when it is, not that a night passed - not taken as a jump to tomorrow`);
+            return null;
+        }
+    }
     await setTime(chatId, chatKey, settingId, to, { source, note: note || `Time passed: ${text}` });
     if (planned) updateChatDoc(chatKey, (d) => { d.clock.planned = { from, to, text }; });
     return { from, to };
@@ -439,6 +459,22 @@ export async function travelAlong(chatId, chatKey, settingId, fromId, toId, sour
     const legTime = (r) => timeFor(r, tech, wanted);
     const said = (t) => (t.mode ? `${t.text} ${modeLabel(t.mode)}` : t.text);
     let route = routeForMove(fromId, toId, settingDoc.routes, up);
+    // A guessed route longer than a guess made now allows was guessed wrong
+    // (three months' walk between two rooms of the Signal Box): put right
+    // as it is used. The user's own routes are never touched.
+    if (route?.guessed) {
+        try {
+            const places = new Map((await listEntries(chatId, settingId, 'location')).map((p) => [p.id, { name: p.name, description: p.base?.description ?? p.description ?? '' }]));
+            const fresh = guessRoute(route.from, route.to, { up, places });
+            if (fresh && travelMinutes(fresh.travel) < travelMinutes(route.travel)) {
+                console.info(LOG_PREFIX, `a guessed route of ${route.travel} put right to ${fresh.travel}`);
+                updateRoute(settingId, route.id, { travel: fresh.travel, basis: 'walk', times: {} });
+                route = { ...route, travel: fresh.travel, basis: 'walk', times: {} };
+            }
+        } catch (err) {
+            console.debug(LOG_PREFIX, 'could not check a guessed route', err);
+        }
+    }
     // Somewhere further on: every route on the way, one after another -
     // never a guessed shortcut past them.
     const legs = route ? null : pathBetween(fromId, toId, settingDoc.routes);
