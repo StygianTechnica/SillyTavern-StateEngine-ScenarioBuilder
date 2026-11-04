@@ -408,6 +408,18 @@ export function dossierText(input) {
         section('ELSEWHERE (far from here or long out of the story - they cannot turn up in this scene; they can be thought of or talked about, and send word only if the story has set that up)');
         lines.push(`- ${away.slice(0, 16).map((c) => `${clean(c.name)}${sidesText(c)}${clean(c.lastAt) ? ` (last at ${clean(c.lastAt)})` : ''}`).join('; ')}`);
     }
+    // Enemy ground (src/director/whereabouts.js enemyGround): on a side
+    // against whoever holds this place - never inside it.
+    const enemyHere = (input.barred ?? []).filter((c) => clean(c?.name) && !absentSet.has(clean(c.name).toLowerCase()));
+    if (enemyHere.length) {
+        const g = input.ground ?? {};
+        const place = clean(g.place) || 'this place';
+        const holders = (g.holders ?? []).map(clean).filter(Boolean).join(' and ') || 'its holders';
+        const leaders = (g.leaders ?? []).map(clean).filter(Boolean);
+        section(`ENEMY GROUND (${place} is held by ${holders}; these are against them and cannot be inside it - never ENTERS here)`);
+        for (const c of enemyHere.slice(0, 12)) lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${clean(c.why) ? ` - ${clean(c.why)}` : ''}`);
+        lines.push(`When the story wants their pressure, show it at the edges instead: those who watch ${place} notice them or their people about more than usual; someone outside runs into them; word of them comes in${leaders.length ? ` and reaches ${leaders.join(' and ')}` : ''}. They step inside only if the player's own post brings them.`);
+    }
     return lines.join('\n').trim();
 }
 

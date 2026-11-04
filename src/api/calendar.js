@@ -46,16 +46,6 @@ export async function advanceDateTime(calendarId, scalarTime, text) {
     return stateEngine.advanceDateTime(EXTENSION_ID, instanceId, calendarId, scalarTime, text);
 }
 
-// The time story prose passes or reaches, read by State Engine
-// (readTimeShift): { skip, reached, elapsed, delta }, each an instruction
-// advanceDateTime resolves. All empty with a State Engine too old to read it.
-export const NO_TIME_SHIFT = Object.freeze({ skip: null, reached: null, elapsed: '', delta: '' });
-export async function readTimeShift(text) {
-    const { stateEngine, instanceId } = await getStateEngine();
-    if (typeof stateEngine.readTimeShift !== 'function') return NO_TIME_SHIFT;
-    return { ...NO_TIME_SHIFT, ...(stateEngine.readTimeShift(EXTENSION_ID, instanceId, String(text ?? '')) ?? {}) };
-}
-
 // Points one of our datetime variables at a calendar.
 export async function assignCalendarToVariable(ref, calendarId) {
     const { stateEngine, instanceId } = await getStateEngine();

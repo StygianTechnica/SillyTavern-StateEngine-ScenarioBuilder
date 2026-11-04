@@ -57,20 +57,3 @@ export function timeOfDayFraction(text, def = null) {
     const hit = [...DAY_PART_FRACTIONS].sort((a, b) => b[0].length - a[0].length).find(([phrase]) => new RegExp(`\\b${phrase}\\b`).test(t));
     return hit ? hit[1] : null;
 }
-
-// Reading time in story prose ("the next morning", "the rest of the day
-// went by") and turning it into a moment are State Engine's (readTimeShift,
-// advanceDateTime), read in one place - see src/api/calendar.js.
-
-// Where the clock should go for a cue, from the time of day now (both as
-// fractions of the day): later the same day; the next day for a dawn
-// reached from evening or night; null when the clock is already there or
-// past it (within a tenth of a day), or the cue is earlier the same day.
-// -> { fraction, nextDay } or null.
-export function cueTarget(cue, nowFraction) {
-    if (!cue || !Number.isFinite(nowFraction)) return null;
-    if (cue.fraction > nowFraction + 0.1) return { fraction: cue.fraction, nextDay: false };
-    // Dawn or morning reached from the evening or night: the next day.
-    if ((cue.phrase === 'dawn' || cue.phrase === 'morning') && nowFraction >= 0.6) return { fraction: cue.fraction, nextDay: true };
-    return null;
-}

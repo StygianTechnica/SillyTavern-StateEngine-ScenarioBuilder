@@ -21,7 +21,7 @@ import { routesFrom, listRoutes, headingAlong, placesFurtherOn } from '../librar
 import { pathOf } from '../library/hierarchy.js';
 import { listRelations, relationsFor, addRelation } from '../library/relations-edit.js';
 import { setCanonical } from '../state/canonical.js';
-import { advanceBy, perTurnDefault, holdStoryWeather, setTime, travelAlong, setTimeOfDay, followPlayerSkip } from '../calendar/clock.js';
+import { advanceBy, perTurnDefault, holdStoryWeather, setTime, travelAlong, setTimeOfDay } from '../calendar/clock.js';
 import { baselineFields } from '../library/fields.js';
 import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
@@ -33,9 +33,9 @@ import { nextFight, fightFacts, woundsOf } from './fight.js';
 import { combatOptions, stanceFor, protectionOf, powerRatingOf, mayDie, protectedText } from './combat.js';
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
-import { whoCouldTurnUp, belongingHere, sharedScenes, lastSeen, firstMeetings, elsewhereEntering } from './whereabouts.js';
+import { whoCouldTurnUp, belongingHere, enemyGround, sharedScenes, lastSeen, firstMeetings, elsewhereEntering } from './whereabouts.js';
 import { rankNearby } from './company.js';
-import { arrivals } from '../world/model.js';
+import { arrivals, addRipple } from '../world/model.js';
 import { isWorldOn, takeHeard, worldHereFor, noteHeartRipple } from '../world/run.js';
 import { bondsOf, heartsSection, noteBrokenVows, takeHearts, jealousyOf } from './jealousy.js';
 import { hasArchivist, storyRelationships, relationshipLine } from '../library/story-relations.js';
@@ -400,12 +400,20 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
     const placeName = new Map((settingId ? await listEntries(chatId, settingId, 'location').catch(() => []) : []).map((p) => [p.id, p.name]));
     // Those at home here - the head of the crew whose headquarters this is -
     // can turn up though no scene has shown them yet.
-    const belongs = settingId && locationId ? belongingHere({
+    const groundInput = settingId && locationId ? {
         placeIds: [...pathOf(parents, locationId)], parents, characters: people, factions: factionList,
         relations: getSettingDoc(settingId).relations, memberships: libraryMemberships(factionList, getSettingDoc(settingId).relations),
         placeName: (id) => placeName.get(id) ?? '',
-    }).filter((b) => b.id !== playerIdOf(settingId, characters)) : [];
-    const { near: found, elsewhere } = whoCouldTurnUp({
+    } : null;
+    const belongs = groundInput ? belongingHere(groundInput).filter((b) => b.id !== playerIdOf(settingId, characters)) : [];
+    // Enemy ground: those on a side against whoever holds this place
+    // cannot be inside it (src/director/whereabouts.js enemyGround); the
+    // player character is never kept out.
+    const ground = groundInput ? enemyGround(groundInput) : { holders: [], leaders: [], barred: new Map() };
+    ground.barred.delete(playerIdOf(settingId, characters));
+    ground.placeName = placeName.get(locationId) ?? '';
+    ground.leaderNames = ground.leaders.map((id) => people.find((c) => c.id === id)?.name).filter(Boolean);
+    const { near: found, elsewhere, barred } = whoCouldTurnUp({
         characters: characters.filter((c) => !isPower(c)), castIds, locationId, parents,
         history: doc.history, current: doc.canonical, inPlay: doc.inPlay, tiesOf: (id) => relationsFor(id, relations),
         // Those the world meanwhile has brought near (src/world/model.js).
@@ -413,6 +421,7 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
         // Where the world has moved people off scene, and how they are now.
         moved: isWorldOn() ? doc.gm.world.overlays.people : {},
         belongs,
+        barred: ground.barred,
     });
     for (const e of elsewhere) e.lastAt = placeName.get(e.lastAt) ?? '';
     // Whom to reach for when someone should come along: not those the
@@ -437,7 +446,7 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
     if (settingId) {
         const memberships = libraryMemberships(factionList, getSettingDoc(settingId).relations);
         const factionName = new Map(factionList.map((f) => [f.id, f.name]));
-        for (const c of [...nearby, ...elsewhere]) c.sides = (memberships.get(c.id) ?? []).map((id) => factionName.get(id)).filter(Boolean);
+        for (const c of [...nearby, ...elsewhere, ...barred]) c.sides = (memberships.get(c.id) ?? []).map((id) => factionName.get(id)).filter(Boolean);
     }
     // Someone who turns up picks up where they left off with those here:
     // whom they have met, and how the story has them stand toward them.
@@ -453,7 +462,7 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
     }
     const eventObjects = settingId ? (await listEntries(chatId, settingId, 'event').catch(() => [])).slice(-8).map((e) => ({ name: e.name, description: e.base?.description ?? e.description ?? '', when: e.base?.when ?? e.when ?? e.base?.date ?? e.base?.timestamp ?? e.timestamp ?? '' })) : [];
     const scenes = settingId ? (await listEntries(chatId, settingId, 'scene').catch(() => [])).map((x) => ({ name: x.name, description: x.base?.description ?? x.description ?? '' })) : [];
-    return { characters, castIds, nearby, elsewhere, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes };
+    return { characters, castIds, nearby, elsewhere, barred, ground, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes };
 }
 
 // Who is bound to whom, for the HEARTS section and for taking in the
@@ -531,7 +540,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     const key = hashOf(JSON.stringify([messages.map((m) => [m.name, m.text]), doc.canonical.locationId || '']));
     if (!ahead && !force && doc.director.key === key && doc.director.note) return doc.director;
 
-    const { characters, castIds, nearby, elsewhere, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes } = await sceneContext(chatId, chatKey, settingId, guidance);
+    const { characters, castIds, nearby, elsewhere, barred, ground, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes } = await sceneContext(chatId, chatKey, settingId, guidance);
     // Every entry of every type, for "also relevant" and for checking what
     // the director adds.
     const types = await getObjectTypes().catch(() => []);
@@ -539,7 +548,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     if (settingId) for (const t of types) everything.push(...await listEntries(chatId, settingId, t.id).catch(() => []));
     const labelOf = new Map(types.map((t) => [t.id, t.label]));
     const covered = new Set([
-        ...castIds, ...placeIds, ...nearby.map((c) => c.id), ...elsewhere.map((c) => c.id),
+        ...castIds, ...placeIds, ...nearby.map((c) => c.id), ...elsewhere.map((c) => c.id), ...barred.map((c) => c.id),
         ...(guidance.location?.items ?? []).map((x) => x.id), ...(guidance.location?.creatures ?? []).map((x) => x.id),
         ...(guidance.lore ?? []).map((x) => x.id),
         ...[...(guidance.location?.places ?? []), ...factions, ...eventObjects, ...scenes, ...(guidance.quests ?? [])].map((x) => String(x.name ?? '').trim().toLowerCase()),
@@ -612,6 +621,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         canonOnly,
         nearby,
         elsewhere,
+        barred,
+        ground: { holders: ground.holders.map((h) => h.name).filter(Boolean), leaders: ground.leaderNames, place: ground.placeName },
         factions,
         eventObjects,
         events: inputs.canonicalValues?.canon_events ?? [],
@@ -886,6 +897,26 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             console.info(LOG_PREFIX, `${farAway.join(', ')} ${farAway.length === 1 ? 'is' : 'are'} elsewhere - not brought into this scene`);
             parsed.enters = parsed.enters.filter((n) => !farAway.includes(n));
         }
+        // Enemy ground: someone on a side against whoever holds this place
+        // is not walked in - unless the player's own post brings them. What
+        // the game master wanted of them becomes pressure at the edges, a
+        // ripple the world takes up: sentries notice them about, someone
+        // outside runs into them, word reaches the holders' leaders.
+        const userPost = [...messages].reverse().find((m) => m.isUser)?.text ?? '';
+        const keptOut = elsewhereEntering(parsed.enters, { characters, elsewhere: [...ground.barred.values()], castIds: baseCast, userPost, namedIn: peopleNamedIn, namesOf: callNames });
+        if (keptOut.length) {
+            console.info(LOG_PREFIX, `${keptOut.join(', ')} kept out of ${ground.placeName || 'this place'} - enemy ground`);
+            parsed.enters = parsed.enters.filter((n) => !keptOut.includes(n));
+            if (isWorldOn()) {
+                updateChatDoc(chatKey, (d) => {
+                    for (const n of keptOut) {
+                        const c = characters.find((x) => callNames(x).some((k) => k.toLowerCase() === String(n).toLowerCase()));
+                        const b = c && ground.barred.get(c.id);
+                        if (b) addRipple(d.gm.world, { id: newLocalId('r'), kind: 'user', text: edgePressure(c.name, b, ground), day: d.canonical.day, ties: [c.id, ...b.against, ...ground.leaders].slice(0, 8), reach: 'local' });
+                    }
+                });
+            }
+        }
         const keptBack = parsed.enters.length - withoutWaiting(parsed.enters, characters, waitingNow).length;
         if (keptBack) {
             console.info(LOG_PREFIX, `${keptBack} named to enter wait where the story left off - kept out of the detour`);
@@ -1093,11 +1124,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         if (settings.time.enabled) {
             // The clock just started: first the story's own time of day.
             if (getChatDoc(chatKey).clock.needsNow) await setTimeOfDay(chatId, chatKey, settingId, parsed.now);
-            // A time skip the player wrote ("Early the next morning, ...")
-            // is theirs to make: the clock follows it, whatever TIME says.
-            const skipped = await followPlayerSkip(chatId, chatKey, settingId, latestUserText, { planned: true, source: 'director' });
-            const wanted = skipped?.text || parsed.time?.text || perTurnDefault();
-            const moved = skipped ?? await advanceBy(chatId, chatKey, settingId, wanted, { planned: true, source: 'director', told: !skipped && !!parsed.time?.text, note: `Time passes: ${wanted}${parsed.time?.why ? ` (${parsed.time.why})` : ''}` })
+            const wanted = parsed.time?.text || perTurnDefault();
+            const moved = await advanceBy(chatId, chatKey, settingId, wanted, { planned: true, source: 'director', told: !!parsed.time?.text, note: `Time passes: ${wanted}${parsed.time?.why ? ` (${parsed.time.why})` : ''}` })
                 ?? await advanceBy(chatId, chatKey, settingId, perTurnDefault(), { planned: true, source: 'director', note: `Time passes: ${perTurnDefault()}` });
             if (moved) timeText = wanted;
             // A move along a route takes at least its travel time.
@@ -1249,4 +1277,14 @@ export async function addNamedPeople(chatId, chatKey) {
         console.warn(LOG_PREFIX, 'could not look for newly named people', err);
         return [];
     }
+}
+
+// A ripple for someone kept off enemy ground (run - keptOut): their side
+// is about the place more than usual, never inside it.
+export function edgePressure(name, barred, ground) {
+    const side = barred.sides?.length ? ` and ${barred.sides.join(' and ')}` : '';
+    const place = ground.placeName || 'the place';
+    const holders = ground.holders.filter((h) => barred.against.includes(h.id)).map((h) => h.name).join(' and ') || 'its holders';
+    const leaders = ground.leaderNames?.length ? `; word of it could reach ${ground.leaderNames.join(' and ')}` : '';
+    return `${name}${side} ${side ? 'are' : 'is'} taking an interest in ${place}, ${holders} ground - seen about its edges more than usual, never inside${leaders}.`;
 }

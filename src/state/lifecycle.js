@@ -33,10 +33,10 @@ import { followMissions } from '../quests/missions.js';
 import { scanStoryChanges } from './changes.js';
 import { ensureCharacterFields } from '../library/character-fields.js';
 import { checkTriggers, checkTriggersOnMessage, markTriggersShown, latestUserIndex } from '../triggers/run.js';
-import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage, followContinuedReply } from '../validate/reconcile.js';
+import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
 import { directBeforeReply, addNamedPeople, thinkAfterReply } from '../director/run.js';
-import { ensureClock, advanceBy, setTime, perTurnDefault, followStoryTimeOfDay, followStoryElapsed } from '../calendar/clock.js';
+import { ensureClock, advanceBy, setTime, perTurnDefault } from '../calendar/clock.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { healMissing } from './canonical.js';
 import { fillRoles } from '../preset/role-fill.js';
@@ -156,19 +156,11 @@ async function prepareReply(ref, type) {
         const settings = getSettings();
         const newTurn = !type || type === 'normal';
         if (settings.time.enabled && settingId) await ensureClock(ref.chatId, chatKey, settingId);
-        // A time skip the player narrates ("It was morning at last", "he was
-        // unconscious until well after daybreak", "over the next hour, they
-        // packed") moves the clock before the reply, so the game master and
-        // the narrator start from it.
+        // Where the turn began: the story's deltatime (the player's post
+        // included) is counted from here after the reply.
         if (settings.time.enabled && settingId && newTurn) {
-            const chat = SillyTavern.getContext().chat ?? [];
-            const userText = [...chat].reverse().find((m) => m?.is_user && typeof m.mes === 'string')?.mes ?? '';
             const turnFrom = getChatDoc(chatKey).canonical.time;
             updateChatDoc(chatKey, (d) => { d.clock.turnFrom = Number.isFinite(turnFrom) ? turnFrom : null; });
-            if (userText) {
-                await followStoryTimeOfDay(ref.chatId, chatKey, settingId, userText);
-                await followStoryElapsed(ref.chatId, chatKey, settingId, userText, turnFrom);
-            }
         }
         // Fired story triggers go into this reply (the director's prompt and
         // the narrator's guidance); marked here, where the reply is surely
@@ -275,8 +267,6 @@ export function startLifecycle() {
             const ref = getCurrentChatRef();
             if (ref && isActive()) void afterReply(ref.chatId, chatKeyFor(ref));
             if (ref && isActive()) void followQuestEnds(ref.chatId, chatKeyFor(ref));
-            // A continue's added text moves the clock too (src/validate/reconcile.js).
-            if (ref && isActive()) void followContinuedReply();
             // People the story just named become characters (src/director/people.js).
             if (ref && isActive()) void addNamedPeople(ref.chatId, chatKeyFor(ref));
         });

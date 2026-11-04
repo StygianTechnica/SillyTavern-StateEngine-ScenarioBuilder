@@ -1,6 +1,4 @@
-// A TIME line that only gives the instruction back is no TIME line. (A
-// time skip the player's post makes is read by State Engine's readTimeShift,
-// tested there.)
+// A TIME line that only gives the instruction back is no TIME line.
 import { parseDirectorNote } from '../src/director/prompt.js';
 
 describe('a TIME line that echoes the instruction', () => {

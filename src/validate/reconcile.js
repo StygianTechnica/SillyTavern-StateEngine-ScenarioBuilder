@@ -31,7 +31,7 @@ import { beatsOf, undoBeatsFrom, unplantSeedsFrom } from '../planner/model.js';
 import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
 import { noteMood } from '../director/company.js';
-import { catchUpWithStory, holdStoryWeather, travelAlong, followStoryTimeOfDay, followStoryElapsed, followPlayerSkip } from '../calendar/clock.js';
+import { catchUpWithStory, holdStoryWeather, travelAlong } from '../calendar/clock.js';
 import { detectDrift, decide, DEFAULT_POLICIES, namedOnlyAsOwner, namedAtAll, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
 
 export const DRIFT_CHANGED_EVENT = 'scenario_builder_drift_changed';
@@ -376,19 +376,7 @@ async function reconcileOnce() {
         if (acceptedFields.has('weather') || acceptedFields.has('temperature')) await holdStoryWeather(chatKey, settingId, canonical.weather, canonical.temperature);
         // A move along a route takes its travel time.
         if (acceptedFields.has('location') && canonical.locationId !== doc.canonical.locationId) await travelAlong(chatId, chatKey, settingId, doc.canonical.locationId, canonical.locationId, replySource, { text: [latestTurnText()] });
-        const replyFrom = doc.clock.planned?.from ?? doc.canonical.time;
         if (newReply) await catchUpWithStory(chatId, chatKey, settingId, raw.scene_deltatime, replySource);
-        // A time skip the player's post opened with, if nothing took it in
-        // yet (no briefing, or one that missed it).
-        if (newReply) await followPlayerSkip(chatId, chatKey, settingId, latestUserPostText(), { from: replyFrom, sourceMessage: replySource });
-        // The day turning in the reply's own words ("the sun began to set"),
-        // and time it says has passed ("gone for hours").
-        if (newReply) {
-            const text = latestReplyText();
-            await followStoryTimeOfDay(chatId, chatKey, settingId, text, replySource);
-            await followStoryElapsed(chatId, chatKey, settingId, text, replyFrom, replySource);
-            updateChatDoc(chatKey, (d) => { d.clock.readTo = { source: replySource, length: text.length }; });
-        }
     }
     if (newReply && playerId) await takePlayerMood(chatId, chatKey, playerId, canonical.castIds, characterEntries, replySource);
     if (restore.size) await pushCanonicalToObserved(chatId, chatKey, { fields: [...restore] });
@@ -588,29 +576,6 @@ export function forgetRejection(chatKey, index) {
             d.loreDismissed = d.loreDismissed.filter((t) => t !== gone.threadId);
         }
     });
-}
-
-// A continue adds to the reply already read: only the new part is read
-// for time - the day turning, time passing. Run after each generation (a
-// continue is no new reply, so reconcile's own reading skips it).
-export async function followContinuedReply() {
-    try {
-        const ref = getCurrentChatRef();
-        if (!ref || !isActive()) return;
-        const chatKey = chatKeyFor(ref);
-        const settingId = await getBoundSettingId(ref.chatId);
-        if (!settingId) return;
-        const source = latestReplySource(ref.chatId);
-        const text = latestReplyText();
-        const read = getChatDoc(chatKey).clock.readTo;
-        if (!source || !read || read.source !== source || text.length <= read.length) return;
-        const added = text.slice(read.length);
-        updateChatDoc(chatKey, (d) => { d.clock.readTo = { source, length: text.length }; });
-        await followStoryTimeOfDay(ref.chatId, chatKey, settingId, added, source);
-        await followStoryElapsed(ref.chatId, chatKey, settingId, added, getChatDoc(chatKey).canonical.time, source);
-    } catch (err) {
-        console.warn(LOG_PREFIX, 'could not read the continued reply for time', err);
-    }
 }
 
 // ---- following messages (SB-224)

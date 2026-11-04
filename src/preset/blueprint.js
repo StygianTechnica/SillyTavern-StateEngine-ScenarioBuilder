@@ -45,13 +45,14 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 // 13: the fight (sb__fight_*) and the structured event (sb__event_*), for
 //     panels that show them while they run.
 // 15: sb__guidance_now, the note for this reply.
-export const PRESET_VERSION = 15;
+// 16: sb__scene_deltatime answered fresh each turn (newEachTurn).
+export const PRESET_VERSION = 16;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
     behaviors: { prompted: false, increment: false }, ...extra,
 });
-const prompted = (instructions) => ({ behaviors: { prompted: true, increment: false }, prompted: { instructions } });
+const prompted = (instructions, options = {}) => ({ behaviors: { prompted: true, increment: false }, prompted: { instructions, ...options } });
 
 export const OBSERVED_VARIABLES = Object.freeze([
     ['scene_title', text('Scene title', 'A short title for the current situation, as the story tells it.', prompted(
@@ -86,8 +87,14 @@ export const OBSERVED_VARIABLES = Object.freeze([
         ...prompted('The temperature value closest to what the characters experience. Keep the current value unless the messages say otherwise.'),
     }],
     ['scene_deltatime', text('Time passed (story)', 'How much in-story time the last turn covered, as the story tells it - the clock catches up when it is more than was planned.', prompted(
-        'How much in-story time passed across the whole Latest turn - every message in it, the user’s included. Count everything that takes time: talking (a few minutes), travel, waiting, work, sleep, and any skip the story makes (“hours later”, “the next day”). Answer a duration (“5 minutes”, “2 hours”, “3 days”) or, when the story moves on to a time of day, that time of day (“the next morning”, “that evening”, “tomorrow afternoon”, “until dawn”). Drop hedging words (“about half an hour” → “30 minutes”). Answer “” only if no time passed at all.',
-    ))],
+        'How much in-story time passed across the whole Latest turn - every message in it, the user’s included. Count everything that takes time: talking (a few minutes), travel, waiting, work, sleep, and any skip the story makes (“hours later”, “the next day”). Answer a duration (“5 minutes”, “2 hours”, “3 days”) or, when the story moves on to a time of day, that time of day (“the next morning”, “that evening”, “tomorrow afternoon”, “until dawn”). Drop hedging words (“about half an hour” → “30 minutes”). Answer “” only if no time passed at all.', {
+        // Answered fresh each turn, as State Engine's own se__scene_deltatime
+        // is (its deltaSource): shown its last value - "" once consumed -
+        // under "repeat the current value", the model answered "" every turn
+        // and the story never moved the clock (Assassins Inc: 51 moves, none
+        // the story's).
+        newEachTurn: true,
+    }))],
     ['scene_nsfw', {
         label: 'Intimate scene (story)', description: 'Whether the scene is sexual or intimate now - characters\' intimate-scene notes reach the narrator only then.',
         type: 'boolean', defaultValue: 'false', scope: 'chat', showInTracker: true,

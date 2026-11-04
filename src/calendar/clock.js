@@ -3,7 +3,9 @@
 //   - before each reply: by what the director decides the reply covers
 //     (src/director/), else by the per-turn default (settings.time.perTurn);
 //   - after a reply: when the story says more time passed than was planned
-//     (sb__scene_deltatime, "three days later"), the clock catches up;
+//     (sb__scene_deltatime, "three days later"), the clock catches up - the
+//     answer read by State Engine, as its own deltatime is (advanceFrom);
+//   - along a route the scene travels (travelAlong);
 //   - by hand, from the Scene tab and the calendar.
 // Dates live on the setting's State Engine calendar (src/api/calendar.js);
 // the sky and weather are src/calendar/sky.js and weather.js.
@@ -15,9 +17,10 @@ import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { emptyCalendar } from '../store/schema.js';
 import { getSetting, updateSetting } from '../api/objects.js';
 import { setCanonical } from '../state/canonical.js';
-import { getDateTimeParts, formatDateTime, formatDateTimePartial, advanceDateTime, readTimeShift, getCalendarDefinition } from '../api/calendar.js';
-import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, timeOfDayFraction, cueTarget } from './moment.js';
-import { getRawValues } from '../api/variables.js';
+import { getDateTimeParts, formatDateTime, formatDateTimePartial, advanceDateTime, getCalendarDefinition } from '../api/calendar.js';
+import { secondsPerDay, dayIndexOf, dayOfYear, yearLength, defaultStart, timeOfDayFraction } from './moment.js';
+import { getRawValues, setVariableValue } from '../api/variables.js';
+import { PRESET_NAME } from '../preset/blueprint.js';
 import { skyAt, needsAt, holidaysAround, holidayText, seasonName } from './sky.js';
 import { weatherAt } from './weather.js';
 import { routeForMove, pathBetween, guessRoute, addRoute, updateRoute } from '../library/routes.js';
@@ -306,14 +309,23 @@ export async function advanceBy(chatId, chatKey, settingId, text, { planned = fa
 // After a reply: how much time the story says passed (sb__scene_deltatime,
 // counted from before the player's message - before what that message
 // itself moved the clock). When that is clearly more than the clock moved,
-// it catches up. -> the history entry, or null.
+// it catches up. The answer is read exactly as State Engine's own deltatime
+// reads its deltaSource - the answer as given, to advanceDateTime (semantic
+// time of day, forward) - and consumed, so a reply whose update failed never
+// takes the last one again. -> the history entry, or null.
 export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, sourceMessage = '') {
     const doc = getChatDoc(chatKey);
     const planned = doc.clock.planned;
     updateChatDoc(chatKey, (d) => { d.clock.planned = null; d.clock.turnFrom = null; });
     const now = doc.canonical.time;
-    // A span, or a jump the story asks for - never the moment described.
-    const { delta } = await readTimeShift(deltaText);
+    const delta = String(deltaText ?? '').trim();
+    if (delta) {
+        try {
+            await setVariableValue(chatId, PRESET_NAME, 'scene_deltatime', '');
+        } catch (err) {
+            console.debug(LOG_PREFIX, 'could not consume sb__scene_deltatime', err);
+        }
+    }
     if (!Number.isFinite(now) || !delta) return null;
     const from = doc.clock.turnFrom ?? planned?.from ?? now;
     const target = await advanceFrom(settingId, from, delta);
@@ -322,74 +334,6 @@ export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, so
     const tolerance = Math.max(15 * (def.secondsPerMinute || 60), 0.25 * ((planned?.to ?? now) - from));
     if (target <= now + tolerance) return null;
     return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The story moved time on: ${deltaText}`, sourceMessage });
-}
-
-// The reply showed the day turning ("the sun began to set"): the clock
-// moves on to that part of the day - forward only, the next day for a dawn
-// after the evening. -> the history entry, or null.
-export async function followStoryTimeOfDay(chatId, chatKey, settingId, replyText, sourceMessage = '') {
-    const now = getChatDoc(chatKey).canonical.time;
-    if (!settingId || !Number.isFinite(now)) return null;
-    const cue = (await readTimeShift(replyText)).reached;
-    if (!cue) return null;
-    const { def } = await calendarFor(settingId);
-    const perDay = secondsPerDay(def);
-    const day = dayIndexOf(def, now);
-    const target = cueTarget(cue, (now - day * perDay) / perDay);
-    if (!target) return null;
-    const to = (day + (target.nextDay ? 1 : 0)) * perDay + Math.round(target.fraction * perDay);
-    if (to <= now) return null;
-    return setTime(chatId, chatKey, settingId, to, { source: 'story', note: `The story reached ${cue.phrase}`, sourceMessage });
-}
-
-// The reply says time has passed ("he has been gone for hours"): the clock
-// is at least that far on from where the reply began (`from`) - taken
-// with, not added to, what the story's own reading already moved it.
-// -> the history entry, or null.
-export async function followStoryElapsed(chatId, chatKey, settingId, text, from, sourceMessage = '') {
-    const now = getChatDoc(chatKey).canonical.time;
-    if (!settingId || !Number.isFinite(now)) return null;
-    const span = (await readTimeShift(text)).elapsed;
-    if (!span) return null;
-    const target = await advanceFrom(settingId, Number.isFinite(from) ? from : now, span);
-    if (target === null || target <= now) return null;
-    return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The story says ${span} passed`, sourceMessage });
-}
-
-// Where a time skip the player's post opens with takes the clock, from
-// `from`: "the next morning" and "two days later" as any advance; "later
-// that evening" later today, or nowhere when today is already past it.
-// -> { to, text } or null.
-export async function playerSkipTarget(settingId, from, postText) {
-    const { skip } = await readTimeShift(postText);
-    if (!skip || !settingId || !Number.isFinite(from)) return null;
-    if (!skip.sameDay) {
-        const to = await advanceFrom(settingId, from, skip.advance);
-        return to === null ? null : { to, text: skip.advance };
-    }
-    const { def } = await calendarFor(settingId);
-    const fraction = timeOfDayFraction(skip.advance.replace(/^until\s+/, ''), def);
-    if (fraction === null) return null;
-    const perDay = secondsPerDay(def);
-    const day = dayIndexOf(def, from);
-    const to = day * perDay + Math.round(fraction * perDay);
-    return to > from ? { to, text: skip.advance } : null;
-}
-
-// The player's post opens with a time skip: the clock goes there, counted
-// from `from` (where the turn began; now by default) - taken with, not
-// added to, what already moved it. planned: the director's advance for
-// this reply, so the story's own reading after it is not counted twice.
-// -> { from, to, text } or null.
-export async function followPlayerSkip(chatId, chatKey, settingId, postText, { from = null, planned = false, source = 'story', sourceMessage = '' } = {}) {
-    const now = planned ? await ensureClock(chatId, chatKey, settingId) : getChatDoc(chatKey).canonical.time;
-    if (!settingId || !Number.isFinite(now)) return null;
-    const start = Number.isFinite(from) ? from : now;
-    const target = await playerSkipTarget(settingId, start, postText);
-    if (!target || target.to <= now) return null;
-    await setTime(chatId, chatKey, settingId, target.to, { source, note: `The player moved time on: ${target.text}`, sourceMessage });
-    if (planned) updateChatDoc(chatKey, (d) => { d.clock.planned = { from: start, to: target.to, text: target.text }; });
-    return { from: start, to: target.to, text: target.text };
 }
 
 // The default advance for a reply nobody planned.

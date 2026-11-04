@@ -1,5 +1,5 @@
 import { daylight, dayPartAt, skyAt, moonPhase, needsAt, holidaysAround, holidayText, seasonName, dayOfYearOf } from '../src/calendar/sky.js';
-import { defaultStart, timeOfDayFraction, cueTarget } from '../src/calendar/moment.js';
+import { defaultStart, timeOfDayFraction } from '../src/calendar/moment.js';
 import { weatherAt, forecast, bandOf, weatherText, CLIMATES } from '../src/calendar/weather.js';
 
 const months = Array.from({ length: 12 }, (_, i) => ({ name: `M${i + 1}`, days: 30 }));
@@ -166,13 +166,3 @@ describe("reading the story's time of day", () => {
     });
 });
 
-// Reading the cue from a reply is State Engine's (readTimeShift); where the
-// clock goes for it is ours.
-describe('where the clock goes for a time of day the story reached', () => {
-    it('moves the clock forward only, to the next day for a dawn after dark', () => {
-        expect(cueTarget({ phrase: 'sunset', fraction: 0.77 }, 10.5 / 24)).toEqual({ fraction: 0.77, nextDay: false });
-        expect(cueTarget({ phrase: 'sunset', fraction: 0.77 }, 0.8)).toBeNull();
-        expect(cueTarget({ phrase: 'dawn', fraction: 0.25 }, 0.9)).toEqual({ fraction: 0.25, nextDay: true });
-        expect(cueTarget({ phrase: 'dawn', fraction: 0.25 }, 0.3)).toBeNull();
-    });
-});

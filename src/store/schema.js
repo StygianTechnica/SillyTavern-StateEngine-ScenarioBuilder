@@ -407,10 +407,10 @@ function normalizeNarrative(value) {
 // passed), and a weather the story set, kept until a later watch.
 // needsNow: the clock started without knowing the story's time of day -
 // the director is asked for it (a NOW line) on its next briefing.
-// turnFrom: the time before the player's message moved it - what the
-// story's own reading of the time passed is counted from.
+// turnFrom: the time when the turn began - what the story's deltatime
+// (sb__scene_deltatime) is counted from.
 export function emptyClock() {
-    return { planned: null, override: null, needsNow: false, readTo: null, turnFrom: null };
+    return { planned: null, override: null, needsNow: false, turnFrom: null };
 }
 
 function normalizeClock(value) {
@@ -418,10 +418,7 @@ function normalizeClock(value) {
     const planned = isObject(c.planned) && Number.isFinite(c.planned.from) && Number.isFinite(c.planned.to) ? { from: c.planned.from, to: c.planned.to, text: str(c.planned.text) } : null;
     const o = c.override;
     const override = isObject(o) && Number.isFinite(o.until) ? { until: o.until, weather: strList(o.weather).filter((w) => WEATHER_VALUES.includes(w)), temperature: TEMPERATURES.includes(o.temperature) ? o.temperature : '' } : null;
-    // How much of the latest reply has been read for time: a continue adds
-    // to the same message, and only the new part is read.
-    const readTo = isObject(c.readTo) && typeof c.readTo.source === 'string' && Number.isFinite(c.readTo.length) ? { source: c.readTo.source, length: c.readTo.length } : null;
-    return { planned, override, needsNow: c.needsNow === true, readTo, turnFrom: Number.isFinite(c.turnFrom) ? c.turnFrom : null };
+    return { planned, override, needsNow: c.needsNow === true, turnFrom: Number.isFinite(c.turnFrom) ? c.turnFrom : null };
 }
 
 export function emptyDirector() {

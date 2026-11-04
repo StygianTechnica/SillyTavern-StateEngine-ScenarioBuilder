@@ -1,27 +1,4 @@
-// Where the clock goes for a time of day the story reached (the reading
-// itself is State Engine's readTimeShift, tested there), and the player
-// setting out along a way on.
-import { cueTarget } from '../src/calendar/moment.js';
-
-const morning = { phrase: 'morning', fraction: 0.33 };
-const dawn = { phrase: 'dawn', fraction: 0.25 };
-
-describe('a narrated morning or dawn', () => {
-    it('reaches morning on the next day from the night', () => {
-        expect(cueTarget(morning, 0.88)).toMatchObject({ nextDay: true });
-    });
-
-    // God War #446/#447: the last watch at 02:45 ends at dawn.
-    it('moves a late-night clock on to dawn the same day', () => {
-        expect(cueTarget(dawn, 2.75 / 24)).toEqual({ fraction: 0.25, nextDay: false });
-    });
-
-    it('never moves the clock back for a dawn it has passed', () => {
-        expect(cueTarget(dawn, 0.3)).toBeNull();
-        expect(cueTarget(dawn, 0.5)).toBeNull();
-    });
-});
-
+// The player setting out along a way on.
 // God War #452: the player packs up "over the next hour" and sets out for
 // the Blackened Bridge, one route away; the director wrote no format lines.
 import { headingAlong } from '../src/library/routes.js';

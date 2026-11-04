@@ -9,7 +9,11 @@ import { memberKindOf } from '../library/faction-sync.js';
 
 // Where each person was last in the scene: replays the history (oldest
 // first). -> Map id -> { locationId, index } (index: the entry's place in
-// the history; higher is more recent).
+// the history; higher is more recent). Someone the player took out of the
+// scene by hand was never rightly there: seen nowhere ({ locationId: '',
+// removed: true }) - Tiago Moriarty, walked into the Signal Box by the game
+// master and taken out, otherwise counted as last seen there and was
+// brought back to its gym.
 export function lastSeen(history = [], current = null) {
     const seen = new Map();
     let loc = null;
@@ -22,9 +26,13 @@ export function lastSeen(history = [], current = null) {
         if (loc === null && typeof before.locationId === 'string') loc = before.locationId;
         if (cast === null && Array.isArray(before.castIds)) cast = before.castIds;
         mark(index);
+        const was = cast ?? [];
         if (typeof after.locationId === 'string') loc = after.locationId;
         if (Array.isArray(after.castIds)) cast = after.castIds;
         mark(index);
+        if (h.source === 'user' && Array.isArray(after.castIds)) {
+            for (const id of was) if (!after.castIds.includes(id)) seen.set(id, { locationId: '', index, removed: true });
+        }
     });
     // Those here now are seen here now.
     if (current) for (const id of current.castIds ?? []) seen.set(id, { locationId: current.locationId ?? '', index: (history ?? []).length });
@@ -85,15 +93,15 @@ const AGAINST = /\b(rival|enem|oppos|hunt|against|hate|target|former|ex-|once\b|
 // parent id; characters: [{ id }]; factions: [{ id, name, base? }];
 // relations: [{ from, to, kind }]; memberships: Map characterId ->
 // [factionId]; placeName(id) -> name. -> [{ id, why }]
-export function belongingHere({ placeIds = [], parents = {}, characters = [], factions = [], relations = [], memberships = new Map(), placeName = () => '' } = {}) {
-    const places = new Set((placeIds ?? []).filter((id) => id && parents[id]));
-    if (!places.size) return [];
-    const people = new Set((characters ?? []).map((c) => c.id));
-    const kindOf = (r) => String(r?.kind ?? '').replace(/\s+/g, ' ').trim();
-    const where = (id) => placeName(id) || 'here';
-    const found = [];
-    // Based at a place: a tie either way between the faction and it, or the
-    // faction's own record naming it.
+const kindOf = (r) => String(r?.kind ?? '').replace(/\s+/g, ' ').trim();
+// The places that tie anyone to a scene: the scene's place and those it is
+// in, never the top of the tree (the world, the city everything is in).
+const scenePlaces = (placeIds, parents) => new Set((placeIds ?? []).filter((id) => id && parents[id]));
+
+// The factions based where the scene is: a tie either way between the
+// faction and the place (or a place it is in), or the faction's own record
+// naming it. -> Map factionId -> placeId
+function homesHere(places, factions, relations) {
     const home = new Map();
     for (const f of factions ?? []) {
         const tie = (relations ?? []).find((r) => !AGAINST.test(kindOf(r)) && ((r.from === f.id && places.has(r.to)) || (r.to === f.id && places.has(r.from))));
@@ -102,6 +110,16 @@ export function belongingHere({ placeIds = [], parents = {}, characters = [], fa
             : [...places].find((p) => Object.values(record).some((v) => (Array.isArray(v) ? v : [v]).includes(p)));
         if (held) home.set(f.id, held);
     }
+    return home;
+}
+
+export function belongingHere({ placeIds = [], parents = {}, characters = [], factions = [], relations = [], memberships = new Map(), placeName = () => '' } = {}) {
+    const places = scenePlaces(placeIds, parents);
+    if (!places.size) return [];
+    const people = new Set((characters ?? []).map((c) => c.id));
+    const where = (id) => placeName(id) || 'here';
+    const found = [];
+    const home = homesHere(places, factions, relations);
     for (const [factionId, placeId] of home) {
         const f = factions.find((x) => x.id === factionId);
         for (const c of characters ?? []) {
@@ -126,6 +144,51 @@ export function belongingHere({ placeIds = [], parents = {}, characters = [], fa
     return out;
 }
 
+// Enemy ground: where the scene is held by a faction (based there -
+// homesHere), those on a side against it cannot simply be inside. Tiago
+// Moriarty, second of the Medina Syndicate, walked into White Cerberus's
+// gym twice (Assassins Inc) - the Signal Box is White Cerberus's, and the
+// two are enemies. Barred: a member of a faction against a holder (either
+// way: "enemy", "rival", "at war with"), or someone against a holder
+// themself - unless they are of a holder too, or have their own tie to the
+// place (a guest, a prisoner held there). Their pressure shows at the
+// edges instead: those who watch the place notice them, someone outside
+// runs into them, word reaches the holders' leaders.
+// -> { holders: [{ id, name }], leaders: [id], barred: Map id -> { id, why, sides: [name] } }
+const HOSTILE = /\b(enem|rival|oppos|hostil|at war|war with|feud|hunt|hate|against|sabotag|raid|attack|target)/i;
+export function enemyGround({ placeIds = [], parents = {}, characters = [], factions = [], relations = [], memberships = new Map(), placeName = () => '' } = {}) {
+    const none = { holders: [], leaders: [], barred: new Map() };
+    const places = scenePlaces(placeIds, parents);
+    if (!places.size) return none;
+    const home = homesHere(places, factions, relations);
+    if (!home.size) return none;
+    const name = new Map((factions ?? []).map((f) => [f.id, f.name]));
+    const holders = [...home.keys()];
+    const between = (a, b) => (relations ?? []).filter((r) => (r.from === a && r.to === b) || (r.from === b && r.to === a));
+    const against = (a, b) => between(a, b).some((r) => HOSTILE.test(kindOf(r)));
+    // The factions against each holder.
+    const foes = new Map();
+    for (const f of factions ?? []) {
+        if (home.has(f.id)) continue;
+        const vs = holders.filter((h) => against(f.id, h));
+        if (vs.length) foes.set(f.id, vs);
+    }
+    const leaders = (characters ?? []).filter((c) => (relations ?? []).some((r) => r.from === c.id && holders.includes(r.to) && memberKindOf(kindOf(r)) === 'leads')).map((c) => c.id);
+    const barred = new Map();
+    for (const c of characters ?? []) {
+        const sides = memberships.get(c.id) ?? [];
+        if (sides.some((id) => home.has(id))) continue;
+        if ((relations ?? []).some((r) => !HOSTILE.test(kindOf(r)) && kindOf(r) && ((r.from === c.id && places.has(r.to)) || (r.to === c.id && places.has(r.from))))) continue;
+        const hostileSides = sides.filter((id) => foes.has(id));
+        const vs = [...new Set([...hostileSides.flatMap((id) => foes.get(id)), ...holders.filter((h) => against(c.id, h))])];
+        if (!vs.length) continue;
+        const of = hostileSides.length ? `of ${hostileSides.map((id) => name.get(id)).join(' and ')}, ` : '';
+        const ground = vs.map((h) => name.get(h)).join(' and ');
+        barred.set(c.id, { id: c.id, sides: hostileSides.map((id) => name.get(id)).filter(Boolean), against: vs, why: `${of}against ${ground}, whose ground ${placeName(home.get(vs[0])) || 'this'} is` });
+    }
+    return { holders: holders.map((id) => ({ id, name: name.get(id) ?? '' })), leaders, barred };
+}
+
 // The people not here, split: `near` - seen here or close by not long ago
 // (within the history kept), who could turn up; `elsewhere` - left far away,
 // not seen in a long while, or only tied to someone here, who cannot.
@@ -139,7 +202,10 @@ export function belongingHere({ placeIds = [], parents = {}, characters = [], fa
 // last seen, now, and how they are now goes with them. belongs: those who
 // belong here (belongingHere - [{ id, why }]): they can turn up unless the
 // story left them far away not long ago.
-export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '', parents = {}, history = [], current = null, inPlay = [], tiesOf = () => [], recent = 120, arrived = [], moved = {}, belongs = [] } = {}) {
+// barred: enemyGround's - those who cannot be inside here, whatever else
+// would bring them (a past visit, a tie, coming looking): `barred` in the
+// result, never `near`.
+export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '', parents = {}, history = [], current = null, inPlay = [], tiesOf = () => [], recent = 120, arrived = [], moved = {}, belongs = [], barred = new Map() } = {}) {
     const present = new Set(castIds);
     const seen = lastSeen(history, current);
     const total = (history ?? []).length;
@@ -147,6 +213,7 @@ export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '',
     const named = new Map(characters.map((c) => [c.id, c]));
     const near = [];
     const elsewhere = [];
+    const kept = [];
     const placed = new Set();
     const came = new Set(arrived);
     const put = (id, why, home = false) => {
@@ -154,6 +221,7 @@ export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '',
         placed.add(id);
         const c = named.get(id);
         const now = moved?.[id]?.state ? `; now ${String(moved[id].state).replace(/[.!?]+$/, '')}` : '';
+        if (barred.has(id)) { kept.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', why: barred.get(id).why }); return; }
         if (came.has(id)) { near.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', why: `came looking, off scene${now}` }); return; }
         const s = seen.get(id);
         const fresh = s && total - s.index <= recent;
@@ -161,13 +229,13 @@ export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '',
         // Not knowing where the scene is, nothing can be ruled out; someone
         // at home here is here unless the story just left them far away.
         if (!locationId || nearHere || (home && !fresh)) near.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', why: `${why}${now}` });
-        else elsewhere.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', lastAt: s?.locationId ?? '', why: `${s ? (fresh ? 'left behind elsewhere' : 'not seen in a long while') : why}${now}` });
+        else elsewhere.push({ id, name: c.name, role: c.base?.role ?? c.role ?? '', lastAt: s?.locationId ?? '', why: `${s?.removed ? 'taken out of the scene by the player' : s ? (fresh ? 'left behind elsewhere' : 'not seen in a long while') : why}${now}` });
     };
     for (const id of arrived) put(id, 'came looking, off scene');
     for (const b of belongs ?? []) put(b.id, b.why, true);
     for (const id of inPlay ?? []) put(id, 'seen earlier in this story');
     for (const id of castIds) for (const r of tiesOf(id)) put(r.otherId, `tied to someone here (${r.kind})`);
-    return { near, elsewhere };
+    return { near, elsewhere, barred: kept };
 }
 
 // The names an ENTERS list brings in who are listed ELSEWHERE - far away,
