@@ -26,6 +26,7 @@ import { triggerLines } from '../triggers/model.js';
 import { deadText, placesTheAbsent } from '../state/death.js';
 import { circling } from '../director/loops.js';
 import { sidesApart, sidesText } from './sides.js';
+import { factionSlips, deadActing, correctionText } from './canon.js';
 import { asksWhatNext } from './build.js';
 import { activeBeat } from '../planner/model.js';
 import { creatureFormOf } from '../library/creature-form.js';
@@ -221,8 +222,9 @@ export async function gatherInputs(chatId, chatKey) {
     // (Also who is of which side, for the people spoken of but not here.)
     let memberships = new Map();
     const factionNames = new Map();
+    let factionList = [];
     if (settingId) {
-        const factionList = await listEntries(chatId, settingId, 'faction').catch(() => []);
+        factionList = await listEntries(chatId, settingId, 'faction').catch(() => []);
         for (const f of factionList) { aliasUsers.set(f.id, f.name); factionNames.set(f.id, f.name); }
         memberships = libraryMemberships(factionList, library.relations ?? []);
     }
@@ -453,6 +455,14 @@ export async function gatherInputs(chatId, chatKey) {
     }
     const fightVars = fightValues(fight, settings.director.fightReplies, characterId);
 
+    // Continuity against the library (src/guidance/canon.js): the latest
+    // replies and Archivist's notes read ahead of the chat, checked in code.
+    const replies = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system && !m.is_user).slice(-2).map((m) => String(m.mes ?? ''));
+    const notes = Object.values(await getRawValues(chatId, ['ar__ctx_scene_characters', 'ar__ctx_scene_relationships', 'ar__ctx_story_summary']).catch(() => ({}))).map(String);
+    const slips = factionSlips(cast, factionList, [...replies, ...notes], { others: allCharacters.map((ch) => ch.name) });
+    const deadNow = deadActing(doc.dead.map((d) => ({ ...d, aliases: allCharacters.find((ch) => ch.id === d.id)?.aliases ?? [] })), replies[replies.length - 1] ?? '');
+    const corrected = new Set(slips.map((s) => s.name));
+
     return {
         guidance: {
             // The game master's briefing (src/director/), written before
@@ -491,7 +501,10 @@ export async function gatherInputs(chatId, chatKey) {
             settled: (doc.gm.settled ?? []).map((x) => x.text),
             // Whose side each is on, where the sides here are at odds
             // (src/guidance/sides.js).
-            sides: sidesText(sidesApart(cast, library.relations ?? [], (fid) => factionNames.get(fid) ?? '')),
+            sides: sidesText(sidesApart(cast, library.relations ?? [], (fid) => factionNames.get(fid) ?? '').filter((s) => !corrected.has(s.name))),
+            // What the latest replies or Archivist's notes got wrong against
+            // the library (src/guidance/canon.js) - put right in the chat.
+            corrections: correctionText({ slips, dead: deadNow }),
             // The player asks what comes next: the outline's beat now answers.
             next: settings.planner?.enabled === true && asksWhatNext(latestPlayerPost()) ? (activeBeat(doc.gm.outline)?.text ?? '') : '',
             // Who has died in this story (src/state/death.js).

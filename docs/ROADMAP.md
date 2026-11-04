@@ -696,6 +696,13 @@ Done: the Worlds tab (src/worlds/, src/ui/worlds-tab.js).
   the Calendar tab.
 - [x] Weather the director may call for (a WEATHER line, held two watches).
 - [ ] Magical weather; per-season climate overrides per region.
+- [ ] Continuity check by model, layer 3 (2026-11-04): an optional call,
+  off by default, that runs only when the state turns - a newcomer arrives,
+  someone changes sides, a quest step lands - and reads the reply against
+  the present cast's canon for subtler contradictions than the code check
+  catches (src/guidance/canon.js). A hit becomes a correction in the next
+  in-chat note, never a rewrite. Layers 1 (Archivist's summaries take the
+  library's roles and factions as fixed) and 2 (the code check) came first.
 - [ ] Hunger and tiredness tracked per character from hours awake and meals
   (today: by the hour only).
 - [ ] Status line in the chat (SB-702).

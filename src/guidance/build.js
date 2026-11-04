@@ -418,9 +418,13 @@ export function buildNow(input) {
     // Whose side someone here is on, the sides being at odds: Archivist's
     // notes, ahead of the chat too, had Dr. Tole working for White Cerberus.
     const sides = clean(input.sides);
-    if (!arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides) return '';
+    // What the latest replies or Archivist's notes got wrong against the
+    // library (src/guidance/canon.js): put right before anything else.
+    const corrections = clean(input.corrections);
+    if (!arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
+    if (corrections) orders.push(corrections);
     if (arriving.length) orders.push(arriving.length === 1
         ? `${arriving[0]} comes in now - they arrive where everyone can see and speak or act, with their own reason for coming.`
         : `${andList(arriving)} come in now - each arrives where everyone can see and speaks or acts, with their own reason for coming.`);
