@@ -1,4 +1,4 @@
-import { normalizeGiver, normalizeMission, nextDifficulty, buildMissionPrompt, readMission, offerText, missionToFollow, offerCondition } from '../src/quests/missions.js';
+import { normalizeGiver, normalizeMission, nextDifficulty, buildMissionPrompt, readMission, offerText, missionToFollow, offerCondition, firstMissionDue, asksForWork, FIRST_TRIED } from '../src/quests/missions.js';
 import { normalizeQuestMeta } from '../src/quests/model.js';
 import { normalizeEntryMeta } from '../src/store/schema.js';
 import { buildGuidance } from '../src/guidance/build.js';
@@ -129,5 +129,42 @@ describe('a board of jobs, and waiting a while', () => {
         expect(normalizeGiver({ on: true, offer: 'after', afterDays: 5 })).toMatchObject({ offer: 'after', afterDays: 5 });
         expect(normalizeGiver({ on: true, offer: 'after', afterDays: 0 }).afterDays).toBe(3);
         expect(offerCondition({ offer: 'after' })).toBe('');
+    });
+});
+
+// Assassins Inc: Adam Miller gives White Cerberus's missions, "only when
+// asked" - and in 479 messages gave none, as nothing made the first.
+describe('the first mission', () => {
+    const adam = normalizeGiver({ on: true, trade: 'Agents take on missions in pairs.', team: true, difficultyMode: 'story', offer: 'asked' });
+
+    it('hears the character asking for work', () => {
+        for (const t of ['"Got any work for me, Adam?"', 'Cyril asked if there were any missions he could take.', '"What\'s next?"', '"Put me to work."', 'I need a job.']) expect(asksForWork(t)).toBe(true);
+        for (const t of ['He worked the knot loose.', '"The mission went badly," she said.', 'Cyril walked to the gym.']) expect(asksForWork(t)).toBe(false);
+    });
+
+    it('waits for the ask, from someone with the giver or naming them', () => {
+        expect(firstMissionDue(adam, [], { present: true, post: 'Cyril stretched.', giverName: 'Adam Miller' })).toBe('');
+        expect(firstMissionDue(adam, [], { present: true, post: '"Any jobs going?"', giverName: 'Adam Miller' })).toBe('asked');
+        expect(firstMissionDue(adam, [], { present: false, post: '"Any jobs going?"', giverName: 'Adam Miller' })).toBe('');
+        expect(firstMissionDue(adam, [], { present: false, post: 'Cyril messaged Adam: "Got any work for me?"', giverName: 'Adam Miller' })).toBe('asked');
+    });
+
+    it('when they meet, or at once when a story trigger is to wait for its condition', () => {
+        expect(firstMissionDue({ ...adam, offer: 'meet' }, [], { present: true })).toBe('meet');
+        expect(firstMissionDue({ ...adam, offer: 'meet' }, [], { present: false })).toBe('');
+        expect(firstMissionDue({ ...adam, offer: 'after' }, [], { present: true })).toBe('meet');
+        expect(firstMissionDue({ ...adam, offer: 'when', offerWhen: 'Cyril is at the Signal Box in the morning' }, [])).toBe('when');
+    });
+
+    it('only the first, only once, only for a giver that is on', () => {
+        const ask = { present: true, post: '"Any jobs going?"', giverName: 'Adam Miller' };
+        expect(firstMissionDue(adam, [{ id: 'q1', status: 'Completed' }], ask)).toBe('');
+        expect(firstMissionDue({ ...adam, lastFollowed: FIRST_TRIED }, [], ask)).toBe('');
+        expect(firstMissionDue({ ...adam, on: false }, [], ask)).toBe('');
+    });
+
+    it('asked already: offered now, not left waiting for the ask again', () => {
+        expect(offerText({ name: 'Glass Ledger', task: 'Lift the ledger from the Omicron courier.', reward: 'a cut of the fee' }, { giverName: 'Adam Miller', takerName: 'Cyril', now: true }))
+            .toBe('Adam Miller offers Cyril a job: "Glass Ledger" - Lift the ledger from the Omicron courier, paying a cut of the fee. It can be turned down.');
     });
 });

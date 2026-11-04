@@ -25,6 +25,7 @@ import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.
 import { triggerLines } from '../triggers/model.js';
 import { deadText, placesTheAbsent } from '../state/death.js';
 import { circling } from '../director/loops.js';
+import { sidesApart, sidesText } from './sides.js';
 import { asksWhatNext } from './build.js';
 import { activeBeat } from '../planner/model.js';
 import { creatureFormOf } from '../library/creature-form.js';
@@ -258,6 +259,7 @@ export async function gatherInputs(chatId, chatKey) {
             knownAs: settingId ? knownAsText(obj.name, obj.aliases ?? base.aliases ?? [], library.entries?.[id]?.aliasInfo ?? {}, (x) => aliasUsers.get(x) ?? '') : '',
             // The names kept to a few, for the director (who here does not know them).
             factions: (memberships.get(id) ?? []).map((f) => aliasUsers.get(f)).filter(Boolean),
+            factionIds: (memberships.get(id) ?? []).filter((f) => factionNames.has(f)),
             keptNames: settingId ? keptNames(obj.aliases ?? base.aliases ?? [], library.entries?.[id]?.aliasInfo ?? {}, (x) => aliasUsers.get(x) ?? '', (x) => aliasUsers.has(x) && !nameById0.has(x)) : [],
             role: await readField(chatId, id, 'se__character.role', 'role'),
             description: doc.narrative[id]?.text || obj.description || '',
@@ -487,6 +489,9 @@ export async function gatherInputs(chatId, chatKey) {
             arriving: settings.director.enabled ? (doc.director.moves?.in ?? []) : [],
             // What the story has settled (src/planner/model.js settledSection).
             settled: (doc.gm.settled ?? []).map((x) => x.text),
+            // Whose side each is on, where the sides here are at odds
+            // (src/guidance/sides.js).
+            sides: sidesText(sidesApart(cast, library.relations ?? [], (fid) => factionNames.get(fid) ?? '')),
             // The player asks what comes next: the outline's beat now answers.
             next: settings.planner?.enabled === true && asksWhatNext(latestPlayerPost()) ? (activeBeat(doc.gm.outline)?.text ?? '') : '',
             // Who has died in this story (src/state/death.js).
@@ -501,7 +506,7 @@ export async function gatherInputs(chatId, chatKey) {
             ], { stance: stanceFor(doc, settings) }),
             // Going in circles, or the player asking whether it is over
             // (src/director/loops.js) - read from the chat itself.
-            ...((stuck) => ({ loop: stuck.line, dodging: stuck.order }))(circling((SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-8).map((m) => ({ text: String(m.mes ?? ''), isUser: !!m.is_user })), { names: cast.filter((x) => !x.player).map((x) => x.name) })),
+            ...((stuck) => ({ loop: stuck.dodging ? stuck.order : stuck.line, dodging: stuck.order }))(circling((SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-8).map((m) => ({ text: String(m.mes ?? ''), isUser: !!m.is_user })), { names: cast.filter((x) => !x.player).map((x) => x.name) })),
             // Names the narrator may give someone new (settings.naming.narrator,
             // off by default): the director's pool for this place.
             names: await narratorNames(chatId, settingId, library, locationId, settings),

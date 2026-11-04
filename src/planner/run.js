@@ -458,7 +458,12 @@ async function takeWorldHooks(chatId, chatKey, settingId, extras) {
         const known = await knownEntries(chatId, settingId);
         const breakaways = splits.filter((x) => !knownAs(x.name, known)).map((x) => ({ kind: 'faction', name: x.name, text: x.text, why: x.why, ties: x.ties }));
         if (breakaways.length) updateChatDoc(chatKey, (d) => { addIdeas(d.gm, breakaways); });
-        const ideas = hooks.filter((x) => !knownAs(x.name, known)).map((x) => ({ kind: 'quest', name: x.name, text: x.text, why: x.why, ties: x.ties }));
+        // A hook a mission giver is behind is that giver's mission
+        // (src/quests/missions.js) - not a quest idea of its own.
+        const { missionFromHook } = await import('../quests/missions.js');
+        const left = [];
+        for (const x of hooks.filter((h) => !knownAs(h.name, known))) if (!(await missionFromHook(chatId, chatKey, settingId, x))) left.push(x);
+        const ideas = left.map((x) => ({ kind: 'quest', name: x.name, text: x.text, why: x.why, ties: x.ties }));
         if (!ideas.length) return;
         if (creationMode(settingId) === 'silent') {
             for (const idea of ideas) await applyIdea(chatId, chatKey, settingId, idea, { silent: true });

@@ -29,6 +29,8 @@ import { libraryMemberships } from '../library/faction-sync.js';
 import { pathOf } from '../library/hierarchy.js';
 import { isPower } from '../library/powers.js';
 import { questBoard } from '../quests/sync.js';
+import { normalizeGiver, givesText } from '../quests/missions.js';
+import { getSettingDoc } from '../store/setting-store.js';
 import { deadIds, isDead, markDead } from '../state/death.js';
 import { mayDie, stanceFor } from '../director/combat.js';
 import { addHappening } from '../planner/model.js';
@@ -189,13 +191,22 @@ export async function worldMoves(chatId, chatKey, settingId, { aim = null, userN
         // Those with a standing claim on the player character are in view
         // whether or not anything new has happened to them.
         const stakes = standingStakes({ entries: cast.entries, tiesOf: cast.tiesOf, memberships: cast.memberships, knowledge, playerId });
+        // Who gives missions (src/quests/missions.js): a giver, or a faction
+        // one of whose people is one - they may send the player on a job.
+        const metas = getSettingDoc(settingId).entries ?? {};
+        const givers = new Map(cast.entries.filter((e) => normalizeGiver(metas[e.id]?.giver).on).map((e) => [e.id, normalizeGiver(metas[e.id].giver)]));
+        const givesFor = (id) => {
+            if (givers.has(id)) return givesText(givers.get(id));
+            const inside = [...givers.keys()].find((g) => (cast.memberships.get(g) ?? []).includes(id));
+            return inside ? givesText(givers.get(inside), { via: cast.nameOf(inside) }) : '';
+        };
         const found = stakeholders(ripples, {
             entries: cast.entries, tiesOf: cast.tiesOf, memberships: cast.memberships, knowledge,
             present: doc.canonical.castIds, playerId, skip: [...deadIds(doc), ...world.leftAlone], stakes, schemers, limit: limits.stakeholders,
         }).map((s) => {
             const base = cast.byId.get(s.id)?.base ?? {};
             const facts = castFacts(s.id, { byId: cast.byId, tiesOf: cast.tiesOf, memberships: cast.memberships, knowledge, playerId, conditions: world.conditions, people: world.overlays.people });
-            return { ...s, role: world.overlays.people[s.id]?.role || base.role || '', goals: base.goals ?? '', personality: base.personality ?? base.description ?? '', ...facts };
+            return { ...s, role: world.overlays.people[s.id]?.role || base.role || '', goals: base.goals ?? '', personality: base.personality ?? base.description ?? '', ...facts, gives: givesFor(s.id) };
         });
         const canonOnly = isCanonOnly(settingId);
         const places = await listEntries(chatId, settingId, 'location').catch(() => []);

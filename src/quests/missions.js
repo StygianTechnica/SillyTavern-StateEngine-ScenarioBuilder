@@ -147,6 +147,7 @@ export function buildMissionPrompt(input) {
         `# Difficulty\n${DIFFICULTY_TEXT[difficulty]}. Size the job to it - the opposition, the stakes and the pay.`,
         candidates.length ? `# People, places and things the setting has (use them as client or target where they fit)\n${candidates.map((c) => `- ${clean(c.name)}${clean(c.type) ? ` (${clean(c.type)})` : ''}${clean(c.description) ? `: ${cut(c.description, 90)}` : ''}`).join('\n')}` : '',
         past.length ? `# Jobs this giver has handed out before (do not repeat them)\n${past.map((p) => `- ${clean(p.name)}${clean(p.status) ? ` (${clean(p.status).toLowerCase()})` : ''}`).join('\n')}` : '',
+        clean(input?.occasion) ? `# Why this job comes up now\n${cut(input.occasion, 500)}\nThe job answers this: it is what the giver wants found out, fetched, stopped or done about it.` : '',
         clean(input?.request) ? `# What the user wants this time\n${cut(input.request, 400)}` : '',
         '# Your task',
         `Write the next job ${clean(g.name) || 'the giver'} hands out - the kind of work they give, for one of their clients, at this difficulty.`,
@@ -250,6 +251,66 @@ export function missionToFollow(giver, missions = []) {
     return last && last.id !== giver.lastFollowed ? last : null;
 }
 
+// The first mission. Nothing ever ended, so nothing follows: a giver with
+// no missions yet writes its first once its offer condition holds - when
+// they meet, when the character asks it for work, or at once for "only
+// when..." (the story trigger then waits). Tried once; after that, the
+// Missions tab's button. (Adam Miller at White Cerberus gave none in 479
+// messages: only the button made one.)
+export const FIRST_TRIED = 'first';
+
+// The player asking for work: someone asking ("give me", "got any", "is
+// there") for a job, a mission, a task - or what is next. "I have a job",
+// "find a new job", "get to work" are not asking.
+const ASKS_FOR_WORK = /\b(give me|got|need|(i|we) want|(i'?m|we'?re) (looking|ready) for|assign me|anything for me|(do|does|did) (you|he|she|they) have|you (got|have)|is there|are there|(if|whether) there (is|are|was|were))\b[^.?!"]{0,25}?\b(a|an|any|some|new|another|next|more|my next|the next)\s+(\w+\s+)?(work|jobs?|missions?|assignments?|contracts?|gigs?|tasks?)\b|\bany (\w+\s+)?(work|jobs?|missions?|assignments?|contracts?|gigs?)( going\b| for (me|us)\b|\s*\?)|\bwhat('s| is) (next|my next (job|mission|assignment|task))\b|\bput me (to work|on (a|the|something))\b|\bsend me (out|on (a|the|another))\b/i;
+
+export function asksForWork(text) {
+    return ASKS_FOR_WORK.test(clean(text));
+}
+
+// A name as the prose uses it: the whole, or one of its words.
+function names(text, name) {
+    const words = clean(name).split(' ').filter((w) => w.length > 2 && !/^(the|of|dr|mr|mrs|ms|sir|lady|lord)\.?$/i.test(w));
+    return words.some((w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(clean(text)));
+}
+
+// giver: normalized; missions: its missions on the board; present: whether
+// the giver is in the scene (or is the place); post: the player's latest
+// message. -> 'meet' | 'asked' | 'when' | '' (not now).
+export function firstMissionDue(giver, missions = [], { present = false, post = '', giverName = '' } = {}) {
+    if (!giver?.on || missions.length || giver.lastFollowed === FIRST_TRIED) return '';
+    if (giver.offer === 'when') return clean(giver.offerWhen) ? 'when' : (present ? 'meet' : '');
+    if (giver.offer === 'asked') return asksForWork(post) && (present || names(post, giverName)) ? 'asked' : '';
+    return present ? 'meet' : '';
+}
+
+// A job a giver may hand out now: nothing of theirs under way, and room on
+// their board. missions: [{ status }].
+export function roomForMission(giver, missions = []) {
+    if (!giver?.on) return false;
+    if (missions.some((m) => m.status === 'Active')) return false;
+    return missions.filter((m) => m.status === 'Not started').length < Math.max(1, giver.board ?? 1);
+}
+
+// Whose mission a world hook is (src/world/): one of those behind it who
+// gives missions, or a giver who belongs to a faction behind it - White
+// Cerberus wanting to know what Medina knows is Adam Miller's job to hand
+// out. ids: those behind the hook; isGiver(id); membersOf(factionId) -> [id].
+// -> giver id or ''.
+export function hookGiver(ids = [], { isGiver = () => false, membersOf = () => [] } = {}) {
+    for (const id of ids) if (isGiver(id)) return id;
+    for (const id of ids) for (const m of membersOf(id) ?? []) if (isGiver(m)) return m;
+    return '';
+}
+
+// A stakeholder's line in the world pass, when they give missions: what
+// work, and that they may send the player character on it. -> '' or text.
+export function givesText(giver, { via = '' } = {}) {
+    if (!giver?.on) return '';
+    const trade = clean(giver.trade);
+    return via ? `${clean(via)}, one of theirs, gives missions${trade ? ` (${cut(trade, 120)})` : ''}` : `gives missions${trade ? ` (${cut(trade, 120)})` : ''}`;
+}
+
 // ---- runners
 
 const TYPES_FOR_PARTS = ['character', 'faction', 'location', 'item', 'creature'];
@@ -301,7 +362,7 @@ let offering = false;
 // the offer queued for the director. options: { difficulty, request,
 // follow (the next after one ended: a giver that waits some days waits) }.
 // -> the quest made, or null. Never throws.
-export async function offerMission(chatId, chatKey, settingId, giverId, { difficulty = '', request = '', follow = false } = {}) {
+export async function offerMission(chatId, chatKey, settingId, giverId, { difficulty = '', request = '', follow = false, asked = false, occasion = '', sent = false } = {}) {
     if (offering) return null;
     offering = true;
     try {
@@ -349,6 +410,7 @@ export async function offerMission(chatId, chatKey, settingId, giverId, { diffic
             candidates,
             past: past.map((m) => ({ name: m.name, status: m.status })),
             request,
+            occasion,
             canonOnly,
             pool: live?.pool ?? null,
         });
@@ -392,11 +454,14 @@ export async function offerMission(chatId, chatKey, settingId, giverId, { diffic
         const takerName = player?.name ?? '';
         // A power gives its tasks in dreams and visions.
         const vision = giverEntry.meta?.power?.on === true;
-        const condition = offerCondition(giver, { giverName: giverEntry.name, takerName });
+        // Asked for work just now: offered at once, no waiting for the ask.
+        // Sent by the world (a hook): the giver comes with it, unasked -
+        // offered when they next meet.
+        const condition = asked || sent ? '' : offerCondition(giver, { giverName: giverEntry.name, takerName });
         // Jobs already on offer there (a board): the new one is posted beside them.
         const others = giver.board > 1 ? past.filter((q) => q.status === 'Not started').map((q) => q.name) : [];
         let watched = null;
-        if (follow && giver.offer === 'after') {
+        if (follow && giver.offer === 'after' && !sent) {
             const { armTrigger } = await import('../triggers/run.js');
             const day = doc.canonical.day + giver.afterDays;
             watched = await armTrigger(chatId, chatKey, { kind: 'day', day, when: `day ${day}: ${giverEntry.name} has work again`, then: offerText(m, { giverName: giverEntry.name, takerName, now: true, vision, others }), source: 'giver' });
@@ -408,7 +473,7 @@ export async function offerMission(chatId, chatKey, settingId, giverId, { diffic
         }
         if (!watched) {
             const together = vision || doc.canonical.castIds.includes(giverId) || doc.canonical.locationId === giverId;
-            updateChatDoc(chatKey, (d) => { addRequest(d.gm, { id: newLocalId('r'), text: offerText(m, { giverName: giverEntry.name, takerName, vision, others }), urgency: together ? 'soon' : 'whenever', at: new Date().toISOString() }); });
+            updateChatDoc(chatKey, (d) => { addRequest(d.gm, { id: newLocalId('r'), text: offerText(m, { giverName: giverEntry.name, takerName, vision, others, now: asked }), urgency: together || asked ? 'soon' : 'whenever', at: new Date().toISOString() }); });
         }
         console.info(LOG_PREFIX, `${giverEntry.name} has a new ${level} mission: ${m.name}`);
         return quest;
@@ -417,6 +482,46 @@ export async function offerMission(chatId, chatKey, settingId, giverId, { diffic
         return null;
     } finally {
         offering = false;
+    }
+}
+
+// A quest hook from the world: when a mission giver is behind it, the giver
+// writes it as their mission - client, difficulty, reward - and offers it
+// when they next meet. hook: { name, text, why, ties: [name] }. -> the
+// quest made, or null (no giver behind it, no room, or it failed: the hook
+// is then an ordinary quest idea). Never throws.
+export async function missionFromHook(chatId, chatKey, settingId, hook) {
+    try {
+        if (!settingId || !hook) return null;
+        const lib = await import('../library/library.js');
+        const { getSettingDoc } = await import('../store/setting-store.js');
+        const { listRelations } = await import('../library/relations-edit.js');
+        const { libraryMemberships } = await import('../library/faction-sync.js');
+        const entries = getSettingDoc(settingId).entries ?? {};
+        const characters = await lib.listEntries(chatId, settingId, 'character').catch(() => []);
+        const factions = await lib.listEntries(chatId, settingId, 'faction').catch(() => []);
+        const all = [...characters, ...factions];
+        const lower = (t) => clean(t).toLowerCase();
+        const idOf = (name) => all.find((e) => [e.name, ...(e.aliases ?? e.base?.aliases ?? [])].map(lower).includes(lower(name)))?.id ?? '';
+        const ids = [...new Set((hook.ties ?? []).map(idOf).filter(Boolean))];
+        const memberships = libraryMemberships(factions, listRelations(settingId));
+        const members = new Map();
+        for (const [p, fs] of memberships) for (const f of fs ?? []) members.set(f, [...(members.get(f) ?? []), p]);
+        const isGiver = (id) => normalizeGiver(entries[id]?.giver).on;
+        const giverId = hookGiver(ids, { isGiver, membersOf: (id) => members.get(id) ?? [] });
+        if (!giverId) return null;
+        const giver = normalizeGiver(entries[giverId]?.giver);
+        if (!roomForMission(giver, await giverMissions(chatId, chatKey, settingId, giverId))) {
+            console.info(LOG_PREFIX, `a world hook ("${clean(hook.name)}") is for ${all.find((e) => e.id === giverId)?.name}, who has a job under way or a full board - kept as a quest idea`);
+            return null;
+        }
+        const occasion = [clean(hook.why), clean(hook.name) && clean(hook.text) ? `${clean(hook.name)}: ${clean(hook.text)}` : clean(hook.text)].filter(Boolean).join(' - ');
+        const quest = await offerMission(chatId, chatKey, settingId, giverId, { occasion, sent: true });
+        if (quest) console.info(LOG_PREFIX, `the world's hook "${clean(hook.name)}" became ${all.find((e) => e.id === giverId)?.name}'s mission: ${quest.name}`);
+        return quest;
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not make a mission from a world hook', err);
+        return null;
     }
 }
 
@@ -429,8 +534,27 @@ export async function followMissions(chatId, chatKey, settingId) {
         const lib = await import('../library/library.js');
         const { getSettingDoc } = await import('../store/setting-store.js');
         const entries = getSettingDoc(settingId).entries ?? {};
+        const { getChatDoc } = await import('../store/chat-store.js');
+        const doc = getChatDoc(chatKey);
+        const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system);
+        const post = String([...chat].reverse().find((m) => m.is_user)?.mes ?? '');
         for (const [id, meta] of Object.entries(entries)) {
             const giver = normalizeGiver(meta?.giver);
+            if (giver.on && giver.lastFollowed !== FIRST_TRIED) {
+                const mine = await giverMissions(chatId, chatKey, settingId, id);
+                if (!mine.length) {
+                    const entry = await lib.getEntry(chatId, settingId, id).catch(() => null);
+                    const present = doc.canonical.castIds.includes(id) || doc.canonical.locationId === id || meta?.power?.on === true;
+                    const due = entry ? firstMissionDue(giver, mine, { present, post, giverName: entry.name }) : '';
+                    if (due) {
+                        lib.setEntryMeta(settingId, id, { giver: { ...giver, lastFollowed: FIRST_TRIED } });
+                        console.info(LOG_PREFIX, `${entry.name} writes a first mission (${due === 'asked' ? 'asked for work' : due === 'when' ? 'the story trigger waits for its condition' : 'they are together'})`);
+                        const quest = await offerMission(chatId, chatKey, settingId, id, { asked: due === 'asked' });
+                        if (!quest) console.info(LOG_PREFIX, `${entry.name}'s first mission could not be written - the Missions tab can still make one`);
+                        return quest;
+                    }
+                }
+            }
             if (!giver.on || !giver.auto) continue;
             const ended = missionToFollow(giver, await giverMissions(chatId, chatKey, settingId, id));
             if (!ended) continue;

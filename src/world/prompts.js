@@ -30,6 +30,7 @@ function stakeholderLine(s) {
         texts(s.members, 8).length ? `members: ${texts(s.members, 8).join(', ')}` : '',
         texts(s.bonds, 5).length ? `ties: ${texts(s.bonds, 5).join('; ')}` : '',
         texts(s.secrets, 3).length ? `hides: ${texts(s.secrets, 3).join('; ')}` : '',
+        clean(s.gives),
     ].filter(Boolean).join('; ');
     return `- ${clean(s.name)} (${s.type === 'faction' ? 'faction' : 'person'})${s.why?.length ? ` - ${s.why.map(clean).filter(Boolean).join('; ')}` : ''}${facts ? `. ${facts}` : ''}`;
 }
@@ -116,6 +117,9 @@ export function worldPart(input) {
         `Weigh everyone above, not only those already scheming: someone with a claim on ${userName} (they made or own them, are owed by them, hunt or hate them) who has no scheme yet is the likeliest to start one. A side already chasing an aim never starts the same one again under another name.`,
         `What ${userName} has not learned - who made them, what was done to them, a secret someone keeps - stays hidden from them: what surfaces is only what ${userName} could actually see or hear (strangers asking questions, a corporate car parked too long, a face that knows them), never the truth told outright. Let the story bring it out in its own time.`,
         `No one sends someone close to ${userName} (a lover, an old friend, kin) on a job against them, least of all someone with a secret that person could learn.`,
+        people.some((p) => clean(p.gives)) && ways.list.includes('hook') && input.surfacing !== 'log' && surface > 0
+            ? `Someone marked "gives missions" who has ${userName} on their side may answer what happened by sending ${userName} on a job rather than doing it all themselves - finding out what a rival knows, fetching, guarding or stopping something. Make it a scheme of theirs (the giver, or their faction, in "who") that surfaces as a hook, the job said in one sentence. Only when it is a job they would give ${userName}; never one against ${userName}.`
+            : '',
         input.surfacing === 'log' || surface <= 0 ? `Nothing surfaces for ${userName} today: leave every "surface" empty.`
             : `Let at most ${surface} of them surface where ${userName} could come across it - ${ways.words}.${input.ownPass ? '' : ` If someone comes to find ${userName} today, make that one of the day's moments too.`}`,
         aim,

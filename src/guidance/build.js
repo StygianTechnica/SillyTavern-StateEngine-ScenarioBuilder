@@ -365,6 +365,8 @@ function castLine(c) {
     }
     const bits = [];
     if (clean(c.role)) bits.push(firstUpper(unstop(c.role)));
+    const sides = (c.factions ?? []).map(clean).filter(Boolean);
+    if (sides.length) bits.push(`Of ${andList(sides)}`);
     if (clean(c.description)) bits.push(unstop(looksBrief(c.description, 360)));
     if (clean(c.lineageNote)) bits.push(firstUpper(unstop(truncate(c.lineageNote, 120))));
     // Their age for their kind (src/library/bloodlines.js ageLine).
@@ -413,7 +415,10 @@ export function buildNow(input) {
     // (src/director/loops.js): told only before the chat, Dr. Tole kept
     // teasing for replies on end.
     const dodging = clean(input.dodging);
-    if (!arriving.length && !triggered.length && !settled.length && !next && !dodging) return '';
+    // Whose side someone here is on, the sides being at odds: Archivist's
+    // notes, ahead of the chat too, had Dr. Tole working for White Cerberus.
+    const sides = clean(input.sides);
+    if (!arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (arriving.length) orders.push(arriving.length === 1
@@ -422,6 +427,7 @@ export function buildNow(input) {
     if (triggered.length) orders.push(`It happens now: ${triggered.join(' ')}`);
     if (dodging) orders.push(dodging);
     if (next) orders.push(`${player ? clean(player.name) : 'The player character'} asks what comes next - the answer is where the story goes now: ${unstop(next)}. Bring it in this reply.`);
+    if (sides) orders.push(sides);
     if (settled.length) orders.push(`Keep to what the story has settled - no one acts as if it were otherwise or argues it again: ${settled.map(unstop).join('; ')}.`);
     return `[Game master's note for this reply, not part of the story: ${orders.join(' ')}${player ? ` Write only the others; never ${clean(player.name)}.` : ''}]`;
 }
@@ -438,6 +444,7 @@ export function buildCast(input) {
     const absent = (input.absent ?? []).map(clean).filter(Boolean);
     if (absent.length) lines.push(`Not here: ${andList(absent)}. ${absent.length === 1 ? 'They are' : 'They are'} elsewhere now; do not write ${absent.length === 1 ? 'them' : 'them'} into this reply.`);
     if (others.some((c) => c.relations?.length)) lines.push(STANCES_HOLD);
+    if (clean(input.sides)) lines.push(`Sides: ${clean(input.sides)}`);
     if (others.length) lines.push(`Write ${others.length === 1 ? clean(others[0].name) : 'each of them'} true to what they want and how they feel. ${others.length === 1 ? 'They pursue their' : 'Each pursues their'} own aims: in this reply ${others.length === 1 ? 'they take' : 'at least one of them takes'} the initiative - starting something, pressing a plan, acting on someone - instead of only reacting.${player ? ` Never write ${clean(player.name)}'s words, actions, thoughts or feelings.` : ''}`);
     else if (player) lines.push(aloneText(input));
     return `${REFERENCE_HEADER}\n${lines.join('\n')}`;
