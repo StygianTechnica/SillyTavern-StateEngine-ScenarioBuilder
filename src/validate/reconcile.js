@@ -269,7 +269,12 @@ async function reconcileOnce() {
         }
     }
 
-    if (!items.length && !newReply && JSON.stringify(doc.lastObserved) === JSON.stringify(observed)) return;
+    // The story's deltatime is taken whenever State Engine writes it, as
+    // its own deltatime is: its update lands seconds after the reply, after
+    // a first pass here has already marked the reply read (Assassins Inc
+    // #434, "evening drew near" with the clock left at 12:49).
+    const storyTime = typeof raw.scene_deltatime === 'string' ? raw.scene_deltatime.trim() : '';
+    if (!items.length && !newReply && !storyTime && JSON.stringify(doc.lastObserved) === JSON.stringify(observed)) return;
 
     // A new place read as a whole sentence ("Remus is in the infirmary now,
     // resting from his injuries") is renamed to the place itself before it
@@ -376,7 +381,7 @@ async function reconcileOnce() {
         if (acceptedFields.has('weather') || acceptedFields.has('temperature')) await holdStoryWeather(chatKey, settingId, canonical.weather, canonical.temperature);
         // A move along a route takes its travel time.
         if (acceptedFields.has('location') && canonical.locationId !== doc.canonical.locationId) await travelAlong(chatId, chatKey, settingId, doc.canonical.locationId, canonical.locationId, replySource, { text: [latestTurnText()] });
-        if (newReply) await catchUpWithStory(chatId, chatKey, settingId, raw.scene_deltatime, replySource);
+        if (storyTime) await catchUpWithStory(chatId, chatKey, settingId, storyTime, replySource);
     }
     if (newReply && playerId) await takePlayerMood(chatId, chatKey, playerId, canonical.castIds, characterEntries, replySource);
     if (restore.size) await pushCanonicalToObserved(chatId, chatKey, { fields: [...restore] });

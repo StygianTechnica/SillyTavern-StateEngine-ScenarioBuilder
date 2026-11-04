@@ -312,28 +312,30 @@ export async function advanceBy(chatId, chatKey, settingId, text, { planned = fa
 // it catches up. The answer is read exactly as State Engine's own deltatime
 // reads its deltaSource - the answer as given, to advanceDateTime (semantic
 // time of day, forward) - and consumed, so a reply whose update failed never
-// takes the last one again. -> the history entry, or null.
+// takes the last one again. Taken whenever the answer is written (src/
+// validate/reconcile.js), not only on the pass that first sees the reply.
+// -> the history entry, or null.
 export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, sourceMessage = '') {
+    const delta = String(deltaText ?? '').trim();
+    if (!delta) return null;
     const doc = getChatDoc(chatKey);
     const planned = doc.clock.planned;
     updateChatDoc(chatKey, (d) => { d.clock.planned = null; d.clock.turnFrom = null; });
-    const now = doc.canonical.time;
-    const delta = String(deltaText ?? '').trim();
-    if (delta) {
-        try {
-            await setVariableValue(chatId, PRESET_NAME, 'scene_deltatime', '');
-        } catch (err) {
-            console.debug(LOG_PREFIX, 'could not consume sb__scene_deltatime', err);
-        }
+    try {
+        await setVariableValue(chatId, PRESET_NAME, 'scene_deltatime', '');
+    } catch (err) {
+        console.debug(LOG_PREFIX, 'could not consume sb__scene_deltatime', err);
     }
-    if (!Number.isFinite(now) || !delta) return null;
+    const now = doc.canonical.time;
+    if (!Number.isFinite(now)) return null;
     const from = doc.clock.turnFrom ?? planned?.from ?? now;
     const target = await advanceFrom(settingId, from, delta);
-    if (target === null) return null;
     const { def } = await calendarFor(settingId);
     const tolerance = Math.max(15 * (def.secondsPerMinute || 60), 0.25 * ((planned?.to ?? now) - from));
-    if (target <= now + tolerance) return null;
-    return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The story moved time on: ${deltaText}`, sourceMessage });
+    const moves = target !== null && target > now + tolerance;
+    console.info(LOG_PREFIX, `the story's time passed: "${delta}" - ${target === null ? 'not understood by State Engine' : moves ? 'the clock catches up' : 'within what the clock already moved'}`);
+    if (!moves) return null;
+    return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The story moved time on: ${delta}`, sourceMessage });
 }
 
 // The default advance for a reply nobody planned.
