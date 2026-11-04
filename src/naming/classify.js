@@ -119,6 +119,63 @@ export function pronounsFrom(text) {
     return f >= 2 && f >= m * 2 ? 'f' : m >= 2 && m >= f * 2 ? 'm' : '';
 }
 
+// A person's gender, from what is written of them, strongest first:
+//   1. their own text saying what they are ("Vex is a woman of average
+//      height", "she was a girl of twelve");
+//   2. the pronouns of their own text (pronounsFrom - a clear lead);
+//   3. the pronouns that follow their name in the story ("Vex continued
+//      her watchful vigil");
+//   4. the pronouns of everything else written of them (personality,
+//      voice, background - often generated, and generated wrong).
+// Vex's description says she is a woman; three generated fields called
+// her "he" sixteen times, and counted all together they made her a man.
+// own: their description, the story's account of them; more: the other
+// fields; story: text they appear in. -> 'f' | 'm' | ''. Pure.
+const SELF = { woman: 'f', girl: 'f', lady: 'f', female: 'f', man: 'm', boy: 'm', gentleman: 'm', male: 'm' };
+export function personGender({ name = '', own = [], more = [], story = [] } = {}) {
+    const ownText = own.filter((t) => typeof t === 'string').join(' ');
+    const said = ownText.toLowerCase().match(/\b(?:is|was)\s+(?:a|an)\s+(?:[a-z'-]+\s+){0,3}?(woman|girl|lady|female|man|boy|gentleman|male)\b/);
+    if (said) return SELF[said[1]];
+    const near = pronounsNear(name, [ownText, ...story.filter((t) => typeof t === 'string')].join(' '));
+    if (near) return near;
+    // Only the pronouns before anyone else is named in a sentence: "offers
+    // to help Cyril and implies he could gain protection from her group"
+    // is one "he" for Cyril, not two for Vex.
+    const fromOwn = pronounsFrom(beforeOthers(ownText));
+    if (fromOwn) return fromOwn;
+    return pronounsFrom([ownText, ...more.filter((t) => typeof t === 'string')].map(beforeOthers).join(' '));
+}
+
+// Each sentence up to the first name in it after its opening word.
+const beforeOthers = (text) => (String(text ?? '').match(/[^.!?]+[.!?]*/g) ?? []).map((s) => {
+    const words = s.trimStart();
+    const cut = words.slice(1).search(/\b[A-Z][a-z]+\b/);
+    return cut < 0 ? words : words.slice(0, cut + 1);
+}).join(' ');
+
+// The pronouns that follow a name in its own sentence, before anyone else
+// is named ("Vex rose from her seat"; not "Vex nodded at Cyril and he
+// left") - a clear lead, as pronounsFrom. -> 'f' | 'm' | ''.
+export function pronounsNear(name, text) {
+    const n = String(name ?? '').trim();
+    if (!n) return '';
+    const esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let f = 0;
+    let m = 0;
+    for (const sentence of String(text ?? '').match(/[^.!?]+[.!?]*/g) ?? []) {
+        const at = sentence.search(new RegExp(`\\b${esc}\\b`));
+        if (at < 0) continue;
+        const after = sentence.slice(at + n.length);
+        const other = after.search(/\b[A-Z][a-z]+\b/);
+        const span = other < 0 ? after : after.slice(0, other);
+        const p = span.toLowerCase().match(/\b(she|her|hers|herself|he|him|his|himself)\b/);
+        if (!p) continue;
+        if (/^(?:she|her|hers|herself)$/.test(p[1])) f += 1;
+        else m += 1;
+    }
+    return f >= 2 && f >= m * 2 ? 'f' : m >= 2 && m >= f * 2 ? 'm' : '';
+}
+
 // -> { kind, feature?, subtype?, noun? } or null when no rolled name
 // fits (a room, a sword, a quest - the model names those in plain words).
 // kind: 'person' | 'settlement' | 'region' | 'feature' | 'building' |

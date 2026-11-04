@@ -409,13 +409,18 @@ export function buildNow(input) {
     // The player asks what comes next: the beat now is the answer (Adam
     // gave Cyril a job with Doc and Galice; the beat was his match with Inji).
     const next = clean(input.next);
-    if (!arriving.length && !triggered.length && !settled.length && !next) return '';
+    // Someone asked again and again what they want, and dodging it
+    // (src/director/loops.js): told only before the chat, Dr. Tole kept
+    // teasing for replies on end.
+    const dodging = clean(input.dodging);
+    if (!arriving.length && !triggered.length && !settled.length && !next && !dodging) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (arriving.length) orders.push(arriving.length === 1
         ? `${arriving[0]} comes in now - they arrive where everyone can see and speak or act, with their own reason for coming.`
         : `${andList(arriving)} come in now - each arrives where everyone can see and speaks or acts, with their own reason for coming.`);
     if (triggered.length) orders.push(`It happens now: ${triggered.join(' ')}`);
+    if (dodging) orders.push(dodging);
     if (next) orders.push(`${player ? clean(player.name) : 'The player character'} asks what comes next - the answer is where the story goes now: ${unstop(next)}. Bring it in this reply.`);
     if (settled.length) orders.push(`Keep to what the story has settled - no one acts as if it were otherwise or argues it again: ${settled.map(unstop).join('; ')}.`);
     return `[Game master's note for this reply, not part of the story: ${orders.join(' ')}${player ? ` Write only the others; never ${clean(player.name)}.` : ''}]`;

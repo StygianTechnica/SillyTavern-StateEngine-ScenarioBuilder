@@ -326,7 +326,11 @@ export function dossierText(input) {
             lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}: the player character, played by the human - never write for them.`);
             continue;
         }
+        // She or he, as the narrator is told (src/guidance/sync.js gender):
+        // the fields below may say otherwise - Vex's generated ones called
+        // her "he", and the director wrote her as a man.
         const bits = [
+            c.gender === 'f' ? 'a woman (she / her)' : c.gender === 'm' ? 'a man (he / him)' : '',
             clean(c.role), cut(c.description, 300),
             clean(c.personality) && `personality: ${cut(c.personality, 200)}`,
             clean(c.voice) && `voice and mannerisms: ${cut(c.voice, 200)}`,

@@ -54,7 +54,7 @@ import { libraryMemberships } from '../library/faction-sync.js';
 import { spokenOf } from './spoken.js';
 import { livePoolFor, byType } from '../naming/run.js';
 import { narratorPoolLine } from '../naming/live.js';
-import { pronounsFrom } from '../naming/classify.js';
+import { personGender } from '../naming/classify.js';
 
 export const GUIDANCE_CHANGED_EVENT = 'scenario_builder_guidance_changed';
 
@@ -262,8 +262,9 @@ export async function gatherInputs(chatId, chatKey) {
             role: await readField(chatId, id, 'se__character.role', 'role'),
             description: doc.narrative[id]?.text || obj.description || '',
             // she / he from their own prose: without it a stray "his" in the
-            // story turned a woman into a man.
-            gender: pronounsFrom([doc.narrative[id]?.text, obj.description, text(base.personality), text(base.voice), text(base.goals), text(base.background)].join(' ')),
+            // story turned a woman into a man. Their description first - the
+            // other fields only when it says nothing (src/naming/classify.js).
+            gender: personGender({ name: obj.name, own: [doc.narrative[id]?.text, obj.description], more: [text(base.personality), text(base.voice), text(base.goals), text(base.background)] }),
             personality: text(base.personality),
             voice: text(base.voice),
             goals: text(base.goals),
@@ -500,7 +501,7 @@ export async function gatherInputs(chatId, chatKey) {
             ], { stance: stanceFor(doc, settings) }),
             // Going in circles, or the player asking whether it is over
             // (src/director/loops.js) - read from the chat itself.
-            loop: circling((SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-8).map((m) => ({ text: String(m.mes ?? ''), isUser: !!m.is_user }))).line,
+            ...((stuck) => ({ loop: stuck.line, dodging: stuck.order }))(circling((SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-8).map((m) => ({ text: String(m.mes ?? ''), isUser: !!m.is_user })), { names: cast.filter((x) => !x.player).map((x) => x.name) })),
             // Names the narrator may give someone new (settings.naming.narrator,
             // off by default): the director's pool for this place.
             names: await narratorNames(chatId, settingId, library, locationId, settings),

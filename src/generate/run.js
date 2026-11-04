@@ -16,7 +16,7 @@ import { getEntryMeta } from '../store/setting-store.js';
 import { pathOf, childrenOf } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
 import { buildGenerationPrompt, parseGenerationResponse, buildOverviewPrompt, parseOverviewResponse, groundRefs, buildAliasPrompt, readAlias } from './prompt.js';
-import { genderFrom } from '../naming/classify.js';
+import { genderFrom, personGender } from '../naming/classify.js';
 import { callModel } from './llm.js';
 import { storyRelationships, relationshipLine } from '../library/story-relations.js';
 import { relationsFor, pairCovered, authoredLine } from '../library/relations-edit.js';
@@ -349,7 +349,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     const narrativeText = entry?.id ? getChatDoc(ctx.chatKey).narrative[entry.id]?.text ?? '' : '';
     const rollsName = task === 'create' && !(draft?.name ?? entry?.name) && !naming.name;
     const gender = type.id === 'character'
-        ? genderOf({ chosen: naming.gender, texts: [brief, values.description, entry?.description, entry?.base?.description, narrativeText] }) || (rollsName ? (Math.random() < 0.5 ? 'f' : 'm') : '')
+        ? genderOf({ chosen: naming.gender, texts: [brief], name: draft?.name ?? entry?.name ?? '', own: [values.description, entry?.description, entry?.base?.description, narrativeText], story: [story] }) || (rollsName ? (Math.random() < 0.5 ? 'f' : 'm') : '')
         : '';
     if (task === 'create' && !(draft?.name ?? entry?.name)) {
         if (naming.name) fixedName = naming.name;
@@ -495,11 +495,14 @@ export function withMemberships(relations, brief, factions) {
     return [...given, ...own].slice(0, Math.max(3, given.length));
 }
 
-// A character's gender: the one picked ('f' | 'm'), else what the texts
-// say, first to last (their idea, then their own text). '' when none says.
-// Pure.
-export function genderOf({ chosen = '', texts = [] } = {}) {
+// A character's gender: the one picked ('f' | 'm'), else what their own
+// text says (personGender: "is a woman", its pronouns, the pronouns after
+// their name in the story), else what the idea for them says (texts).
+// '' when none says. Pure.
+export function genderOf({ chosen = '', texts = [], name = '', own = [], story = [] } = {}) {
     if (chosen === 'f' || chosen === 'm') return chosen;
+    const theirs = personGender({ name, own, story });
+    if (theirs) return theirs;
     for (const t of texts) {
         const g = typeof t === 'string' ? genderFrom(t) : '';
         if (g) return g;

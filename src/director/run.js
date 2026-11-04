@@ -646,7 +646,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         eventFacts: eventFacts(event, { placeName: event?.placeId ? everything.find((e) => e.id === event.placeId)?.name ?? '' : '', turn: getChatDoc(chatKey).turn, ways }),
         // Only the dead the latest messages speak of.
         // The story going in circles, or the player asking whether it is over.
-        loopLine: circling(messages.slice(-8)).line,
+        loopLine: circling(messages.slice(-8), { names: (guidance.cast ?? []).filter((c) => !c.player).map((c) => c.name) }).line,
         deadText: deadText(doc, { recentText: messages.slice(-6).map((m) => m.text).join('\n'), about: (id) => {
             const ch = characters.find((x) => x.id === id);
             const patrons = patronsOf(ch).map((p) => characters.find((x) => x.id === p)?.name).filter(Boolean);
