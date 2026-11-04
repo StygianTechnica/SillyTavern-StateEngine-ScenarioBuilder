@@ -170,6 +170,22 @@ export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '',
     return { near, elsewhere };
 }
 
+// The names an ENTERS list brings in who are listed ELSEWHERE - far away,
+// or out of the story - and so cannot turn up in this scene, unless the
+// player's own post brings them. Told they could not, the game master
+// still walked Tiago Moriarty of the Medina Syndicate into White Cerberus's
+// underground training center (Assassins Inc). namedIn(text, characters) ->
+// those a text names; namesOf(c) -> the names someone answers to.
+// -> [name] to keep out.
+export function elsewhereEntering(enters, { characters = [], elsewhere = [], castIds = [], userPost = '', namedIn = () => [], namesOf = (c) => [c.name] } = {}) {
+    const brought = new Set(namedIn(userPost, characters).map((c) => c.id));
+    const far = new Set((elsewhere ?? []).map((c) => c.id).filter((id) => !brought.has(id) && !castIds.includes(id)));
+    return (enters ?? []).filter((name) => {
+        const c = characters.find((x) => namesOf(x).some((n) => String(n).toLowerCase() === String(name).toLowerCase()));
+        return !!c && far.has(c.id);
+    });
+}
+
 // Those here meeting the player character for the first time: no tie to
 // them in the setting, and the chat names them first only in its last few
 // messages (or not at all). Told so, they claim no shared past - Adam

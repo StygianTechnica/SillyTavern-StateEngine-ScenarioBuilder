@@ -33,7 +33,7 @@ import { nextFight, fightFacts, woundsOf } from './fight.js';
 import { combatOptions, stanceFor, protectionOf, powerRatingOf, mayDie, protectedText } from './combat.js';
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
-import { whoCouldTurnUp, belongingHere, sharedScenes, lastSeen, firstMeetings } from './whereabouts.js';
+import { whoCouldTurnUp, belongingHere, sharedScenes, lastSeen, firstMeetings, elsewhereEntering } from './whereabouts.js';
 import { rankNearby } from './company.js';
 import { arrivals } from '../world/model.js';
 import { isWorldOn, takeHeard, worldHereFor, noteHeartRipple } from '../world/run.js';
@@ -878,6 +878,13 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         if (overdue.length) {
             console.info(LOG_PREFIX, `${overdue.map((c) => c.name).join(', ')} brought in - the beat has waited on them too long`);
             parsed.enters = [...new Set([...parsed.enters, ...overdue.map((c) => c.name)])];
+        }
+        // Someone listed ELSEWHERE cannot turn up in this scene - unless the
+        // player's own post brings them (src/director/whereabouts.js).
+        const farAway = elsewhereEntering(parsed.enters, { characters, elsewhere, castIds: baseCast, userPost: [...messages].reverse().find((m) => m.isUser)?.text ?? '', namedIn: peopleNamedIn, namesOf: callNames });
+        if (farAway.length) {
+            console.info(LOG_PREFIX, `${farAway.join(', ')} ${farAway.length === 1 ? 'is' : 'are'} elsewhere - not brought into this scene`);
+            parsed.enters = parsed.enters.filter((n) => !farAway.includes(n));
         }
         const keptBack = parsed.enters.length - withoutWaiting(parsed.enters, characters, waitingNow).length;
         if (keptBack) {
