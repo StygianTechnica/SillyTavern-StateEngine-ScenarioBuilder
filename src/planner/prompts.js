@@ -115,8 +115,11 @@ export function buildDayPrompt(input) {
         ...(clean(input.place) ? [`The scene is at ${clean(input.place)}${clean(input.situation) ? `, where ${unstopFirst(input.situation)}` : ''}. That is where things stand - already played. The plan picks up after it; moments elsewhere happen only if the story would plausibly go there today.`] : []),
         'Two to five moments, in the order they could happen: something someone does, an arrival, news, a discovery, a complication, a quiet beat. Each grows out of what is above, moves a thread, a person\'s agenda or a request along, and leaves the player free to respond. Vary them: not every moment is a crisis.',
         `A moment is what the world does around ${userName}, never what ${userName} does: its subject is someone else, a faction, or the world itself (news, an arrival, a turn of events). Never "${userName} goes" or "${userName} and a friend confront" - you do not play ${userName}. Where a moment answers something ${userName} might do, that goes in its trigger and the moment is how the world answers it (trigger "if ${userName} goes to the docks", moment "a crew is waiting there with a job").`,
-        ...(clean(input.story?.beat) ? [`At least one moment moves the beat now along, done by the people it names. An agenda fits the beat: someone the beat has acting today wants to get there (they may hesitate or bargain on the way), not the opposite - unless the latest chat shows them refusing it.`] : []),
-        'Every moment is something that has NOT happened yet: what comes next, later today, or from somewhere else - never what THE LATEST CHAT already shows, said again or a little reworded. A talk under way is not a moment; what it leads to, once it is over, can be. Give each its time of day and the names it involves.',
+        ...(clean(input.story?.beat) ? [
+            `At least one moment moves the beat now along, done by the people it names. An agenda fits the beat: someone the beat has acting today wants to get there (they may hesitate or bargain on the way), not the opposite - unless the latest chat shows them refusing it.`,
+            `If the talk under way in THE LATEST CHAT is where the beat now should come about (a briefing whose beat is the assignment, a negotiation whose beat is the deal), plan its outcome as the first moment: what the people the beat names decide or do as the talk comes to its point (e.g. "the leader hands out the assignments: the two of them go in, with a partner"). Its trigger is empty, its time "any time". That is not the talk said again - it is where the talk lands, so the story does not drift past it.`,
+        ] : []),
+        `Every moment is something that has NOT happened yet: what comes next, later today, or from somewhere else - never what THE LATEST CHAT already shows, said again or a little reworded. A talk under way is not a moment; what it leads to, once it is over, can be${clean(input.story?.beat) ? ' - and so can where it lands, when the beat now comes about there (above)' : ''}. Give each its time of day and the names it involves.`,
         'Answer in this JSON shape:',
         `{"moments":[{"text":"<what someone other than ${userName} does, or what happens around ${userName}, one sentence>","when":"<morning|midday|afternoon|evening|night|any time>","trigger":"<the condition, e.g. 'if the scene is at the forge'; empty if none>","ties":["<names of the people, places, factions or threads it involves>"],"droppable":true${happeningField}}],`,
         ' "agendas":[{"who":"<a person who matters today, not the player>","wants":"<what they want>","will":"<what they will do about it>","hidden":"<what they hide, or empty>"}],',
@@ -199,7 +202,10 @@ export function buildCheckPrompt(input) {
         'Only what THE LATEST CHAT shows counts as done: someone who appears nowhere in it has done nothing yet, and a moment planned for them is still pending.',
         `Add a new moment only for a request above, or when the story has opened something the plan lacks (at most two) - something the world or someone other than ${userName} does, never what ${userName} does.`,
     );
-    if (clean(input.beat)) parts.push('Say whether the story has now played out the beat above ("beat_done": true), or not yet (false).');
+    if (clean(input.beat)) parts.push(
+        `If the talk under way in THE LATEST CHAT is where the beat above should come about, and no pending moment lands it, add one for its outcome: what the people the beat names decide or do as the talk comes to its point.`,
+        'Say whether the story has now played out the beat above ("beat_done": true), or not yet (false).',
+    );
     if (input.askTension) parts.push('Rate the story\'s tension as the latest chat leaves it, each from 0 (none) to 5 (unbearable): threat (danger to people), uncertainty (open questions, mistrust, the unknown) and emotional (what is at stake between people), with a few words on what drives it.');
     parts.push(
         'Answer in this JSON shape:',

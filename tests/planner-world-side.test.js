@@ -34,6 +34,18 @@ describe('the day plan', () => {
         expect(buildCheckPrompt({ userName: 'Cyril', messages: [], moments: [] }).prompt).toContain('never what Cyril does');
     });
 
+    it('lets a talk under way land where the beat comes about', () => {
+        const story = { shape: 'Thriller', act: 'The Call', beat: 'Adam assigns Cyril and Inji to stop Enrique, with Zane as a partner.' };
+        const day = buildDayPrompt({ userName: 'Cyril', messages: [], story }).prompt;
+        expect(day).toContain('If the talk under way in THE LATEST CHAT is where the beat now should come about');
+        expect(day).toContain('and so can where it lands, when the beat now comes about there');
+        const plain = buildDayPrompt({ userName: 'Cyril', messages: [] }).prompt;
+        expect(plain).not.toContain('where it lands');
+        expect(plain).toContain('A talk under way is not a moment; what it leads to, once it is over, can be. Give each');
+        expect(buildCheckPrompt({ userName: 'Cyril', messages: [], moments: [], beat: story.beat }).prompt).toContain('no pending moment lands it, add one for its outcome');
+        expect(buildCheckPrompt({ userName: 'Cyril', messages: [], moments: [] }).prompt).not.toContain('lands it');
+    });
+
     it('drops moments the player character leads, and keeps request links in step', () => {
         const plan = readDayPlan({
             moments: [{ text: 'Cyril goes outside to think.' }, { text: 'Adam calls the team in.' }, { text: 'Zane sends word of a job.' }],
@@ -78,5 +90,20 @@ describe('the outline', () => {
         // An act left with nothing keeps what it had.
         expect(out.acts[1].beats.map((b) => b.id)).toEqual(['b5']);
         expect(dropped).toEqual(['Cyril goes outside to contemplate his navel.']);
+    });
+});
+
+describe('the beat in the director\'s plan', () => {
+    it('settles who is in it, over any agenda', async () => {
+        const { planSection, emptyGm } = await import('../src/planner/model.js');
+        const g = emptyGm();
+        g.outline = { premise: '', themes: [], seeds: [], acts: [{ id: 'a1', title: 'The Call', beats: [
+            { id: 'b3', text: 'Adam assigns Cyril and Inji to stop Enrique\'s operation, with Zane as a partner.', ties: ['Inji Miyama', 'Zane'], status: 'active', locked: false, by: 'planner', note: '' },
+        ] }] };
+        const text = planSection(g);
+        expect(text).toContain('the beat now: Adam assigns Cyril and Inji');
+        expect(text).toContain('Who is in it: the people the beat names, in the parts it gives them, are who it is');
+        expect(text).toContain('no one tells someone the beat names that they are left out');
+        expect(planSection(emptyGm())).not.toContain('Who is in it');
     });
 });

@@ -587,6 +587,11 @@ export function planSection(gm, { pace = null, aim = null, story = null, motifs 
     const lines = [];
     const beat = activeBeat(gm.outline);
     if (beat) lines.push(`- Story: ${story?.shape ? `${story.shape}, ` : ''}${story?.act ? `in "${story.act}" - ` : ''}the beat now: ${beat.text}${story?.next ? ` (then: ${story.next})` : ''}. When the scene opens a way to it - the player character asks what comes next, a talk winds down - the beat is the answer.`);
+    // Who the beat names, in what part, is settled: left loose, a narrator
+    // asked "are you sending me in?" made up its own team (Assassins Inc:
+    // Adam left Cyril out of the job the beat gave him, and Inji brought
+    // "associates" of his own).
+    if (beat) lines.push('- Who is in it: the people the beat names, in the parts it gives them, are who it is - whether they are on the job, who leads, who partners whom. When it comes up, the briefing names them plainly, so the narrator does not guess; no one made up joins them, no one stands in for them, and no one tells someone the beat names that they are left out. An agenda below gives way to this.');
     const due = beat ? strList(newcomers) : [];
     const back = new Set(strList(returning).map((n) => n.toLowerCase()));
     const fresh = due.filter((n) => !back.has(n.toLowerCase()));
