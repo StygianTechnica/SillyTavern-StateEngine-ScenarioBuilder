@@ -29,7 +29,7 @@ import { callModelFirst } from '../generate/llm.js';
 import { replyKeyOf, canUseAhead, shouldThinkAhead } from './ahead.js';
 import { gatherInputs } from '../guidance/sync.js';
 import { fitDirectorPrompt, promptBudget } from './fit.js';
-import { nextFight, fightFacts, woundsOf } from './fight.js';
+import { nextFight, fightFacts, woundsOf, fightPaused } from './fight.js';
 import { combatOptions, stanceFor, protectionOf, powerRatingOf, mayDie, protectedText } from './combat.js';
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
@@ -571,7 +571,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         callerText,
         caller,
         dead: deadHere,
-        fight: doc.fight,
+        // A paused fight is no moment for a blessing.
+        fight: fightPaused(doc.fight) ? null : doc.fight,
         turn: doc.turn,
         lastActed: doc.powersActed,
         lastDid: doc.powersDid,

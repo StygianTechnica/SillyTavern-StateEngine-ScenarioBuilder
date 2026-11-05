@@ -19,6 +19,9 @@ export const FIGHT_LADDER = Object.freeze(['unhurt', 'hurt', 'wounded', 'badly w
 export const FIGHT_OUT = Object.freeze(['down', 'fled', 'won']);
 export const FIGHT_SIDES = Object.freeze(['foe', 'ally']);
 export const FIGHT_REPLIES = 5;
+// Replies in a row with no fighting before a paused fight counts as broken
+// off (its wounds are remembered: src/director/run.js).
+export const FIGHT_QUIET = 3;
 const MAX_FIGHTERS = 8;
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
@@ -50,11 +53,38 @@ export function readSide(text) {
     return '';
 }
 
+// A fighter's name as a small model writes it, with a condition or side
+// tacked on ("Inji Miyama, unhurt", "Inji Miyama (ally)") -> the bare name
+// and whatever the tail says.
+export function readFighterName(text) {
+    let name = clean(text);
+    let condition = '';
+    let side = '';
+    for (let i = 0; i < 3; i += 1) {
+        const m = name.match(/^(.+?)\s*(?:,\s*|-\s+|[([]\s*)([^,()[\]]+?)\s*[)\]]?$/);
+        if (!m || m[2].split(/\s+/).length > 3) break;
+        const c = readCondition(m[2]);
+        const s = c ? '' : readSide(m[2]);
+        if (!c && !s) break;
+        name = clean(m[1]);
+        if (c && !condition) condition = c;
+        if (s && !side) side = s;
+    }
+    return { name, condition, side };
+}
+
+const worse = (a, b) => {
+    const at = (c) => (FIGHT_OUT.includes(c) ? FIGHT_LADDER.length : rank(c));
+    return at(b) > at(a) ? b : a;
+};
+
 function normalizeFighter(f) {
     if (!isObject(f) || !clean(f.name)) return null;
+    const read = readFighterName(f.name);
+    if (!read.name) return null;
     return {
-        name: clean(f.name).slice(0, 80),
-        side: FIGHT_SIDES.includes(f.side) ? f.side : 'foe',
+        name: read.name.slice(0, 80),
+        side: read.side || (FIGHT_SIDES.includes(f.side) ? f.side : 'foe'),
         condition: [...FIGHT_LADDER, ...FIGHT_OUT].includes(f.condition) ? f.condition : 'unhurt',
         // Replies in a row a foe's condition did not worsen.
         steady: Number.isInteger(f.steady) && f.steady >= 0 ? f.steady : 0,
@@ -64,9 +94,25 @@ function normalizeFighter(f) {
     };
 }
 
+// One fighter named twice is one fighter: the worse condition, and an ally
+// if either says so (foe is only the default when no side was given).
+function mergeFighters(list) {
+    const out = [];
+    for (const f of list) {
+        const had = out.find((x) => sameName(x.name, f.name));
+        if (!had) { out.push(f); continue; }
+        had.condition = worse(had.condition, f.condition);
+        if (f.side === 'ally') had.side = 'ally';
+        had.steady = Math.min(had.steady, f.steady);
+        had.power ||= f.power;
+        had.protect ||= f.protect;
+    }
+    return out;
+}
+
 export function normalizeFight(value) {
     if (!isObject(value)) return null;
-    const fighters = (Array.isArray(value.fighters) ? value.fighters : []).map(normalizeFighter).filter(Boolean).slice(0, MAX_FIGHTERS);
+    const fighters = mergeFighters((Array.isArray(value.fighters) ? value.fighters : []).map(normalizeFighter).filter(Boolean)).slice(0, MAX_FIGHTERS);
     if (!fighters.length) return null;
     return {
         fighters,
@@ -74,8 +120,13 @@ export function normalizeFight(value) {
         ended: value.ended === true,
         // The most replies this fight runs (longer while a strong foe stands).
         ...(Number.isInteger(value.limit) && value.limit > 0 ? { limit: value.limit } : {}),
+        // Replies in a row the briefing reported no fighting (paused).
+        ...(Number.isInteger(value.quiet) && value.quiet > 0 ? { quiet: value.quiet } : {}),
     };
 }
+
+// Paused: the fight stands, but nobody fought in the latest reply.
+export const fightPaused = (fight) => (normalizeFight(fight)?.quiet ?? 0) > 0;
 
 const standing = (f) => !FIGHT_OUT.includes(f.condition);
 
@@ -90,9 +141,18 @@ const standing = (f) => !FIGHT_OUT.includes(f.condition);
 // -> the fight for this reply, or null when there is none.
 export function nextFight(prev, lines = [], { present = () => true, limit = FIGHT_REPLIES, playerNames = [], remembered = {}, traitsOf = () => ({}), foesFall = 'standard', alliesPressed = 'spared' } = {}) {
     const last = prev && !prev.ended ? normalizeFight(prev) : null;
-    const said = (lines ?? [])
-        .map((l) => ({ name: clean(l?.name), condition: readCondition(l?.condition), side: readSide(l?.side) }))
-        .filter((l) => l.name && !playerNames.some((p) => sameName(p, l.name)));
+    const said = [];
+    for (const l of lines ?? []) {
+        // "Inji Miyama (ally) | unhurt": the name, with what its tail says
+        // when the cells do not.
+        const read = readFighterName(l?.name);
+        const x = { name: read.name, condition: readCondition(l?.condition) || read.condition, side: readSide(l?.side) || read.side };
+        if (!x.name || playerNames.some((p) => sameName(p, x.name))) continue;
+        const had = said.find((s) => sameName(s.name, x.name));
+        if (!had) { said.push(x); continue; }
+        had.condition = had.condition && x.condition ? worse(had.condition, x.condition) : had.condition || x.condition;
+        had.side ||= x.side;
+    }
     if (!last && !said.length) return null;
     // Everyone already fighting, then anyone new the briefing brings in.
     const fighters = (last?.fighters ?? []).map((f) => ({ ...f }));
@@ -110,8 +170,12 @@ export function nextFight(prev, lines = [], { present = () => true, limit = FIGH
     }
     // A reply the briefing reports no fighting in: the fight is paused while
     // its fighters are still around (nothing counts, no one wears down - the
-    // player may have stepped out), and over once none of them is.
-    if (last && !said.length) return last.fighters.some((f) => standing(f) && present(f.name)) ? last : null;
+    // player may have stepped out), and over once none of them is - or once
+    // it has stayed quiet FIGHT_QUIET replies: then it was broken off.
+    if (last && !said.length) {
+        const quiet = (last.quiet ?? 0) + 1;
+        return quiet < FIGHT_QUIET && last.fighters.some((f) => standing(f) && present(f.name)) ? { ...last, quiet } : null;
+    }
     const round = last ? last.round + 1 : 1;
     // The hardest foe still standing hits allies harder, and draws the
     // fight out a little.
@@ -212,6 +276,7 @@ export function fightFacts(fight, limit = FIGHT_REPLIES) {
     limit = f.limit ?? limit;
     const left = Math.max(1, limit - f.round);
     const who = f.fighters.map((x) => `${x.name} (${tags(x)}): ${x.condition}`).join('; ');
+    if (f.quiet) return `A fight paused after ${f.round} ${f.round === 1 ? 'reply' : 'replies'}, with no fighting for ${f.quiet}: ${who}. Write FIGHT lines only if the latest chat takes the fighting up again; otherwise it is over.`;
     return `After ${f.round} ${f.round === 1 ? 'reply' : 'replies'}: ${who}. A fight ends within ${limit} replies - ${left === 1 ? 'this is its last: it ends in this reply' : `at most ${left} more`}. A condition only gets worse unless the story heals it.`;
 }
 
@@ -222,7 +287,7 @@ export function fightFacts(fight, limit = FIGHT_REPLIES) {
 // unnamed guard). With no fight running, everything is empty.
 export function fightValues(fight, limit = FIGHT_REPLIES, characterId = () => '') {
     const f = normalizeFight(fight);
-    if (!f || f.ended) return { fight_active: false, fight_round: 0, fight_summary: '', fight_fighters: [], fight_allies: [], fight_foes: [] };
+    if (!f || f.ended || f.quiet) return { fight_active: false, fight_round: 0, fight_summary: '', fight_fighters: [], fight_allies: [], fight_foes: [] };
     limit = f.limit ?? limit;
     const ids = (side) => [...new Set(f.fighters.filter((x) => x.side === side).map((x) => characterId(x.name)).filter(Boolean))];
     return {
@@ -236,9 +301,10 @@ export function fightValues(fight, limit = FIGHT_REPLIES, characterId = () => ''
 }
 
 // The narrator's lines for the fight this reply - '' when there is none.
+// A paused fight tells the narrator nothing: there is no fighting to show.
 export function fightGuidance(fight) {
     const f = normalizeFight(fight);
-    if (!f) return '';
+    if (!f || f.quiet) return '';
     const cue = (x) => {
         if (x.condition === 'down' && x.protect === 'spare') return SPARED_DOWN;
         if (x.side === 'ally') return x.condition === 'down' || x.condition === 'fled' ? ALLY_CUES[x.condition] : `is ${ALLY_CUES[x.condition] ?? ALLY_CUES.unhurt}`;

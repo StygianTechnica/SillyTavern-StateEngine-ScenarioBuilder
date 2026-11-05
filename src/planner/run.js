@@ -48,7 +48,7 @@ import { stillWaiting } from '../director/suspended.js';
 import {
     buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline, wholeOutline, outlineToCome,
     buildBeatPrompt, readBeat, buildRecapPrompt, readRecap, readRecapText, closeCutJson, buildIdeasPrompt, readIdeas,
-    buildSteerObjectsPrompt, readSteerObjects, buildStarterPrompt, readStarter, writesForPlayer,
+    buildSteerObjectsPrompt, readSteerObjects, buildStarterPrompt, readStarter, writesForPlayer, withoutPlayerBeats,
 } from './prompts.js';
 import { povRule } from '../director/perspective.js';
 import { livePoolFor, byType } from '../naming/run.js';
@@ -341,6 +341,12 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
             console.warn(LOG_PREFIX, 'the outline answer had no beats Scenario Builder could read:', JSON.stringify(answer).slice(0, 2000));
             throw Object.assign(new Error('The outline had no beats in it (the answer is kept in the planner log).'), { answer: JSON.stringify(answer) });
         }
+        // Beats to come that the player character leads never happen: the
+        // planner does not play them (the user's locked beats stay).
+        const lockedIds = beatsOf(getChatDoc(chatKey).gm.outline).filter((b) => b.locked).map((b) => b.id);
+        const pruned = withoutPlayerBeats(parsed, [userName()], lockedIds);
+        if (pruned.dropped.length) console.info(LOG_PREFIX, `the outline's beats for ${userName()} to play were left out:`, pruned.dropped);
+        parsed = pruned.outline;
         // The conditions the outline wants watched: story triggers.
         await plannerTriggers(chatId, chatKey, parsed.triggers ?? []);
         updateChatDoc(chatKey, (d) => {
@@ -428,7 +434,7 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today', late: x.late, promise: x.source === 'promise' })),
             world: world?.part ?? null,
         });
-        const plan = readDayPlan(await ask({ system, prompt }));
+        const plan = readDayPlan(await ask({ system, prompt }), { playerNames: [userName()] });
         if (!plan) throw new Error('The plan had no moments in it.');
         updateChatDoc(chatKey, (d) => {
             setDayPlan(d.gm, plan, { day: d.canonical.day, turn: d.gm.counters.turn });
@@ -524,7 +530,7 @@ export async function runCheck(chatId, chatKey) {
             beat: beat?.text ?? '',
             askTension,
         });
-        const check = readCheck(await ask({ system, prompt }));
+        const check = readCheck(await ask({ system, prompt }), { playerNames: [userName()] });
         // Nothing is done that the chat does not show: a moment's people,
         // and for the beat, a person no message has named yet.
         const seen = seenTexts();

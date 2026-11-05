@@ -114,14 +114,36 @@ export function buildDayPrompt(input) {
         `PLAN ${input.rest ? 'THE REST OF THE DAY' : 'THE DAY'}${clean(input.dateText) ? ` - ${clean(input.dateText)}` : ''}${clean(input.dayPart) ? `, starting ${clean(input.dayPart)}` : ''}`,
         ...(clean(input.place) ? [`The scene is at ${clean(input.place)}${clean(input.situation) ? `, where ${unstopFirst(input.situation)}` : ''}. That is where things stand - already played. The plan picks up after it; moments elsewhere happen only if the story would plausibly go there today.`] : []),
         'Two to five moments, in the order they could happen: something someone does, an arrival, news, a discovery, a complication, a quiet beat. Each grows out of what is above, moves a thread, a person\'s agenda or a request along, and leaves the player free to respond. Vary them: not every moment is a crisis.',
+        `A moment is what the world does around ${userName}, never what ${userName} does: its subject is someone else, a faction, or the world itself (news, an arrival, a turn of events). Never "${userName} goes" or "${userName} and a friend confront" - you do not play ${userName}. Where a moment answers something ${userName} might do, that goes in its trigger and the moment is how the world answers it (trigger "if ${userName} goes to the docks", moment "a crew is waiting there with a job").`,
+        ...(clean(input.story?.beat) ? [`At least one moment moves the beat now along, done by the people it names. An agenda fits the beat: someone the beat has acting today wants to get there (they may hesitate or bargain on the way), not the opposite - unless the latest chat shows them refusing it.`] : []),
         'Every moment is something that has NOT happened yet: what comes next, later today, or from somewhere else - never what THE LATEST CHAT already shows, said again or a little reworded. A talk under way is not a moment; what it leads to, once it is over, can be. Give each its time of day and the names it involves.',
         'Answer in this JSON shape:',
-        `{"moments":[{"text":"<what happens, one sentence>","when":"<morning|midday|afternoon|evening|night|any time>","trigger":"<the condition, e.g. 'if the scene is at the forge'; empty if none>","ties":["<names of the people, places, factions or threads it involves>"],"droppable":true${happeningField}}],`,
+        `{"moments":[{"text":"<what someone other than ${userName} does, or what happens around ${userName}, one sentence>","when":"<morning|midday|afternoon|evening|night|any time>","trigger":"<the condition, e.g. 'if the scene is at the forge'; empty if none>","ties":["<names of the people, places, factions or threads it involves>"],"droppable":true${happeningField}}],`,
         ' "agendas":[{"who":"<a person who matters today, not the player>","wants":"<what they want>","will":"<what they will do about it>","hidden":"<what they hide, or empty>"}],',
         ...(world ? [] : [' "offscreen":["<what a faction or absent person is doing meanwhile>"],']),
         ` "requests":[{"request":"<request id>","moments":[<the number of each moment that answers it, from 1>]}]${world ? `,\n${world.field}` : ''}}`,
     );
     return { system, prompt: parts.join('\n') };
+}
+
+// A moment the player character leads ("Cyril confronts Bartin", "Inji and
+// Cyril work with Zane"): the planner does not play them, so it goes. Names
+// are the player character's (full and first).
+export function playerLed(text, playerNames = []) {
+    const t = clean(text).replace(/^["'*]+/, '');
+    const names = [...new Set(list(playerNames).flatMap((n) => [clean(n), clean(n).split(' ')[0]]).filter((n) => n.length > 1))];
+    const esc = (n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // "Cyril receives a call", "Cyril is cornered": the world acting on them.
+    const onThem = '(?:is|was|are|has|had|gets|got|receives|received|hears|heard)\\b';
+    return names.some((n) => new RegExp(`^(?:[A-Z][\\w'-]*(?:\\s+[A-Z][\\w'-]*)?\\s+and\\s+)?${esc(n)}(?:\\s+and\\s+[A-Z][\\w'-]*(?:\\s+[A-Z][\\w'-]*)?)?\\s+(?!${onThem})[a-z]`).test(t));
+}
+
+// Moments without those the player character leads - all of them if none
+// would be left (a plan of the player's moves beats none at all).
+function worldSide(moments, playerNames) {
+    if (!list(playerNames).length) return moments;
+    const kept = moments.filter((m) => !playerLed(m.text, playerNames));
+    return kept.length ? kept : moments;
 }
 
 function readMoment(m) {
@@ -136,16 +158,23 @@ function readLinks(v) {
 }
 
 // -> { moments, agendas, offscreen, requests } or null when nothing usable.
-export function readDayPlan(json) {
+// playerNames: the player character's - moments they lead are dropped.
+// (Request links count moments as the model numbered them, so they are
+// renumbered past any dropped.)
+export function readDayPlan(json, { playerNames = [] } = {}) {
     if (!isObject(json)) return null;
-    const moments = list(json.moments).map(readMoment).filter(Boolean).slice(0, 6);
+    const all = list(json.moments).map(readMoment);
+    const kept = worldSide(all.filter(Boolean), playerNames);
+    const moments = kept.slice(0, 6);
     if (!moments.length) return null;
+    // The model's number of a moment -> its number now (none if dropped).
+    const renumber = (n) => { const i = moments.indexOf(all[n - 1]); return i < 0 ? 0 : i + 1; };
     return {
         moments,
         agendas: list(json.agendas).filter((a) => isObject(a) && clean(a.who) && clean(a.wants))
             .map((a) => ({ who: cut(a.who, 60), wants: cut(a.wants, 200), will: cut(a.will, 200), hidden: cut(a.hidden, 200) })).slice(0, 6),
         offscreen: texts(json.offscreen, 4).map((t) => cut(t, 240)),
-        requests: readLinks(json.requests),
+        requests: readLinks(json.requests).map((r) => ({ ...r, moments: r.moments.map(renumber).filter(Boolean) })).filter((r) => r.moments.length),
         world: readWorld(json.world),
     };
 }
@@ -168,14 +197,14 @@ export function buildCheckPrompt(input) {
         '',
         'Which pending moments has the story already played out ("done"), and which can no longer happen or no longer fit where the story went ("skipped")? Leave the rest alone.',
         'Only what THE LATEST CHAT shows counts as done: someone who appears nowhere in it has done nothing yet, and a moment planned for them is still pending.',
-        'Add a new moment only for a request above, or when the story has opened something the plan lacks (at most two).',
+        `Add a new moment only for a request above, or when the story has opened something the plan lacks (at most two) - something the world or someone other than ${userName} does, never what ${userName} does.`,
     );
     if (clean(input.beat)) parts.push('Say whether the story has now played out the beat above ("beat_done": true), or not yet (false).');
     if (input.askTension) parts.push('Rate the story\'s tension as the latest chat leaves it, each from 0 (none) to 5 (unbearable): threat (danger to people), uncertainty (open questions, mistrust, the unknown) and emotional (what is at stake between people), with a few words on what drives it.');
     parts.push(
         'Answer in this JSON shape:',
         '{"done":[{"id":"<moment id>","how":"<a few words>"}],"skipped":[{"id":"<moment id>","why":"<a few words>"}],',
-        ' "add":[{"text":"<what happens>","when":"<time of day or any time>","trigger":"<condition or empty>","ties":["<names>"],"droppable":true}],',
+        ` "add":[{"text":"<what happens around ${userName}>","when":"<time of day or any time>","trigger":"<condition or empty>","ties":["<names>"],"droppable":true}],`,
         ` "requests":[{"request":"<request id>","moments":[<number of each added moment that answers it, from 1>]}]${clean(input.beat) ? ',\n "beat_done":false' : ''}${input.askTension ? ',\n "tension":{"threat":0,"uncertainty":0,"emotional":0,"reason":"<what drives it>"}' : ''}}`,
     );
     return { system, prompt: parts.join('\n') };
@@ -195,14 +224,18 @@ function readTension(t) {
 
 // -> { done: [{ id, how }], skipped: [{ id, why }], add: [moment], requests,
 //      beatDone, tension }
-export function readCheck(json) {
+// playerNames: the player character's - moments they lead are not added.
+export function readCheck(json, { playerNames = [] } = {}) {
     if (!isObject(json)) return { done: [], skipped: [], add: [], requests: [], beatDone: false, tension: null };
+    const all = list(json.add).map(readMoment);
+    const add = all.filter((m) => m && !(list(playerNames).length && playerLed(m.text, playerNames))).slice(0, 2);
+    const renumber = (n) => { const i = add.indexOf(all[n - 1]); return i < 0 ? 0 : i + 1; };
     const ids = (v, key) => list(v).map((x) => (typeof x === 'string' ? { id: clean(x).toLowerCase(), [key]: '' } : isObject(x) ? { id: clean(x.id).toLowerCase(), [key]: cut(x[key], 160) } : null)).filter((x) => x?.id);
     return {
         done: ids(json.done, 'how'),
         skipped: ids(json.skipped, 'why'),
-        add: list(json.add).map(readMoment).filter(Boolean).slice(0, 2),
-        requests: readLinks(json.requests),
+        add,
+        requests: readLinks(json.requests).map((r) => ({ ...r, moments: r.moments.map(renumber).filter(Boolean) })).filter((r) => r.moments.length),
         beatDone: json.beat_done === true || json.beatDone === true,
         tension: readTension(json.tension),
     };
@@ -290,7 +323,7 @@ export function buildOutlinePrompt(input) {
     parts.push(
         '',
         outline && !input.rewrite ? 'REVIEW THE OUTLINE' : 'WRITE THE OUTLINE',
-        `${outline && !input.rewrite ? 'Bring it up to date with the story: mark the beats the story has played out "done", the one under way "active", and any the story has made impossible "skipped". Rewrite or replace beats still to come if the story has moved somewhere better - keep each kept beat\'s id. Never add a new beat for something that has already happened. ' : ''}One act per act of the shape, in its order, ${beatsPerAct(input.pacing)} beats each. A beat is a turn in the story, loose enough to happen many ways ("the alliance is tested by a betrayal from within"), growing out of the threads, factions, frictions and people above. Everyday moments - a watch, a meal, waking, making camp, a stretch of road where nothing happens - are never beats, and nor is the journey itself: a beat is what happens where they arrive. Each beat happens in one place; two places are two beats, in the order the story will reach them (somewhere beyond the bridge comes after the bridge). Let each act's beats reach that act's target tension. Add a few seeds: small things to plant early so a later beat pays off.`,
+        `${outline && !input.rewrite ? 'Bring it up to date with the story: mark the beats the story has played out "done", the one under way "active", and any the story has made impossible "skipped". Rewrite or replace beats still to come if the story has moved somewhere better - keep each kept beat\'s id. Never add a new beat for something that has already happened. ' : ''}One act per act of the shape, in its order, ${beatsPerAct(input.pacing)} beats each. A beat is a turn in the story, loose enough to happen many ways ("the alliance is tested by a betrayal from within"), growing out of the threads, factions, frictions and people above. Everyday moments - a watch, a meal, waking, making camp, a stretch of road where nothing happens - are never beats, and nor is the journey itself: a beat is what happens where they arrive. Each beat happens in one place; two places are two beats, in the order the story will reach them (somewhere beyond the bridge comes after the bridge). Let each act's beats reach that act's target tension. A beat still to come is what the world and the other people do around ${userName} - an arrival, a betrayal, an offer, an attack, news - never what ${userName} does, thinks or feels ("${userName} confronts", "${userName} goes outside to think"): you do not play ${userName}, so such a beat never happens. When a turn needs ${userName} to act, the beat is what the others do that puts it before ${userName}, or how the world answers once ${userName} has acted. A beat already "done" may tell what ${userName} did. Add a few seeds: small things to plant early so a later beat pays off.`,
         'Answer in this JSON shape:',
         '{"premise":"<what this story is about, two or three sentences>","themes":["<theme>"],',
         ' "acts":[{"title":"<act title>","beats":[{"id":"<the id of a beat kept from above, or empty for a new one>","text":"<the beat>","ties":["<names>"],"status":"pending|active|done|skipped"}]}],',
@@ -442,7 +475,7 @@ export function buildBeatPrompt(input) {
     parts.push(
         '',
         'WRITE IT AGAIN',
-        `A different turn in the story for the same place in the outline: it follows from the beats before it and leads toward the ones after. Not a rewording of "${clean(old?.text)}" - a different idea.`,
+        `A different turn in the story for the same place in the outline: it follows from the beats before it and leads toward the ones after. Not a rewording of "${clean(old?.text)}" - a different idea. It is what the world or the other people do around ${userName}, never what ${userName} does, thinks or feels.`,
         ...steerLines(input.steer),
         ...(clean(input.wish) ? [`The user wants: ${clean(input.wish)}`] : []),
         'Answer in this JSON shape: {"text":"<the beat, one sentence>","ties":["<names of the people, places, factions or threads it involves>"]}',
@@ -499,6 +532,24 @@ export function readOutline(raw) {
         seeds: list(json.seeds).filter((x) => isObject(x) && clean(x.text)).map((x) => ({ text: cut(x.text, 200), payoff: cut(x.payoff, 200) })).slice(0, 6),
         triggers: list(json.triggers).filter((x) => isObject(x) && clean(x.when) && clean(x.then)).map((x) => ({ when: cut(x.when, 240), then: cut(x.then, 300) })).slice(0, 3),
     };
+}
+
+// A read outline without the beats still to come that the player character
+// leads (playerLed) - the planner does not play them, so they never happen.
+// Beats already played out may tell what they did; `keepIds` (the user's
+// locked beats) always stay, and an act keeps its beats if it would have
+// none left. -> { outline, dropped: [text] }
+export function withoutPlayerBeats(outline, playerNames = [], keepIds = []) {
+    if (!outline || !list(playerNames).length) return { outline, dropped: [] };
+    const keep = new Set(list(keepIds));
+    const dropped = [];
+    const acts = outline.acts.map((a) => {
+        const out = a.beats.filter((b) => b.status !== 'pending' || keep.has(b.id) || !playerLed(b.text, playerNames));
+        if (!out.length) return a;
+        dropped.push(...a.beats.filter((b) => !out.includes(b)).map((b) => b.text));
+        return { ...a, beats: out };
+    });
+    return { outline: { ...outline, acts }, dropped };
 }
 
 // input: { title, text }

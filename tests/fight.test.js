@@ -1,4 +1,4 @@
-import { nextFight, readCondition, readSide, normalizeFight, fightFacts, fightGuidance, woundsOf } from '../src/director/fight.js';
+import { nextFight, readCondition, readSide, readFighterName, normalizeFight, fightFacts, fightGuidance, fightValues, woundsOf, FIGHT_QUIET } from '../src/director/fight.js';
 import { parseDirectorNote } from '../src/director/prompt.js';
 import { buildGuidance } from '../src/guidance/build.js';
 
@@ -22,6 +22,27 @@ describe('reading the FIGHT lines', () => {
         expect(readSide('enemy')).toBe('foe');
         expect(readSide('companion')).toBe('ally');
     });
+
+    it('takes a condition or side off the end of a name, and merges one fighter named twice', () => {
+        expect(readFighterName('Inji Miyama, unhurt')).toEqual({ name: 'Inji Miyama', condition: 'unhurt', side: '' });
+        expect(readFighterName('Inji Miyama (ally)')).toEqual({ name: 'Inji Miyama', condition: '', side: 'ally' });
+        expect(readFighterName('Skeleton - badly wounded')).toEqual({ name: 'Skeleton', condition: 'badly wounded', side: '' });
+        expect(readFighterName('Varyn, the Bold').name).toBe('Varyn, the Bold');
+        expect(readFighterName('Jean-Luc').name).toBe('Jean-Luc');
+        const parsed = parseDirectorNote('FIGHT | Adam Miller | hurt | foe\nFIGHT | Inji Miyama, unhurt | unhurt\nFIGHT | Inji Miyama (ally) | unhurt\n\nThey trade blows.');
+        const fight = nextFight(null, parsed.fights);
+        expect(fight.fighters.map((f) => [f.name, f.side, f.condition])).toEqual([['Adam Miller', 'foe', 'hurt'], ['Inji Miyama', 'ally', 'unhurt']]);
+        expect(fightGuidance(fight)).toContain('Inji Miyama is unhurt.');
+    });
+
+    it('cleans up a fight stored with such names', () => {
+        const stored = { fighters: [
+            { name: 'Adam Miller', side: 'foe', condition: 'hurt', steady: 0 },
+            { name: 'Inji Miyama, unhurt', side: 'foe', condition: 'unhurt', steady: 1 },
+            { name: 'Inji Miyama (ally)', side: 'foe', condition: 'unhurt', steady: 0 },
+        ], round: 3, ended: false, limit: 5 };
+        expect(normalizeFight(stored).fighters.map((f) => [f.name, f.side, f.condition, f.steady])).toEqual([['Adam Miller', 'foe', 'hurt', 0], ['Inji Miyama', 'ally', 'unhurt', 0]]);
+    });
 });
 
 describe('the fight from reply to reply', () => {
@@ -44,8 +65,25 @@ describe('the fight from reply to reply', () => {
 
     it('is paused when the director reports no fighting, while the fighters are still here', () => {
         const start = nextFight(null, [champion('hurt')]);
-        expect(nextFight(start, [], { present: () => true })).toEqual(start);
+        expect(nextFight(start, [], { present: () => true })).toEqual({ ...start, quiet: 1 });
         expect(nextFight(start, [], { present: () => false })).toBe(null);
+    });
+
+    it('is broken off when it stays quiet, and tells the narrator nothing while paused', () => {
+        let fight = nextFight(null, [champion('wounded'), varyn('hurt')]);
+        fight = nextFight(fight, [], { present: () => true });
+        expect(fightGuidance(fight)).toBe('');
+        expect(fightValues(fight).fight_active).toBe(false);
+        expect(fightFacts(fight)).toMatch(/^A fight paused after 1 reply, with no fighting for 1:.*only if the latest chat takes the fighting up again/);
+        expect(buildGuidance({ location: { path: ['Crypt'] }, fight, budget: 2000 }).sections.find((s) => s.key === 'fight')?.text ?? '').toBe('');
+        // Taken up again: it goes on, and counts.
+        const resumed = nextFight(fight, [champion('wounded'), varyn('hurt')]);
+        expect(resumed.quiet).toBeUndefined();
+        expect(resumed.round).toBe(2);
+        expect(fightGuidance(resumed)).toMatch(/^The fight goes on \(reply 2\)/);
+        // Quiet FIGHT_QUIET replies in a row: over.
+        for (let i = 1; i < FIGHT_QUIET; i += 1) fight = nextFight(fight, [], { present: () => true });
+        expect(fight).toBe(null);
     });
 
     it('takes in someone who joins, and ends when every foe is out', () => {
@@ -98,7 +136,7 @@ describe('the fight told to the director and the narrator', () => {
 describe('a fight broken off and taken up again', () => {
     it('neither counts nor wears anyone down while nobody fights', () => {
         let fight = nextFight(null, [champion('wounded'), varyn('hurt')]);
-        for (let i = 0; i < 6; i += 1) fight = nextFight(fight, [], { present: () => true, limit: 5 });
+        for (let i = 1; i < FIGHT_QUIET; i += 1) fight = nextFight(fight, [], { present: () => true, limit: 5 });
         expect(fight.round).toBe(1);
         expect(fight.ended).toBe(false);
         expect(of(fight, 'The Eternal Champion').condition).toBe('wounded');
