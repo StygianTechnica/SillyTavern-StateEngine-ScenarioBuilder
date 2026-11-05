@@ -14,6 +14,7 @@
 
 import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
+import { fitMessages } from './fit-text.js';
 
 let chain = Promise.resolve();
 
@@ -29,8 +30,15 @@ function textOf(result) {
     return '';
 }
 
-async function callNow(messages, maxTokens) {
+async function callNow(given, maxTokens) {
     const context = SillyTavern.getContext();
+    // Fitted to the model's context with room for the answer
+    // (settings.director.contextTokens - the same model, unless a
+    // generation profile is chosen; see fit-text.js).
+    const fitted = fitMessages(given, getSettings().director?.contextTokens, maxTokens);
+    if (fitted.cut) console.info(LOG_PREFIX, `a prompt was trimmed to fit the model's context (${fitted.tokens} of ${fitted.budget} tokens, ${fitted.cut} cut${fitted.cut === 1 ? '' : 's'})`);
+    if (!fitted.fits) console.warn(LOG_PREFIX, `a prompt is still over the model's context after trimming (${fitted.tokens} of ${fitted.budget} tokens) - the answer may be cut short`);
+    const messages = fitted.messages;
     const profileId = getSettings().connectionProfileId;
     if (profileId) {
         const svc = context.ConnectionManagerRequestService;

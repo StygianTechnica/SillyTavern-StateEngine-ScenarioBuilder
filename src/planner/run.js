@@ -26,6 +26,7 @@ import { getBoundSettingId, listEntries, getObjectTypes, createEntry, updateEntr
 import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { setQuestMeta, questMeta } from '../quests/sync.js';
 import { callModel } from '../generate/llm.js';
+import { fitOutlinePrompt, promptBudget } from './fit.js';
 import { readModelJson } from '../generate/prompt.js';
 import { plannerTriggers, retirePlannerTriggers, latestUserIndex } from '../triggers/run.js';
 import { gatherInputs } from '../guidance/sync.js';
@@ -287,7 +288,8 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
         const volume = doc.gm.volume;
         const newVolume = writing && volume.number > 1 && !beatsOf(doc.gm.outline).some((b) => b.status === 'done') ? { number: volume.number } : null;
         if (newVolume && !wish) wish = volume.direction;
-        const outlinePrompt = buildOutlinePrompt({
+        // Fitted to the model's context, with room for the answer (fit.js).
+        const fitted = fitOutlinePrompt({
             dossier: await dossierWithNames(chatId, settingId, guidance, ctx),
             userName: userName(),
             messages: chatMessages(writing ? 12 : 8),
@@ -307,7 +309,10 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
             newVolume,
             pacing: plannerSettings().pacing,
             untouched: await factionsToBringIn(chatId, settingId),
-        });
+        }, promptBudget(getSettings().director.contextTokens, OUTLINE_TOKENS));
+        if (fitted.trimmed.length) console.info(LOG_PREFIX, `the outline prompt was trimmed to fit the model's context (${fitted.tokens} of ${fitted.budget} tokens): ${fitted.trimmed.join(', ')}`);
+        if (!fitted.fits) console.warn(LOG_PREFIX, `the outline prompt is still over the model's context after trimming (${fitted.tokens} of ${fitted.budget} tokens)`);
+        const outlinePrompt = { system: fitted.system, prompt: fitted.prompt };
         const salvage = { salvage: (raw) => readModelJson(closeCutJson(raw)) };
         // A written outline (a first one, or a rewrite) needs beats still to
         // come. Assassins Inc's rewrite came back with only the beats the
