@@ -12,7 +12,7 @@
 //   queue: [{ id, text, urgency: 'soon' | 'today' | 'whenever', status: 'waiting' |
 //             'planned' | 'done' | 'withdrawn', at, plannedAs: [momentId], doneAt }]
 //   inspirations: [{ id, title, text, motifs: [text], at, error }]
-//   log: [{ pass, at, ms, outcome, error }]     the last LOG_LIMIT passes
+//   log: [{ pass, at, ms, outcome, error, answer? }]  the last LOG_LIMIT passes
 //   counters: { sinceCheck, turn, lastCheck }   replies since the last CHECK; replies seen;
 //                                               when the last CHECK or DAY pass ran (ISO)
 //   pace: { sceneKey, sceneReplies, idleReplies, baselineWords, hold }
@@ -291,7 +291,9 @@ function trimQueue(queue) {
 }
 
 export function addLog(gm, entry) {
-    gm.log = [...gm.log, { pass: entry.pass, at: entry.at ?? new Date().toISOString(), ms: entry.ms ?? 0, outcome: clean(entry.outcome), error: clean(entry.error) }].slice(-LOG_LIMIT);
+    // A failed pass keeps what the model answered (cut short), so a shape the
+    // reader missed can be seen without the browser console.
+    gm.log = [...gm.log, { pass: entry.pass, at: entry.at ?? new Date().toISOString(), ms: entry.ms ?? 0, outcome: clean(entry.outcome), error: clean(entry.error), ...(entry.answer ? { answer: String(entry.answer).slice(0, 3000) } : {}) }].slice(-LOG_LIMIT);
 }
 
 // ---------------------------------------------------------------- queue

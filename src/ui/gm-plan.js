@@ -772,7 +772,7 @@ function settingsCard(gm) {
         }), 'Quests, quest detail, happenings and seeds the game master thinks up.'),
         log.length ? h('div', { class: 'sb-gm-sub' }, 'Recent passes') : null,
         ...log.map((l) => h('div', { class: 'sb-gm-row sb-gm-log' },
-            h('span', { class: 'sb-chip' }, l.pass), h('span', {}, l.error ? `failed: ${l.error}` : l.outcome),
+            h('span', { class: 'sb-chip' }, l.pass), h('span', { title: l.answer ? `What the model answered:\n${l.answer}` : '' }, l.error ? `failed: ${l.error}` : l.outcome),
             h('small', { class: 'sb-hint' }, `${new Date(l.at).toLocaleTimeString()}${l.ms ? ` · ${(l.ms / 1000).toFixed(1)}s` : ''}`))));
 }
 

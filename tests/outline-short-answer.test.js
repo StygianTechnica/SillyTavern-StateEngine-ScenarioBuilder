@@ -51,3 +51,20 @@ describe('the outline guidance', () => {
         expect(emptyGm().volume.outlineWish).toBe('');
     });
 });
+
+describe('a rewrite that is not a whole outline', () => {
+    // Assassins Inc: a rewrite came back with one chapter of beats already
+    // done; taken in, chapters 2-4 were gone and the volume read as complete.
+    it('is told apart: beats still to come, and every chapter of the shape', async () => {
+        const { wholeOutline, outlineToCome } = await import('../src/planner/prompts.js');
+        const shape = { acts: [{ title: 'a' }, { title: 'b' }, { title: 'c' }, { title: 'd' }] };
+        const doneOnly = { acts: [{ title: 'The Call', beats: [{ text: 'x', status: 'done' }, { text: 'y', status: 'done' }] }] };
+        expect(outlineToCome(doneOnly)).toBe(false);
+        expect(wholeOutline(doneOnly, shape)).toBe(false);
+        expect(wholeOutline({ acts: [{ beats: [{ status: 'pending' }] }] }, shape)).toBe(false);
+        expect(wholeOutline(written, shape)).toBe(true);
+        const full = { acts: shape.acts.map((a) => ({ title: a.title, beats: [{ text: a.title, status: 'pending' }] })) };
+        expect(wholeOutline(full, shape)).toBe(true);
+        expect(wholeOutline(null, shape)).toBe(false);
+    });
+});

@@ -45,7 +45,7 @@ import { companyLines } from '../director/company.js';
 import { questBoard } from '../quests/sync.js';
 import { stillWaiting } from '../director/suspended.js';
 import {
-    buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline,
+    buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline, wholeOutline, outlineToCome,
     buildBeatPrompt, readBeat, buildRecapPrompt, readRecap, readRecapText, closeCutJson, buildIdeasPrompt, readIdeas,
     buildSteerObjectsPrompt, readSteerObjects, buildStarterPrompt, readStarter, writesForPlayer,
 } from './prompts.js';
@@ -153,7 +153,7 @@ async function runPass(kind, chatKey, fn) {
     } catch (err) {
         console.warn(LOG_PREFIX, `the planner's ${kind} pass failed`, err);
         const error = String(err?.message ?? err);
-        updateChatDoc(chatKey, (d) => addLog(d.gm, { pass: kind, ms: Date.now() - started, outcome: 'failed', error }));
+        updateChatDoc(chatKey, (d) => addLog(d.gm, { pass: kind, ms: Date.now() - started, outcome: 'failed', error, answer: err?.answer ?? '' }));
         status = { ...status, error };
         return null;
     } finally {
@@ -177,7 +177,7 @@ async function ask({ system, prompt }, maxTokens = 0, { salvage = null } = {}) {
     if (second) return second;
     const saved = salvage?.(again) ?? salvage?.(raw);
     if (saved) return saved;
-    throw new Error('The model\'s answer was not JSON.');
+    throw Object.assign(new Error('The model\'s answer was not JSON.'), { answer: String(again || raw || '') });
 }
 
 // ---------------------------------------------------------------- the story (§5)
@@ -287,8 +287,7 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
         const volume = doc.gm.volume;
         const newVolume = writing && volume.number > 1 && !beatsOf(doc.gm.outline).some((b) => b.status === 'done') ? { number: volume.number } : null;
         if (newVolume && !wish) wish = volume.direction;
-        let answer = null;
-        const parsed = readOutline(answer = await ask(buildOutlinePrompt({
+        const outlinePrompt = buildOutlinePrompt({
             dossier: await dossierWithNames(chatId, settingId, guidance, ctx),
             userName: userName(),
             messages: chatMessages(writing ? 12 : 8),
@@ -308,11 +307,34 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
             newVolume,
             pacing: plannerSettings().pacing,
             untouched: await factionsToBringIn(chatId, settingId),
-        }), OUTLINE_TOKENS, { salvage: (raw) => readModelJson(closeCutJson(raw)) }));
+        });
+        const salvage = { salvage: (raw) => readModelJson(closeCutJson(raw)) };
+        // A written outline (a first one, or a rewrite) needs beats still to
+        // come. Assassins Inc's rewrite came back with only the beats the
+        // story had done - taken in, the volume read as complete. Such an
+        // answer is asked for once more, then turned away; the outline
+        // before it stays.
+        // Every chapter of the shape, too: a rewrite with fewer chapters
+        // deleted the rest (chapters 2-4 of Assassins Inc's volume 3).
+        const toCome = outlineToCome;
+        const whole = (p) => wholeOutline(p, shape);
+        let answer = await ask(outlinePrompt, OUTLINE_TOKENS, salvage);
+        let parsed = readOutline(answer);
+        if (writing && !whole(parsed)) {
+            console.info(LOG_PREFIX, 'the outline came back without every chapter, or with nothing still to come - asking again');
+            answer = await ask({
+                system: outlinePrompt.system,
+                prompt: `${outlinePrompt.prompt}\n\nIMPORTANT: the last answer was not a whole outline - it had fewer than ${shape.acts.length} acts, or only what the story has already done. Answer with all ${shape.acts.length} acts of the shape, in its order (${shape.acts.map((a) => a.title).join(', ')}). Keep the beats the story has done as they are, then write the beats still to come - status "pending" - from where the story is now.`,
+            }, OUTLINE_TOKENS, salvage);
+            parsed = readOutline(answer);
+            if (parsed && !whole(parsed)) {
+                throw Object.assign(new Error(`The outline came back with ${toCome(parsed) ? `${parsed.acts.length} of ${shape.acts.length} chapters` : 'no beats still to come'} - the outline before it is kept (the answer is in the planner log).`), { answer: JSON.stringify(answer) });
+            }
+        }
         if (!parsed) {
             // What came back, so a new shape can be read next time.
             console.warn(LOG_PREFIX, 'the outline answer had no beats Scenario Builder could read:', JSON.stringify(answer).slice(0, 2000));
-            throw new Error('The outline had no beats in it (the answer is in the browser console).');
+            throw Object.assign(new Error('The outline had no beats in it (the answer is kept in the planner log).'), { answer: JSON.stringify(answer) });
         }
         // The conditions the outline wants watched: story triggers.
         await plannerTriggers(chatId, chatKey, parsed.triggers ?? []);

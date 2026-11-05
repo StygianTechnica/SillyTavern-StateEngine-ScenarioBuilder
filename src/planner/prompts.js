@@ -468,6 +468,11 @@ function outlineRoot(json) {
     for (const v of Object.values(json)) if (isObject(v) && (firstList(v, ACT_KEYS).length || firstList(v, BEAT_KEYS).length)) return v;
     return json;
 }
+// Whether a written outline (readOutline()) has beats still to come, and
+// every chapter of the shape as well.
+export const outlineToCome = (p) => (p?.acts ?? []).some((a) => (a.beats ?? []).some((b) => b.status === 'pending' || b.status === 'active'));
+export const wholeOutline = (p, shape) => outlineToCome(p) && (p?.acts?.length ?? 0) >= (shape?.acts?.length ?? 0);
+
 export function readOutline(raw) {
     const json = outlineRoot(raw);
     if (!isObject(json)) return null;
