@@ -111,3 +111,19 @@ export function placeRuleFor(parentName, frame, { factions = [], siblings = [] }
     }
     return lines.join('\n');
 }
+
+// The purposes a kind of place belongs to, from the words of an idea ("a
+// jazz club" - nightlife, "a container yard" - the harbour), best first:
+// the longer a kind it names, the more it says ("a dockside tavern" is the
+// harbour's before it is any tavern). [] when it names none.
+export function purposesOfKind(text) {
+    const t = ` ${String(text ?? '').toLowerCase().replace(/[^a-z' ]+/g, ' ')} `;
+    const scored = [];
+    for (const [purpose, lists] of Object.entries(HOLDS)) {
+        const hits = [...new Set(lists.flat())].filter((noun) => t.includes(` ${noun} `) || t.includes(` ${noun}s `));
+        if (hits.length) scored.push({ purpose, score: Math.max(...hits.map((n) => n.split(' ').length)) * 10 + hits.length });
+    }
+    return scored.sort((a, b) => b.score - a.score).map((x) => x.purpose);
+}
+
+export const purposeOfKind = (text) => purposesOfKind(text)[0] ?? '';

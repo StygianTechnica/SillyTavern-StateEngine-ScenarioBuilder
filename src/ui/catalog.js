@@ -21,6 +21,7 @@ import {
     eraGroups, randomFor, techForEra, splitList, joinList,
 } from '../library/world-options.js';
 import { generateOverview, generateEntry, rollEntryName } from '../generate/run.js';
+import { chooseParent } from '../generate/place-parent.js';
 import { bloodlinesOf, choicesOf } from '../library/bloodlines.js';
 import { premiseOffer, dismissPremiseOffer } from '../naming/run.js';
 import { cultureOptions, markNameDeclined } from '../naming/run.js';
@@ -444,6 +445,10 @@ function chapterPage(type, all, doc, board = null) {
         body);
 }
 
+// "Inside: (a new region)" - a new top-level place; left empty, a new place
+// goes where it fits (src/generate/place-parent.js).
+const NEW_REGION = '__new_region';
+
 // "Generate a new ..." - from the user's idea, or a surprise. The result
 // opens as a new sheet in edit mode: nothing is created until Save (SB-133).
 function generatePanel(type, all, pathLabel) {
@@ -461,7 +466,7 @@ function generatePanel(type, all, pathLabel) {
     const nameBox = h('input', { class: 'text_pole', value: g.name ?? '', placeholder: 'Leave empty to roll one when it is generated', oninput: (e) => { g.name = e.target.value; } });
     const reroll = () => {
         if (g.rolled && g.name === g.rolled) markNameDeclined(ws.ctx.settingId, g.rolled);
-        const name = rollEntryName({ ctx: ws.ctx, type, brief: g.brief, all, parentId: g.parentId || null, naming: { cultureId: g.culture, gender: g.gender, lineage: g.bloodline ? [g.bloodline] : [] } });
+        const name = rollEntryName({ ctx: ws.ctx, type, brief: g.brief, all, parentId: g.parentId && g.parentId !== NEW_REGION ? g.parentId : null, naming: { cultureId: g.culture, gender: g.gender, lineage: g.bloodline ? [g.bloodline] : [] } });
         if (!name) return toast('info', `Nothing to roll for this ${type.noun} - the model will name it in plain words.`);
         g.name = name;
         g.rolled = name;
@@ -473,10 +478,27 @@ function generatePanel(type, all, pathLabel) {
         try {
             const fields = await fieldDefs(type);
             const naming = { name: (g.name ?? '').trim(), cultureId: g.culture, gender: g.gender, bloodlineId: g.bloodline };
-            const { values, dropped, lineage } = await generateEntry({ task: 'create', type, ctx: ws.ctx, fields, all, brief: useBrief ? g.brief : '', parentId: g.parentId || null, naming });
+            // A place left to find its own spot: the one it is part of,
+            // chosen before it is written so it is written to fit there.
+            const idea = useBrief ? g.brief : '';
+            const placeArgs = () => ({
+                locations: (all.location ?? []).map((l) => ({ id: l.id, name: l.name, aliases: l.aliases ?? l.base?.aliases ?? [], description: l.description ?? l.base?.description ?? '' })),
+                parents: getParents(ws.ctx.settingId),
+                sceneId: ws.ctx.chatKey ? getChatDoc(ws.ctx.chatKey).canonical?.locationId || null : null,
+            });
+            let chosen = type.id === 'location' && !g.parentId ? chooseParent({ brief: idea, ...placeArgs() }) : null;
+            const parentId = g.parentId === NEW_REGION ? null : (g.parentId || chosen?.id || null);
+            const { values, dropped, lineage } = await generateEntry({ task: 'create', type, ctx: ws.ctx, fields, all, brief: idea, parentId, naming });
             g.name = '';
             g.rolled = '';
-            ws.prefill = { values, parentId: g.parentId || null, lineage: lineage?.ids ?? [] };
+            // Put at the top for want of better: what it was written as may name its district.
+            let placedIn = parentId;
+            if (chosen?.why === 'top') {
+                const after = chooseParent({ brief: idea, description: [values.description, values.name].filter(Boolean).join(' '), ...placeArgs() });
+                if (after?.why === 'named') { chosen = after; placedIn = after.id; }
+            }
+            ws.prefill = { values, parentId: placedIn, lineage: lineage?.ids ?? [] };
+            if (chosen && placedIn) toast('info', `Placed inside ${pathLabel(placedIn) || all.location.find((l) => l.id === placedIn)?.name} - change it on the sheet if it belongs elsewhere.`);
             // A kind of being the world has no bloodline for: used as asked, and offered.
             if (lineage?.unknown) toast('info', `"${lineage.unknown}" is not one of this world's bloodlines yet - written as asked. Add it on the Bloodlines tab to describe how they look and live here.`);
             // Its intimate-scene note follows on the sheet, when the setting writes one.
@@ -501,7 +523,7 @@ function generatePanel(type, all, pathLabel) {
             type.id === 'character' ? field('Gender', select([{ value: '', label: 'From the idea, or either' }, { value: 'f', label: 'Female' }, { value: 'm', label: 'Male' }], g.gender, { onchange: (e) => { g.gender = e.target.value; } })) : null,
             bloodlines.length > 1 ? field('Bloodline', select([{ value: '', label: 'From the idea, or by who lives there' }, ...bloodlines.map((b) => ({ value: b.id, label: b.name }))], g.bloodline, { onchange: (e) => { g.bloodline = e.target.value; } }), 'Its culture names them, unless you pick one') : null),
         h('div', { class: 'sb-row' },
-            placed && locations.length ? field(type.id === 'location' ? 'Inside' : 'Located in', select([{ value: '', label: type.id === 'location' ? '(a new region)' : '(anywhere)' }, ...locations], g.parentId, { onchange: (e) => { g.parentId = e.target.value; } })) : null,
+            placed && locations.length ? field(type.id === 'location' ? 'Inside' : 'Located in', select([...(type.id === 'location' ? [{ value: '', label: '(where it fits)' }, { value: NEW_REGION, label: '(a new region)' }] : [{ value: '', label: '(anywhere)' }]), ...locations], g.parentId, { onchange: (e) => { g.parentId = e.target.value; } })) : null,
             h('div', { class: 'sb-actions sb-push' },
                 button(busy ? 'Writing…' : 'Generate', () => void run(true), { iconName: busy ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles', cls: 'sb-primary', disabled: busy }),
                 button('Surprise me', () => void run(false), { iconName: 'fa-dice', disabled: busy, title: 'Ignore the idea box and invent something' }),
