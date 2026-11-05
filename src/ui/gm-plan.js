@@ -726,7 +726,7 @@ function settledCard(gm) {
     return h('div', { class: 'sb-card' },
         h('div', { class: 'sb-card-title' }, icon('fa-thumbtack'), 'Settled in the story',
             h('span', { class: 'sb-gm-title-tools' }, !isEditing(addKey) ? button('Add', () => startEdit(addKey, ''), { iconName: 'fa-plus', title: 'Something the story has made true or agreed' }) : null)),
-        h('small', { class: 'sb-hint' }, 'What a scene really was, and what was agreed or refused - so no one acts as if it were otherwise, argues it or brings it up again. Yours go to the narrator every reply and stay until you remove them; the game master’s go only when the latest messages touch them, and retire on their own after 40 replies untouched.'),
+        h('small', { class: 'sb-hint' }, 'What a scene really was, and what was agreed or refused - so no one acts as if it were otherwise, argues it or brings it up again. The game master always keeps to them; the narrator is reminded only when the latest messages touch one. Yours stay until you remove them; the game master’s retire on their own after 40 replies untouched.'),
         isEditing(addKey) ? inlineEditor(addKey, {
             onSave: (text) => { if (!addSettledItem(chatKey, text)) toast('info', 'That is already settled, or empty.'); },
             placeholder: 'e.g. "The Novakorp run was only a training simulation - nothing real was taken" or "Adam agreed Cyril will not be sent against Omicron Innovations"', saveLabel: 'Add', saveIcon: 'fa-plus',

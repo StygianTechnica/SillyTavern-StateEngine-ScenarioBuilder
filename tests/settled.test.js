@@ -113,12 +113,13 @@ describe('what the director may settle, and what the note carries', () => {
         expect(settledSection({ settled: list })).not.toContain('this terminal');
     });
 
-    it("sends the user's always, the director's only when the latest messages touch them", () => {
-        expect(settledNow(list, { recentText: 'Adam waved them into his office.', skipWords: ['Cyril'] })).toEqual([SIM, OMI]);
-        expect(settledNow(list, { recentText: 'Galice smirked: "Spent the night with Inji and Vex, did we? Private, is it?"', skipWords: ['Cyril'] }))
-            .toEqual([SIM, OMI, list[8].text]);
+    it("sends only what the latest messages touch, the user's too", () => {
+        // A name in the line is enough; Novakorp stays out until it comes up.
+        expect(settledNow(list, { recentText: 'Adam waved them into his office.', skipWords: ['Cyril'] })).toEqual([OMI]);
+        expect(settledNow(list, { recentText: 'Adam wanted the Novakorp report.', skipWords: ['Cyril'] })).toEqual([SIM, OMI]);
+        expect(settledNow(list, { recentText: 'Galice smirked: "Spent the night with Inji and Vex, did we? Private, is it?"', skipWords: ['Cyril'] })).toEqual([list[8].text]);
         // The player's name alone is not touching it.
-        expect(settledNow(list, { recentText: 'Cyril, Cyril, Cyril.', skipWords: ['Cyril'] })).toEqual([SIM, OMI]);
+        expect(settledNow(list, { recentText: 'Cyril, Cyril, Cyril.', skipWords: ['Cyril'] })).toEqual([]);
     });
 });
 

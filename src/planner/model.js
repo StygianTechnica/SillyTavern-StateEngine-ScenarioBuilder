@@ -1413,27 +1413,33 @@ export function settledSection(gm) {
     return ['SETTLED IN THE STORY (private - what the story has made true or agreed; keep to it. It is done with: no one acts as if it were otherwise, and no one argues it, asks for it or brings it up again unless someone else does or the story itself gives them a new reason):', ...list.map((s) => `- ${s.text}`)].join('\n');
 }
 
-// The settled lines for the in-chat note: the user's always, and the
-// director's only when the latest messages touch them - two words in
-// common besides the player's names (the director sees them all). Six at
-// most, the user's first, then the newest. Listed every reply whatever was
-// going on, five lines about the Novakorp simulation kept it on Adam's mind.
+// The settled lines for the in-chat note: only those the latest messages
+// touch - a name in the line (a capitalised word, not the player's), or two
+// words in common besides the player's names. The director sees them all
+// every reply. Six at most, the user's first, then the newest. Listed every
+// reply whatever was going on, the Novakorp simulation - the user's own
+// line among them - kept Novakorp on Adam's mind.
 // list: gm.settled; recentText: the latest messages; skipWords: the
 // player's names.
 export function settledNow(list = [], { recentText = '', skipWords = [], max = 6 } = {}) {
-    const touched = new Set(touchedSettled(list, { recentText, skipWords }));
-    const kept = keptSettled(list);
+    const touched = new Set(touchedSettled(list, { recentText, skipWords, all: true }));
+    const kept = keptSettled(list).filter((s) => touched.has(s.id));
     const users = kept.filter((s) => s.source !== 'director');
-    const director = kept.filter((s) => touched.has(s.id)).reverse();
+    const director = kept.filter((s) => s.source === 'director').reverse();
     return [...users, ...director].slice(0, max).map((s) => s.text);
 }
 
-// The ids of the director's lines the latest messages touch (settledNow()).
-export function touchedSettled(list = [], { recentText = '', skipWords = [] } = {}) {
+// The ids of the lines the latest messages touch (settledNow()) - the
+// director's only, unless `all`.
+export function touchedSettled(list = [], { recentText = '', skipWords = [], all = false } = {}) {
     const skip = new Set(skipWords.flatMap((n) => [...beatWords(n)]));
     const recent = beatWords(recentText);
-    const touches = (text) => [...beatWords(text)].filter((w) => !skip.has(w) && recent.has(w)).length >= 2;
-    return keptSettled(list).filter((s) => s.source === 'director' && touches(s.text)).map((s) => s.id);
+    const named = (text) => [...beatWords((String(text ?? '').match(/(?<![\p{L}'’])\p{Lu}[\p{L}-]+/gu) ?? []).join(' '))];
+    const touches = (text) => {
+        const shared = [...beatWords(text)].filter((w) => !skip.has(w) && recent.has(w));
+        return shared.length >= 2 || named(text).some((w) => shared.includes(w));
+    };
+    return keptSettled(list).filter((s) => (all || s.source === 'director') && touches(s.text)).map((s) => s.id);
 }
 
 // Ages the director's settled lines: those `touchedIds` now count from
