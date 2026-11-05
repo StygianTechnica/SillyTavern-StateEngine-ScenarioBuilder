@@ -21,7 +21,7 @@ import { changeScene } from '../state/scene-actions.js';
 import { syncNow } from '../guidance/sync.js';
 import { getSettings } from '../settings.js';
 import { safeImageSrc } from '../images/attach.js';
-import { entityHistory, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
+import { entityHistory, chatStatusOf, STATUS_LABELS, placeMap } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
 import { placeSurroundings, imageSourceFor } from '../images/prompt.js';
 import { renderQuestTab } from './quest-board.js';
@@ -577,7 +577,36 @@ async function sheetBody(tab, c) {
     }
 }
 
-function overviewTab({ type, entry, isNew, defs, doc, all }) {
+// Moving about the map from a place's sheet: the places above it to click
+// up to, the places inside it to go down to (with a new one made inside),
+// the places beside it, and who and what is here.
+function placeMapCard(entry, { names, parents, allEntries }) {
+    const map = placeMap(entry.id, { parents, entries: allEntries });
+    const link = (id, label = names.get(id)?.name ?? id) => h('a', { class: 'sb-crumb', href: '#', onclick: (e) => { e.preventDefault(); openSheet(id, 'location'); } }, label);
+    const crumbs = [...map.above.map((id) => [link(id), h('span', { class: 'sb-crumb-sep' }, '›')]).flat(), h('strong', { class: 'sb-crumb-here' }, entry.name)];
+    const newInside = () => { ws.newParent = entry.id; openSheet('new', 'location'); };
+    const generateInside = () => {
+        ws.genInput = { ...(ws.genInput ?? { brief: '', name: '', rolled: '', culture: '', gender: '', bloodline: '' }), parentId: entry.id };
+        ws.genPanel = 'location';
+        ws.chapter = 'location';
+        ws.entryId = null;
+        rerender();
+    };
+    const insideChip = ({ id, count }) => h('span', { class: 'sb-chip sb-chip-link', style: `--sb-accent: ${names.get(id)?.color ?? ''}`, title: count ? `${count} place${count === 1 ? '' : 's'} inside` : 'Open its sheet', onclick: () => openSheet(id, 'location') },
+        h('i', { class: 'fa-solid fa-location-dot' }), names.get(id)?.name ?? id, count ? h('small', { class: 'sb-chip-count' }, ` ${count}`) : null);
+    return h('div', { class: 'sb-placemap' },
+        h('div', { class: 'sb-crumbs' }, icon('fa-sitemap'), map.above.length ? null : h('small', { class: 'sb-hint' }, 'Top level · '), crumbs),
+        h('div', { class: 'sb-placemap-row' },
+            h('small', { class: 'sb-hint' }, map.inside.length ? 'Inside:' : 'Nothing inside yet.'),
+            h('div', { class: 'sb-chips' }, map.inside.map(insideChip),
+                button('', newInside, { iconName: 'fa-plus', title: `A new place inside ${entry.name}` }),
+                button('', generateInside, { iconName: 'fa-wand-magic-sparkles', title: `Generate a place inside ${entry.name}` }))),
+        map.here.length ? h('div', { class: 'sb-placemap-row' }, h('small', { class: 'sb-hint' }, 'Here:'), h('div', { class: 'sb-chips' }, map.here.map((id) => chip(id, names)))) : null,
+        map.beside.length ? h('details', { class: 'sb-placemap-row' }, h('summary', {}, h('small', { class: 'sb-hint' }, `Beside it (${map.beside.length})`)),
+            h('div', { class: 'sb-chips' }, map.beside.map((id) => insideChip({ id, count: 0 })))) : null);
+}
+
+function overviewTab({ type, entry, isNew, defs, doc, all, names, parents, allEntries }) {
     const narrative = isNew ? '' : doc.narrative[entry.id]?.text ?? '';
     if (ws.editing) {
         return h('div', { class: 'sb-tabpane' },
@@ -593,6 +622,7 @@ function overviewTab({ type, entry, isNew, defs, doc, all }) {
         entry.description ? h('div', { class: 'sb-prose sb-editable', title: 'Click to edit', onclick: () => editField('description') }, entry.description) : h('div', { class: 'sb-muted sb-editable', onclick: () => editField('description') }, 'No description yet - click to write one, or let the sparkle do it.'));
     const glance = defs.filter((d) => !isEmpty(entry.base?.[d.name] ?? entry[d.name]) && d.kind !== 'refs' && d.kind !== 'ref').slice(0, 4);
     return h('div', { class: 'sb-tabpane' },
+        type.id === 'location' && !isNew ? placeMapCard(entry, { names, parents, allEntries }) : null,
         narrative ? h('div', { class: 'sb-narrative' },
             h('div', { class: 'sb-section-title' }, icon('fa-hourglass-half'), ' Now, in this story',
                 h('span', { class: 'sb-spacer' }),

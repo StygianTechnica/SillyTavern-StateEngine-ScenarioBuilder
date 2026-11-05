@@ -2,7 +2,7 @@
 // sorting, an entry's status in the chat, and an entry's own story
 // history.
 
-import { isWithin } from '../library/hierarchy.js';
+import { isWithin, pathOf, childrenOf } from '../library/hierarchy.js';
 
 // SB-124: 'scene' (in the current scene), 'play' (has been in play in this
 // chat), or 'unused'.
@@ -83,4 +83,22 @@ export function entityHistory(doc, id) {
     const n = doc?.narrative?.[id];
     if (n?.updatedAt) out.push({ at: n.updatedAt, kind: 'narrative', text: 'Current description changed', source: 'user' });
     return out.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+
+// A place's spot on the map, for moving about it from its sheet: the
+// places above it (top first), the places inside it (each with how many
+// are inside that), the places beside it, and the other entries that are
+// here (a character, an item or a creature whose location is this place).
+// entries: every entry, [{ id, type, name, location?, base? }].
+export function placeMap(id, { parents = {}, entries = [] } = {}) {
+    const places = entries.filter((e) => e.type === 'location');
+    const ids = places.map((e) => e.id);
+    const known = new Set(ids);
+    const byName = (a, b) => String(places.find((e) => e.id === a)?.name ?? '').localeCompare(String(places.find((e) => e.id === b)?.name ?? ''));
+    const above = pathOf(parents, id).slice(0, -1).filter((x) => known.has(x));
+    const inside = childrenOf(parents, ids, id).sort(byName).map((child) => ({ id: child, count: childrenOf(parents, ids, child).length }));
+    const parent = above[above.length - 1] ?? null;
+    const beside = (parent ? childrenOf(parents, ids, parent) : ids.filter((x) => !parents[x] || !known.has(parents[x]))).filter((x) => x !== id).sort(byName);
+    const here = entries.filter((e) => e.type !== 'location' && (e.base?.location ?? e.location) === id).sort((a, b) => String(a.name).localeCompare(String(b.name))).map((e) => e.id);
+    return { above, inside, beside, here };
 }

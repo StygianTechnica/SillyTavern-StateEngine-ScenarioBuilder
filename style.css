@@ -229,6 +229,15 @@
 .sb-aka { opacity: 0.7; font-style: italic; }
 .sb-name-meaning { display: block; opacity: 0.65; }
 .sb-where { opacity: 0.85; display: flex; gap: 6px; align-items: center; }
+.sb-placemap { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; border: 1px solid var(--sb-line); border-radius: var(--sb-radius); background: var(--sb-soft); }
+.sb-crumbs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sb-crumb { color: inherit; text-decoration: underline; text-decoration-color: var(--sb-gold); text-underline-offset: 3px; cursor: pointer; }
+.sb-crumb:hover { color: var(--sb-gold); }
+.sb-crumb-sep { opacity: 0.5; }
+.sb-placemap-row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.sb-placemap-row > summary { cursor: pointer; }
+.sb-placemap details[open] > .sb-chips, details.sb-placemap-row[open] > .sb-chips { flex-basis: 100%; }
+.sb-chip-count { opacity: 0.6; }
 .sb-sheet-tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--sb-line); }
 .sb-sheet-tab { display: flex; align-items: center; gap: 6px; padding: 7px 12px; cursor: pointer; opacity: 0.65; border-bottom: 2px solid transparent; white-space: nowrap; }
 .sb-sheet-tab.active { opacity: 1; border-bottom-color: var(--sb-gold); }
