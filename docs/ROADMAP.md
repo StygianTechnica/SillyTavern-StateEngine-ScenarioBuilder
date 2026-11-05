@@ -696,6 +696,18 @@ Done: the Worlds tab (src/worlds/, src/ui/worlds-tab.js).
   the Calendar tab.
 - [x] Weather the director may call for (a WEATHER line, held two watches).
 - [ ] Magical weather; per-season climate overrides per region.
+- [ ] Context size follows the connection (2026-11-05): every call is fitted
+  to settings.director.contextTokens (src/generate/fit-text.js,
+  src/planner/fit.js, src/director/fit.js), one number set by hand - left
+  at 8192 it trims a big model's prompts, and on Stheno with SillyTavern's
+  Context Size still at Venice's 121,939 the planner's outline prompt filled
+  the 8k context and every answer was cut off. When the connection Scenario
+  Builder uses changes (the generation connection profile in the drawer, or
+  SillyTavern's active connection/model when none is chosen), ask the user
+  what context that model has - offering SillyTavern's own Context Size for
+  it as the default - or take that default without asking. Kept per
+  connection profile, so switching back restores it; the drawer shows which
+  size is in use and where it came from.
 - [ ] Continuity check by model, layer 3 (2026-11-04): an optional call,
   off by default, that runs only when the state turns - a newcomer arrives,
   someone changes sides, a quest step lands - and reads the reply against
