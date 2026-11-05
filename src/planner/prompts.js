@@ -453,15 +453,33 @@ export function readBeat(json) {
 }
 
 // -> { premise, themes, acts, seeds } or null.
-export function readOutline(json) {
+// Models other than the one the prompt was tuned on answer the same shape
+// in their own words (Assassins Inc, on a larger model: "The outline had
+// no beats in it"): wrapped in { "outline": ... }, acts called chapters,
+// beats called events or steps, a beat as a bare string or with its words
+// under "beat", "description" or "summary". All are read.
+const ACT_KEYS = ['acts', 'chapters', 'parts', 'sections'];
+const BEAT_KEYS = ['beats', 'events', 'steps', 'scenes', 'moments'];
+const firstList = (o, keys) => keys.map((k) => o?.[k]).find((v) => Array.isArray(v) && v.length) ?? [];
+const beatText = (b) => (typeof b === 'string' ? b : clean(b?.text) || clean(b?.beat) || clean(b?.description) || clean(b?.summary) || clean(b?.event) || clean(b?.title));
+function outlineRoot(json) {
     if (!isObject(json)) return null;
-    const acts = list(json.acts).filter(isObject).map((a) => ({
-        title: cut(a.title, 80),
-        beats: list(a.beats).filter((b) => isObject(b) && clean(b.text)).map((b) => ({
-            id: clean(b.id).replace(/^\[|\]$/g, ''),
-            text: cut(b.text, 300),
-            ties: texts(b.ties, 6),
-            status: ['pending', 'active', 'done', 'skipped'].includes(clean(b.status).toLowerCase()) ? clean(b.status).toLowerCase() : 'pending',
+    if (firstList(json, ACT_KEYS).length || firstList(json, BEAT_KEYS).length) return json;
+    for (const v of Object.values(json)) if (isObject(v) && (firstList(v, ACT_KEYS).length || firstList(v, BEAT_KEYS).length)) return v;
+    return json;
+}
+export function readOutline(raw) {
+    const json = outlineRoot(raw);
+    if (!isObject(json)) return null;
+    // No acts, only beats: one act holds them.
+    const actList = firstList(json, ACT_KEYS).length ? firstList(json, ACT_KEYS) : [{ title: '', beats: firstList(json, BEAT_KEYS) }];
+    const acts = actList.filter(isObject).map((a) => ({
+        title: cut(a.title ?? a.name, 80),
+        beats: firstList(a, BEAT_KEYS).filter((b) => clean(beatText(b))).map((b) => ({
+            id: clean(b?.id).replace(/^\[|\]$/g, ''),
+            text: cut(beatText(b), 300),
+            ties: texts(b?.ties, 6),
+            status: ['pending', 'active', 'done', 'skipped'].includes(clean(b?.status).toLowerCase()) ? clean(b?.status).toLowerCase() : 'pending',
         })).slice(0, 8),
     })).filter((a) => a.beats.length);
     if (!acts.length) return null;

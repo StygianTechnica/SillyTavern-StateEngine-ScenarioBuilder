@@ -287,7 +287,8 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
         const volume = doc.gm.volume;
         const newVolume = writing && volume.number > 1 && !beatsOf(doc.gm.outline).some((b) => b.status === 'done') ? { number: volume.number } : null;
         if (newVolume && !wish) wish = volume.direction;
-        const parsed = readOutline(await ask(buildOutlinePrompt({
+        let answer = null;
+        const parsed = readOutline(answer = await ask(buildOutlinePrompt({
             dossier: await dossierWithNames(chatId, settingId, guidance, ctx),
             userName: userName(),
             messages: chatMessages(writing ? 12 : 8),
@@ -308,7 +309,11 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
             pacing: plannerSettings().pacing,
             untouched: await factionsToBringIn(chatId, settingId),
         }), OUTLINE_TOKENS, { salvage: (raw) => readModelJson(closeCutJson(raw)) }));
-        if (!parsed) throw new Error('The outline had no beats in it.');
+        if (!parsed) {
+            // What came back, so a new shape can be read next time.
+            console.warn(LOG_PREFIX, 'the outline answer had no beats Scenario Builder could read:', JSON.stringify(answer).slice(0, 2000));
+            throw new Error('The outline had no beats in it (the answer is in the browser console).');
+        }
         // The conditions the outline wants watched: story triggers.
         await plannerTriggers(chatId, chatKey, parsed.triggers ?? []);
         updateChatDoc(chatKey, (d) => {

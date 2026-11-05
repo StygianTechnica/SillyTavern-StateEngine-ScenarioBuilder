@@ -25,3 +25,16 @@ describe("a volume's steer", () => {
         expect(normalizeGm({ volume: { number: 2, direction: long } }).volume.direction).toBe(long);
     });
 });
+
+describe('an outline in another model\'s words', () => {
+    // Assassins Inc on a larger model: "The outline had no beats in it".
+    it('reads a wrapper, chapters, events, and beats as strings or under other names', () => {
+        expect(readOutline({ outline: { premise: 'p', acts: [{ title: 'A', beats: [{ text: 'x' }] }] } }).acts[0].beats[0].text).toBe('x');
+        const chapters = readOutline({ chapters: [{ name: 'One', events: ['Cyril returns to HQ', { description: 'Adam gives a job' }] }] });
+        expect(chapters.acts[0].title).toBe('One');
+        expect(chapters.acts[0].beats.map((b) => b.text)).toEqual(['Cyril returns to HQ', 'Adam gives a job']);
+        expect(readOutline({ beats: [{ beat: 'a' }, { summary: 'b' }] }).acts[0].beats.map((b) => b.text)).toEqual(['a', 'b']);
+        expect(readOutline({ acts: [{ title: 'A', beats: [] }] })).toBeNull();
+        expect(readOutline({ note: 'nothing here' })).toBeNull();
+    });
+});
