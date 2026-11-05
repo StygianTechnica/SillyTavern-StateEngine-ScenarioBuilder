@@ -465,6 +465,45 @@ newly confirmed objects, a separate generation connection profile.
   for what the story did, to edit and use as the current description (the
   setting's own stays). Settings: offer them (on), write them at once (off,
   one call each).
+- [ ] **Reputation from the story (added 2026-11-05).** A person's standing
+  changes with what they do in the story, and their current description
+  follows it. The user's case: Galice is meant to be an expert, but with
+  Cyril she has been violent and overreactive again and again, and that
+  should change how other people see her. Today the "Changed in the story"
+  check (src/state/changes.js) only takes a change to the person's body or
+  station (scarred, maimed, crowned), never how they have behaved.
+  - Notice a pattern, not one scene: the same kind of conduct over several
+    memories (lashing out, a botched job, a betrayal, a rescue), weighed
+    against what the description says they are ("an expert", "calm under
+    fire"). It is offered in Review like the other changes, and the user
+    decides.
+  - Being proven wrong counts, for a professional above all. The user's
+    second case: Doc jumps to some wild conclusion without
+    measuring or testing anything, and Cyril shows she was wrong. That
+    hurts her standing as an expert with the people who saw it. Her
+    confidence alone does not hurt it; being wrong, and seen to be wrong,
+    does.
+  - Reputation is something others hold, not a fact about the person: who
+    saw it or heard of it (perspective, Archivist's witnesses; the world
+    meanwhile's ripples carry word) see them differently, and people who
+    never heard keep the old picture. The setting's own description stays;
+    the change goes in the current description, or in a short "how they are
+    seen now" line the director gets for the people who know.
+  - It has consequences: the people who hold the low opinion act on it.
+    In the user's story Adam still takes Doc and Galice seriously after
+    they have been unprofessional often enough that Cyril came to blows
+    with them. A boss who has seen that trusts them less, gives the
+    assignment to someone else and asks someone else first, and the
+    others weigh what they say less. The planner and the director move them
+    to the sidelines: fewer moments and less of the spotlight, not a part
+    in every scene.
+  - It can mend, and that is a story: later conduct that goes the other
+    way softens it, and a damaged name gives the person a reason in the
+    story to put it right (to apologise, to prove themselves), which the
+    planner can offer as a moment or an agenda if the user wants them back.
+  - Cost: finding it should take no call, as the change check does; writing
+    the new text is one call, offered, and can be turned off. Never the
+    player character's (their reputation comes from what the user writes).
 - [x] **Names from the name generator (2026-10-26):** docs/DESIGN - NAMING.md
   phase 1 - real-world name stocks, cultures, the registry; Generate is told
   a name instead of making one up. Businesses are a kind of faction

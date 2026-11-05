@@ -66,7 +66,7 @@ describe('the note for this reply', () => {
         expect(asksWhatNext('Cyril wondered what Inji was thinking.')).toBe(false);
         expect(asksWhatNext('"What is that thing?"')).toBe(false);
         const note = buildNow({ cast, next: "A mock combat is arranged between Cyril and Inji to assess Cyril's skills." });
-        expect(note).toContain("Cyril asks what comes next - the answer is where the story goes now: A mock combat is arranged between Cyril and Inji to assess Cyril's skills. Bring it in this reply.");
+        expect(note).toContain("Cyril asks what comes next - the answer is where the story goes now: A mock combat is arranged between Cyril and Inji to assess Cyril's skills. Those it names are the ones in it, in the parts it gives them; no one else takes their place and no one it names is left out. Bring it in this reply.");
     });
 });
 

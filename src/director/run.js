@@ -48,8 +48,9 @@ import { shownLeaving } from './departures.js';
 const WOUNDS_KEPT = 30;
 import { markDead, deadText, deadByName, bringBack } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
+import { personGender } from '../naming/classify.js';
 import { creatureFormOf, readCount, addCount, takeCount, creatureLabel } from '../library/creature-form.js';
-import { namesSomething, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn, samePlaceName } from './prompt.js';
+import { namesSomething, parseDirectorNote, matchPlace, peopleNamedIn, callNames, relevance, mentionedIn, alsoRelevant, withoutPlayerActions, withoutEcho, knownAs, strayName, looksLikePlaceName, routeName, creatureNamedIn, parentForNewPlace, placeNamedIn, samePlaceName } from './prompt.js';
 import { libraryMemberships, briefMemberships } from '../library/faction-sync.js';
 import { buildPeoplePrompt, readPeople } from './people.js';
 import { unknownsFor, toldInChat, mergeTold, PERSPECTIVE_TOKENS } from './perspective.js';
@@ -449,6 +450,17 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
         const factionName = new Map(factionList.map((f) => [f.id, f.name]));
         for (const c of [...nearby, ...elsewhere, ...barred]) c.sides = (memberships.get(c.id) ?? []).map((id) => factionName.get(id)).filter(Boolean);
     }
+    // She or he for those out of the scene too, from their own text as for
+    // those here (src/guidance/sync.js): without it the plan wrote about Inji
+    // away from the scene from the name alone - "Inji uses her connections" -
+    // and the narrator was handed it.
+    for (const c of [...nearby, ...elsewhere, ...barred]) {
+        const obj = characters.find((x) => x.id === c.id);
+        if (!obj || c.gender) continue;
+        const base = obj.base ?? obj;
+        const text = (v) => (typeof v === 'string' ? v : '');
+        c.gender = personGender({ name: obj.name, own: [doc.narrative?.[obj.id]?.text, obj.description], more: [text(base.personality), text(base.voice), text(base.goals), text(base.background)] });
+    }
     // Someone who turns up picks up where they left off with those here:
     // whom they have met, and how the story has them stand toward them.
     // Without it Riven, who had confronted Cyril over his family, came back
@@ -692,6 +704,11 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     const playerChar = settingId ? characters.find((c) => c.id === playerIdOf(settingId, characters)) : null;
     const playerNames = [...(playerChar ? callNames(playerChar) : []), clean(SillyTavern.getContext().name1)].filter(Boolean);
     for (const key of ['note', 'summary', 'direction', 'situation']) parsed[key] = withoutPlayerActions(parsed[key], playerNames);
+    // Nor what it copied out of the player's own post (withoutEcho).
+    const playerPost = [...messages].reverse().find((m) => m.isUser)?.text ?? '';
+    const echoed = parsed.note;
+    for (const key of ['note', 'summary', 'direction', 'situation']) parsed[key] = withoutEcho(parsed[key], playerPost);
+    if (echoed && parsed.note !== echoed) console.warn(LOG_PREFIX, 'the briefing copied the player\'s post; that part was left out');
     let { note } = parsed;
     const { created } = parsed;
     if (!note) throw new Error('The model wrote no briefing.');

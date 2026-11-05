@@ -401,7 +401,11 @@ function castLine(c) {
 // Whether the player's post asks what comes next ("What do you want from
 // me next?", "So what now?", "What's the plan?") - in speech or not.
 const ASKS_NEXT = /\b(?:what(?:'s|’s|\s+is)?\s+(?:next|now|the plan)|now what|where (?:to|now|next)|what (?:do|does|should|would|will) (?:you|we|i|they)\b[^?]{0,40}\b(?:next|now|want|do)|what (?:job|mission|task|work|assignment)\b[^?]{0,30})[^?]{0,40}\?/i;
-export const asksWhatNext = (text) => ASKS_NEXT.test(clean(text));
+// Or who is in it - whether they are sent, who goes, what their part is
+// ("So who's on the ground to stop the heist directly? Are you sending me
+// in there?"): the beat now says who.
+const ASKS_PART = /\b(?:are you (?:sending|putting|taking|bringing) (?:me|us)|(?:send|put) me (?:in|on)|am i (?:going|in|on|part of|coming)|do i (?:go|get to go|come)|who(?:'s|’s|\s+is|\s+are|\s+goes|\s+will go|\s+do you send|\s+are you sending)\b[^?]{0,40}\b(?:going|in|on|ground|team|job|mission|sent|send|handl)|what(?:'s|’s|\s+is) my (?:part|role|job)|where do i (?:fit|come in))[^?]{0,80}\?/i;
+export const asksWhatNext = (text) => ASKS_NEXT.test(clean(text)) || ASKS_PART.test(clean(text));
 
 export function buildNow(input) {
     const arriving = [...new Set((input.arriving ?? []).map(clean).filter(Boolean))];
@@ -436,7 +440,9 @@ export function buildNow(input) {
         : `${andList(arriving)} come in now - each arrives where everyone can see and speaks or acts, with their own reason for coming.`);
     if (triggered.length) orders.push(`It happens now: ${triggered.join(' ')}`);
     if (dodging) orders.push(dodging);
-    if (next) orders.push(`${player ? clean(player.name) : 'The player character'} asks what comes next - the answer is where the story goes now: ${unstop(next)}. Bring it in this reply.`);
+    // The beat's people are who it is (Adam kept sending others on the job
+    // the beat gives Cyril): no one stands in for them.
+    if (next) orders.push(`${player ? clean(player.name) : 'The player character'} asks what comes next - the answer is where the story goes now: ${unstop(next)}. Those it names are the ones in it, in the parts it gives them; no one else takes their place and no one it names is left out. Bring it in this reply.`);
     if (sides) orders.push(sides);
     if (named) orders.push(named);
     if (settled.length) orders.push(`Settled and done with - no one acts as if it were otherwise, and no one argues it, asks about it or brings it up again unless someone else does: ${settled.map(unstop).join('; ')}.`);

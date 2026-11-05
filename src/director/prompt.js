@@ -412,7 +412,7 @@ export function dossierText(input) {
     const others = (input.nearby ?? []).filter((c) => clean(c?.name) && !absentSet.has(clean(c.name).toLowerCase()));
     if (others.length) {
         section('OTHERS WHO COULD TURN UP (not here now)');
-        for (const c of others.slice(0, 12)) lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${sidesText(c)}${clean(c.why) ? ` - ${clean(c.why)}` : ''}${historyText(c)}`);
+        for (const c of others.slice(0, 12)) lines.push(`- ${clean(c.name)}${pronounTag(c)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${sidesText(c)}${clean(c.why) ? ` - ${clean(c.why)}` : ''}${historyText(c)}`);
         if (others.slice(0, 12).some((c) => c.keepAway)) lines.push('When someone should come along, reach for the top of this list - someone not in a scene for a while is welcome back - and only for those marked "had enough of them" when the story truly needs them.');
         if (others.slice(0, 12).some((c) => c.met?.length || c.standing?.length)) lines.push('Someone who turns up has met those they have met: they pick up where they left off - never introduce themselves again - and keep the stance they had toward them, unless the story has changed it.');
     }
@@ -420,7 +420,7 @@ export function dossierText(input) {
     const away = (input.elsewhere ?? []).filter((c) => clean(c?.name) && !absentSet.has(clean(c.name).toLowerCase()));
     if (away.length) {
         section('ELSEWHERE (far from here or long out of the story - they cannot turn up in this scene; they can be thought of or talked about, and send word only if the story has set that up)');
-        lines.push(`- ${away.slice(0, 16).map((c) => `${clean(c.name)}${sidesText(c)}${clean(c.lastAt) ? ` (last at ${clean(c.lastAt)})` : ''}`).join('; ')}`);
+        lines.push(`- ${away.slice(0, 16).map((c) => `${clean(c.name)}${pronounTag(c)}${sidesText(c)}${clean(c.lastAt) ? ` (last at ${clean(c.lastAt)})` : ''}`).join('; ')}`);
     }
     // Enemy ground (src/director/whereabouts.js enemyGround): on a side
     // against whoever holds this place - never inside it.
@@ -431,11 +431,15 @@ export function dossierText(input) {
         const holders = (g.holders ?? []).map(clean).filter(Boolean).join(' and ') || 'its holders';
         const leaders = (g.leaders ?? []).map(clean).filter(Boolean);
         section(`ENEMY GROUND (${place} is held by ${holders}; these are against them and cannot be inside it - never ENTERS here)`);
-        for (const c of enemyHere.slice(0, 12)) lines.push(`- ${clean(c.name)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${clean(c.why) ? ` - ${clean(c.why)}` : ''}`);
+        for (const c of enemyHere.slice(0, 12)) lines.push(`- ${clean(c.name)}${pronounTag(c)}${clean(c.role) ? ` (${clean(c.role)})` : ''}${clean(c.why) ? ` - ${clean(c.why)}` : ''}`);
         lines.push(`When the story wants their pressure, show it at the edges instead: those who watch ${place} notice them or their people about more than usual; someone outside runs into them; word of them comes in${leaders.length ? ` and reaches ${leaders.join(' and ')}` : ''}. They step inside only if the player's own post brings them.`);
     }
     return lines.join('\n').trim();
 }
+
+// He or she for someone out of the scene, short: " [he]". Without it a
+// plan about them guessed from the name (Inji Miyama became "her").
+const pronounTag = (c) => (c.gender === 'f' ? ' [she]' : c.gender === 'm' ? ' [he]' : '');
 
 // The factions someone out of the scene belongs to (src/director/run.js):
 // they stay on that side while away.
@@ -640,6 +644,26 @@ export function buildDirectorPrompt(input) {
         'Keep it under 400 words in all.',
     );
     return { system, prompt: parts.join('\n') };
+}
+
+// The director's sentences copied out of the player's own post taken out.
+// A small model given a long prompt now and then answers by writing the
+// post back ("The man was not an elite agent for being worthless. He
+// surely knew plenty of people...") - the narrator then read Cyril's own
+// thoughts as its brief, and nothing of the plan. A sentence is a copy when
+// its words (12 letters or more) stand in the post as they are, case and
+// spacing aside. Paragraph breaks are kept.
+export function withoutEcho(text, post) {
+    const flat = (t) => String(t ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+    const source = ` ${flat(post)} `;
+    if (source.trim().length < 12) return String(text ?? '');
+    const keep = (sentence) => {
+        const words = flat(sentence);
+        return words.length < 12 || !source.includes(` ${words} `);
+    };
+    return String(text ?? '').split(/\n{2,}/)
+        .map((para) => (para.match(/[^.!?…]+(?:[.!?…]+["'”’)]*|$)/g) ?? [para]).filter((s) => s.trim() && keep(s)).join('').trim())
+        .filter(Boolean).join('\n\n');
 }
 
 // The director's sentences with the player character as their subject
