@@ -1628,3 +1628,21 @@ export function frictionLines({ cells = [], relations = [], knowledge = [], name
     }
     return out.slice(0, 12);
 }
+
+// What the director's briefing rests on from the plan: today's moments and
+// agendas, the beat now and the settled lines. A swipe after the user
+// revised any of them is a new situation - the old briefing was written
+// before the change and would carry the old plan into the reply. A moment
+// marked done or skipped is not a revision: the check does that after
+// every reply, and a briefing written ahead would never be used.
+export function planStamp(gm) {
+    const day = gm?.day;
+    const beat = activeBeat(gm?.outline);
+    return JSON.stringify([
+        day?.madeAt ?? '',
+        (day?.moments ?? []).map((m) => m.text),
+        (day?.agendas ?? []).map((a) => [a.who, a.wants, a.will]),
+        beat ? [beat.id, beat.text] : null,
+        (gm?.settled ?? []).map((s) => s.text),
+    ]);
+}

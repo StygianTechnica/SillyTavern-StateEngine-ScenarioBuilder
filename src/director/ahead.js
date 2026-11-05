@@ -33,9 +33,11 @@ export function replyKeyOf(chat) {
 
 // Whether a briefing written ahead can be used for this reply: the setting
 // is on, the reply is a new turn, and the briefing was written after the
-// AI reply the chat still ends on.
-export function canUseAhead(ahead, replyKey, { enabled = false, type = 'normal' } = {}) {
+// AI reply the chat still ends on, from the plan as it still is.
+export function canUseAhead(ahead, replyKey, { enabled = false, type = 'normal', plan = null } = {}) {
     if (!enabled || !(type === 'normal' || !type)) return false;
+    // The plan revised since it was written (plan: a stamp of it): no use.
+    if (plan != null && ahead?.plan != null && ahead.plan !== plan) return false;
     return !!ahead?.raw && !!ahead.after && !!replyKey && ahead.after === replyKey;
 }
 

@@ -46,7 +46,8 @@ export const PRESET_DESCRIPTION = 'The scenario\'s world state: what the story s
 //     panels that show them while they run.
 // 15: sb__guidance_now, the note for this reply.
 // 16: sb__scene_deltatime answered fresh each turn (newEachTurn).
-export const PRESET_VERSION = 16;
+// 17: sb__scene_creatures never lists the story's people.
+export const PRESET_VERSION = 17;
 
 const text = (label, description, extra = {}) => ({
     label, description, type: 'string', defaultValue: '', scope: 'chat', showInTracker: true,
@@ -74,7 +75,7 @@ export const OBSERVED_VARIABLES = Object.freeze([
     ['scene_creatures', {
         label: 'Creatures (story)', description: 'The creatures the story says are in the scene - checked against the canonical ones.',
         type: 'array', itemType: 'object', itemObjectType: 'creature', unique: true, defaultValue: '[]', scope: 'chat', showInTracker: true,
-        ...prompted('The creatures in the scene now - monsters, beasts and animals that matter to it, named ones too (a pet, a mount, a hound, a beast companion); not one that talks and thinks like a person (a sentient familiar, a dragon) - that is a character. A group counts as one entry, by what the story calls it ("the zombies", "a pack of wolves"). Start from the current value: keep those still here, add any that arrive, remove those that leave or are killed.'),
+        ...prompted('The creatures in the scene now - monsters, beasts and animals that matter to it, named ones too (a pet, a mount, a hound, a beast companion); not one that talks and thinks like a person (a sentient familiar, a dragon) - that is a character. Never one of the people of the story (anyone among the scene characters), whatever kind of being they are (a cyborg, an android, an alien) - they are characters, not creatures. A group counts as one entry, by what the story calls it ("the zombies", "a pack of wolves"). Start from the current value: keep those still here, add any that arrive, remove those that leave or are killed.'),
     }],
     ['scene_weather', {
         label: 'Weather (story)', description: 'The weather the story describes.',

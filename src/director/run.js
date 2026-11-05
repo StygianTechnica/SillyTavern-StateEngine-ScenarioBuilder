@@ -54,6 +54,7 @@ import { libraryMemberships, briefMemberships } from '../library/faction-sync.js
 import { buildPeoplePrompt, readPeople } from './people.js';
 import { unknownsFor, toldInChat, mergeTold, PERSPECTIVE_TOKENS } from './perspective.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
+import { planStamp } from '../planner/model.js';
 import { directorPlan, takeBeats, takeSets, takeSettled, markActive, overdueNewcomers } from '../planner/run.js';
 import { livePoolFor, takeFromPool, byType, rollNameFor, markNameUsed } from '../naming/run.js';
 import { poolLine, swapInvented, applySwaps } from '../naming/live.js';
@@ -537,7 +538,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // The same messages in the same place: the briefing already written.
     // A place changed by hand since (the user deleted a wrong one and sent
     // the message again) is a new situation - the scene must move again.
-    const key = hashOf(JSON.stringify([messages.map((m) => [m.name, m.text]), doc.canonical.locationId || '']));
+    // So is a plan revised since (the day plan, the beat, a settled line).
+    const key = hashOf(JSON.stringify([messages.map((m) => [m.name, m.text]), doc.canonical.locationId || '', planStamp(doc.gm)]));
     if (!ahead && !force && doc.director.key === key && doc.director.note) return doc.director;
 
     const { characters, castIds, nearby, elsewhere, barred, ground, overview, limits, canonOnly, factions, placeIds, eventObjects, scenes } = await sceneContext(chatId, chatKey, settingId, guidance);
@@ -663,11 +665,13 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         // Called at once, not queued: a queued call waits out any reply, and
         // the next reply waits for this briefing.
         const after = replyKeyOf(SillyTavern.getContext().chat);
+        // The plan this briefing is written from (a later revision makes it stale).
+        const plan = hashOf(planStamp(doc.gm));
         const answer = await callModelFirst([{ role: 'system', content: system }, { role: 'user', content: prompt }], settings.director.maxTokens);
         if (!String(answer ?? '').trim()) throw new Error('The model wrote no briefing.');
         // The chat moved on meanwhile (an edit, a swipe, a new reply): no use.
         if (replyKeyOf(SillyTavern.getContext().chat) !== after) return getChatDoc(chatKey).director;
-        updateChatDoc(chatKey, (d) => { d.director = { ...d.director, ahead: { after, raw: String(answer), at: new Date().toISOString() } }; });
+        updateChatDoc(chatKey, (d) => { d.director = { ...d.director, ahead: { after, plan, raw: String(answer), at: new Date().toISOString() } }; });
         return getChatDoc(chatKey).director;
     }
     const raw = preRaw ?? await callModelFirst([{ role: 'system', content: system }, { role: 'user', content: prompt }], settings.director.maxTokens);
@@ -1205,7 +1209,7 @@ export async function directBeforeReply(chatId, chatKey, type) {
     const newTurn = isNewTurn(type);
     if (thinkAhead && newTurn && aheadJob?.chatKey === chatKey) await Promise.race([aheadJob.promise, late]);
     const ahead = getChatDoc(chatKey).director.ahead;
-    const preRaw = canUseAhead(ahead, replyKeyOf(SillyTavern.getContext().chat), { enabled: thinkAhead, type }) ? ahead.raw : null;
+    const preRaw = canUseAhead(ahead, replyKeyOf(SillyTavern.getContext().chat), { enabled: thinkAhead, type, plan: hashOf(planStamp(getChatDoc(chatKey).gm)) }) ? ahead.raw : null;
     if (preRaw) console.info(LOG_PREFIX, 'using the briefing written after the last reply');
     const outcome = await Promise.race([runDirector(chatId, chatKey, { type, preRaw }), late]);
     clearTimeout(timer);

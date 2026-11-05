@@ -23,7 +23,8 @@ import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
 import { setCanonical } from '../state/canonical.js';
-import { getObjectTypes, listEntries, getParents, setParent, setEntryMeta, mayAddGeneratedDetail } from './library.js';
+import { getObjectTypes, listEntries, listUnconfirmed, deleteEntry, getParents, setParent, setEntryMeta, mayAddGeneratedDetail } from './library.js';
+import { personNamed } from './creature-form.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import { noticeStoryBloodlines } from './bloodline-store.js';
 
@@ -59,6 +60,23 @@ export function isDescriptiveName(name) {
     return /^(the|a|an)\s+\S/i.test(String(name ?? '').trim());
 }
 
+// Creatures the story reported that are people in the library ("Doc",
+// "Inji"): the scene's creature reading named a character. Whether waiting
+// for review or just confirmed, they go - the character is the one in the
+// scene. -> the ids removed.
+async function dropPeopleAsCreatures(chatId, settingId, creatures, characters) {
+    const gone = [];
+    for (const c of creatures) {
+        const person = personNamed(c.name, characters);
+        if (!person) continue;
+        if (await deleteEntry(chatId, settingId, c.id).catch(() => false)) {
+            gone.push(c.id);
+            console.info(LOG_PREFIX, `"${c.name}" is ${person.name}, a character - not taken in as a creature`);
+        }
+    }
+    return gone;
+}
+
 let running = false;
 
 // One intake pass for a chat's setting. Never throws.
@@ -69,13 +87,17 @@ export async function runIntake(chatId, chatKey, settingId) {
         const world = (await getObjectTypes()).filter((t) => t.scope === 'world');
         const objects = [];
         for (const t of world) objects.push(...(await listEntries(chatId, settingId, t.id)).filter((o) => o.scope === 'setting' && o.confirmed !== false));
+        const characters = objects.filter((o) => o.type === 'character');
+        // Waiting for review: never offered as a creature at all.
+        await dropPeopleAsCreatures(chatId, settingId, await listUnconfirmed(chatId, 'creature').catch(() => []), characters);
         const doc = getSettingDoc(settingId);
         if (!doc.trackedReady) {
             updateSettingDoc(settingId, (d) => { d.tracked = objects.map((o) => o.id); d.trackedReady = true; });
             return;
         }
         const known = new Set(doc.tracked);
-        const fresh = objects.filter((o) => !known.has(o.id));
+        const confirmedAsPeople = new Set(await dropPeopleAsCreatures(chatId, settingId, objects.filter((o) => o.type === 'creature' && !known.has(o.id) && (!o.meta?.origin || o.meta.origin === 'story')), characters));
+        const fresh = objects.filter((o) => !known.has(o.id) && !confirmedAsPeople.has(o.id));
         if (!fresh.length) return;
 
         const auto = getSettings().generation.autoEnrich === true;

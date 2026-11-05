@@ -107,3 +107,22 @@ describe('the beat in the director\'s plan', () => {
         expect(planSection(emptyGm())).not.toContain('Who is in it');
     });
 });
+
+describe('a briefing written before the plan changed', () => {
+    it('is not reused once the plan, the beat or a settled line is revised', async () => {
+        const { planStamp, emptyGm } = await import('../src/planner/model.js');
+        const { canUseAhead } = await import('../src/director/ahead.js');
+        const g = emptyGm();
+        g.day = { day: 1, madeAt: 'a', moments: [{ id: 'm1', text: 'Zane calls.', status: 'pending' }], agendas: [{ who: 'Adam', wants: 'x', will: 'keep Cyril out' }], offscreen: [] };
+        const before = planStamp(g);
+        // Checked off by the check after a reply: the same plan.
+        expect(planStamp({ ...g, day: { ...g.day, moments: [{ ...g.day.moments[0], status: 'done' }] } })).toBe(before);
+        expect(planStamp({ ...g, day: { ...g.day, madeAt: 'b' } })).not.toBe(before);
+        expect(planStamp({ ...g, day: { ...g.day, agendas: [{ who: 'Adam', wants: 'x', will: 'send Cyril, Inji and Zane' }] } })).not.toBe(before);
+        expect(planStamp({ ...g, settled: [{ text: 'Cyril is on the heist team.' }] })).not.toBe(before);
+        const ahead = { after: 'r1', plan: 'p1', raw: 'note' };
+        expect(canUseAhead(ahead, 'r1', { enabled: true, plan: 'p1' })).toBe(true);
+        expect(canUseAhead(ahead, 'r1', { enabled: true, plan: 'p2' })).toBe(false);
+        expect(canUseAhead({ after: 'r1', raw: 'note' }, 'r1', { enabled: true, plan: 'p2' })).toBe(true);
+    });
+});

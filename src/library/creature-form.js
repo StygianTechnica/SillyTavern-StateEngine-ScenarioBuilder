@@ -82,3 +82,22 @@ export function creatureLabel(name, { form = 'individual', count = null } = {}) 
     if (form !== 'kind') return n;
     return Number.isInteger(count) ? `${count} ${n}` : `${n} (some)`;
 }
+
+// The character a creature the story reports is really (the reading put
+// "Doc" or "Inji" under creatures): one whose name, alias or first name is
+// the creature's name. A person in the library is a character, whatever
+// kind of being they are - never a creature of the scene too. -> the
+// character, or null. characters: [{ name, aliases? }].
+export function personNamed(name, characters = []) {
+    const key = (text) => clean(text).toLowerCase().replace(/^(the|a|an)\s+/, '').replace(/['’]s$/, '');
+    const target = key(name);
+    if (!target) return null;
+    for (const c of characters ?? []) {
+        const names = [c?.name, ...(c?.aliases ?? c?.base?.aliases ?? [])].filter((n) => typeof n === 'string' && clean(n));
+        if (names.some((n) => key(n) === target)) return c;
+        // "Inji" for Inji Miyama: a single word that is a person's first name.
+        const first = clean(c?.name).split(' ')[0]?.toLowerCase() ?? '';
+        if (!target.includes(' ') && first.length >= 3 && first === target && clean(c?.name).includes(' ')) return c;
+    }
+    return null;
+}
