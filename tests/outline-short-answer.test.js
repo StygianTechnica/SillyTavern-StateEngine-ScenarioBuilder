@@ -68,3 +68,23 @@ describe('a rewrite that is not a whole outline', () => {
         expect(wholeOutline(null, shape)).toBe(false);
     });
 });
+
+describe('a locked beat the story has played out', () => {
+    // Assassins Inc: the night at Vex's hideout (a locked beat) played out
+    // under the beat before it, and reviews left it pending.
+    it('is told its status follows the story, and is marked done out of order', async () => {
+        const { buildOutlinePrompt } = await import('../src/planner/prompts.js');
+        const gm = planned();
+        const later = beatsOf(gm.outline).find((b) => b.text === 'Galice is offered a payday to sell Cyril out');
+        later.locked = true;
+        const shape = { acts: written.acts.map((a) => ({ title: a.title, share: 0.25, band: [0, 5], pattern: 'steady' })) };
+        const { prompt } = buildOutlinePrompt({ shape, outline: gm.outline, messages: [] });
+        expect(prompt).toContain('[locked] beats are the user\'s - keep their words, but their status follows the story');
+        const vex = beatsOf(gm.outline).find((b) => b.text === 'Vex recruits Cyril');
+        setOutline(gm, { acts: [{ title: 'The players', beats: [{ id: vex.id, text: vex.text, status: 'active' }] }, { title: 'Schemes', beats: [{ id: later.id, text: 'something else', status: 'done' }] }] }, { turn: 20, review: true });
+        const now = beatsOf(gm.outline).find((b) => b.id === later.id);
+        expect(now.status).toBe('done');
+        expect(now.text).toBe('Galice is offered a payday to sell Cyril out');
+        expect(beatsOf(gm.outline).find((b) => b.text === 'Vex recruits Cyril').status).toBe('active');
+    });
+});

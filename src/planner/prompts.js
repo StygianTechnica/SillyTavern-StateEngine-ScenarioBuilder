@@ -247,7 +247,11 @@ export function buildOutlinePrompt(input) {
     if (t) parts.push('', 'THE STORY\'S TENSION NOW (0-5)', `- overall ${t.overall}${Number.isFinite(t.threat) ? `; threat ${t.threat}, uncertainty ${t.uncertainty}, emotional ${t.emotional}` : ''}${clean(t.reason) ? ` - ${clean(t.reason)}` : ''}`);
     const outline = input.outline;
     if (outline && !input.rewrite) {
-        parts.push('', 'THE OUTLINE SO FAR (each beat has its id and status; [locked] beats are the user\'s - keep their words)');
+        // A locked beat keeps its words, not its status: told only "keep
+        // their words", reviews left Assassins Inc's locked beats pending
+        // after the story had played them out (the night at Vex's hideout,
+        // played under the beat before it).
+        parts.push('', 'THE OUTLINE SO FAR (each beat has its id and status; [locked] beats are the user\'s - keep their words, but their status follows the story like any other beat: "done" once the story has played it out, even out of order or under another beat, "skipped" once the story has made it impossible)');
         if (clean(outline.premise)) parts.push(`Premise: ${clean(outline.premise)}`);
         outline.acts.forEach((a, i) => {
             parts.push(`Act ${i + 1}: ${a.title}`);
@@ -257,7 +261,7 @@ export function buildOutlinePrompt(input) {
         const keepLocked = input.keepLocked !== false;
         const keep = outline.acts.flatMap((a) => a.beats.filter((b) => (keepLocked && b.locked) || b.status === 'done'));
         if (keep.length) {
-            parts.push('', `START THE OUTLINE OVER, BUT KEEP THESE (${keepLocked ? 'done, or the user\'s own' : 'what the story has done'} - same ids, same words)`);
+            parts.push('', `START THE OUTLINE OVER, BUT KEEP THESE (${keepLocked ? 'done, or the user\'s own' : 'what the story has done'} - same ids, same words; one the story has since played out is "done", even out of order)`);
             for (const b of keep) parts.push(`- [${b.id}] ${b.text} - ${b.status}${b.locked ? ' [locked]' : ''}`);
         }
     }
