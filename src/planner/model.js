@@ -1356,13 +1356,41 @@ export function lateWords(late) {
 // { id, text, source: 'user' | 'director', at } - the newest last.
 export const SETTLED_LIMIT = 12;
 const normalizeSettled = (x) => (isObject(x) && clean(x.id) && clean(x.text)
-    ? { id: clean(x.id), text: clean(x.text).slice(0, 300), source: x.source === 'director' ? 'director' : 'user', at: str(x.at) } : null);
+    ? { id: clean(x.id), text: clean(x.text).slice(0, 300), source: x.source === 'director' ? 'director' : 'user', at: str(x.at), touched: Number.isInteger(x.touched) ? x.touched : null } : null);
 
-// -> the new entry, or null (empty, or one already says it). The user's own
-// are kept over the director's when the list is full.
-export function addSettled(gm, { id, text, source = 'user', at = new Date().toISOString() }) {
-    const x = normalizeSettled({ id, text, source, at });
+// How many replies a line the director settled lasts without the story
+// touching it again; the user's own never go.
+export const SETTLED_RETIRE = 40;
+
+// Why a line the director offers is not settled, or ''. Assassins Inc's
+// list filled with the director's: "this little meet-up", "this terminal"
+// (clear only in the scene that wrote them), "Adam and Galice's intentions
+// for the simulation trial remain unclear" (open, not settled), and the
+// simulation said three more times - and the note that carried them every
+// reply kept the trial in front of Adam, who asked for a report on it.
+const POINTS = /\b(?:this|these|those)\s+[\p{L}-]+/iu;
+const OPEN = /\b(?:unclear|uncertain|unknown|undecided|unresolved|to be seen|to be determined|not yet (?:known|decided|clear)|remains? (?:open|a mystery|in question))\b/i;
+export function unsettledReason(text) {
+    const t = clean(text);
+    if (POINTS.test(t)) return 'points at something in the scene ("this ...")';
+    if (OPEN.test(t)) return 'says something is still open';
+    return '';
+}
+
+// The settled lines worth keeping to: the user's always; the director's
+// unless unsettledReason() turns them away (older ones, written before the
+// check, are retired on the next reply: retireSettled()).
+export function keptSettled(list = []) {
+    return (list ?? []).filter((s) => s?.source !== 'director' || !unsettledReason(s.text));
+}
+
+// -> the new entry, or null (empty, one already says it, or - from the
+// director - not settled at all: unsettledReason()). The user's own are
+// kept over the director's when the list is full.
+export function addSettled(gm, { id, text, source = 'user', at = new Date().toISOString(), turn = null }) {
+    const x = normalizeSettled({ id, text, source, at, touched: turn });
     if (!x || gm.settled.some((s) => sameBeat(s.text, x.text))) return null;
+    if (x.source === 'director' && unsettledReason(x.text)) return null;
     let list = [...gm.settled, x];
     while (list.length > SETTLED_LIMIT) {
         const drop = list.findIndex((s) => s.source === 'director');
@@ -1380,8 +1408,58 @@ export function removeSettled(gm, id) {
 
 // The director's SETTLED IN THE STORY section. '' when there is nothing.
 export function settledSection(gm) {
-    if (!gm.settled?.length) return '';
-    return ['SETTLED IN THE STORY (private - what the story has made true or agreed; keep to it. No one acts as if it were otherwise, and no one argues it or asks for it again unless the story itself gives them a new reason):', ...gm.settled.map((s) => `- ${s.text}`)].join('\n');
+    const list = keptSettled(gm.settled);
+    if (!list.length) return '';
+    return ['SETTLED IN THE STORY (private - what the story has made true or agreed; keep to it. It is done with: no one acts as if it were otherwise, and no one argues it, asks for it or brings it up again unless someone else does or the story itself gives them a new reason):', ...list.map((s) => `- ${s.text}`)].join('\n');
+}
+
+// The settled lines for the in-chat note: the user's always, and the
+// director's only when the latest messages touch them - two words in
+// common besides the player's names (the director sees them all). Six at
+// most, the user's first, then the newest. Listed every reply whatever was
+// going on, five lines about the Novakorp simulation kept it on Adam's mind.
+// list: gm.settled; recentText: the latest messages; skipWords: the
+// player's names.
+export function settledNow(list = [], { recentText = '', skipWords = [], max = 6 } = {}) {
+    const touched = new Set(touchedSettled(list, { recentText, skipWords }));
+    const kept = keptSettled(list);
+    const users = kept.filter((s) => s.source !== 'director');
+    const director = kept.filter((s) => touched.has(s.id)).reverse();
+    return [...users, ...director].slice(0, max).map((s) => s.text);
+}
+
+// The ids of the director's lines the latest messages touch (settledNow()).
+export function touchedSettled(list = [], { recentText = '', skipWords = [] } = {}) {
+    const skip = new Set(skipWords.flatMap((n) => [...beatWords(n)]));
+    const recent = beatWords(recentText);
+    const touches = (text) => [...beatWords(text)].filter((w) => !skip.has(w) && recent.has(w)).length >= 2;
+    return keptSettled(list).filter((s) => s.source === 'director' && touches(s.text)).map((s) => s.id);
+}
+
+// Ages the director's settled lines: those `touchedIds` now count from
+// `turn`; one not touched for SETTLED_RETIRE replies goes, as does one
+// turned away (unsettledReason) - no pruning by hand. A line with no count
+// yet starts from `turn`. The user's own are never retired.
+// -> { changed, retired: [text] }
+export function retireSettled(gm, turn, touchedIds = [], after = SETTLED_RETIRE) {
+    if (!Number.isInteger(turn)) return { changed: false, retired: [] };
+    const touched = new Set(touchedIds);
+    let changed = false;
+    const retired = [];
+    gm.settled = (gm.settled ?? []).filter((s) => {
+        if (s.source !== 'director') return true;
+        if (unsettledReason(s.text) || (Number.isInteger(s.touched) && turn - s.touched > after && !touched.has(s.id))) {
+            retired.push(s.text);
+            changed = true;
+            return false;
+        }
+        if (touched.has(s.id) ? s.touched !== turn : !Number.isInteger(s.touched)) {
+            s.touched = turn;
+            changed = true;
+        }
+        return true;
+    });
+    return { changed, retired };
 }
 
 // The director's DUE TODAY section - what the story set, and what keeps

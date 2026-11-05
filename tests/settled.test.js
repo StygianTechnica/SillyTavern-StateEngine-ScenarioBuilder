@@ -3,7 +3,7 @@
 // once the chat that settled them scrolled away: Adam spoke of the
 // "Novakorp intel" and asked again for an Omicron job. And when Cyril
 // asked what came next, the beat - Adam's match with Inji - never came.
-import { emptyGm, normalizeGm, addSettled, removeSettled, settledSection, SETTLED_LIMIT } from '../src/planner/model.js';
+import { emptyGm, normalizeGm, addSettled, removeSettled, settledSection, SETTLED_LIMIT, unsettledReason, keptSettled, settledNow, retireSettled, SETTLED_RETIRE } from '../src/planner/model.js';
 import { buildNow, asksWhatNext } from '../src/guidance/build.js';
 import { parseDirectorNote } from '../src/director/prompt.js';
 import { buildDayPrompt } from '../src/planner/prompts.js';
@@ -52,7 +52,8 @@ describe('the note for this reply', () => {
 
     it('carries what is settled, every reply', () => {
         const note = buildNow({ cast, settled: [SIM, OMI] });
-        expect(note).toContain('Keep to what the story has settled');
+        expect(note).toContain('Settled and done with');
+        expect(note).toContain('brings it up again unless someone else does');
         expect(note).toContain(`${SIM}; ${OMI}.`);
         expect(buildNow({ cast })).toBe('');
     });
@@ -79,5 +80,68 @@ describe('one mood sample per reply, whatever the swipes', () => {
         expect(c.samples).toHaveLength(1);
         const dup = { samples: [1, 2, 3].map((i) => ({ key: key(`t${i}`), turn: i, kind: 'sour', mood: 'x', present, named: [] })), choices: {} };
         expect(normalizeCompany(dup).samples.map((s) => s.turn)).toEqual([3]);
+    });
+});
+
+describe('what the director may settle, and what the note carries', () => {
+    // Assassins Inc's list, filled by the director: four lines more about
+    // the simulation, scene-bound ones, and one still open - every reply,
+    // and Adam asked for a report on the trial.
+    const d = (id, text) => ({ id, text, source: 'director', at: id });
+    const list = [
+        { id: 'u0', text: SIM, source: 'user', at: 'a' },
+        { id: 'u1', text: OMI, source: 'user', at: 'b' },
+        d('d2', "This trial is to assess Cyril's skills in a more direct way."),
+        d('d3', "This is a simulation trial to gauge Cyril's abilities; the outcome doesn't directly affect his mission or standing."),
+        d('d5', 'Cyril has an intimate connection to this terminal, allowing seamless access for diagnostic purposes.'),
+        d('d6', 'Cyril is a valuable asset to White Cerberus and his safety remains their top priority.'),
+        d('d7', "Adam and Galice's intentions for the simulation trial remain unclear"),
+        d('d8', 'Adam vouched for this little meet-up; the group agrees to proceed'),
+        d('d11', 'The night Cyril, Inji and Vex spent together is private and for their enjoyment, not surveillance'),
+    ];
+
+    it('turns away lines that point at the scene or are still open', () => {
+        expect(unsettledReason(list[2].text)).toMatch(/points/);
+        expect(unsettledReason(list[4].text)).toMatch(/points/);
+        expect(unsettledReason(list[6].text)).toMatch(/open/);
+        expect(unsettledReason(SIM)).toBe('');
+        expect(unsettledReason('Adam agreed that Cyril stays out of it')).toBe('');
+        expect(keptSettled(list).map((x) => x.id)).toEqual(['u0', 'u1', 'd6', 'd11']);
+        const gm = emptyGm();
+        expect(addSettled(gm, { id: 'x', text: list[6].text, source: 'director' })).toBeNull();
+        expect(addSettled(gm, { id: 'y', text: list[6].text })).not.toBeNull();
+        expect(settledSection({ settled: list })).not.toContain('this terminal');
+    });
+
+    it("sends the user's always, the director's only when the latest messages touch them", () => {
+        expect(settledNow(list, { recentText: 'Adam waved them into his office.', skipWords: ['Cyril'] })).toEqual([SIM, OMI]);
+        expect(settledNow(list, { recentText: 'Galice smirked: "Spent the night with Inji and Vex, did we? Private, is it?"', skipWords: ['Cyril'] }))
+            .toEqual([SIM, OMI, list[8].text]);
+        // The player's name alone is not touching it.
+        expect(settledNow(list, { recentText: 'Cyril, Cyril, Cyril.', skipWords: ['Cyril'] })).toEqual([SIM, OMI]);
+    });
+});
+
+describe('settled lines retire on their own', () => {
+    const d = (id, text, touched = null) => ({ id, text, source: 'director', at: id, touched });
+    it("the director's go after a long stretch untouched; the user's never", () => {
+        const gm = { settled: [{ id: 'u', text: SIM, source: 'user', at: 'a' }, d('old', 'Bartin Medina owes Cyril a favour', 10), d('fresh', 'The night together stays private', null), d('stale', 'Adam vouched for this little meet-up', 50)] };
+        // First pass: the scene-bound one goes, the unseen one starts its count.
+        let r = retireSettled(gm, 60);
+        expect(r.retired).toEqual(['Bartin Medina owes Cyril a favour', 'Adam vouched for this little meet-up']);
+        expect(gm.settled.find((s) => s.id === 'fresh').touched).toBe(60);
+        // Touched again, it counts from then.
+        retireSettled(gm, 60 + SETTLED_RETIRE, ['fresh']);
+        expect(gm.settled.map((s) => s.id)).toEqual(['u', 'fresh']);
+        r = retireSettled(gm, 61 + 2 * SETTLED_RETIRE);
+        expect(r.retired).toEqual(['The night together stays private']);
+        expect(gm.settled.map((s) => s.id)).toEqual(['u']);
+        expect(retireSettled(gm, 9999).changed).toBe(false);
+    });
+
+    it('a new one from the director starts counting from its reply', () => {
+        const gm = emptyGm();
+        expect(addSettled(gm, { id: 'n', text: 'Bartin Medina owes Cyril a favour', source: 'director', turn: 7 }).touched).toBe(7);
+        expect(normalizeGm(JSON.parse(JSON.stringify(gm))).settled[0].touched).toBe(7);
     });
 });

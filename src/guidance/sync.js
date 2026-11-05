@@ -28,7 +28,7 @@ import { circling } from '../director/loops.js';
 import { sidesApart, sidesText } from './sides.js';
 import { factionSlips, deadActing, correctionText } from './canon.js';
 import { asksWhatNext } from './build.js';
-import { activeBeat } from '../planner/model.js';
+import { activeBeat, settledNow, touchedSettled, retireSettled } from '../planner/model.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { giftsText } from '../library/powers.js';
 import { latestUserIndex } from '../triggers/run.js';
@@ -455,6 +455,23 @@ export async function gatherInputs(chatId, chatKey) {
     }
     const fightVars = fightValues(fight, settings.director.fightReplies, characterId);
 
+    // The director's settled lines age: touched by the latest messages they
+    // count again; untouched for long, they retire (src/planner/model.js).
+    const settledOpts = {
+        recentText: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-4).map((m) => String(m.mes ?? '')).join('\n'),
+        skipWords: cast.filter((x) => x.player).flatMap((x) => [x.name, ...(x.aliases ?? [])]),
+    };
+    {
+        const ids = touchedSettled(doc.gm.settled ?? [], settledOpts);
+        const trial = { settled: (doc.gm.settled ?? []).map((s) => ({ ...s })) };
+        if (retireSettled(trial, doc.turn, ids).changed) {
+            updateChatDoc(chatKey, (d) => {
+                const { retired } = retireSettled(d.gm, d.turn, ids);
+                for (const t of retired) console.info(LOG_PREFIX, `no longer settled - retired: ${t}`);
+            });
+        }
+    }
+
     // Continuity against the library (src/guidance/canon.js): the latest
     // replies and Archivist's notes read ahead of the chat, checked in code.
     const replies = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system && !m.is_user).slice(-2).map((m) => String(m.mes ?? ''));
@@ -498,7 +515,8 @@ export async function gatherInputs(chatId, chatKey) {
             // Who the game master brings in with this reply (src/director/).
             arriving: settings.director.enabled ? (doc.director.moves?.in ?? []) : [],
             // What the story has settled (src/planner/model.js settledSection).
-            settled: (doc.gm.settled ?? []).map((x) => x.text),
+            // Only what the latest messages touch, the user's own always.
+            settled: settledNow(getChatDoc(chatKey).gm.settled ?? [], settledOpts),
             // Whose side each is on, where the sides here are at odds
             // (src/guidance/sides.js).
             sides: sidesText(sidesApart(cast, library.relations ?? [], (fid) => factionNames.get(fid) ?? '').filter((s) => !corrected.has(s.name))),

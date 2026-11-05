@@ -409,7 +409,7 @@ export function buildNow(input) {
     // What the story settled, every reply: told only before the chat, it
     // scrolled out of mind (the Novakorp simulation taken for a real raid;
     // Adam's word on Omicron forgotten).
-    const settled = (input.settled ?? []).map(clean).filter(Boolean).slice(0, 8);
+    const settled = (input.settled ?? []).map(clean).filter(Boolean).slice(0, 6);
     // The player asks what comes next: the beat now is the answer (Adam
     // gave Cyril a job with Doc and Galice; the beat was his match with Inji).
     const next = clean(input.next);
@@ -439,7 +439,7 @@ export function buildNow(input) {
     if (next) orders.push(`${player ? clean(player.name) : 'The player character'} asks what comes next - the answer is where the story goes now: ${unstop(next)}. Bring it in this reply.`);
     if (sides) orders.push(sides);
     if (named) orders.push(named);
-    if (settled.length) orders.push(`Keep to what the story has settled - no one acts as if it were otherwise or argues it again: ${settled.map(unstop).join('; ')}.`);
+    if (settled.length) orders.push(`Settled and done with - no one acts as if it were otherwise, and no one argues it, asks about it or brings it up again unless someone else does: ${settled.map(unstop).join('; ')}.`);
     return `[Game master's note for this reply, not part of the story: ${orders.join(' ')}${player ? ` Write only the others; never ${clean(player.name)}.` : ''}]`;
 }
 

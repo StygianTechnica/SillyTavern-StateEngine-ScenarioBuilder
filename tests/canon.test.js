@@ -61,7 +61,7 @@ describe('the correction in the chat', () => {
         expect(corrections).toMatch(/Correction: Marcus Hale is dead\./);
         const note = buildNow({ corrections, settled: ['The deal is off.'], cast: [{ name: 'Cyril', player: true }] });
         expect(note).toMatch(/^\[Game master's note for this reply, not part of the story: Correction: Doctor Adrigo Tole/);
-        expect(note).toMatch(/Keep to what the story has settled/);
+        expect(note).toMatch(/Settled and done with/);
         expect(buildNow({ corrections: '' })).toBe('');
         expect(correctionText()).toBe('');
     });

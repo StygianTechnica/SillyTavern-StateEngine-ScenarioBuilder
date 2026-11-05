@@ -38,7 +38,7 @@ import { triggerSection,
     stampBeats, beatFrom, dueSection, setByStory, readWhen,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText, removeChronicle,
     addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines, factionsOutOfPlay,
-    removeFromDay, planBehindBeat, addSettled, removeSettled, settledSection,
+    removeFromDay, planBehindBeat, addSettled, removeSettled, settledSection, keptSettled,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
 import { companyLines } from '../director/company.js';
@@ -243,7 +243,7 @@ async function storySoFar(gm, guidance) {
     if (earlier) lines.push('Earlier volumes:', earlier);
     if (gm.join.note) lines.push(`From the user: ${gm.join.note}`);
     // What the story settled outweighs any summary that says otherwise.
-    if (gm.settled?.length) lines.push('Settled in the story (true, whatever the summary below says):', ...gm.settled.map((x) => `- ${x.text}`));
+    if (keptSettled(gm.settled).length) lines.push('Settled in the story (true, whatever the summary below says):', ...keptSettled(gm.settled).map((x) => `- ${x.text}`));
     try {
         const compiled = typeof window.StateEngineArchivist?.getCompiledMemory === 'function' ? await window.StateEngineArchivist.getCompiledMemory() : null;
         if (compiled?.story_summary) lines.push(`Summary: ${compiled.story_summary}`);
@@ -392,7 +392,7 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             untouched: await factionsToBringIn(chatId, settingId),
             place: (guidance.location?.path ?? []).slice(-1)[0] ?? '',
             situation: doc.canonical.sceneSummary,
-            settled: doc.gm.settled.map((x) => x.text),
+            settled: keptSettled(doc.gm.settled).map((x) => x.text),
             happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today', late: x.late, promise: x.source === 'promise' })),
             world: world?.part ?? null,
         });
@@ -727,7 +727,7 @@ export function takeSettled(chatKey, lines) {
     try {
         updateChatDoc(chatKey, (d) => {
             for (const text of lines) {
-                const made = addSettled(d.gm, { id: newLocalId('st'), text, source: 'director' });
+                const made = addSettled(d.gm, { id: newLocalId('st'), text, source: 'director', turn: d.turn });
                 if (made) console.info(LOG_PREFIX, `settled in the story: ${made.text}`);
             }
         });

@@ -7,7 +7,7 @@
 import { getSettings, saveSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { getSettingDoc } from '../store/setting-store.js';
-import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeiled, openRequests, currentAct, volumeComplete, volumeReadings, storyMarkdown, hasStory, openIdeas, sameBeat } from '../planner/model.js';
+import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeiled, openRequests, currentAct, volumeComplete, volumeReadings, storyMarkdown, hasStory, openIdeas, sameBeat, unsettledReason } from '../planner/model.js';
 import { SHAPES, shapeCurve, targetAt } from '../planner/shapes.js';
 import {
     getPlannerStatus, runDay, runCheck, runInspire, runOutline, runBeat, queueRequest, withdrawRequest, addInspiration, removeInspiration,
@@ -726,14 +726,14 @@ function settledCard(gm) {
     return h('div', { class: 'sb-card' },
         h('div', { class: 'sb-card-title' }, icon('fa-thumbtack'), 'Settled in the story',
             h('span', { class: 'sb-gm-title-tools' }, !isEditing(addKey) ? button('Add', () => startEdit(addKey, ''), { iconName: 'fa-plus', title: 'Something the story has made true or agreed' }) : null)),
-        h('small', { class: 'sb-hint' }, 'What a scene really was, and what was agreed or refused - kept in front of the narrator every reply, so no one acts as if it were otherwise or argues it again. The game master adds some itself.'),
+        h('small', { class: 'sb-hint' }, 'What a scene really was, and what was agreed or refused - so no one acts as if it were otherwise, argues it or brings it up again. Yours go to the narrator every reply and stay until you remove them; the game master’s go only when the latest messages touch them, and retire on their own after 40 replies untouched.'),
         isEditing(addKey) ? inlineEditor(addKey, {
             onSave: (text) => { if (!addSettledItem(chatKey, text)) toast('info', 'That is already settled, or empty.'); },
             placeholder: 'e.g. "The Novakorp run was only a training simulation - nothing real was taken" or "Adam agreed Cyril will not be sent against Omicron Innovations"', saveLabel: 'Add', saveIcon: 'fa-plus',
         }) : null,
         ...(gm.settled ?? []).map((x) => h('div', { class: 'sb-gm-row' },
             h('span', { class: 'sb-chip', title: x.source === 'director' ? 'The game master noted it' : 'You added it' }, icon(x.source === 'director' ? 'fa-chess-knight' : 'fa-user')),
-            h('div', { class: 'sb-gm-text' }, x.text),
+            h('div', { class: 'sb-gm-text' }, x.text, x.source === 'director' && unsettledReason(x.text) ? h('small', { class: 'sb-muted' }, ` - not sent: ${unsettledReason(x.text)}`) : null),
             h('div', { class: 'sb-iconbtn', title: 'Remove - no longer holds', onclick: () => { removeSettledItem(chatKey, x.id); done(); } }, icon('fa-trash')))),
         !(gm.settled ?? []).length ? h('p', { class: 'sb-muted' }, 'Nothing yet.') : null);
 }
