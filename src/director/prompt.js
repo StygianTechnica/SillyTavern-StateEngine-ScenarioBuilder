@@ -190,17 +190,22 @@ export function mentionedIn(name, recentText) {
 }
 
 // Words that are titles, not names ("High Seer Maren" is Maren).
-const TITLE_WORDS = new Set(['high', 'seer', 'lord', 'lady', 'sir', 'dame', 'king', 'queen', 'prince', 'princess', 'captain', 'father', 'mother', 'brother', 'sister', 'master', 'mistress', 'angel', 'saint', 'elder', 'the', 'old', 'young', 'great', 'doctor', 'general']);
+const TITLE_WORDS = new Set(['high', 'chief', 'director', 'agent', 'commander', 'officer', 'seer', 'lord', 'lady', 'sir', 'dame', 'king', 'queen', 'prince', 'princess', 'captain', 'father', 'mother', 'brother', 'sister', 'master', 'mistress', 'angel', 'saint', 'elder', 'the', 'old', 'young', 'great', 'doctor', 'general']);
 
 // The ways a character is named in prose: their name, aliases, the part
 // before a comma ("Lucen, Angel of Loyalty"), and their first and last
-// names unless those are titles.
+// names unless those are titles. An alias is called only whole: a callsign
+// or epithet's words are no names ("Moriarty's Right Hand" had "his hand
+// still resting on..." name Tiago Moriarty; "Cerberus Cutter" had every
+// "White Cerberus" name Vex).
 export function callNames(c) {
     const names = new Set();
+    const own = clean(c?.name);
     for (const raw of [c?.name, ...(c?.aliases ?? c?.base?.aliases ?? [])]) {
         const n = clean(raw);
         if (!n) continue;
         names.add(n);
+        if (n !== own) continue;
         const head = clean(n.split(',')[0]);
         names.add(head);
         const words = head.split(/\s+/);
@@ -214,14 +219,19 @@ export function callNames(c) {
 // "a Moriarty") names no one in particular; a full name or alias still does.
 export function peopleNamedIn(text, characters) {
     const t = String(text ?? '');
-    const has = (n) => new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'iu').test(t);
+    // A word taken from a name (not a whole name or alias) counts only
+    // written as a name - capitalised.
+    const has = (n, whole = true) => new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, whole ? 'iu' : 'u').test(t);
     const list = characters ?? [];
     const owners = new Map();
-    for (const c of list) for (const n of new Set(callNames(c).map((x) => x.toLowerCase()))) owners.set(n, (owners.get(n) ?? 0) + 1);
+    // Who carries each word - aliases' words too ("Cyril Moriarty" shares
+    // Tiago Moriarty's family name), though those never call anyone.
+    const carried = (c) => new Set([...callNames(c), ...(c?.aliases ?? c?.base?.aliases ?? []).flatMap((a) => clean(String(a).split(',')[0]).split(/\s+/))].map((x) => x.toLowerCase()).filter(Boolean));
+    for (const c of list) for (const n of carried(c)) owners.set(n, (owners.get(n) ?? 0) + 1);
     const whole = (c) => new Set([c?.name, ...(c?.aliases ?? c?.base?.aliases ?? [])].map((x) => clean(x).toLowerCase()).filter(Boolean));
     return list.filter((c) => {
         const full = whole(c);
-        return callNames(c).some((n) => (full.has(n.toLowerCase()) || owners.get(n.toLowerCase()) === 1) && has(n));
+        return callNames(c).some((n) => (full.has(n.toLowerCase()) || owners.get(n.toLowerCase()) === 1) && has(n, full.has(n.toLowerCase())));
     });
 }
 

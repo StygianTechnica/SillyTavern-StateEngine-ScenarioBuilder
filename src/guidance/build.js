@@ -329,7 +329,9 @@ function spokenSection(spoken) {
             clean(p.role) ? unstop(truncate(p.role, 110)).replace(/^(A|An|The)(?=\s)/, (w) => w.toLowerCase()).replace(/^[A-Z](?=[a-z])/, (w) => w.toLowerCase()) : '',
         ].filter(Boolean).join(', ');
         const stances = (p.stances ?? []).length ? `; ${andList(p.stances)}` : '';
-        return `${clean(p.name)} - ${bits || 'known in this setting'}${stances}.`;
+        const ties = (p.ties ?? []).length ? `; ${p.ties.map(clean).join('; ')}` : '';
+        const known = (p.knownBy ?? []).length ? `; ${andList(p.knownBy.map(clean))} know${p.knownBy.length === 1 ? 's' : ''} them` : '';
+        return `${clean(p.name)} - ${bits || 'known in this setting'}${stances}${ties}${known}.`;
     };
     const rule = 'Someone away keeps who they are and whose side they are on: what is said of them fits that, and they are never made an attacker, enemy or ally of a side the story has not shown them turn to.';
     return {
@@ -421,7 +423,11 @@ export function buildNow(input) {
     // What the latest replies or Archivist's notes got wrong against the
     // library (src/guidance/canon.js): put right before anything else.
     const corrections = clean(input.corrections);
-    if (!arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections) return '';
+    // Someone the player just named who is not here, and who here knows
+    // them (src/guidance/spoken.js): Inji, asked about Zane - his rival, a
+    // fellow White Cerberus agent - said he had never heard the name.
+    const named = clean(input.spokenNow);
+    if (!arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (corrections) orders.push(corrections);
@@ -432,6 +438,7 @@ export function buildNow(input) {
     if (dodging) orders.push(dodging);
     if (next) orders.push(`${player ? clean(player.name) : 'The player character'} asks what comes next - the answer is where the story goes now: ${unstop(next)}. Bring it in this reply.`);
     if (sides) orders.push(sides);
+    if (named) orders.push(named);
     if (settled.length) orders.push(`Keep to what the story has settled - no one acts as if it were otherwise or argues it again: ${settled.map(unstop).join('; ')}.`);
     return `[Game master's note for this reply, not part of the story: ${orders.join(' ')}${player ? ` Write only the others; never ${clean(player.name)}.` : ''}]`;
 }

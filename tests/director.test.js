@@ -274,4 +274,16 @@ describe('who the situation names', () => {
         expect(peopleNamedIn('As Cyril delves into Medina Syndicate databases, Riven calls him a Moriarty.', family).map((x) => x.id)).toEqual(['c']);
         expect(peopleNamedIn('Bartin waits while Enrique Medina and Tiago talk; Lark keeps watch.', family).map((x) => x.id)).toEqual(['t', 'b', 'e', 'v']);
     });
+
+    it('calls an alias only whole: a callsign or epithet\'s words are no names', () => {
+        const crew = [
+            { id: 't', name: 'Tiago Moriarty', aliases: ['The Shadow Prince', "Moriarty's Right Hand"] },
+            { id: 'v', name: 'Vex', aliases: ['Cerberus Cutter'] },
+            { id: 'a', name: 'Adam Miller', aliases: ['Chief Miller'] },
+        ];
+        expect(peopleNamedIn('Inji blinked, his hand still resting on the other man\'s shoulder.', crew)).toEqual([]);
+        expect(peopleNamedIn('The rest of White Cerberus waited. The Chief nodded.', crew)).toEqual([]);
+        expect(peopleNamedIn('"The Cerberus Cutter is here," and Chief Miller frowned.', crew).map((x) => x.id)).toEqual(['v', 'a']);
+        expect(peopleNamedIn('Moriarty\'s Right Hand slipped in.', crew).map((x) => x.id)).toEqual(['t']);
+    });
 });

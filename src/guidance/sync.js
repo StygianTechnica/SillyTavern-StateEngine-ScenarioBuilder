@@ -53,7 +53,7 @@ import { protectedText, stanceFor } from '../director/combat.js';
 import { eventValues } from '../events/model.js';
 import { knownAsText, keptNames } from '../library/alias-kinds.js';
 import { libraryMemberships } from '../library/faction-sync.js';
-import { spokenOf } from './spoken.js';
+import { spokenOf, spokenNowText } from './spoken.js';
 import { livePoolFor, byType } from '../naming/run.js';
 import { narratorPoolLine } from '../naming/live.js';
 import { personGender } from '../naming/classify.js';
@@ -542,7 +542,19 @@ export async function gatherInputs(chatId, chatKey) {
                 memberships,
                 factionName: (id) => factionNames.get(id) ?? '',
                 relations: library.relations ?? [],
+                playerId,
             }),
+            // Of those, the ones the player's latest post names whom someone
+            // here knows - told in the chat itself.
+            spokenNow: spokenNowText(spokenOf(allCharacters, {
+                recentText: latestPlayerPost(),
+                here: castIds,
+                skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id)].filter(Boolean),
+                memberships,
+                factionName: (id) => factionNames.get(id) ?? '',
+                relations: library.relations ?? [],
+                playerId,
+            })),
             // Never a correction that puts a power (no body) or the dead in the
             // scene ("Ferunox ... is still present in this scene").
             corrections: doc.corrections.map((x) => x.text).filter((t) => !placesTheAbsent(t, absentNames)),
