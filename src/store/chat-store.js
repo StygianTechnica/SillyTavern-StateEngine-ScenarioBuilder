@@ -40,8 +40,14 @@ export function updateChatDoc(chatKey, mutate) {
     // here would set the newer tab's work back.
     if (isStaleTab()) return structuredClone(normalizeChatDoc(settings.chats[chatKey]));
     const doc = normalizeChatDoc(settings.chats[chatKey]);
+    const before = JSON.stringify(doc);
     mutate(doc);
-    settings.chats[chatKey] = normalizeChatDoc(doc);
+    const after = normalizeChatDoc(doc);
+    // Nothing changed: no save and no event. A write that changed nothing
+    // still woke the guidance sync, which wrote again - a loop that redrew
+    // the workspace without end (a sheet's boxes snapped back as edited).
+    if (JSON.stringify(after) === before) return structuredClone(after);
+    settings.chats[chatKey] = after;
     saveSettings();
     emit(chatKey);
     return structuredClone(settings.chats[chatKey]);

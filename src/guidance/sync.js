@@ -305,7 +305,11 @@ export async function gatherInputs(chatId, chatKey) {
         // is not being in the story - Zane, put in the cast by a swipe that
         // was then replaced, was taken as there, and the beat stopped
         // waiting on him.
-        const names = shownOf(cast.filter((x) => !x.player).map((x) => [x.name, ...(Array.isArray(x.aliases) ? x.aliases : [])]), String(chatNow[at]?.mes ?? '')).flat();
+        // Only the names the message itself uses: noting every alias of each
+        // one shown ("Keystone" for Inji) and then dropping the ones it did
+        // not use, sync after sync, never ended.
+        const latestText = String(chatNow[at]?.mes ?? '');
+        const names = shownOf(cast.filter((x) => !x.player).map((x) => [x.name, ...(Array.isArray(x.aliases) ? x.aliases : [])]), latestText).flat().filter((n) => shownOf([[n]], latestText).length);
         // Presence the recent chat does not bear out goes: noted from a
         // swipe since replaced, or from the cast alone before this check.
         const stale = Object.entries(doc.present ?? {}).filter(([n, i]) => i >= at - 10 && chatNow[i] && !shownOf([[n]], String(chatNow[i].mes ?? '')).length).map(([n]) => n);

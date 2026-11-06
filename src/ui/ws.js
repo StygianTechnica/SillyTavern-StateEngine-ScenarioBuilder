@@ -33,7 +33,9 @@ export function setRedraw(fn) {
 export function rerender({ force = true } = {}) {
     // A background update waits while the user is editing - or dragging on
     // the map, or a place card onto another, which a redraw would cut short.
-    if (!ws.open || (!force && (ws.dirty || ws.mapDragging || ws.cardDragging))) return;
+    // A sheet open for editing counts too, typed in or not: a redraw put
+    // its boxes back as they were (a textarea dragged taller snapped back).
+    if (!ws.open || (!force && (ws.dirty || ws.editing || ws.mapDragging || ws.cardDragging))) return;
     void redraw();
 }
 
