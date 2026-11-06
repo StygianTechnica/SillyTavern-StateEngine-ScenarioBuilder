@@ -50,7 +50,13 @@ const ROMANTIC = /\b(?:lovers?|in love|loves?|beloved|sweetheart|spouses?|wife|h
 const FAMILY = /\b(?:brothers?|sisters?|siblings?|mother|father|parents?|sons?|daughters?|child(?:ren)?|cousins?|uncle|aunt|niece|nephew|grand\w*|kin|family|twins?|mentor|teacher|student|apprentice)\b/i;
 const VOW = /\b(?:marry|wed|faithful|fidelity|forsak\w*|betroth\w*|engag\w*|only (?:you|one)|my heart|be yours|be mine|true to (?:you|him|her|them)|love (?:you|him|her|them)|never love|no other|hand in marriage)\b/i;
 
-export const isRomantic = (text) => ROMANTIC.test(str(text)) && !FAMILY.test(str(text));
+// Wanting, not loving: a fling, a flirtation, someone they have slept with.
+// Assassins Inc's ties were all desire - Zane and Inji had each been with
+// Cyril - so no one was ever "in love" with him, and Zane, jealous by
+// nature, had no one to be jealous over.
+const DESIRE = /\b(?:attract(?:ed|ion)|desires?|desired|wants? (?:him|her|them)|lust\w*|flirt\w*|fling|hook(?:ed)? up|slept with|sleeps? with|sleeping with|bedded|seduc\w*|sexual\w*|intimate|kissed|kisses|fooled around|messed around|hot for|into (?:him|her|them)|chemistry)\b/i;
+export const isDesire = (text) => DESIRE.test(str(text)) && !FAMILY.test(str(text));
+export const isRomantic = (text) => (ROMANTIC.test(str(text)) || DESIRE.test(str(text))) && !FAMILY.test(str(text));
 export const isVowOfLove = (text) => VOW.test(str(text));
 
 export const jealousyOf = (entry) => (JEALOUSY_MODES.includes(entry?.meta?.jealousy) ? entry.meta.jealousy : '');
@@ -116,7 +122,7 @@ export function bondsOf({ authored = [], story = [], oaths = [], nameOf = () => 
         const text = `${str(r.type)} ${str(r.text)}`;
         const polarity = Number(r.polarity) || 0;
         if (FAMILY.test(text)) continue;
-        if (ROMANTIC.test(text) && polarity >= 1) add(r.fromId, r.toId, Math.min(3, Math.max(2, polarity)), true, clean(r.type) || 'in love');
+        if (isRomantic(text) && polarity >= 1) add(r.fromId, r.toId, Math.min(3, Math.max(2, polarity)), true, clean(r.type) || 'in love');
         else if (polarity >= 3) add(r.fromId, r.toId, 2, false, 'devoted');
     }
     for (const k of oaths ?? []) {
@@ -213,7 +219,9 @@ export function heartsSection({ present = [], bonds = [], grievances = [], modeO
         if (!others.length) continue;
         const who = nameOfId(b.who);
         const to = b.to && playerIds.has(b.to) ? userName : nameOfId(b.to);
-        const tie = b.romantic ? (b.label && !/^(?:in love|lover)$/i.test(b.label) ? `is in love with ${to} (${b.label})` : `is in love with ${to}`) : `is devoted to ${to}`;
+        // Desire is not love: "wants Cyril (slept together)".
+        const wants = b.romantic && isDesire(b.label) && !ROMANTIC.test(str(b.label));
+        const tie = !b.romantic ? `is devoted to ${to}` : wants ? `wants ${to} (${b.label})` : b.label && !/^(?:in love|lover)$/i.test(b.label) ? `is in love with ${to} (${b.label})` : `is in love with ${to}`;
         const prone = modeOf(b.who) === 'jealous';
         lines.push(`- ${who} ${tie}. If ${to} shows warmth, desire or favour to someone else here - flirting, a lingering touch, a kiss, choosing their company - ${who} notices, and it shows${b.romantic ? '' : ' if it fits what they are to each other'}${prone ? `. ${who} is jealous by nature: quick to it, slow to let go, and may act on it` : ''}.`);
         watch = true;
