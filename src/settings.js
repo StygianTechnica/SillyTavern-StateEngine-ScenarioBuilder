@@ -113,6 +113,9 @@ const DEFAULTS = {
     // list them in Review (no call); auto - write each one's current
     // description at once (one call per change).
     changes: { suggest: true, auto: false },
+    // Standing from the story (src/state/standing.js): a pattern in how
+    // someone has behaved, offered in Review. No model call.
+    standing: { suggest: true },
     director: { enabled: true, timeout: 45, allowCreate: true, maxTokens: 700, thinkAhead: false, perspective: true, perspectiveTokens: 600, pov: 'free', travelAtNight: false, contextTokens: 8192, fightReplies: 5, powersEvery: 8, jealousy: true },
     // The clock (src/calendar/clock.js): on = Scenario Builder keeps the
     // time and weather; perTurn = how much time a reply covers when the

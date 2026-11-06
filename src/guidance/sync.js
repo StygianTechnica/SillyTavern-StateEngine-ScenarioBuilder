@@ -15,6 +15,7 @@
 
 import { LOG_PREFIX } from '../constants.js';
 import { describedNow } from '../state/narrative.js';
+import { standingText } from '../state/standing-model.js';
 import { getSettings, isActive } from '../settings.js';
 import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
 import { getChatDoc, updateChatDoc, SCENARIO_CHANGED_EVENT } from '../store/chat-store.js';
@@ -334,6 +335,14 @@ export async function gatherInputs(chatId, chatKey) {
             member.relations = lines.sort();
             if (lines.length) member.why = 'canonically present; relationships';
         }
+    }
+
+    // How the others here see each one now, from what they did
+    // (src/state/standing.js): Doc, wrong about Cyril's implant again and
+    // again, was still the one Adam turned to.
+    for (const member of cast.filter((c) => !c.player)) {
+        const here = cast.filter((c) => c.id && c.id !== member.id).map((c) => ({ id: c.id, name: c.name }));
+        member.standing = standingText(doc.standing?.people?.[member.id], { name: member.name, gender: member.gender, here });
     }
 
     // People the user took out of the scene by hand (src/validate/reconcile.js

@@ -9,6 +9,7 @@
 // History, Import (import-panel.js), Worlds (worlds-tab.js), Preview (panels.js),
 // Naming (naming-tab.js), Bloodlines (bloodlines-tab.js).
 
+import { openPatterns } from '../state/standing-model.js';
 import { getSettings, saveSettings } from '../settings.js';
 import { LOG_PREFIX } from '../constants.js';
 import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
@@ -153,7 +154,7 @@ function listen() {
 
 function reviewCount() {
     const doc = getChatDoc(ws.ctx.chatKey);
-    return doc.adopted.length + doc.candidates.length + doc.drift.filter((d) => d.status === 'pending').length;
+    return doc.adopted.length + doc.candidates.length + doc.drift.filter((d) => d.status === 'pending').length + openPatterns(doc.standing).length;
 }
 
 async function render() {

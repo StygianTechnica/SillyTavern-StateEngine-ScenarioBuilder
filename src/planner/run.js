@@ -18,6 +18,7 @@
 // moments, agendas, requests, motifs) and hands the BEAT lines it writes
 // back to takeBeats(). Never throws.
 
+import { sidelinedText } from '../state/standing-model.js';
 import { LOG_PREFIX } from '../constants.js';
 import { opposedJobs, jobsLine, planTexts } from './aims.js';
 import { timedHappenings, notYet } from './timed.js';
@@ -495,6 +496,8 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             dayPart: guidance.clock?.dayPart ?? doc.canonical.dayPart,
             userName: userName(),
             messages: chatMessages(),
+            // Who has lost standing: fewer moments (src/state/standing-model.js).
+            sidelined: sidelinedText(Object.values(doc.standing?.people ?? {})),
             requests: waitingRequests(doc.gm).concat(doc.gm.queue.filter((r) => r.status === 'planned')),
             motifs: motifsOf(doc.gm),
             gmStyle: guidance.overview?.gmStyle ?? '',

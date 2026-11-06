@@ -31,6 +31,7 @@ import { runQuestSync, writeActiveQuests } from '../quests/sync.js';
 import { checkQuestEnds, fillMissingEnds } from '../quests/ends.js';
 import { followMissions } from '../quests/missions.js';
 import { scanStoryChanges } from './changes.js';
+import { scanStanding } from './standing.js';
 import { ensureCharacterFields } from '../library/character-fields.js';
 import { checkTriggers, checkTriggersOnMessage, markTriggersShown, latestUserIndex } from '../triggers/run.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage } from '../validate/reconcile.js';
@@ -63,6 +64,8 @@ async function intakeOpenChat() {
     await runLoreSync(ref.chatId, chatKeyFor(ref), settingId);
     // What the story did to the world: offered as current descriptions.
     await scanStoryChanges(ref.chatId, chatKeyFor(ref), settingId);
+    // How people are seen now, from what they did (no call).
+    await scanStanding(ref.chatId, chatKeyFor(ref), settingId);
     hookArchivist();
 }
 
@@ -79,7 +82,10 @@ function hookArchivist() {
         SillyTavern.getContext().eventSource.on(memories, async () => {
             const ref = getCurrentChatRef();
             if (!ref || !isActive()) return;
-            if (await scanStoryChanges(ref.chatId, chatKeyFor(ref), await getBoundSettingId(ref.chatId))) await syncNow();
+            const settingId = await getBoundSettingId(ref.chatId);
+            const changed = await scanStoryChanges(ref.chatId, chatKeyFor(ref), settingId);
+            const marked = await scanStanding(ref.chatId, chatKeyFor(ref), settingId);
+            if (changed || marked) await syncNow();
         });
     }
 }

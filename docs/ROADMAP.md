@@ -471,7 +471,15 @@ newly confirmed objects, a separate generation connection profile.
   for what the story did, to edit and use as the current description (the
   setting's own stays). Settings: offer them (on), write them at once (off,
   one call each).
-- [ ] **Reputation from the story (added 2026-11-05).** A person's standing
+- [x] **Reputation from the story (added 2026-11-05; built 2026-11-06 as
+  "standing", src/state/standing.js).** In: no-call detection from
+  Archivist's memories and the user's posts (shown wrong, scorn for their
+  thinking, lashing out, botched jobs, betrayal; proven right, rescues,
+  amends), a pattern of 2 offered in Review and on the sheet; a Standing
+  card (-3..+3, a "how they are seen" line, held by the witnesses); the
+  narrator's cast line while a holder is present; the day plan sidelines
+  the discredited. Not yet: word of it carried by ripples, and a mending
+  moment or agenda offered by the planner. A person's standing
   changes with what they do in the story, and their current description
   follows it. The user's case: Galice is meant to be an expert, but with
   Cyril she has been violent and overreactive again and again, and that

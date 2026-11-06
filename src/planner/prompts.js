@@ -84,6 +84,8 @@ export function buildDayPrompt(input) {
     if (settled.length) parts.push('', 'SETTLED IN THE STORY (true and agreed - no moment acts as if it were otherwise, argues it again or asks for it again)', ...settled.map((t) => `- ${t}`));
     // src/planner/aims.js: every moment says whose it is ("stop Enrique's
     // heist", never "the heist").
+    // Who has lost standing (src/state/standing-model.js): fewer moments.
+    if (clean(input.sidelined)) parts.push('', 'WHO IS NOT TAKEN SERIOUSLY NOW', clean(input.sidelined));
     if (clean(input.jobs)) parts.push('', 'WHOSE JOB IS WHOSE (every moment and agenda names whose it is - "stop Enrique\'s heist", never a bare "the heist")', clean(input.jobs));
     if (input.requests?.length) parts.push('', `WHAT THE USER WOULD LIKE TO SEE (fit these in where they are natural; each id is the request's)`, requestsText(input.requests));
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (echo them as images and turns of fate, never as literal events)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));

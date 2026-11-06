@@ -105,6 +105,7 @@ import { normalizePresent } from '../planner/presence.js';
 import { normalizeEvent, normalizeEventsDone, normalizeEventsComing } from '../events/model.js';
 import { normalizeTemplates } from '../events/setup.js';
 import { emptyChanges, normalizeChanges } from '../state/changes-model.js';
+import { emptyStanding, normalizeStanding } from '../state/standing-model.js';
 import { normalizeAliasInfo } from '../library/alias-kinds.js';
 import { normalizeCultureDef } from '../naming/cultures.js';
 import { normalizePool } from '../naming/live.js';
@@ -492,6 +493,8 @@ export function emptyChatDoc() {
         // Changes the story made to the world, offered as current
         // descriptions (src/state/changes.js).
         changes: emptyChanges(),
+        // How people are seen now, from what they did (src/state/standing.js).
+        standing: emptyStanding(),
         // Who has died in this story (src/state/death.js).
         dead: [],
         // Who may die in this chat ('' = the default in the settings):
@@ -560,6 +563,7 @@ export function normalizeChatDoc(doc) {
         dead: normalizeDead(d.dead),
         combatStance: STANCES.includes(d.combatStance) ? d.combatStance : '',
         changes: normalizeChanges(d.changes),
+        standing: normalizeStanding(d.standing),
         beliefsSeen: normalizeBeliefsSeen(d.beliefsSeen),
         perspectiveTold: isObject(d.perspectiveTold) ? Object.fromEntries(Object.entries(d.perspectiveTold).filter(([k, v]) => k && Array.isArray(v)).map(([k, v]) => [k, v.filter((x) => typeof x === 'string')])) : {},
         powersDid: isObject(d.powersDid) ? Object.fromEntries(Object.entries(d.powersDid).filter(([k, v]) => k && typeof v === 'string').map(([k, v]) => [k, v.slice(0, 200)])) : {},

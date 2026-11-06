@@ -118,6 +118,7 @@ function renderSettings() {
     byId('sb_director_jealousy').checked = settings.director.jealousy !== false;
     byId('sb_changes_suggest').checked = settings.changes?.suggest !== false;
     byId('sb_changes_auto').checked = settings.changes?.auto === true;
+    byId('sb_standing_suggest').checked = settings.standing?.suggest !== false;
     byId('sb_director_timeout').value = settings.director.timeout;
     byId('sb_director_context').value = settings.director.contextTokens;
     byId('sb_director_fight').value = settings.director.fightReplies;
@@ -187,6 +188,7 @@ export async function addSettingsDrawer() {
     byId('sb_director_jealousy').addEventListener('change', (e) => { settings.director.jealousy = e.target.checked; saveSettings(); });
     byId('sb_changes_suggest').addEventListener('change', (e) => { settings.changes = { ...(settings.changes ?? {}), suggest: e.target.checked }; saveSettings(); });
     byId('sb_changes_auto').addEventListener('change', (e) => { settings.changes = { ...(settings.changes ?? {}), auto: e.target.checked }; saveSettings(); });
+    byId('sb_standing_suggest').addEventListener('change', (e) => { settings.standing = { ...(settings.standing ?? {}), suggest: e.target.checked }; saveSettings(); });
     byId('sb_director_timeout').addEventListener('change', (e) => {
         const value = Math.round(Number(e.target.value));
         settings.director.timeout = Number.isFinite(value) ? Math.min(300, Math.max(5, value)) : 45;

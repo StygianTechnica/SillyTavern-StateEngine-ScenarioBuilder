@@ -26,6 +26,7 @@ import { storyBloodline } from '../library/bloodline-prompts.js';
 import { holdStoryWeather, advanceBy } from '../calendar/clock.js';
 import { getEnrichmentStatus, cancelEnrichment } from '../generate/enrich.js';
 import { openChanges, writeChange, useChange, dismissChange, editChangeDraft } from '../state/changes.js';
+import { openPatterns, setStanding, dismissStanding } from '../state/standing.js';
 import { runDirector, getDirectorStatus } from '../director/run.js';
 import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
 
@@ -223,6 +224,7 @@ export async function renderReview() {
     const section = (title, iconName, items, empty) => [h('h3', {}, icon(iconName), ` ${title}`), items.length ? items : h('div', { class: 'sb-muted' }, empty)];
     const status = getEnrichmentStatus();
     const changed = openChanges(doc).map((s) => changeItem(s, types.get(s.type)));
+    const standing = openPatterns(doc.standing).map((x) => standingItem(chatKey, x));
     return h('div', { class: 'sb-review' },
         h('small', { class: 'sb-hint' }, 'New places and characters the story mentions are confirmed in State Engine\'s own object review. Once confirmed, they appear here - tracked, placed, and (if auto-enrich is on) given detail.'),
         status.current || status.queued ? h('div', { class: 'sb-callout' }, icon('fa-spinner fa-spin'),
@@ -230,6 +232,7 @@ export async function renderReview() {
             status.queued ? button('Stop', () => cancelEnrichment(), { iconName: 'fa-stop' }) : null) : null,
         section('New in the setting', 'fa-seedling', adopted, 'Nothing new. Objects confirmed into the setting while you play land here.'),
         changed.length ? section('Changed in the story', 'fa-hourglass-half', changed, '') : null,
+        standing.length ? section('How people are seen', 'fa-scale-unbalanced', standing, '') : null,
         pending.length ? section('Questions', 'fa-circle-question', questions, '') : null,
         candidates.length ? section('Waiting for you', 'fa-inbox', candidates, '') : null,
         ...rejectedSection(doc, chatKey, section),
@@ -237,6 +240,19 @@ export async function renderReview() {
         resolved.length ? h('div', { class: 'sb-list' }, resolved.map((d) => h('div', { class: 'sb-log' },
             h('span', { class: `sb-badge sb-badge-${d.classification}` }, d.classification.replace('_', ' ')), ` ${scrubIds(d.text)}`, h('small', { class: 'sb-hint' }, ` - ${d.resolution}`))))
             : h('div', { class: 'sb-muted' }, 'Nothing yet.'));
+}
+
+// A pattern in how someone has behaved (src/state/standing.js): lower or
+// raise how the people who saw it see them, or let it be.
+function standingItem(chatKey, x) {
+    const finish = () => { void syncNow(); rerender(); };
+    return h('div', { class: 'sb-review-item sb-adopted', style: `--sb-accent: ${x.sign < 0 ? '#b4443a' : '#4a8a4f'}` },
+        h('div', { class: 'sb-row' }, h('i', { class: 'fa-solid fa-scale-unbalanced' }), h('b', {}, x.name),
+            h('small', { class: 'sb-hint' }, `${x.marks.length} times the story shows them ${[...new Set(x.marks.map((m) => m.kind))].join(', ')} - ${x.sign < 0 ? 'lower' : 'raise'} how they are seen?`)),
+        h('ul', { class: 'sb-gm-threads' }, x.marks.slice(-4).map((m) => h('li', {}, m.text))),
+        h('div', { class: 'sb-actions' },
+            button(x.sign < 0 ? 'Lower their standing' : 'Raise their standing', () => { setStanding(chatKey, x.id, x.sign, { name: x.name }); finish(); }, { iconName: x.sign < 0 ? 'fa-arrow-down' : 'fa-arrow-up', cls: 'sb-primary', title: 'Those who saw it see them so now: the narrator and the planner act on it' }),
+            button('Not now', () => { dismissStanding(chatKey, x.id); finish(); }, { iconName: 'fa-xmark', title: 'Let these go - new ones can still add up' })));
 }
 
 // Something the story changed (src/state/changes.js): what it says happened,

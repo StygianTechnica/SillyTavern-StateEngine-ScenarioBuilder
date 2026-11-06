@@ -46,6 +46,7 @@ import { suggestGifts, suggestActs } from '../generate/gifts.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
 import { sparkButton, fieldWithTools, diceButton, tagEditor } from './controls.js';
+import { standingCard } from './standing-card.js';
 import { generateEntry, canGenerateFor, rollEntryName, generateAlias } from '../generate/run.js';
 import { ALIAS_KINDS, kindLabel, aliasInfoFor, aliasLabel } from '../library/alias-kinds.js';
 import { cultureChoices, resolveCulture, inheritedCulture } from '../naming/cultures.js';
@@ -658,6 +659,7 @@ function overviewTab({ type, entry, isNew, defs, doc, all, names, parents, allEn
         isNew ? null : lineageCard(type, entry, all),
         isNew ? null : populationCard(type, entry, all),
         isNew ? null : giftsCard(type, entry, all, defs),
+        isNew ? null : standingCard(type, entry, all),
         isNew ? null : combatCard(type, entry, all),
         isNew ? null : heartCard(type, entry, all),
         isNew ? null : offSceneCard(type, entry),

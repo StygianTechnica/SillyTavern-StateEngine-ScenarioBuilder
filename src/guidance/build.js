@@ -393,6 +393,8 @@ function castLine(c) {
     if (now.length) bits.push(`Now: ${now.join(', ')}`);
     if (clean(c.condition)) bits.push(unstop(truncate(c.condition, 80)));
     for (const r of c.relations ?? []) bits.push(firstUpper(unstop(truncate(r, 200))));
+    // How the others here see them now (src/state/standing-model.js).
+    if (clean(c.standing)) bits.push(unstop(truncate(c.standing, 360)));
     // What they know that others may not, and what binds them.
     for (const k of c.knows ?? []) bits.push(`Knows: ${unstop(truncate(k, 160))}`);
     // What they hold true that is not (src/library/knowledge.js, beliefs).
@@ -518,6 +520,7 @@ function castParagraph(c) {
     if (clean(c.thought)) bits.push(`On ${name}'s mind: ${sentence(firstLower(truncate(c.thought, 140)))}`);
     if (clean(c.condition)) bits.push(`Condition: ${sentence(truncate(c.condition, 120))}`);
     if (c.relations?.length) bits.push(c.relations.map((r) => sentence(firstUpper(truncate(r, 200)))).join(' '));
+    if (clean(c.standing)) bits.push(sentence(truncate(c.standing, 360)));
     return bits.join(' ');
 }
 
