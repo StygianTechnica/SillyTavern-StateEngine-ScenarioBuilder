@@ -22,7 +22,8 @@ import { routesFrom, listRoutes, headingAlong, placesFurtherOn } from '../librar
 import { pathOf } from '../library/hierarchy.js';
 import { listRelations, relationsFor, addRelation } from '../library/relations-edit.js';
 import { setCanonical } from '../state/canonical.js';
-import { advanceBy, perTurnDefault, holdStoryWeather, setTime, travelAlong, setTimeOfDay } from '../calendar/clock.js';
+import { advanceBy, advanceFrom, perTurnDefault, holdStoryWeather, setTime, travelAlong, setTimeOfDay } from '../calendar/clock.js';
+import { postSpan } from '../calendar/post-span.js';
 import { baselineFields } from '../library/fields.js';
 import { describeMagic, describeTech } from '../library/world-options.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
@@ -1184,7 +1185,19 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         if (settings.time.enabled) {
             // The clock just started: first the story's own time of day.
             if (getChatDoc(chatKey).clock.needsNow) await setTimeOfDay(chatId, chatKey, settingId, parsed.now);
-            const wanted = parsed.time?.text || perTurnDefault();
+            let wanted = parsed.time?.text || perTurnDefault();
+            // What the player's post says its action took is the least the
+            // turn covers: "spent several hours at the gun range" was "A few
+            // minutes" by the TIME line (src/calendar/post-span.js).
+            const said = postSpan(latestUserText);
+            if (said) {
+                const start = getChatDoc(chatKey).canonical.time;
+                const [byLine, byPost] = Number.isFinite(start) ? await Promise.all([advanceFrom(settingId, start, wanted), advanceFrom(settingId, start, said)]) : [null, null];
+                if (byPost !== null && (byLine === null || byPost > byLine)) {
+                    console.info(LOG_PREFIX, `the player's post says it took ${said}; the TIME line said "${wanted}" - ${said} it is`);
+                    wanted = said;
+                }
+            }
             const moved = await advanceBy(chatId, chatKey, settingId, wanted, { planned: true, source: 'director', told: !!parsed.time?.text, note: `Time passes: ${wanted}${parsed.time?.why ? ` (${parsed.time.why})` : ''}` })
                 ?? await advanceBy(chatId, chatKey, settingId, perTurnDefault(), { planned: true, source: 'director', note: `Time passes: ${perTurnDefault()}` });
             if (moved) timeText = wanted;
