@@ -28,7 +28,7 @@ import { triggerLines } from '../triggers/model.js';
 import { deadText, placesTheAbsent } from '../state/death.js';
 import { circling } from '../director/loops.js';
 import { sidesApart, sidesText } from './sides.js';
-import { factionSlips, deadActing, correctionText } from './canon.js';
+import { factionSlips, deadActing, correctionText, pronounSlips, commandSlips, pronounText } from './canon.js';
 import { asksWhatNext } from './build.js';
 import { activeBeat, settledNow, touchedSettled, retireSettled, dueToday } from '../planner/model.js';
 import { notYet, notYetLine } from '../planner/timed.js';
@@ -513,6 +513,13 @@ export async function gatherInputs(chatId, chatKey) {
     const notes = Object.values(await getRawValues(chatId, ['ar__ctx_scene_characters', 'ar__ctx_scene_relationships', 'ar__ctx_story_summary']).catch(() => ({}))).map(String);
     const slips = factionSlips(cast, factionList, [...replies, ...notes], { others: allCharacters.map((ch) => ch.name) });
     const deadNow = deadActing(doc.dead.map((d) => ({ ...d, aliases: allCharacters.find((ch) => ch.id === d.id)?.aliases ?? [] })), replies[replies.length - 1] ?? '');
+    // Someone here with the wrong pronouns, or giving orders that are their
+    // absent leader's (Galice, "his voice firm", handing out Adam's jobs).
+    const leaders = new Map();
+    for (const r of library.relations ?? []) if (r.kind === 'leads' && factionNames.has(r.to)) leaders.set(r.to, [...(leaders.get(r.to) ?? []), { id: r.from, name: allCharacters.find((ch) => ch.id === r.from)?.name ?? '' }].filter((x) => x.name));
+    const castFor = cast.map((c) => ({ ...c, aliases: Array.isArray(c.aliases) ? c.aliases : allCharacters.find((ch) => ch.id === c.id)?.aliases ?? [] }));
+    const wrongPronouns = pronounSlips(castFor, replies[replies.length - 1] ?? '', { others: allCharacters.map((ch) => ch.name) });
+    const wrongOrders = commandSlips(castFor, leaders, [replies[replies.length - 1] ?? '', ...notes]);
     const corrected = new Set(slips.map((s) => s.name));
 
     return {
@@ -577,7 +584,7 @@ export async function gatherInputs(chatId, chatKey) {
             sides: sidesText(sidesApart(cast, library.relations ?? [], (fid) => factionNames.get(fid) ?? '').filter((s) => !corrected.has(s.name))),
             // What the latest replies or Archivist's notes got wrong against
             // the library (src/guidance/canon.js) - put right in the chat.
-            corrections: correctionText({ slips, dead: deadNow }),
+            corrections: [correctionText({ slips, dead: deadNow }), pronounText(wrongPronouns, wrongOrders)].filter(Boolean).join(' '),
             // The player asks what comes next: the outline's beat now answers.
             next: settings.planner?.enabled === true && asksWhatNext(latestPlayerPost()) ? (activeBeat(doc.gm.outline)?.text ?? '') : '',
             // Who has died in this story (src/state/death.js).

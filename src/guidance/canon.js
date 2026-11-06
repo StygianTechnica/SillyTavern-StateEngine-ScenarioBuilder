@@ -112,3 +112,81 @@ export function correctionText({ slips = [], dead = [] } = {}) {
     }
     return lines.join(' ');
 }
+
+// Someone here written with the other gender's pronouns: a sentence that
+// begins with them and, before anyone else is named, says his for her or
+// her for him (Assassins Inc: "Galice stepped forward, his voice firm" -
+// Adam's lines given to Galice, his pronoun and all). people: [{ name,
+// aliases, gender 'f'|'m', player }]; others: every name in the library.
+// -> [{ name, gender }]
+const HIS = /\b(?:he|him|his|himself)\b/i;
+const HERS = /\b(?:she|her|hers|herself)\b/i;
+export function pronounSlips(people = [], text = '', { others = [] } = {}) {
+    const out = [];
+    const t = String(text ?? '').replace(/["“][^"”]*["”]/g, ' ');
+    for (const p of people ?? []) {
+        if (p.player || !['f', 'm'].includes(p.gender)) continue;
+        const names = namesOf(p);
+        // Everyone else, by first name too ("Inji" for Inji Miyama).
+        const rest = [...new Set((others ?? []).flatMap((n) => [clean(n), clean(String(n ?? '').split(/[\s,]+/)[0])]).filter((n) => n.length >= 3 && !names.some((x) => lower(x) === lower(n))))];
+        const wrong = p.gender === 'f' ? HIS : HERS;
+        const slip = sentences(t).some((s) => {
+            const at = firstAt(s, names);
+            if (at !== 0) return false;
+            // Up to the next person named: the pronouns there are theirs.
+            const next = firstAt(s.slice(1), rest);
+            const span = next < 0 ? s : s.slice(0, next + 1);
+            return wrong.test(span);
+        });
+        if (slip) out.push({ name: clean(p.name), gender: p.gender });
+    }
+    return out;
+}
+
+// Someone here giving the orders when they do not lead and their leader is
+// away (Galice "assigns roles for the operation" - Adam Miller's to give).
+// people: [{ id, name, aliases, factionIds, player }]; leaders: Map
+// factionId -> [{ id, name }]; texts: the latest reply and Archivist's
+// notes. -> [{ name, leader, faction }]
+const ORDERS = /\b(?:assign(?:s|ed|ing)?\s+(?:the\s+)?(?:roles|tasks|duties|positions|teams?)|(?:gives?|gave|giving|issues?|issued|barks?|barked)\s+(?:the\s+)?orders|ordered\s+(?:the\s+)?(?:team|everyone|them|us)|put(?:s|ting)?\s+\w+\s+in\s+charge|takes?\s+command|took\s+command|is\s+in\s+command)\b/i;
+const ORDER_SAID = /\b(?:I expect (?:everyone|each of you|you all)|you(?:\s+and\s+[\p{Lu}][\p{L}]+)?\s+will\s+(?:be\s+)?(?:lead(?:ing)?|handle|take point|provide|cover)|(?:that's|that is) an order|you have your orders|let's move out)\b/iu;
+export function commandSlips(people = [], leaders = new Map(), texts = []) {
+    const out = [];
+    const here = new Set((people ?? []).map((p) => p.id));
+    for (const p of people ?? []) {
+        if (p.player) continue;
+        for (const fid of p.factionIds ?? []) {
+            const heads = leaders.get(fid) ?? [];
+            if (!heads.length || heads.some((h) => h.id === p.id || here.has(h.id))) continue;
+            const names = namesOf(p);
+            // Who says the words: the one the sentence before them starts
+            // with, or - for a he / she - the one the sentence before that
+            // started with ("He turned to Inji. 'You and Cyril will lead'"
+            // is still Galice).
+            const lastNamed = (before) => {
+                const said = sentences(before).reverse();
+                for (const s of said) {
+                    const who = (people ?? []).find((q) => firstAt(s, namesOf(q)) === 0);
+                    if (who) return who;
+                    if (!/^(?:he|she|they)\b/i.test(s)) return null;
+                }
+                return null;
+            };
+            const gave = (texts ?? []).some((text) => {
+                const raw = String(text ?? '');
+                // Their own sentence says it, or their quoted words do.
+                return sentences(raw.replace(/["“][^"”]*["”]/g, ' ')).map((s) => s.replace(/^[-*•]\s*/, '')).some((s) => firstAt(s, names) === 0 && ORDERS.test(s))
+                    || [...raw.matchAll(/([^"“]{0,200})["“]([^"”]+)["”]/g)].some((m) => ORDER_SAID.test(m[2]) && lastNamed(m[1]) === p);
+            });
+            if (gave) out.push({ name: clean(p.name), leader: clean(heads[0].name), faction: fid });
+        }
+    }
+    return out.filter((x, i, all) => all.findIndex((y) => y.name === x.name) === i);
+}
+
+export function pronounText(slips = [], commands = []) {
+    const lines = [];
+    for (const s of slips) lines.push(`Correction: ${s.name} is ${s.gender === 'f' ? 'a woman - she, her' : 'a man - he, him'}. The last reply slipped; write ${s.name} so.`);
+    for (const c of commands) lines.push(`Correction: ${c.name} does not give the orders - ${c.leader} does, and ${c.leader} is not here. The last reply had ${c.name} give them by mistake. No one here takes ${c.leader}'s place: they keep to the orders ${c.leader} gave and settle the rest among equals.`);
+    return lines.join(' ');
+}
