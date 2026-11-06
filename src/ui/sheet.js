@@ -47,6 +47,7 @@ import { hasArchivist, storyRelationships } from '../library/story-relations.js'
 import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
 import { sparkButton, fieldWithTools, diceButton, tagEditor } from './controls.js';
 import { standingCard } from './standing-card.js';
+import { pronounFixRow } from './pronoun-fix.js';
 import { generateEntry, canGenerateFor, rollEntryName, generateAlias } from '../generate/run.js';
 import { ALIAS_KINDS, kindLabel, aliasInfoFor, aliasLabel } from '../library/alias-kinds.js';
 import { cultureChoices, resolveCulture, inheritedCulture } from '../naming/cultures.js';
@@ -757,6 +758,8 @@ function heartCard(type, entry, all) {
         h('div', { class: 'sb-card-title' }, icon('fa-heart-crack'), ' Heart'),
         field('Jealousy', select(JEALOUSY_MODES.map((m) => ({ value: m, label: m ? JEALOUSY_LABELS[m] : `${JEALOUSY_LABELS['']} (${on ? 'can be jealous' : 'off'})` })), mode, { onchange: (e) => save(e.target.value) }),
             'Whether they mind when someone they love, are devoted to or were promised to shows warmth to another, or breaks a vow of love. The chat\'s default is in the extension settings (Game master).'),
+        // The chat calling them by the wrong pronouns (src/ui/pronoun-fix.js).
+        pronounFixRow(entry, all),
         live.length ? h('div', { class: 'sb-hint' }, icon('fa-droplet'), ' In this chat:') : null,
         ...live.map((g) => h('div', { class: 'sb-gm-row' }, h('span', {}, grievanceLine(g, { day: doc.canonical.day })),
             h('div', { class: 'sb-iconbtn', title: 'Let it go - they are over it', onclick: () => { updateChatDoc(chatKey, (d) => { const x = d.hearts.grievances.find((y) => y.id === g.id); if (x) x.soothed = true; }); rerender(); } }, icon('fa-hand-holding-heart')))));

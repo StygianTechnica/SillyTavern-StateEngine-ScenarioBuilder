@@ -190,3 +190,52 @@ export function pronounText(slips = [], commands = []) {
     for (const c of commands) lines.push(`Correction: ${c.name} does not give the orders - ${c.leader} does, and ${c.leader} is not here. The last reply had ${c.name} give them by mistake. No one here takes ${c.leader}'s place: they keep to the orders ${c.leader} gave and settle the rest among equals.`);
     return lines.join(' ');
 }
+
+// Puts right someone's pronouns in a reply, only where they are plainly
+// the one meant: a sentence that begins with them, up to the next person
+// named, and a sentence that begins with a he / she right after one that
+// began with them (no one of that gender named between). Galice, a woman,
+// was "he" in 9 of the last 40 messages and the model followed the chat
+// over every correction. person: { name, aliases, gender 'f'|'m' };
+// others: [{ name, aliases, gender }]. -> { text, count }
+const SWAP_TO_F = { he: 'she', him: 'her', his: 'her', himself: 'herself' };
+const OBJECT_AFTER = /^(?:|that|to|and|or|but|in|on|with|for|as|at|from|by|into|again|back|off|up|down|out|away|over|a|an|the|this|these|those|now|then|here|there|before|after|if|when|while)$/i;
+export function fixPronounsIn(text, person, others = []) {
+    if (!['f', 'm'].includes(person?.gender)) return { text: String(text ?? ''), count: 0 };
+    const names = namesOf(person);
+    const rest = (others ?? []).filter((o) => clean(o?.name) && !names.some((n) => namesOf(o).some((m) => lower(m) === lower(n))));
+    const restNames = rest.flatMap(namesOf);
+    const sameGender = rest.filter((o) => o.gender && o.gender !== person.gender).flatMap(namesOf);
+    let count = 0;
+    const swap = (span) => span.replace(person.gender === 'f' ? /\b(he|him|his|himself)\b(\s*)([\p{L}'’-]*)/giu : /\b(she|her|hers|herself)\b(\s*)([\p{L}'’-]*)/giu, (all, w, sp, next) => {
+        const lw = w.toLowerCase();
+        const to = person.gender === 'f' ? SWAP_TO_F[lw] : { she: 'he', hers: 'his', herself: 'himself', her: OBJECT_AFTER.test(next) ? 'him' : 'his' }[lw];
+        count++;
+        return (w[0] === w[0].toUpperCase() ? to[0].toUpperCase() + to.slice(1) : to) + sp + next;
+    });
+    // Speech is left as it is: inside quotes, "he" may be anyone.
+    const fixNarration = (s, fix) => s.split(/(["“][^"”]*["”])/).map((part, i) => (i % 2 ? part : fix(part))).join('');
+    let theirs = false;
+    const out = String(text ?? '').split(/(?<=[.!?…]["”’']?)(\s+)/).map((s) => {
+        if (!s.trim()) return s;
+        const plain = s.replace(/^[\s"“*_-]+/, '');
+        const lead = s.slice(0, s.length - plain.length);
+        if (firstAt(plain, names) === 0) {
+            theirs = true;
+            const next = firstAt(plain.slice(1), restNames);
+            const end = next < 0 ? plain.length : next + 1;
+            return lead + fixNarration(plain.slice(0, end), swap) + plain.slice(end);
+        }
+        const opens = /^(he|she|his|her|him)\b/i.exec(plain);
+        const wrongOpen = opens && (person.gender === 'f' ? /^(?:he|his|him)$/i : /^(?:she|her)$/i).test(opens[1]);
+        if (theirs && wrongOpen) {
+            const next = firstAt(plain.slice(1), restNames);
+            const end = next < 0 ? plain.length : next + 1;
+            return lead + fixNarration(plain.slice(0, end), swap) + plain.slice(end);
+        }
+        // Someone else named: the next he / she may be theirs.
+        theirs = theirs && firstAt(plain, restNames) < 0;
+        return s;
+    }).join('');
+    return { text: out, count };
+}
