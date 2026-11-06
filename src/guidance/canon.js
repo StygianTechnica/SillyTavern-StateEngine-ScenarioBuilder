@@ -239,3 +239,34 @@ export function fixPronounsIn(text, person, others = []) {
     }).join('');
     return { text: out, count };
 }
+
+// Archivist's notes calling a pair close when the user wrote them as
+// rivals or enemies: Assassins Inc's library has Zane and Inji as rivals
+// ("compete lewdly over sexual conquests"), and the notes read before the
+// chat said "Inji Miyama -> Zane: ally, close (+2)" - the narrator played
+// them as best friends. authored: [{ a, b, kind, note }] for pairs here
+// (names); notes: Archivist's text. -> [{ a, b, kind, note, said }]
+const AGAINST = /\b(?:rival|enem|hostile|hate|distrust|resent|feud|grudge|nemes|compet|antagon|despise|loathe)/i;
+const WARM = /\b(?:ally|allies|friend|close|best|partner|trust|devoted|loyal|support|teammate|confidant)\b|\(\+\d\)/i;
+export function relationSlips(authored = [], notes = '') {
+    const out = [];
+    const lines = String(notes ?? '').split(/\n/).map(clean).filter((l) => /->|→/.test(l));
+    for (const r of authored ?? []) {
+        if (!AGAINST.test(`${r.kind} ${r.note ?? ''}`)) continue;
+        const pair = [r.a, r.b].map((n) => namesOf({ name: n }));
+        const said = lines.find((l) => {
+            const [left, right = ''] = l.split(/->|→/);
+            const head = right.split(':')[0] ?? '';
+            const one = (side, names) => names.some((n) => firstAt(side, [n]) >= 0);
+            const ab = (one(left, pair[0]) && one(head, pair[1])) || (one(left, pair[1]) && one(head, pair[0]));
+            const rest = right.slice(head.length);
+            return ab && WARM.test(rest) && !AGAINST.test(rest);
+        });
+        if (said) out.push({ a: clean(r.a), b: clean(r.b), kind: clean(r.kind), note: clean(r.note), said: said.replace(/^-\s*/, '') });
+    }
+    return out;
+}
+
+export function relationText(slips = []) {
+    return slips.map((s) => `Correction: between ${s.a} and ${s.b} it is ${s.kind}${s.note ? ` - ${s.note}` : ''}; they are not allies or close friends, and notes that said so were wrong. They needle, compete and keep score with each other, whatever the job.`).join(' ');
+}

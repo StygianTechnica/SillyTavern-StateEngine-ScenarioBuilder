@@ -45,7 +45,7 @@ import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from
 import { namedAtAll } from '../validate/drift.js';
 import { circling } from './loops.js';
 import { shownLeaving, shownArriving } from './departures.js';
-import { goesAlone, goesTogether, namedGoing } from './going-along.js';
+import { goesAlone, goesTogether, namedGoing, leftOut } from './going-along.js';
 import { timedHappenings } from '../planner/timed.js';
 
 // How many replies a broken-off fight's wounds are remembered.
@@ -415,11 +415,17 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
     const alone = goesAlone(latestText, playerNames);
     const along = alone ? [] : move.along.map(byName).filter(Boolean);
     const here = characters.filter((c) => castIds.includes(c.id));
-    const named = !near || alone ? []
-        : !clean(latestText) || goesTogether(latestText) ? peopleNamedIn(recentText, here).map((c) => c.id)
-        : namedGoing(latestText, here.map((c) => ({ id: c.id, names: callNames(c) })));
+    const hereNames = here.map((c) => ({ id: c.id, names: callNames(c) }));
+    // Those the post leaves out never come: "without Doc and Galice".
+    const out = new Set(leftOut(latestText, hereNames));
+    // On a journey too, the post's own going counts: "They went all
+    // together, without Doc and Galice, to the art museum" left Inji and
+    // Zane behind, the MOVE line listing no one.
+    const named = alone ? []
+        : near ? (!clean(latestText) || goesTogether(latestText) ? peopleNamedIn(recentText, here).map((c) => c.id) : namedGoing(latestText, hereNames))
+            : goesTogether(latestText) ? here.map((c) => c.id) : namedGoing(latestText, hereNames);
     if (alone) console.info(LOG_PREFIX, `${playerNames[0] || 'the player character'} goes alone - no one comes along`);
-    const next = [...new Set([...(playerId && castIds.includes(playerId) ? [playerId] : playerId ? [playerId] : []), ...along, ...named])];
+    const next = [...new Set([...(playerId ? [playerId] : []), ...along, ...named])].filter((id) => id === playerId || !out.has(id));
     const left = castIds.filter((id) => !next.includes(id)).map((id) => characters.find((c) => c.id === id)?.name).filter(Boolean);
     const patch = { locationId: place.id, castIds: next, creatureIds: near ? [...doc.canonical.creatureIds] : [] };
     if (move.indoor !== null) patch.indoor = move.indoor;
@@ -893,7 +899,16 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             const around = known.find((e) => e.id === parents[heading.id]);
             if (around) heading = { ...heading, id: around.id, name: around.name };
         }
-        const invented = move && (routeName(move.place) || !knownAs(move.place, known.filter((e) => e.type === 'location')));
+        // Further than the routes reach: a place the library has, named
+        // whole in the player's going sentence ("to the art museum" - Saint
+        // Aora's Museum, across the city), when the MOVE names somewhere the
+        // post never does (the director sent the team to the Signal Box).
+        if (!heading && move) {
+            const anywhere = known.filter((e) => e.type === 'location' && e.id !== from).map((e) => ({ id: e.id, names: [e.name, ...e.aliases] }));
+            const far = headingAlong(latestUserText, anywhere);
+            if (far && !far.byKind && !mentionedIn(move.place, latestUserText)) heading = far;
+        }
+        const invented = move && (routeName(move.place) || !knownAs(move.place, known.filter((e) => e.type === 'location')) || (heading && !mentionedIn(move.place, latestUserText)));
         if (heading && (!move || invented)) {
             console.info(LOG_PREFIX, move ? `the director moved the scene to "${move.place}", which the library does not have; the player's message sets out for ${heading.name}, so the scene goes there` : `no MOVE line; the player's message sets out for ${heading.name}`);
             const along = move?.along?.length ? move.along : heading.together ? (guidance.cast ?? []).filter((c) => !c.player).map((c) => c.name) : [];

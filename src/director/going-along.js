@@ -39,7 +39,9 @@ export function goesTogether(text) {
 export function namedGoing(text, people) {
     const going = sentencesOf(text).filter((s) => MOVING.test(s));
     const out = [];
+    const not = new Set(leftOut(text, people));
     for (const p of people ?? []) {
+        if (not.has(p.id)) continue;
         const names = (p.names ?? []).map(clean).filter((n) => n.length >= 2);
         const shown = going.some((s) => names.some((n) => {
             const at = new RegExp(`(^|[^\\p{L}\\p{N}])${escape(n)}(?!\\p{L})('s\\b)?`, 'giu');
@@ -55,4 +57,16 @@ export function namedGoing(text, people) {
         if (shown) out.push(p.id);
     }
     return out;
+}
+
+// Those the text leaves out of the going: "They went all together, without
+// Doc and Galice to the art museum" - Doc and Galice were taken along, and
+// Inji and Zane, the ones going, were left behind. people: [{ id, names }]
+// -> [id]
+const LEFT_OUT = /\b(?:without|except(?: for)?|but not|minus|apart from|other than|leaving(?: behind)?|left behind)\s+([^.,;!?]*?)(?=\s+(?:to|into|for|toward|towards|at|behind)\b|[.,;!?]|$)/gi;
+export function leftOut(text, people) {
+    const clauses = [...unquoted(text).matchAll(LEFT_OUT)].map((m) => m[1]);
+    if (!clauses.length) return [];
+    return (people ?? []).filter((p) => (p.names ?? []).map(clean).filter((n) => n.length >= 2)
+        .some((n) => clauses.some((c) => new RegExp(String.raw`(^|[^\p{L}\p{N}])${escape(n)}(?!\p{L})`, 'iu').test(c)))).map((p) => p.id);
 }

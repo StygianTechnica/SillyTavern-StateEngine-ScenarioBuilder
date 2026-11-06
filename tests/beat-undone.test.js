@@ -95,3 +95,31 @@ describe('a finished beat that assigns a job', () => {
         expect(g.settled).toHaveLength(1);
     });
 });
+
+// The user's locked beat was cut by a full act: "Zane is a little too
+// obvious about his sexual interest in Cyril..." - written and locked by
+// the user - came after ten of the planner's own, and a slice dropped it.
+import { setOutline as rewrite, beatsOf as allBeats, emptyGm as blank } from '../src/planner/model.js';
+describe('a full act', () => {
+    it('never drops the user\'s locked beat', () => {
+        const g = blank();
+        g.outline = { premise: '', themes: [], seeds: [], acts: [{ id: 'a1', title: 'One', beats: [
+            { id: 'b1', text: 'The team infiltrates the gallery.', ties: [], status: 'active', locked: true, by: 'user', note: '' },
+            { id: 'b18', text: 'Zane is a little too obvious about his interest in Cyril, and he and Inji bicker.', ties: ['Zane', 'Inji Miyama'], status: 'pending', locked: true, by: 'user', note: '' },
+        ] }] };
+        const many = Array.from({ length: 12 }, (_, i) => ({ text: `Planner idea number ${i + 1} about the museum.`, status: 'pending' }));
+        rewrite(g, { acts: [{ title: 'One', beats: [{ id: 'b1', text: 'The team infiltrates the gallery.', status: 'active' }, ...many] }] });
+        const ids = allBeats(g.outline).map((b) => b.id);
+        expect(ids).toContain('b18');
+        expect(ids).toContain('b1');
+        expect(allBeats(g.outline).length).toBeLessThanOrEqual(11);
+    });
+    it('and a rewrite never skips it', () => {
+        const g = blank();
+        g.outline = { premise: '', themes: [], seeds: [], acts: [{ id: 'a1', title: 'One', beats: [
+            { id: 'b18', text: 'Zane and Inji bicker over Cyril.', ties: [], status: 'pending', locked: true, by: 'user', note: '' },
+        ] }] };
+        rewrite(g, { acts: [{ title: 'One', beats: [{ id: 'b18', text: 'Zane and Inji bicker over Cyril.', status: 'skipped' }] }] });
+        expect(allBeats(g.outline).find((b) => b.id === 'b18').status).not.toBe('skipped');
+    });
+});

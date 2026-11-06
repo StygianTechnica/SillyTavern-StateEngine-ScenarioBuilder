@@ -83,6 +83,19 @@ const INSPIRATION_LIMIT = 12;
 const INSPIRATION_CHARS = 12000;
 const MOMENT_LIMIT = 8;
 const BEAT_LIMIT = 10;
+// An act's beats kept to BEAT_LIMIT by dropping the planner's own beats
+// still to come, last first - never the user's locked beats or what has
+// played out. A plain slice cut the user's beats, added after the model's:
+// Assassins Inc lost "Zane is a little too obvious about his sexual interest
+// in Cyril...", written and locked by the user, to a full act.
+function fitBeats(beats) {
+    const out = [...beats];
+    for (let i = out.length - 1; out.length > BEAT_LIMIT && i >= 0; i--) {
+        const b = out[i];
+        if (!b?.locked && !['done', 'skipped'].includes(b?.status) && b?.status !== 'active') out.splice(i, 1);
+    }
+    return out;
+}
 const TENSION_LIMIT = 50;
 const BEAT_STATUSES = ['pending', 'active', 'done', 'skipped'];
 
@@ -262,7 +275,7 @@ function normalizeOutline(o) {
     const acts = o.acts.filter(isObject).map((a, i) => ({
         id: clean(a.id) || `a${i + 1}`,
         title: clean(a.title),
-        beats: (Array.isArray(a.beats) ? a.beats : []).map((b) => normalizeBeat(b, n++)).filter(Boolean).slice(0, BEAT_LIMIT),
+        beats: fitBeats((Array.isArray(a.beats) ? a.beats : []).map((b) => normalizeBeat(b, n++)).filter(Boolean)),
     }));
     if (!acts.length) return null;
     return {
@@ -762,7 +775,8 @@ export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString()
             if (prev && !used.has(prev.id)) {
                 used.add(prev.id);
                 const said = BEAT_STATUSES.includes(raw.status) ? raw.status : prev.status;
-                const status = past(prev) ? prev.status : said === 'done' && unseen(prev).length ? prev.status : said;
+                // The user's locked beat is never skipped by a rewrite.
+                const status = past(prev) ? prev.status : said === 'done' && unseen(prev).length ? prev.status : prev.locked && said === 'skipped' ? prev.status : said;
                 const keepWords = prev.locked || past(prev);
                 beats.push({ ...prev, text: keepWords ? prev.text : clean(raw.text) || prev.text, ties: keepWords ? prev.ties : strList(raw.ties).slice(0, 6), status });
             } else if (review && raw.status === 'done') {
@@ -785,7 +799,7 @@ export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString()
             const before = past(b) ? beats.findIndex((x) => !past(x)) : -1;
             if (before >= 0) beats.splice(before, 0, b); else beats.push(b);
         }
-        return { id: `a${i + 1}`, title: clean(a.title) || clean(oldAct?.title) || `Act ${i + 1}`, beats: beats.slice(0, BEAT_LIMIT) };
+        return { id: `a${i + 1}`, title: clean(a.title) || clean(oldAct?.title) || `Act ${i + 1}`, beats: fitBeats(beats) };
     });
     // A review that comes back with fewer chapters than the outline had (an
     // answer cut short and salvaged, or a model that wrote only the act
@@ -797,7 +811,7 @@ export function setOutline(gm, parsed, { turn = 0, at = new Date().toISOString()
         for (let i = acts.length; i < oldActs.length; i++) {
             const beats = oldActs[i].beats.filter((b) => !used.has(b.id) && b.status !== 'skipped');
             for (const b of beats) used.add(b.id);
-            acts.push({ id: `a${i + 1}`, title: oldActs[i].title || `Act ${i + 1}`, beats: beats.slice(0, BEAT_LIMIT) });
+            acts.push({ id: `a${i + 1}`, title: oldActs[i].title || `Act ${i + 1}`, beats: fitBeats(beats) });
         }
     }
     // Kept beats of acts the answer no longer has go to the last act.

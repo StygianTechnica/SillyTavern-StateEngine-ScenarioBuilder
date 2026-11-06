@@ -28,7 +28,7 @@ import { triggerLines } from '../triggers/model.js';
 import { deadText, placesTheAbsent } from '../state/death.js';
 import { circling } from '../director/loops.js';
 import { sidesApart, sidesText } from './sides.js';
-import { factionSlips, deadActing, correctionText, pronounSlips, commandSlips, pronounText } from './canon.js';
+import { factionSlips, deadActing, correctionText, pronounSlips, commandSlips, pronounText, relationSlips, relationText } from './canon.js';
 import { asksWhatNext } from './build.js';
 import { activeBeat, settledNow, touchedSettled, retireSettled, dueToday } from '../planner/model.js';
 import { notYet, notYetLine } from '../planner/timed.js';
@@ -531,6 +531,11 @@ export async function gatherInputs(chatId, chatKey) {
     const wrongPronouns = pronounSlips(castFor, lately.join('\n\n'), { others: allCharacters.map((ch) => ch.name) });
     const recentEvents = Object.values(await getRawValues(chatId, ['ar__ctx_recent_events']).catch(() => ({}))).map(String);
     const wrongOrders = commandSlips(castFor, leaders, [...replies, ...notes, ...recentEvents]);
+    // Pairs here the user wrote as rivals or enemies that Archivist's notes
+    // call close (Zane and Inji, "ally, close (+2)").
+    const hereIds = new Set(cast.map((c) => c.id));
+    const nameOfId = (id) => allCharacters.find((ch) => ch.id === id)?.name ?? '';
+    const wrongTies = relationSlips((library.relations ?? []).filter((r) => hereIds.has(r.from) && hereIds.has(r.to)).map((r) => ({ a: nameOfId(r.from), b: nameOfId(r.to), kind: r.kind, note: r.note })).filter((r) => r.a && r.b), notes.join(String.fromCharCode(10)));
     const corrected = new Set(slips.map((s) => s.name));
 
     return {
@@ -595,7 +600,7 @@ export async function gatherInputs(chatId, chatKey) {
             sides: sidesText(sidesApart(cast, library.relations ?? [], (fid) => factionNames.get(fid) ?? '').filter((s) => !corrected.has(s.name))),
             // What the latest replies or Archivist's notes got wrong against
             // the library (src/guidance/canon.js) - put right in the chat.
-            correctionsNow: [correctionText({ slips, dead: deadNow }), pronounText(wrongPronouns, wrongOrders)].filter(Boolean).join(' '),
+            correctionsNow: [correctionText({ slips, dead: deadNow }), pronounText(wrongPronouns, wrongOrders), relationText(wrongTies)].filter(Boolean).join(' '),
             // The player asks what comes next: the outline's beat now answers.
             next: settings.planner?.enabled === true && asksWhatNext(latestPlayerPost()) ? (activeBeat(doc.gm.outline)?.text ?? '') : '',
             // The player questions it: no closing ranks, and the job as the
