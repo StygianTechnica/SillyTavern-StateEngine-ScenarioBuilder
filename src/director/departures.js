@@ -24,3 +24,18 @@ export function shownLeaving(names, text) {
     }
     return last === 'out';
 }
+
+// Whether a post shows someone coming into the scene, or being called or
+// met there - not only talked about, remembered or doubted. Cyril's "He
+// didn't think Enrique would be there in person", and his memories of how
+// Enrique mocked him, walked Enrique Medina into Adam's briefing room
+// (Assassins Inc).
+const COMING = /\b(?:arriv(?:e|es|ed|ing)|enter(?:s|ed|ing)?|c[oa]me(?:s)? (?:in|back|over|up|through|into|along)|coming (?:in|back|over|through|into|along)|(?:walk|stroll|stride|step|burst|storm|slip|march|wander|limp|stumble|hurri)(?:s|ed|es|ing)? (?:in|into|through|over|up|back)|strode (?:in|into|through|over|up)|show(?:s|ed|ing)? up|turn(?:s|ed|ing)? up|appear(?:s|ed|ing)?|join(?:s|ed|ing)?|(?:call|wave|beckon|summon|bring|brought|fetch)(?:s|ed|es|ing)?\b[^.!?\n]{0,30}\b(?:over|in|here|along|up)|turn(?:s|ed)? to (?:face )?|look(?:s|ed)? (?:at|up at|over at)|(?:said|says|asked|asks|told|tells|whispered|snapped|growled) to|(?:greet(?:s|ed)?|fac(?:es|ed|ing)|hug(?:s|ged)?|kiss(?:es|ed)?|punch(?:es|ed)?|shove[sd]?|grab(?:s|bed)?))\b/i;
+const DOUBT = /\b(?:not|n't|never|no|if|unless|would|might|could|maybe|perhaps|probably|likely|whether|think|thought|doubt(?:ed)?|wonder(?:ed)?|rememb(?:er|ered)|recall(?:ed)?|used to|had (?:been|once|always|often|never))\b|n't\b|'d\b/i;
+
+export function shownComing(names, text) {
+    const list = (names ?? []).map((n) => String(n ?? '').trim()).filter((n) => n.length > 1);
+    if (!list.length) return false;
+    const named = new RegExp(`\\b(?:${list.map(escape).join('|')})\\b`, 'i');
+    return String(text ?? '').split(/(?<=[.!?…"”])\s+|\n+/).some((s) => named.test(s) && COMING.test(s) && !DOUBT.test(s));
+}

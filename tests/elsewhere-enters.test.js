@@ -21,6 +21,23 @@ describe('someone elsewhere does not walk in', () => {
         expect(elsewhereEntering(['Tiago Moriarty'], { ...opts, userPost: 'The door slid open and Tiago Moriarty walked in.' })).toEqual([]);
     });
 
+    // Cyril's posts named Enrique Medina again and again - doubting he would
+    // come, remembering him - and the director walked him into Adam's room.
+    it('named, doubted or remembered is not brought', () => {
+        const people = [...characters, { id: 'enrique', name: 'Enrique Medina', base: {} }];
+        const far = { ...opts, characters: people, elsewhere: [{ id: 'enrique', name: 'Enrique Medina' }] };
+        const posts = [
+            "He didn't think Enrique would be there in person.  That wasn't how the Syndicate did things.",
+            "Cyril had always been the 'pretty one'.  Enrique had often mocked him to his face.  Cyril had never cared.  Enrique didn't like it.",
+            '"What do we know about Enrique Medina\'s crew?" Cyril asked.',
+            'Maybe Enrique would show up himself. Cyril doubted it.',
+        ];
+        for (const userPost of posts) expect(elsewhereEntering(['Enrique Medina'], { ...far, userPost })).toEqual(['Enrique Medina']);
+        for (const userPost of ['Enrique Medina strode into the room, grinning.', 'Cyril turned to Enrique and smiled coldly.', 'Cyril called Enrique over to the bar.']) {
+            expect(elsewhereEntering(['Enrique Medina'], { ...far, userPost })).toEqual([]);
+        }
+    });
+
     it('someone already here, or unknown, is left alone', () => {
         expect(elsewhereEntering(['Tiago Moriarty'], { ...opts, castIds: ['tiago'] })).toEqual([]);
         expect(elsewhereEntering(['A guard'], opts)).toEqual([]);

@@ -6,6 +6,7 @@
 // is ELSEWHERE: thought of, talked about, sending word, but not here. Pure.
 
 import { memberKindOf } from '../library/faction-sync.js';
+import { shownComing } from './departures.js';
 
 // Where each person was last in the scene: replays the history (oldest
 // first). -> Map id -> { locationId, index } (index: the entry's place in
@@ -246,7 +247,9 @@ export function whoCouldTurnUp({ characters = [], castIds = [], locationId = '',
 // those a text names; namesOf(c) -> the names someone answers to.
 // -> [name] to keep out.
 export function elsewhereEntering(enters, { characters = [], elsewhere = [], castIds = [], userPost = '', namedIn = () => [], namesOf = (c) => [c.name] } = {}) {
-    const brought = new Set(namedIn(userPost, characters).map((c) => c.id));
+    // Named is not brought: only a post that shows them coming, called or
+    // met (src/director/departures.js).
+    const brought = new Set(namedIn(userPost, characters).filter((c) => shownComing(namesOf(c), userPost)).map((c) => c.id));
     const far = new Set((elsewhere ?? []).map((c) => c.id).filter((id) => !brought.has(id) && !castIds.includes(id)));
     return (enters ?? []).filter((name) => {
         const c = characters.find((x) => namesOf(x).some((n) => String(n).toLowerCase() === String(name).toLowerCase()));
