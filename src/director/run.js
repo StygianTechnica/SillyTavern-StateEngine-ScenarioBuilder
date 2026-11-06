@@ -14,6 +14,7 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
+import { chooseParent } from '../generate/place-parent.js';
 import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, listUnconfirmed, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf, saveKnowledge, listKnowledge, allKnowledge } from '../library/library.js';
 import { bargainItem, sameBargain, fulfilledByReturn } from '../library/knowledge.js';
 import { stillWaiting, steppedAway, suspend, returnTo, returnsHere, restorePatch, waitingIds, withoutWaiting, suspendedText } from './suspended.js';
@@ -197,6 +198,7 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
     const bloodlines = created.some((i) => i.kind === 'character') ? bloodlinesOf(await listEntries(chatId, settingId, 'lore').catch(() => [])) : [];
     const doc = getSettingDoc(settingId);
     let factions = null;
+    let placesFull = null;
     const mix = bloodlines.length ? mixFor({ world: doc.overview.population, parents: getParents(settingId), metaById: doc.entries, placeId: locationId }).mix : [];
     for (const item of created) {
         try {
@@ -229,11 +231,26 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
                 factions ??= await listEntries(chatId, settingId, 'faction').catch(() => []);
                 for (const m of briefMemberships(`${item.name}. ${item.description}`, factions)) addRelation(settingId, { from: obj.id, to: m.id, kind: m.kind });
             }
-            const parent = item.kind === 'location' ? parentForNewPlace(item, chain) : null;
+            let parent = item.kind === 'location' ? parentForNewPlace(item, chain) : null;
+            // Not a part of where the scene is: the place its words name, the
+            // district it fits (a warehouse in the docks), or the town or
+            // country around the story - as a place made in the catalog
+            // (src/generate/place-parent.js). The Medina Syndicate's
+            // warehouse went under the whole city.
+            let atTop = false;
+            if (item.kind === 'location' && (!parent || parent === chain[chain.length - 1]?.id)) {
+                placesFull ??= await listEntries(chatId, settingId, 'location').catch(() => []);
+                const chosen = chooseParent({ brief: [item.name, item.why].filter(Boolean).join('. '), description: item.description ?? '', locations: placesFull.filter((p) => p.id !== obj.id).map((p) => ({ id: p.id, name: p.name, aliases: p.aliases ?? p.base?.aliases ?? [], description: p.description ?? p.base?.description ?? '' })), parents: getParents(settingId), sceneId: locationId });
+                // 'top' is the place around the story - the town the scene is
+                // in, not the nation above it - and it is placed again once
+                // it is written.
+                if (chosen) parent = chosen.id;
+                atTop = !chosen || chosen.why === 'top';
+            }
             if (parent) setParent(settingId, obj.id, parent);
             // `here` travels with it: State Engine may store the name a little
             // differently, so matching back by name loses it.
-            made.push({ id: obj.id, kind: item.kind, name: obj.name, parent, here: item.here === true, unknownKind: kin?.unknown ? { id: obj.id, description: item.description } : null });
+            made.push({ id: obj.id, kind: item.kind, name: obj.name, parent, atTop, here: item.here === true, unknownKind: kin?.unknown ? { id: obj.id, description: item.description } : null });
         } catch (err) {
             console.warn(LOG_PREFIX, `the director could not add ${item.name}`, err);
         }
@@ -250,7 +267,9 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
     });
     if (getSettings().generation.autoEnrich) {
         // An event or scene is written from the chat it came from, not made up.
-        for (const a of adopted) enqueueEnrichment({ settingId, chatId, chatKey, objectId: a.objectId, name: a.name, adoptedId: a.id, ...(STORY_KINDS.includes(a.type) && recentText ? { story: recentText } : {}) });
+        // A place left at the top of the map is placed again once it is
+        // written - its description may name the district it is in.
+        for (const a of adopted) enqueueEnrichment({ settingId, chatId, chatKey, objectId: a.objectId, name: a.name, adoptedId: a.id, ...(STORY_KINDS.includes(a.type) && recentText ? { story: recentText } : {}), ...(made.find((m) => m.id === a.objectId)?.atTop ? { placeAfter: true } : {}) });
     }
     return made;
 }

@@ -58,6 +58,46 @@ describe('where a new place goes', () => {
         expect(chooseParent({ brief: 'an investment bank on its last legs', ...london }).id).toBe('city');
     });
 
+    // Not every map is a city of districts: a kingdom of provinces and
+    // towns, a country of cities.
+    describe('follows how the map is laid out', () => {
+        const realm = map([
+            ['valdria', 'Kingdom of Valdria', 'An old kingdom of river valleys.'],
+            ['ost', 'Ostmark Province', 'The eastern march.', 'valdria'],
+            ['bren', 'Brennhold', 'A walled trading town on the river.', 'ost'],
+            ['tan', "Tanners' Ward", 'The industrial ward: tanneries, warehouses and workshops.', 'bren'],
+            ['inn', 'The Gilded Goose', 'An inn by the gate.', 'bren'],
+            ['wes', 'Westfold Province', 'The western hills.', 'valdria'],
+            ['cael', 'Caelmoor', 'A mining town.', 'wes'],
+            ['pit', 'The Pit Ward', 'The industrial ward of Caelmoor, all forges and warehouses.', 'cael'],
+        ]);
+
+        it("a building goes in the town the scene is in, or its district - not the kingdom (fantasy)", () => {
+            expect(chooseParent({ brief: "a smugglers' warehouse", sceneId: 'inn', ...realm })).toEqual({ id: 'tan', why: 'fits' });
+            expect(chooseParent({ brief: 'a wizard\'s tower', sceneId: 'inn', ...realm })).toEqual({ id: 'bren', why: 'top' });
+            // Two towns have a ward for it: the scene's town decides, and
+            // without a scene it is not guessed.
+            expect(chooseParent({ brief: "a smugglers' warehouse", sceneId: 'cael', ...realm })).toEqual({ id: 'pit', why: 'fits' });
+            expect(chooseParent({ brief: "a smugglers' warehouse", ...realm })).toEqual({ id: 'valdria', why: 'top' });
+        });
+
+        it('a town goes in the province the scene is in', () => {
+            expect(chooseParent({ brief: 'a fishing village', sceneId: 'inn', ...realm })).toEqual({ id: 'ost', why: 'top' });
+        });
+
+        it('a city in a country (real world)', () => {
+            const japan = map([
+                ['jp', 'Japan', 'An island nation.'],
+                ['tokyo', 'Tokyo', 'The capital city.', 'jp'],
+                ['kabuki', 'Kabukicho', 'The red-light district: bars, clubs and hostess clubs.', 'tokyo'],
+                ['osaka', 'Osaka', 'A port city.', 'jp'],
+            ]);
+            expect(chooseParent({ brief: 'a jazz club', sceneId: 'osaka', ...japan })).toEqual({ id: 'osaka', why: 'top' });
+            expect(chooseParent({ brief: 'a jazz club', sceneId: 'tokyo', ...japan })).toEqual({ id: 'kabuki', why: 'fits' });
+            expect(chooseParent({ brief: 'a ramen shop', sceneId: 'kabuki', ...japan })).toEqual({ id: 'tokyo', why: 'top' });
+        });
+    });
+
     it('with several tops, uses the one the story is in (sci-fi), else leaves it', () => {
         const space = map([
             ['s', 'Halcyon Station', 'An orbital station.'],

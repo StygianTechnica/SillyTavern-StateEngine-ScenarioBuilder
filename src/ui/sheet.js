@@ -38,7 +38,7 @@ import { newLocalId } from '../store/schema.js';
 import { suggestQuestEnds } from '../quests/ends.js';
 import { writeIntimacyNote } from '../generate/intimacy.js';
 import { questMeta, setQuestMeta, questBoard } from '../quests/sync.js';
-import { baselineFields } from '../library/fields.js';
+import { baselineFields, foldRegion } from '../library/fields.js';
 import { CLIMATES } from '../calendar/weather.js';
 import { listRoutes, routesFrom, addRoute, removeRoute, updateRoute, guessRoute } from '../library/routes.js';
 import { suggestRoutes, suggestEnvironment, randomClimate } from '../generate/places.js';
@@ -606,6 +606,26 @@ function placeMapCard(entry, { names, parents, allEntries }) {
             h('div', { class: 'sb-chips' }, map.beside.map((id) => insideChip({ id, count: 0 })))) : null);
 }
 
+// The Region field is no longer shown (src/library/fields.js): text a place
+// still has in it can be moved into its description, or cleared.
+function oldRegionCard(entry) {
+    const region = String(entry.base?.region ?? entry.region ?? '').trim();
+    if (!region) return null;
+    const { chatId, settingId } = ws.ctx;
+    const save = async (patch, done) => {
+        if (!await updateEntry(chatId, settingId, entry.id, patch)) return toast('error', 'State Engine refused the change - see the console.');
+        toast('info', done);
+        rerender({ force: true });
+    };
+    const description = entry.base?.description ?? entry.description ?? '';
+    return h('div', { class: 'sb-old-region' },
+        h('small', { class: 'sb-hint' }, 'Old Region text (this field is no longer used - where a place is comes from what it is inside):'),
+        h('div', { class: 'sb-prose' }, region),
+        h('div', { class: 'sb-row' },
+            button('Move into description', () => void save({ description: foldRegion(description, region), region: '' }, 'Moved into the description.'), { iconName: 'fa-arrow-down' }),
+            button('Clear', () => void save({ region: '' }, 'Old Region text cleared.'), { iconName: 'fa-xmark' })));
+}
+
 function overviewTab({ type, entry, isNew, defs, doc, all, names, parents, allEntries }) {
     const narrative = isNew ? '' : doc.narrative[entry.id]?.text ?? '';
     if (ws.editing) {
@@ -623,6 +643,7 @@ function overviewTab({ type, entry, isNew, defs, doc, all, names, parents, allEn
     const glance = defs.filter((d) => !isEmpty(entry.base?.[d.name] ?? entry[d.name]) && d.kind !== 'refs' && d.kind !== 'ref').slice(0, 4);
     return h('div', { class: 'sb-tabpane' },
         type.id === 'location' && !isNew ? placeMapCard(entry, { names, parents, allEntries }) : null,
+        type.id === 'location' && !isNew ? oldRegionCard(entry) : null,
         narrative ? h('div', { class: 'sb-narrative' },
             h('div', { class: 'sb-section-title' }, icon('fa-hourglass-half'), ' Now, in this story',
                 h('span', { class: 'sb-spacer' }),

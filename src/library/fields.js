@@ -22,8 +22,25 @@ export function editorKind(def) {
     return { ...base, kind: 'text' };
 }
 
+// A place's Region field is State Engine's old way to say where it is; here
+// the place tree says that (Inside, the map card). Left in, it was never
+// read, and a background fill of a place with a one-line description
+// poured everything into it (the Medina Syndicate's warehouse).
+export const DROPPED_FIELDS = Object.freeze({ location: ['region'] });
+export const isDroppedField = (typeId, name) => (DROPPED_FIELDS[typeId] ?? []).includes(name);
+
+// A place's old Region text taken into its description: what it says about
+// the place itself is kept there. Already in it, nothing is added. Pure.
+export function foldRegion(description, region) {
+    const d = String(description ?? '').trim();
+    const r = String(region ?? '').trim();
+    if (!r || d.toLowerCase().includes(r.toLowerCase())) return d;
+    if (!d) return r;
+    return `${/[.!?…"”]$/.test(d) ? d : `${d}.`} ${r}`;
+}
+
 // `type`: a registry entry from getObjectTypes().
 export async function baselineFields(settingId, type) {
     const defs = (await getObjectFields(settingId, type.id)).filter((d) => d.scope === 'global');
-    return (defs.length ? defs : type.fields).map(editorKind);
+    return (defs.length ? defs : type.fields).filter((d) => !isDroppedField(type.id, d.name)).map(editorKind);
 }

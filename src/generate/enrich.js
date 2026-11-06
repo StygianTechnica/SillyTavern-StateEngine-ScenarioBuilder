@@ -16,8 +16,10 @@ import { LOG_PREFIX } from '../constants.js';
 import { getObject } from '../api/objects.js';
 import { updateChatDoc } from '../store/chat-store.js';
 import { getEntryMeta } from '../store/setting-store.js';
-import { getObjectType, getObjectTypes, listEntries, updateEntry, setEntryMeta, mayAddGeneratedDetail } from '../library/library.js';
-import { baselineFields } from '../library/fields.js';
+import { getObjectType, getObjectTypes, listEntries, updateEntry, setEntryMeta, mayAddGeneratedDetail, getParents, setParent } from '../library/library.js';
+import { baselineFields, foldRegion } from '../library/fields.js';
+import { chooseParent } from './place-parent.js';
+import { pathOf } from '../library/hierarchy.js';
 import { generateEntry } from './run.js';
 import { recordEnrichment, enrichmentRecord } from './revert.js';
 import { newLocalId } from '../store/schema.js';
@@ -92,6 +94,29 @@ async function drain() {
     }
 }
 
+// A description that is only a line: one sentence, short.
+export function thinDescription(text) {
+    const t = String(text ?? '').trim();
+    return !!t && t.length < 160 && (t.match(/[.!?…](?:\s|$)/g) ?? []).length <= 1;
+}
+
+function placeAgain(job, written, locations) {
+    const { settingId } = job;
+    const parents = getParents(settingId);
+    const was = parents[job.objectId] ?? '';
+    const chosen = chooseParent({
+        brief: written.name ?? job.name, description: written.description ?? '',
+        locations: locations.filter((l) => l.id !== job.objectId && !pathOf(parents, l.id).includes(job.objectId)).map((l) => ({ id: l.id, name: l.name, aliases: l.aliases ?? l.base?.aliases ?? [], description: l.description ?? l.base?.description ?? '' })),
+        parents, sceneId: was || null,
+    });
+    if (!chosen || chosen.why === 'top' || chosen.id === was) return;
+    // Only further in: a district of where it was put, never somewhere else.
+    if (was && !pathOf(parents, chosen.id).includes(was)) return;
+    setParent(settingId, job.objectId, chosen.id);
+    if (job.chatKey && job.adoptedId) updateChatDoc(job.chatKey, (d) => { const item = d.adopted.find((a) => a.id === job.adoptedId); if (item) item.placedUnder = chosen.id; });
+    console.info(LOG_PREFIX, `${job.name} placed inside ${locations.find((l) => l.id === chosen.id)?.name ?? chosen.id} - ${chosen.why === 'named' ? 'its description names it' : 'it fits there'}`);
+}
+
 async function enrichOne(job) {
     const { settingId, chatId } = job;
     if (!mayAddGeneratedDetail(settingId, job.objectId)) return setItem(job, 'off', 'canon - no generated detail');
@@ -107,18 +132,28 @@ async function enrichOne(job) {
         const all = {};
         for (const t of await getObjectTypes()) all[t.id] = await listEntries(chatId, settingId, t.id);
         const base = obj.base ?? obj;
-        const draft = { name: obj.name, aliases: base.aliases ?? [], description: base.description ?? '', fields: Object.fromEntries(fields.map((f) => [f.name, base[f.name] ?? null])) };
-        const { values } = await generateEntry({ task: 'fill', type, ctx: { chatId, chatKey: job.chatKey, settingId }, fields, entry: obj, draft, all, story: job.story ?? '' });
+        // A one-line description the story's own addition came with (the
+        // director's "A heavily guarded storage facility for their illegal
+        // operations") is a seed, not a description: written out from it,
+        // with what an old Region field says (src/library/fields.js).
+        const seed = job.adoptedId && thinDescription(base.description) ? String(base.description).trim() : '';
+        const oldRegion = type.id === 'location' ? String(base.region ?? '').trim() : '';
+        const brief = seed ? `It is: ${foldRegion(seed, oldRegion)} - keep that, and write the description out from it.` : '';
+        const draft = { name: obj.name, aliases: base.aliases ?? [], description: seed ? '' : base.description ?? '', fields: Object.fromEntries(fields.map((f) => [f.name, base[f.name] ?? null])) };
+        const { values } = await generateEntry({ task: 'fill', type, ctx: { chatId, chatKey: job.chatKey, settingId }, fields, entry: obj, draft, all, brief, story: job.story ?? '' });
 
-        // Re-read: only what is STILL empty is written.
+        // Re-read: only what is STILL empty is written - or the seed, while
+        // it is still the same line.
         const fresh = await getObject(chatId, job.objectId);
         if (!fresh || isBeingEdited(job.objectId)) return setItem(job, 'held', 'open for editing - enrich it from the sheet');
         const now = fresh.base ?? fresh;
         const patch = {};
         for (const [key, value] of Object.entries(values)) {
             if (key === 'name') continue;
-            if (isEmpty(now[key])) patch[key] = value;
+            if (isEmpty(now[key]) || (key === 'description' && seed && String(now.description ?? '').trim() === seed && !isEmpty(value))) patch[key] = value;
         }
+        // The old Region text, once in the description, is not kept twice.
+        if (seed && oldRegion && patch.description && String(now.region ?? '').trim() === oldRegion && getEntryMeta(settingId, job.objectId).generated.includes('region')) patch.region = '';
         if (Object.keys(patch).length) {
             if (!await updateEntry(chatId, settingId, job.objectId, patch)) throw new Error('State Engine refused the change');
             const generated = getEntryMeta(settingId, job.objectId).generated;
@@ -126,6 +161,9 @@ async function enrichOne(job) {
             // Kept so it can be put back (src/generate/revert.js).
             await recordEnrichment(settingId, job.objectId, enrichmentRecord({ id: newLocalId('e'), at: new Date().toISOString(), source: 'auto', before: Object.fromEntries(Object.keys(patch).map((k) => [k, now[k] ?? null])), after: patch }));
         }
+        // A place left at the top of the map: its written description may
+        // name or fit a district now (src/generate/place-parent.js).
+        if (job.placeAfter && type.id === 'location') placeAgain(job, { ...now, ...patch }, all.location ?? []);
         setItem(job, 'done');
     } catch (err) {
         console.warn(LOG_PREFIX, `could not enrich ${job.name}`, err);
