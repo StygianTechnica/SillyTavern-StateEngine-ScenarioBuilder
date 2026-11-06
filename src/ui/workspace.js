@@ -114,6 +114,7 @@ export async function openWorkspace({ tab = null } = {}) {
     if (!overlay) {
         overlay = h('div', { class: 'sb-workspace', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Scenario Builder' });
         isolate(overlay);
+        watchScroll(overlay);
         document.body.append(overlay);
     }
     ws.open = true;
@@ -127,7 +128,7 @@ function listen() {
     if (listening) return;
     listening = true;
     const { eventSource, eventTypes } = SillyTavern.getContext();
-    const later = () => rerender({ force: false });
+    const later = redrawLater;
     for (const event of [SCENARIO_CHANGED_EVENT, LIBRARY_CHANGED_EVENT, DRIFT_CHANGED_EVENT]) eventSource.on(event, later);
     eventSource.on(GUIDANCE_CHANGED_EVENT, () => { if (ws.tab === 'preview') later(); });
     eventSource.on(ENRICH_EVENT, later);
@@ -167,7 +168,7 @@ async function render() {
         getSettings().catalog.last = { tab: ws.tab, chapter: ws.chapter };
         saveSettings();
     }
-    const scrolls = view === lastView ? SCROLLERS.map((sel) => overlay.querySelector(sel)?.scrollTop ?? 0) : null;
+    const sameView = view === lastView;
     lastView = view;
     let body;
     try {
@@ -201,11 +202,66 @@ async function render() {
             h('div', { class: 'sb-iconbtn', title: 'Close', onclick: () => void close() }, icon('fa-xmark'))));
 
     overlay.replaceChildren(h('div', { class: 'sb-ws-panel' }, header, h('div', { class: 'sb-ws-body' }, body)));
-    if (scrolls) SCROLLERS.forEach((sel, i) => { const el = overlay.querySelector(sel); if (el) el.scrollTop = scrolls[i]; });
+    // Where the user is now (not when this redraw began); a new view starts
+    // at the top.
+    if (sameView && view === lastView) restoreScroll({ ...kept });
+    else if (view === lastView) { kept = {}; restoring = null; }
 }
 
 const SCROLLERS = Object.freeze(['.sb-ws-body', '.sb-content', '.sb-rail', '.sb-sheet-body']);
 let lastView = '';
+
+// Where each scrolling area is, kept as the user scrolls - not read when a
+// redraw starts: a background redraw that took a moment put the GM plan
+// back where it was when it began, and set before the page had its full
+// height (images still loading) it was clamped to the top.
+let kept = {};
+let userAt = 0;          // the user's last scroll, wheel, touch or key
+let restoring = null;    // { wanted, until } while a redraw puts them back
+const scrollerOf = (el) => SCROLLERS.find((sel) => el?.matches?.(sel)) ?? null;
+
+function watchScroll(el) {
+    el.addEventListener('scroll', (e) => {
+        const sel = scrollerOf(e.target);
+        if (!sel || restoring) return;
+        kept[sel] = e.target.scrollTop;
+    }, true);
+    // The user's own hand ends a restore at once.
+    for (const type of ['wheel', 'touchstart', 'pointerdown', 'keydown']) {
+        el.addEventListener(type, () => { userAt = Date.now(); restoring = null; }, { capture: true, passive: true });
+    }
+}
+
+// Puts each area back, frame by frame while the page grows into it (for a
+// second at most), until the user scrolls.
+function restoreScroll(wanted) {
+    restoring = { wanted, until: Date.now() + 1000 };
+    const mine = restoring;
+    const step = () => {
+        if (restoring !== mine || !overlay) return;
+        let short = false;
+        for (const [sel, top] of Object.entries(wanted)) {
+            const el = overlay.querySelector(sel);
+            if (!el) continue;
+            if (Math.abs(el.scrollTop - top) > 1) el.scrollTop = top;
+            if (el.scrollTop < top - 1) short = true;
+        }
+        if (short && Date.now() < mine.until) requestAnimationFrame(step);
+        else requestAnimationFrame(() => { if (restoring === mine) restoring = null; });
+    };
+    step();
+}
+
+// A background redraw waits while the user is scrolling, and a burst of
+// changes is one redraw.
+let laterTimer = null;
+function redrawLater() {
+    clearTimeout(laterTimer);
+    laterTimer = setTimeout(() => {
+        if (Date.now() - userAt < 1200) return redrawLater();
+        rerender({ force: false });
+    }, 250);
+}
 
 async function onSwitchSetting(settingId, el) {
     if (!settingId || settingId === ws.ctx.settingId) return;
