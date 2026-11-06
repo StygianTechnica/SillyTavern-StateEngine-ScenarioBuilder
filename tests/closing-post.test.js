@@ -39,6 +39,8 @@ describe('a cutaway is not the scene', () => {
 describe('a post that closes out what the player was doing', () => {
     it('is read, across genres', () => {
         expect(closesOut(post)).toBe(true);
+        // The post after it, which the hand-back missed.
+        expect(closesOut('Cyril spent several hours at the gun range making absolutely sure he was good.  It felt good to flex his finesse with a handgun.  His skill was impressive, almost perfect.')).toBe(true);
         expect(closesOut('Aria spent the afternoon mending her armor by the fire. When she was done, she leaned back.')).toBe(true);
         expect(closesOut('Rook worked the reactor console for hours until he was satisfied.')).toBe(true);
         expect(closesOut('Cyril picked up the pistol. "What about this one?"')).toBe(false);

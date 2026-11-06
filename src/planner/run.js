@@ -20,7 +20,8 @@
 
 import { LOG_PREFIX } from '../constants.js';
 import { opposedJobs, jobsLine, planTexts } from './aims.js';
-import { timedHappenings } from './timed.js';
+import { timedHappenings, notYet } from './timed.js';
+import { closesOut, nextThingLine } from '../guidance/wrapped.js';
 import { presenceFrom, takingPart, absentSince, isKnownPerson } from './presence.js';
 import { getSettings, isActive } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
@@ -39,7 +40,7 @@ import { triggerSection,
     addRequest, setRequestStatus, waitingRequests,
     setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, restoreBeat, editBeat, lockBeat, removeBeat, addBeat, moveBeat, stepBeat,
     mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat, unseenTies, undoUnseenBeats, newcomerWait, FIRM_AFTER,
-    stampBeats, beatFrom, dueSection, setByStory, readWhen,
+    stampBeats, beatFrom, dueSection, dueToday, setByStory, readWhen,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText, removeChronicle,
     addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines, factionsOutOfPlay,
     removeFromDay, planBehindBeat, addSettled, removeSettled, settledSection, keptSettled,
@@ -763,7 +764,21 @@ export function directorPlan(chatKey, messages) {
     } catch (err) {
         console.warn(LOG_PREFIX, 'no company lines for the director', err);
     }
-    return [triggered, settled, jobs, due, company, plan].filter(Boolean).join('\n\n');
+    // The player's post played its action through ("spent several hours at
+    // the gun range"): the briefing brings them the next thing, where they
+    // are - it had Doc notice "his return" to a room he never went back to.
+    let handBack = '';
+    try {
+        const post = [...(messages ?? [])].reverse().find((m) => m.isUser)?.text ?? '';
+        if (closesOut(post)) {
+            const doc = getChatDoc(chatKey);
+            const due = dueToday(doc.gm, doc.canonical.day);
+            handBack = `NEXT FOR ${userName().toUpperCase() || 'THE PLAYER'} (private)\n${nextThingLine({ player: userName(), lead: notYet(due, { today: doc.canonical.day, nowPart: doc.canonical.dayPart })[0]?.text ?? due[0]?.text ?? '' })} The scene stays where ${userName() || 'they'} now is: no one there acts as if ${userName() || 'they'} came back elsewhere.`;
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'no hand-back for the director', err);
+    }
+    return [triggered, settled, jobs, due, handBack, company, plan].filter(Boolean).join('\n\n');
 }
 
 function plannedSection(chatKey, messages) {

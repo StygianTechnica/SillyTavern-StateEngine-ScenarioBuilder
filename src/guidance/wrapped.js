@@ -5,6 +5,8 @@
 // to think up Cyril's next move alone. The reply should bring him the next
 // thing instead. Pure.
 
+import { postSpan } from '../calendar/post-span.js';
+
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 
 const WRAP = /\b(?:after (?:some|a few|an hour|a while|awhile|hours|a bit|a time|several)\b|for (?:a ?while|awhile|an hour|hours|the rest of the (?:morning|afternoon|day|evening|night))|(?:until|till) (?:he|she|they|i|we) (?:was|were|had|felt) (?:done|finished|satisfied|ready|tired)|when (?:he|she|they|i|we) (?:was|were|had) (?:done|finished)|(?:finished|done) (?:with|for the)|spent (?:the|an|a|some|hours|most)|by the time (?:he|she|they|i|we)|disappeared to|(?:the )?(?:hours?|time|afternoon|morning) (?:passed|went by|slipped by|wore on))\b/i;
@@ -15,6 +17,9 @@ const WRAP = /\b(?:after (?:some|a few|an hour|a while|awhile|hours|a bit|a time
 export function closesOut(post) {
     const text = String(post ?? '').replace(/[“”]/g, '"').trim();
     if (!text || /["?]\s*$/.test(text)) return false;
+    // A post that says how long its action took has played it through:
+    // "Cyril spent several hours at the gun range" (src/calendar/post-span.js).
+    if (postSpan(text)) return true;
     const plain = text.replace(/"[^"]*"/g, ' ');
     const sentences = clean(plain).match(/[^.!?…]+[.!?…]*/g) ?? [];
     return sentences.slice(-3).some((s) => WRAP.test(s));
