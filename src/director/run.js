@@ -754,7 +754,13 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     if (echoed && parsed.note !== echoed) console.warn(LOG_PREFIX, 'the briefing copied the player\'s post; that part was left out');
     let { note } = parsed;
     const { created } = parsed;
-    if (!note) throw new Error('The model wrote no briefing.');
+    // Nothing left of the prose once the player character's own actions
+    // and the echo of their post are out (Cyril stepping out of the Signal
+    // Box was all the briefing said): its MOVE, TIME and SCENE lines still
+    // stand, and the player's post can still move the scene. Only a new
+    // turn goes on so; otherwise the old briefing stays.
+    if (!note && !(isNewTurn(type) && (wroteLines || String(raw ?? '').trim()))) throw new Error('The model wrote no briefing.');
+    if (!note) console.warn(LOG_PREFIX, 'the briefing had nothing left for the narrator once the player character\'s part was out; its format lines are still taken in');
 
     // Only what the recent chat brought up (the last few messages).
     const recentText = messages.slice(-4).map((m) => m.text).join('\n');
@@ -880,7 +886,13 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         const beside = from ? known.filter((e) => e.type === 'location' && e.id !== from && (parents[e.id] === from || (up && (parents[e.id] === up || e.id === up)))).map((e) => e.id) : [];
         const reach = from ? [...new Set([...routesFrom(from, routes).map((r) => r.otherId), ...placesFurtherOn(from, routes).map((p) => p.id), ...beside])] : known.filter((e) => e.type === 'location').map((e) => e.id);
         const ways = reach.map((id) => known.find((e) => e.id === id)).filter(Boolean).map((e) => ({ id: e.id, names: [e.name, ...e.aliases] }));
-        const heading = headingAlong(latestUserText, ways);
+        let heading = headingAlong(latestUserText, ways);
+        // Outside it: the place around it (the street outside the Signal Box
+        // is in Bearville District, not in the Signal Box).
+        if (heading?.outside && parents[heading.id]) {
+            const around = known.find((e) => e.id === parents[heading.id]);
+            if (around) heading = { ...heading, id: around.id, name: around.name };
+        }
         const invented = move && (routeName(move.place) || !knownAs(move.place, known.filter((e) => e.type === 'location')));
         if (heading && (!move || invented)) {
             console.info(LOG_PREFIX, move ? `the director moved the scene to "${move.place}", which the library does not have; the player's message sets out for ${heading.name}, so the scene goes there` : `no MOVE line; the player's message sets out for ${heading.name}`);

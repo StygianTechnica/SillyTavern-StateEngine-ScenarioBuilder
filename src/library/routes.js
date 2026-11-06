@@ -100,7 +100,10 @@ export function placesFurtherOn(fromId, routes, maxLegs = 3) {
 // the bridge tomorrow", or in speech). `ways`: [{ id, names }] of the
 // places the routes from here lead to.
 // -> { id, name, together } (together: the party goes as one) or null.
-const SETTING_OUT = /\b(?:set(?:s|ting)? out|set off|mount(?:s|ed|ing)? up|rode|ride(?:s)? (?:out|off|on)|head(?:s|ed|ing)? (?:out|off|for|to|toward|towards)|(?:made|make|makes|making) (?:their|our|his|her|my|the) way|journey(?:s|ed)?|travel(?:s|led|ed|ling|ing)?|depart(?:s|ed|ing)?|(?:left|leave|leaves|leaving) for|on the road|hit the road|march(?:es|ed|ing)? (?:out|off|on|for|to)|next leg|continu(?:e|es|ed|ing) (?:on|onward|onwards|to|toward|towards|for)|(?:press|push)(?:es|ed|ing)? on|(?:go|goes|went) (?:on )?(?:to|toward|towards|for)|rode (?:on|out|off)|(?:carried|carry|carries) on|disappear(?:s|ed|ing)? (?:in)?to|(?:asked|asks|asking) (?:for )?(?:the )?directions to|(?:made|makes|making) for|(?:went|goes|go|going|is|was) off to|(?:walked|walks|walking|wandered|wanders|strode|strolled|hurried|ran|jogged) (?:off |over |down |up )?(?:to|toward|towards|into))\b/i;
+const SETTING_OUT = /\b(?:set(?:s|ting)? out|set off|mount(?:s|ed|ing)? up|rode|ride(?:s)? (?:out|off|on)|head(?:s|ed|ing)? (?:out|off|for|to|toward|towards)|(?:made|make|makes|making) (?:their|our|his|her|my|the) way|journey(?:s|ed)?|travel(?:s|led|ed|ling|ing)?|depart(?:s|ed|ing)?|(?:left|leave|leaves|leaving) for|on the road|hit the road|march(?:es|ed|ing)? (?:out|off|on|for|to)|next leg|continu(?:e|es|ed|ing) (?:on|onward|onwards|to|toward|towards|for)|(?:press|push)(?:es|ed|ing)? on|(?:go|goes|went) (?:on )?(?:to|toward|towards|for)|rode (?:on|out|off)|(?:carried|carry|carries) on|disappear(?:s|ed|ing)? (?:in)?to|(?:asked|asks|asking) (?:for )?(?:the )?directions to|(?:made|makes|making) for|(?:went|goes|go|going|is|was) off to|(?:walked|walks|walking|wandered|wanders|strode|strolled|hurried|ran|jogged) (?:off |over |down |up )?(?:to|toward|towards|into)|(?:step(?:s|ped|ping)?|walk(?:s|ed|ing)?|came|comes|went|goes|head(?:s|ed|ing)?|slipp?(?:s|ed|ing)?) (?:out(?:side)?|outdoors)|exit(?:s|ed|ing)?|(?:left|leaves|leaving) the building)\b/i;
+// "Stepped out into the street outside the Signal Box": the scene is around
+// it, not in it.
+const OUTSIDE_OF = (name) => new RegExp(`\\b(?:outside|out front of|in front of|outside of)\\s+(?:the\\s+)?${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
 const NOT_YET = /\b(?:will|would|shall|should|tomorrow|tonight|later|soon|plan(?:s|ned)?|going to|could|might|if)\b|'ll\b/i;
 const TOGETHER = /\b(?:they|we|the group|the party|everyone|together|all of (?:us|them)|companions)\b/i;
 // "So he could practice" says why, not that the trip is only planned.
@@ -141,7 +144,8 @@ export function headingAlong(text, ways) {
     // Spoken of only where the plan is told ("we'll reach the bridge by
     // nightfall") is not setting out.
     if (sentences.filter((s) => ` ${bare(s)} `.includes(` ${bare(best.name)} `)).every((s) => notYet(s))) return null;
-    return { id: best.id, name: best.name, together: going.some((s) => TOGETHER.test(s)) };
+    const outside = going.some((s) => OUTSIDE_OF(bare(best.name)).test(bare(s)));
+    return { id: best.id, name: best.name, together: going.some((s) => TOGETHER.test(s)), ...(outside ? { outside: true } : {}) };
 }
 
 // ---- stored
