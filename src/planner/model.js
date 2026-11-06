@@ -1017,8 +1017,15 @@ export function finishBeat(gm, id, { index = -1 } = {}) {
     b.status = 'done';
     b.doneAt = chatIndex(index);
     addChronicle(gm, `Beat: ${b.text}`);
+    // A beat that hands out a job is settled as it was given: who is on it.
+    // Assassins Inc: "Adam assigns Cyril and Inji to stop Enrique's
+    // operation, with Zane as a partner" played out, an outline rewrite
+    // dropped it, and the team was lost - Doc and Galice came along and no
+    // one could say they were not sent.
+    if (ASSIGNS.test(b.text)) addSettled(gm, { id: `set_${b.id}`, text: b.text, source: 'director' });
     settleActive(gm.outline);
 }
+const ASSIGNS = /\b(?:assign(?:s|ed)?|appoint(?:s|ed)?|sends?|sent|puts?\s+\w+\s+in\s+charge|picks?|picked|chooses?|chose|names?\s+\w+\s+(?:to|as)|(?:as|with)\s+(?:a\s+|his\s+|her\s+|their\s+)?partners?|leads?\s+the\s+team|on\s+the\s+(?:job|team|mission))\b/i;
 
 // ---------------------------------------------------------------- tension (§5)
 

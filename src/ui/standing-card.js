@@ -21,7 +21,7 @@ export function standingCard(type, entry, all) {
     const names = new Map((all.character ?? []).map((c) => [c.id, c.name]));
     const holders = p.by.map((id) => names.get(id)).filter(Boolean);
     const pattern = openPattern(p);
-    const move = (sign) => { setStanding(chatKey, entry.id, sign, { name: entry.name }); done(); };
+    const move = (sign, steps = 1) => { setStanding(chatKey, entry.id, sign, { name: entry.name, steps }); done(); };
     const level = p.level ?? 0;
     return h('div', { class: 'sb-card sb-standing' },
         h('div', { class: 'sb-card-title' }, icon('fa-scale-unbalanced'), ' Standing in this story',
@@ -44,6 +44,6 @@ export function standingCard(type, entry, all) {
             h('div', {}, h('b', {}, pattern.sign < 0 ? 'The story shows a pattern against them:' : 'The story shows a pattern for them:')),
             h('ul', {}, pattern.marks.slice(-4).map((m) => h('li', {}, h('i', {}, m.kind), ` - ${m.text}`))),
             h('div', { class: 'sb-actions' },
-                button(pattern.sign < 0 ? 'Lower their standing' : 'Raise their standing', () => move(pattern.sign), { iconName: pattern.sign < 0 ? 'fa-arrow-down' : 'fa-arrow-up', cls: 'sb-primary' }),
+                button(`${pattern.sign < 0 ? 'Lower' : 'Raise'} their standing${pattern.steps > 1 ? ` (${pattern.sign < 0 ? '−' : '+'}${pattern.steps})` : ''}`, () => move(pattern.sign, pattern.steps), { iconName: pattern.sign < 0 ? 'fa-arrow-down' : 'fa-arrow-up', cls: 'sb-primary' }),
                 button('Not now', () => { dismissStanding(chatKey, entry.id); done(); }, { iconName: 'fa-xmark' }))) : null);
 }

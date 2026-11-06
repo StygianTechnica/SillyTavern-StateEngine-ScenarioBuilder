@@ -251,7 +251,7 @@ function standingItem(chatKey, x) {
             h('small', { class: 'sb-hint' }, `${x.marks.length} times the story shows them ${[...new Set(x.marks.map((m) => m.kind))].join(', ')} - ${x.sign < 0 ? 'lower' : 'raise'} how they are seen?`)),
         h('ul', { class: 'sb-gm-threads' }, x.marks.slice(-4).map((m) => h('li', {}, m.text))),
         h('div', { class: 'sb-actions' },
-            button(x.sign < 0 ? 'Lower their standing' : 'Raise their standing', () => { setStanding(chatKey, x.id, x.sign, { name: x.name }); finish(); }, { iconName: x.sign < 0 ? 'fa-arrow-down' : 'fa-arrow-up', cls: 'sb-primary', title: 'Those who saw it see them so now: the narrator and the planner act on it' }),
+            button(`${x.sign < 0 ? 'Lower' : 'Raise'} their standing${x.steps > 1 ? ` (${x.sign < 0 ? '−' : '+'}${x.steps})` : ''}`, () => { setStanding(chatKey, x.id, x.sign, { name: x.name, steps: x.steps }); finish(); }, { iconName: x.sign < 0 ? 'fa-arrow-down' : 'fa-arrow-up', cls: 'sb-primary', title: 'Those who saw it see them so now: the narrator and the planner act on it' }),
             button('Not now', () => { dismissStanding(chatKey, x.id); finish(); }, { iconName: 'fa-xmark', title: 'Let these go - new ones can still add up' })));
 }
 

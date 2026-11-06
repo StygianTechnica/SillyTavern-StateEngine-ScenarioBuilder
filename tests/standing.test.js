@@ -97,3 +97,14 @@ describe('whose the scorn is', () => {
         expect(scornIn('Doc and Galice argued. Both of them were nosy.', all, { post: true }).map((x) => x.id).sort()).toEqual(['doc', 'gal']);
     });
 });
+
+// Doc's six marks moved her only to "doubted".
+describe('a bigger pattern', () => {
+    it('is a bigger step', () => {
+        const marks = (n) => Array.from({ length: n }, (_, i) => ({ key: `k${i}`, kind: 'shown wrong', sign: -1, text: 'x', by: [], status: 'open' }));
+        expect(openPattern({ level: 0, marks: marks(2) }).steps).toBe(1);
+        expect(openPattern({ level: 0, marks: marks(6) }).steps).toBe(2);
+        expect(moveStanding({ level: 0, marks: marks(6) }, -1, { steps: 2 }).level).toBe(-2);
+        expect(moveStanding({ level: -2 }, -1, { steps: 2 }).level).toBe(-3);
+    });
+});

@@ -73,3 +73,25 @@ describe('a newcomer kept waiting', () => {
         expect(g.newcomer).toBeNull();
     });
 });
+
+// A beat that hands out a job is settled as given: who is on the team.
+import { finishBeat as finish, emptyGm as fresh } from '../src/planner/model.js';
+describe('a finished beat that assigns a job', () => {
+    it('is settled, word for word', () => {
+        const g = fresh();
+        g.outline = { premise: '', themes: [], seeds: [], acts: [{ id: 'a1', title: 'x', beats: [
+            { id: 'b3', text: "Adam assigns Cyril and Inji to stop Enrique's operation, with Zane as a partner.", ties: [], status: 'active', locked: false, by: 'planner', note: '' },
+            { id: 'b4', text: 'The team infiltrates the gallery.', ties: [], status: 'pending', locked: false, by: 'planner', note: '' },
+        ] }] };
+        finish(g, 'b3');
+        expect(g.settled.map((s) => s.text)).toEqual(["Adam assigns Cyril and Inji to stop Enrique's operation, with Zane as a partner."]);
+        finish(g, 'b4');
+        expect(g.settled).toHaveLength(1);
+    });
+    it('across genres', () => {
+        const g = fresh();
+        g.outline = { premise: '', themes: [], seeds: [], acts: [{ id: 'a1', title: 'x', beats: [{ id: 'b1', text: 'The Lord Commander sends Aldric and Ser Brannoc to hold the pass.', ties: [], status: 'active', locked: false, by: 'planner', note: '' }] }] };
+        finish(g, 'b1');
+        expect(g.settled).toHaveLength(1);
+    });
+});

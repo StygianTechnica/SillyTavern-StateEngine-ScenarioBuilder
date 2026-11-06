@@ -77,10 +77,10 @@ export async function scanStanding(chatId, chatKey, settingId) {
 // The user moves someone's standing a step (sign -1 or 1): by hand, or
 // taking the pattern Review offers. by: who holds it ([] = all who know
 // them).
-export function setStanding(chatKey, personId, sign, { by = [], line = null, name = '' } = {}) {
+export function setStanding(chatKey, personId, sign, { by = [], line = null, name = '', steps = 1 } = {}) {
     updateChatDoc(chatKey, (d) => {
         const s = normalizeStanding(d.standing);
-        s.people[personId] = { ...moveStanding(s.people[personId], sign, { by, line }), ...(clean(name) ? { name: clean(name) } : {}) };
+        s.people[personId] = { ...moveStanding(s.people[personId], sign, { by, line, steps }), ...(clean(name) ? { name: clean(name) } : {}) };
         d.standing = s;
     });
 }

@@ -270,15 +270,18 @@ export function openPattern(person) {
     if (Math.abs(net) < PATTERN) return null;
     const sign = net < 0 ? -1 : 1;
     if (clamp((person?.level ?? 0) + sign) === clamp(person?.level ?? 0)) return null;
-    return { sign, marks: open.filter((m) => m.sign === sign) };
+    // A bigger pattern is a bigger step: two marks one, five or more two
+    // (Doc's six went only to "doubted").
+    const steps = Math.abs(net) >= 5 ? 2 : 1;
+    return { sign, steps, marks: open.filter((m) => m.sign === sign) };
 }
 
 // The user's word on it: the level moves one step (sign), those who saw it
 // hold it, and the open marks are settled. Or by hand, without marks.
-export function moveStanding(person, sign, { by = [], line = null, at = new Date().toISOString() } = {}) {
+export function moveStanding(person, sign, { by = [], line = null, at = new Date().toISOString(), steps = 1 } = {}) {
     const p = normalizePerson(person);
     const open = p.marks.filter((m) => m.status === 'open' && m.sign === sign);
-    p.level = clamp(p.level + sign);
+    p.level = clamp(p.level + sign * Math.max(1, Math.min(3, Math.round(steps) || 1)));
     p.by = [...new Set([...p.by, ...by, ...open.flatMap((m) => m.by)])];
     for (const m of p.marks) if (m.status === 'open') m.status = m.sign === sign ? 'used' : 'dismissed';
     if (line !== null) p.line = cut(line, 300);

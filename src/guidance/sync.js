@@ -342,7 +342,7 @@ export async function gatherInputs(chatId, chatKey) {
     // (src/state/standing.js): Doc, wrong about Cyril's implant again and
     // again, was still the one Adam turned to.
     for (const member of cast.filter((c) => !c.player)) {
-        const here = cast.filter((c) => c.id && c.id !== member.id).map((c) => ({ id: c.id, name: c.name }));
+        const here = cast.filter((c) => c.id && c.id !== member.id && !c.player).map((c) => ({ id: c.id, name: c.name }));
         member.standing = standingText(doc.standing?.people?.[member.id], { name: member.name, gender: member.gender, here });
     }
 
@@ -598,8 +598,17 @@ export async function gatherInputs(chatId, chatKey) {
             // plan gives it (src/guidance/pushback.js).
             ...((b) => {
                 const player = cast.find((c) => c.player)?.name ?? '';
-                const people = b ? [...takingPart(b.text, b.ties ?? [], { isPerson: isKnownPerson, player }), ...(player && new RegExp(`\\b${player.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(b.text) ? [player] : [])] : [];
-                const p = pushBack({ post: latestPlayerPost(), player, cast, beat: b ? { text: b.text, people } : null });
+                const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const names = (t) => allCharacters.filter((ch) => [ch.name, String(ch.name ?? '').split(/\s+/)[0], ...(ch.aliases ?? [])].filter((n) => String(n ?? '').length >= 3).some((n) => new RegExp(`\\b${esc(String(n))}\\b`, 'i').test(t))).map((ch) => ch.name);
+                let job = b ? { text: b.text, people: [...takingPart(b.text, b.ties ?? [], { isPerson: isKnownPerson, player }), ...(player && new RegExp(`\\b${esc(player)}\\b`, 'i').test(b.text) ? [player] : [])] } : null;
+                // A beat that names no one ("they will stop Enrique's heist in
+                // the end"): the job as the story settled it - "Cyril is
+                // assigned as lead infiltrator..., with Inji as his partner".
+                if (!job?.people?.some((n) => n !== player)) {
+                    const settled = [...(doc.gm.settled ?? [])].reverse().map((s) => String(s.text ?? '')).find((t) => /\b(?:assign\w*|sent|mission|job|team|partner\w*|lead\w*)\b/i.test(t) && player && new RegExp(`\\b${esc(player)}\\b`, 'i').test(t) && names(t).some((n) => n !== player));
+                    if (settled) job = { text: settled, people: names(settled) };
+                }
+                const p = pushBack({ post: latestPlayerPost(), player, cast, beat: job });
                 return { pushFair: p.fair, pushTeam: p.team };
             })(settings.planner?.enabled === true ? activeBeat(doc.gm.outline) : null),
             // Who has died in this story (src/state/death.js).
