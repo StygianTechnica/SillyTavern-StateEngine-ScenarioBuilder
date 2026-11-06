@@ -59,7 +59,7 @@ import { libraryMemberships, briefMemberships } from '../library/faction-sync.js
 import { buildPeoplePrompt, readPeople } from './people.js';
 import { unknownsFor, toldInChat, mergeTold, PERSPECTIVE_TOKENS } from './perspective.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
-import { planStamp } from '../planner/model.js';
+import { planStamp, arrivalReasons } from '../planner/model.js';
 import { directorPlan, takeBeats, takeSets, takeSettled, markActive, overdueNewcomers, beatWaitingOn } from '../planner/run.js';
 import { livePoolFor, takeFromPool, byType, rollNameFor, markNameUsed } from '../naming/run.js';
 import { poolLine, swapInvented, applySwaps } from '../naming/live.js';
@@ -1241,9 +1241,18 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // cast, so Zane, waited on for ten replies, could not reach Cyril at the
     // gun range however often the reply was swiped (Assassins Inc). Only
     // ever adds, so swiping again does not stack.
+    // Whoever came in with this turn - on its first reply or an earlier
+    // swipe - is still arriving in the next swipe: the reply that showed
+    // them coming is gone. Zane, brought in on one swipe, stayed in the cast
+    // and was never written into the swipes after it.
+    // (Keyed by the reply index: every swipe counts as a turn.)
+    const turnNow = replyIndex;
+    const cameThisTurn = !isNewTurn(type) && doc.director.turnIn?.turn === turnNow ? (doc.director.turnIn.names ?? []) : [];
     if (!isNewTurn(type) && settingId) {
         const doc2 = getChatDoc(chatKey);
         const castNow = doc2.canonical.castIds;
+        const sameIn = (c) => cameThisTurn.some((n) => callNames(c).some((x) => x.toLowerCase() === String(n).toLowerCase()));
+        const still = characters.filter((c) => castNow.includes(c.id) && sameIn(c));
         const heldOut = new Set(doc2.held.filter((h) => h.field === 'cast' && h.op === 'remove' && h.until > doc2.turn).map((h) => h.objectId));
         const overdue = overdueHere(chatKey, characters, castNow, { heldOut, waitingNow, dead: doc2.dead })
             .filter((c) => !elsewhereEntering([c.name], { characters, elsewhere: [...ground.barred.values()], castIds: castNow, userPost: [...messages].reverse().find((m) => m.isUser)?.text ?? '', namedIn: peopleNamedIn, namesOf: callNames }).length);
@@ -1251,8 +1260,9 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             const names = overdue.map((c) => c.name);
             console.info(LOG_PREFIX, `${names.join(', ')} brought in on the swipe - the beat has waited on them too long`);
             setCanonical(chatKey, { castIds: [...castNow, ...overdue.map((c) => c.id)] }, { chatId, source: 'director', note: `${names.join(', ')} arrive${names.length === 1 ? 's' : ''}` });
-            moves = { in: names, out: [] };
         }
+        const names = [...new Set([...still, ...overdue].map((c) => c.name))];
+        if (names.length) moves = { in: names, out: [] };
     }
 
     // The planner hears what played out (BEAT lines) and whether the scene
@@ -1274,7 +1284,15 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // A briefing written ahead is used once. Its key holds the place the
     // scene ended up in, so a swipe after a move is not a new situation.
     const settledKey = hashOf(JSON.stringify([messages.map((m) => [m.name, m.text]), getChatDoc(chatKey).canonical.locationId || '']));
-    const result = { note, summary: parsed.summary, direction: parsed.direction, key: settledKey, at: new Date().toISOString(), created: [...doc.director.created, ...made].slice(-20), error: '', time: timeText, moves, ahead: preRaw ? null : getChatDoc(chatKey).director.ahead };
+    // Who arrives, and why, from the plan: told to the narrator with them.
+    let arrivingFor = {};
+    try {
+        arrivingFor = moves.in.length ? arrivalReasons(getChatDoc(chatKey).gm, moves.in) : {};
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'no reasons for those arriving', err);
+    }
+    const turnIn = moves.in.length ? { turn: turnNow, names: [...new Set([...cameThisTurn, ...moves.in])] } : (cameThisTurn.length ? doc.director.turnIn : null);
+    const result = { note, summary: parsed.summary, direction: parsed.direction, key: settledKey, at: new Date().toISOString(), created: [...doc.director.created, ...made].slice(-20), error: '', time: timeText, moves, arrivingFor, turnIn, ahead: preRaw ? null : getChatDoc(chatKey).director.ahead };
     updateChatDoc(chatKey, (d) => { d.director = result; });
     return result;
 }

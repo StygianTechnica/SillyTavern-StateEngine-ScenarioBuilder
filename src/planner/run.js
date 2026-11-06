@@ -43,7 +43,7 @@ import { triggerSection,
     stampBeats, beatFrom, dueSection, dueToday, setByStory, readWhen,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText, removeChronicle,
     addIdeas, resolveIdea, editIdea, addHappening, removeHappening, dueHappenings, settleAgenda, addSeed, frictionLines, factionsOutOfPlay,
-    removeFromDay, planBehindBeat, addSettled, removeSettled, settledSection, keptSettled,
+    removeFromDay, planBehindBeat, addSettled, removeSettled, settledSection, keptSettled, arrivalReasons,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
 import { companyLines } from '../director/company.js';
@@ -787,7 +787,11 @@ export function directorPlan(chatKey, messages) {
         if (closesOut(post)) {
             const doc = getChatDoc(chatKey);
             const due = dueToday(doc.gm, doc.canonical.day);
-            handBack = `NEXT FOR ${userName().toUpperCase() || 'THE PLAYER'} (private)\n${nextThingLine({ player: userName(), lead: notYet(due, { today: doc.canonical.day, nowPart: doc.canonical.dayPart })[0]?.text ?? due[0]?.text ?? '' })} The scene stays where ${userName() || 'they'} now is: no one there acts as if ${userName() || 'they'} came back elsewhere.`;
+            // The beat waiting on someone: they are the next thing, not a
+            // time skip to tonight's job (Zane, waited on for ten replies).
+            const waiting = plannerSettings().enabled === true ? beatNewcomers(doc.gm, doc) : [];
+            const theirs = waiting.length ? (Object.values(arrivalReasons(doc.gm, waiting))[0] ?? '') : '';
+            handBack = `NEXT FOR ${userName().toUpperCase() || 'THE PLAYER'} (private)\n${nextThingLine({ player: userName(), lead: theirs || (notYet(due, { today: doc.canonical.day, nowPart: doc.canonical.dayPart })[0]?.text ?? due[0]?.text ?? '') })} The scene stays where ${userName() || 'they'} now is: no one there acts as if ${userName() || 'they'} came back elsewhere.`;
         }
     } catch (err) {
         console.warn(LOG_PREFIX, 'no hand-back for the director', err);

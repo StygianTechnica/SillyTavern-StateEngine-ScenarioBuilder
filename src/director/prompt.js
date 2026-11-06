@@ -801,7 +801,7 @@ export function isPlaceholder(value) {
 
 // A format line, whether or not it could be read - never left in the prose.
 // The format lines' keys, in capitals as the prompt writes them.
-const FORMAT_KEYS = 'TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED';
+const FORMAT_KEYS = 'TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAMES|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED';
 const KEY_COLON = new RegExp(`^(\\s*(?:[-*]\\s*)?\\**)(${FORMAT_KEYS})(\\**)\\s*:\\s*(?!\\|)(.*)$`);
 // (A bare "BACK" is a line of its own, not a heading.)
 const KEY_HEADING = new RegExp(`^\\s*(?:[-*#]\\s*)*\\**(?:[A-Za-z]+\\s+(?:${FORMAT_KEYS})(?:\\s+lines?)?\\**\\s*:?|(?:${FORMAT_KEYS})\\s+lines?\\**\\s*:?)\\s*$`);
@@ -824,7 +824,7 @@ export function formatLineAsMeant(raw) {
 // A line opening with a heading in capitals, two words or more, then a bar
 // or a colon: "DUE TODAY |", "SET FOR LATER:", "WHO IS HERE -".
 export const HEADER_ECHO = /^\s*(?:[-*]\s*)?\**[A-Z][A-Z']+(?:\s+[A-Z][A-Z']+)+\**\s*(?:\(|\||:|\s-\s)/;
-const FORMAT_LINE =/^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+const FORMAT_LINE =/^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAMES|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.

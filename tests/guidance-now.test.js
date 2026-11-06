@@ -7,7 +7,7 @@ const cast = [{ name: 'Cyril', player: true }, { name: 'Doc' }, { name: 'Galice 
 describe('the note for this reply', () => {
     it('says who comes in now, and keeps off the player character', () => {
         const note = buildNow({ arriving: ['Adam Miller'], cast });
-        expect(note).toBe("[Game master's note for this reply, not part of the story: Adam Miller comes in now - they arrive where everyone can see and speak or act, with their own reason for coming. Write only the others; never Cyril.]");
+        expect(note).toBe("[Game master's note for this reply, not part of the story: Adam Miller comes in now - they arrive where everyone can see and speak or act, with their own reason for coming. They come to Cyril where Cyril is; the scene does not move, and no one is already waiting somewhere else. Write only the others; never Cyril.]");
     });
 
     it('several arrivals, and what the story set off', () => {

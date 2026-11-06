@@ -529,6 +529,8 @@ export async function gatherInputs(chatId, chatKey) {
             triggered: triggerLines(doc.gm.triggers, latestUserIndex()),
             // Who the game master brings in with this reply (src/director/).
             arriving: settings.director.enabled ? (doc.director.moves?.in ?? []) : [],
+            // Why each comes, from the plan (src/planner/model.js arrivalReasons).
+            arrivingFor: settings.director.enabled ? (doc.director.arrivingFor ?? {}) : {},
             // What the story has settled (src/planner/model.js settledSection).
             // Only what the latest messages touch, the user's own always.
             settled: settledNow(getChatDoc(chatKey).gm.settled ?? [], settledOpts),

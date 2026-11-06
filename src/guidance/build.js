@@ -175,11 +175,22 @@ export function aloneText(input) {
 // Those the game master brings into the scene in this reply: told plainly,
 // or the narrator writes around them - Adam Miller was in the cast for a
 // reply and never in the story. names: the director's arrivals.
-function arrivingSection(names) {
+function arrivingSection(names, input = {}) {
     const list = [...new Set((names ?? []).map(clean).filter(Boolean))];
     if (!list.length) return null;
     const who = list.length === 1 ? list[0] : `${list.slice(0, -1).join(', ')} and ${list.at(-1)}`;
-    return { full: `${who} ${list.length === 1 ? 'comes' : 'come'} into the scene in this reply: write ${list.length === 1 ? 'them' : 'each of them'} arriving, where everyone can see, and taking part - they speak or act, with their own reason for coming. Not only mentioned, not left at the door.`, compact: '' };
+    return { full: `${who} ${list.length === 1 ? 'comes' : 'come'} into the scene in this reply: write ${list.length === 1 ? 'them' : 'each of them'} arriving, where everyone can see, and taking part - they speak or act, with their own reason for coming. Not only mentioned, not left at the door.${arrivalWhere(list, input)}`, compact: '' };
+}
+
+// Where those arriving come, and what for: here, where the player
+// character is - Zane, brought to Cyril at the gun range, was written
+// "awaiting him in Miller's office" with intel no one had set up.
+function arrivalWhere(list, input) {
+    const place = clean((input.location?.path ?? []).at(-1));
+    const player = clean((input.cast ?? []).find((c) => c.player)?.name) || 'the player character';
+    const why = list.map((n) => [n, clean(input.arrivingFor?.[n])]).filter(([, w]) => w);
+    const reasons = why.map(([n, w]) => ` ${n} comes for this: ${w.replace(/[.!]+$/, '')}.`).join('');
+    return ` They come to ${player} where ${player} is${place ? ` - ${place}` : ''}; the scene does not move, and no one is already waiting somewhere else.${reasons}`;
 }
 
 function aloneSection(input) {
@@ -439,7 +450,8 @@ export function buildNow(input) {
     const notYet = clean(input.notYet);
     // The player's post closed out what they were doing (src/guidance/
     // wrapped.js): Cyril's practice at the range, and the reply cut away.
-    const nextThing = next ? '' : clean(input.nextThing);
+    // Someone arriving is the next thing: no time skip past them.
+    const nextThing = next || arriving.length ? '' : clean(input.nextThing);
     if (!arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
@@ -447,6 +459,7 @@ export function buildNow(input) {
     if (arriving.length) orders.push(arriving.length === 1
         ? `${arriving[0]} comes in now - they arrive where everyone can see and speak or act, with their own reason for coming.`
         : `${andList(arriving)} come in now - each arrives where everyone can see and speaks or acts, with their own reason for coming.`);
+    if (arriving.length) orders[orders.length - 1] += arrivalWhere(arriving, input);
     if (triggered.length) orders.push(`It happens now: ${triggered.join(' ')}`);
     if (dodging) orders.push(dodging);
     // The beat's people are who it is (Adam kept sending others on the job
@@ -579,7 +592,7 @@ const BUILDERS = {
     event: (input) => (eventGuidance(input.event) ? { full: eventGuidance(input.event), compact: '' } : null),
     intimacy: (input) => intimacySection(input),
     alone: (input) => aloneSection(input),
-    arriving: (input) => arrivingSection(input.arriving),
+    arriving: (input) => arrivingSection(input.arriving, input),
     direction: (input) => withOutcomes(directorPart(input.director, 'direction')),
     // The user's own standing instructions (the front page).
     style: (input) => (clean(input.overview?.gmStyle) ? { full: `How this story is run: ${sentence(truncate(input.overview.gmStyle, 800))}`, compact: '' } : null),

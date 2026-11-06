@@ -1696,3 +1696,26 @@ export function planStamp(gm) {
         (gm?.settled ?? []).map((s) => s.text),
     ]);
 }
+
+// Why someone the game master brings in comes, from the plan: the first
+// open day moment that has them in it, else the beat now when it names
+// them. Zane was brought to Cyril at the gun range with no reason told,
+// and the narrator had him "awaiting him in Miller's office" with intel
+// on a man no one had heard of (Assassins Inc). -> { [name]: text }.
+export function arrivalReasons(gm, names) {
+    const out = {};
+    const has = (text, ties, name) => {
+        const words = String(name ?? '').toLowerCase().split(/\s+/).filter((w) => w.length >= 3);
+        const t = String(text ?? '').toLowerCase();
+        return (ties ?? []).some((x) => String(x).toLowerCase() === String(name).toLowerCase() || words.includes(String(x).toLowerCase()))
+            || words.some((w) => new RegExp(`(^|[^\\p{L}])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\p{L})`, 'u').test(t));
+    };
+    const moments = (gm?.day?.moments ?? []).filter((m) => m.status === 'pending');
+    const beat = activeBeat(gm?.outline);
+    for (const name of names ?? []) {
+        const m = moments.find((x) => has(x.text, x.ties, name));
+        const why = m?.text ?? (beat && has(beat.text, beat.ties, name) ? beat.text : '');
+        if (why) out[name] = String(why).replace(/\s+/g, ' ').trim();
+    }
+    return out;
+}
