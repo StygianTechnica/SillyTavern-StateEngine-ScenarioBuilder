@@ -800,7 +800,10 @@ export function isPlaceholder(value) {
 }
 
 // A format line, whether or not it could be read - never left in the prose.
-const FORMAT_LINE = /^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+// A line opening with a heading in capitals, two words or more, then a bar
+// or a colon: "DUE TODAY |", "SET FOR LATER:", "WHO IS HERE -".
+export const HEADER_ECHO = /^\s*(?:[-*]\s*)?\**[A-Z][A-Z']+(?:\s+[A-Z][A-Z']+)+\**\s*(?:\(|\||:|\s-\s)/;
+const FORMAT_LINE =/^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
@@ -989,6 +992,9 @@ export function parseDirectorNote(raw) {
         }
         // A format line that could not be read ("NEW | none") is dropped too.
         if (FORMAT_LINE.test(line)) continue;
+        // A section of the prompt echoed as a line of its own ("DUE TODAY |
+        // Infiltrate and disrupt Enrique's operation...").
+        if (HEADER_ECHO.test(line)) continue;
         keep.push(line);
     }
     text = keep.join('\n')

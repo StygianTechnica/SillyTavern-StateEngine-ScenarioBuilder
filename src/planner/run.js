@@ -20,6 +20,8 @@
 
 import { LOG_PREFIX } from '../constants.js';
 import { opposedJobs, jobsLine, planTexts } from './aims.js';
+import { timedHappenings } from './timed.js';
+import { presenceFrom, takingPart, absentSince, isKnownPerson } from './presence.js';
 import { getSettings, isActive } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
@@ -35,7 +37,7 @@ import { dossierText, knownAs, relevance } from '../director/prompt.js';
 import { triggerSection,
     duePasses, setDayPlan, applyCheck, applyBeats, trackPace, paceAim, planSection, motifsOf, addLog,
     addRequest, setRequestStatus, waitingRequests,
-    setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, restoreBeat, editBeat, lockBeat, removeBeat, addBeat,
+    setOutline, positionOf, currentAct, activeBeat, beatsOf, finishBeat, restoreBeat, editBeat, lockBeat, removeBeat, addBeat, moveBeat, stepBeat,
     mergeArchivistTension, addOwnReading, tensionNow, startAt, replaceBeat, unseenTies, undoUnseenBeats, newcomerWait, FIRM_AFTER,
     stampBeats, beatFrom, dueSection, setByStory, readWhen,
     volumeComplete, closeVolume, startVolume, editVolume, previousVolumesText, removeChronicle,
@@ -108,10 +110,27 @@ const beatTexts = (gm) => (beat) => textsFrom(beatFrom(gm, beat));
 // beat has to bring them to the player, or it never plays out. Someone
 // named long before (Inji, a hundred messages back) still has to come for
 // this beat.
-function beatNewcomers(gm) {
+// Named is not there: someone the beat has taking part who has not been in
+// the scene since it began (Zane, only talked of in Adam's plan) is still to
+// come too. doc: the chat document (its presence record).
+function beatNewcomers(gm, doc = null) {
     const beat = activeBeat(gm.outline);
-    return beat?.ties?.length ? unseenTies(beat.ties, beatTexts(gm)(beat), userName()) : [];
+    if (!beat?.ties?.length) return [];
+    const unnamed = unseenTies(beat.ties, beatTexts(gm)(beat), userName());
+    if (!doc) return unnamed;
+    const away = absentSince(takingPart(beat.text, beat.ties, { isPerson: isKnownPerson, player: userName() }), presentNow(doc), beatFrom(gm, beat));
+    return [...new Set([...unnamed, ...away])];
 }
+
+// Who has been in the scene, and when: the record, and the company samples
+// from before it was kept.
+const presentNow = (doc) => presenceFrom(doc?.company?.samples, doc?.present);
+
+// A day moment's people not in the scene since the plan was made.
+const absentFor = (doc) => (m) => {
+    const since = Number.isInteger(doc?.gm?.day?.madeIndex) && doc.gm.day.madeIndex >= 0 ? doc.gm.day.madeIndex : 0;
+    return absentSince(takingPart(m.text, m.ties, { isPerson: isKnownPerson, player: userName() }), presentNow(doc), since);
+};
 
 // Of those, the ones the story has shown before: they come back - they are
 // no strangers to anyone they have met.
@@ -131,7 +150,7 @@ export function overdueNewcomers(chatKey) {
         const doc = getChatDoc(chatKey);
         const beat = activeBeat(doc.gm.outline);
         if (!beat || doc.gm.newcomer?.beatId !== beat.id || doc.turn - doc.gm.newcomer.since < FIRM_AFTER) return [];
-        return beatNewcomers(doc.gm);
+        return beatNewcomers(doc.gm, doc);
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not read the beat\'s newcomers', err);
         return [];
@@ -469,8 +488,8 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             previous: sameDay ? (planBehindBeat(doc.gm) ? { ...doc.gm.day, moments: doc.gm.day.moments.filter((m) => m.status !== 'pending') } : doc.gm.day) : null,
             rest: rest || sameDay,
             story: storyWords(doc.gm),
-            newcomers: beatNewcomers(doc.gm),
-            returning: beatReturning(doc.gm),
+            newcomers: beatNewcomers(doc.gm, doc),
+            returning: beatReturning(doc.gm, beatNewcomers(doc.gm, doc)),
             company: companyLines(doc.company, { turn: doc.turn, player: userName() }),
             untouched: await factionsToBringIn(chatId, settingId),
             place: (guidance.location?.path ?? []).slice(-1)[0] ?? '',
@@ -479,11 +498,17 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             jobs: jobsLine(opposedJobs(planTexts(doc.gm), { player: [userName()] }), userName()),
             happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today', late: x.late, promise: x.source === 'promise' })),
             world: world?.part ?? null,
+            // What the chat set a time for, beyond the last few messages ("a
+            // major heist tonight at the Arcadia Museum"), and the beats to
+            // come: the day plan saw only the gear being handed out, and
+            // planned more of it.
+            saidWhen: timedHappenings(chatMessages(40).map((m) => m.text).join('\n'), 6),
+            coming: beatsOf(doc.gm.outline).filter((b) => b.status === 'pending').slice(0, 3).map((b) => b.text),
         });
         const plan = readDayPlan(await ask({ system, prompt }), { playerNames: [userName()] });
         if (!plan) throw new Error('The plan had no moments in it.');
         updateChatDoc(chatKey, (d) => {
-            setDayPlan(d.gm, plan, { day: d.canonical.day, turn: d.gm.counters.turn });
+            setDayPlan(d.gm, plan, { day: d.canonical.day, turn: d.gm.counters.turn, index: latestIndex() });
             d.gm.counters.sinceCheck = 0;
             d.gm.counters.lastCheck = new Date().toISOString();
             d.gm.checkWanted = false;
@@ -580,12 +605,12 @@ export async function runCheck(chatId, chatKey) {
         // Nothing is done that the chat does not show: a moment's people,
         // and for the beat, a person no message has named yet.
         const seen = seenTexts();
-        const beatDone = check.beatDone && beat && !beatNewcomers(doc.gm).length;
+        const beatDone = check.beatDone && beat && !beatNewcomers(doc.gm, doc).length;
         updateChatDoc(chatKey, (d) => {
             // Beats called done whose people never turned up are under way again.
             const back = undoUnseenBeats(d.gm, beatTexts(d.gm), userName(), textsFrom(0));
             if (back.length) console.info(LOG_PREFIX, `beats called done without ${back.join(', ')} in the story are back under way`);
-            applyCheck(d.gm, check, { seen, player: userName() });
+            applyCheck(d.gm, check, { seen, player: userName(), absent: absentFor(d) });
             d.gm.counters.sinceCheck = 0;
             d.gm.counters.lastCheck = new Date().toISOString();
             d.gm.checkWanted = false;
@@ -753,7 +778,7 @@ function plannedSection(chatKey, messages) {
         const story = storyState(gm);
         const tense = (tensionNow(gm).now?.overall ?? 0) >= TENSE;
         const pace = paceAim(gm, { level: p.pacing, recentUser, tense, pull });
-        const newcomers = beatNewcomers(gm);
+        const newcomers = beatNewcomers(gm, getChatDoc(chatKey));
         let waited = 0;
         updateChatDoc(chatKey, (d) => {
             stampBeats(d.gm, stampIndex());
@@ -783,7 +808,7 @@ export function takeBeats(chatKey, beats) {
             // play, not what the reply showed (Adam "strode in" there, and
             // never in the story).
             // A seed is planted by the reply this briefing is for.
-            applyBeats(d.gm, beats, { seen: seenTexts(), player: userName(), index: latestIndex() + 1 });
+            applyBeats(d.gm, beats, { seen: seenTexts(), player: userName(), index: latestIndex() + 1, absent: absentFor(d) });
             done = (d.gm.day?.moments ?? []).some((m) => m.status === 'done' && !before.has(m.id));
         });
         if (done) markActive(chatKey);
@@ -895,6 +920,18 @@ export function editOutlineBeat(chatKey, id, text) {
 
 export function lockOutlineBeat(chatKey, id, locked) {
     updateChatDoc(chatKey, (d) => lockBeat(d.gm, id, locked));
+}
+
+export function moveOutlineBeat(chatKey, id, actId, index) {
+    let moved = false;
+    updateChatDoc(chatKey, (d) => { moved = moveBeat(d.gm, id, actId, index); });
+    return moved;
+}
+
+export function stepOutlineBeat(chatKey, id, step) {
+    let moved = false;
+    updateChatDoc(chatKey, (d) => { moved = stepBeat(d.gm, id, step); });
+    return moved;
 }
 
 export function removeOutlineBeat(chatKey, id) {

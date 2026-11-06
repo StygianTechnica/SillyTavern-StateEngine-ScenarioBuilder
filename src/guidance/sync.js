@@ -30,6 +30,8 @@ import { factionSlips, deadActing, correctionText } from './canon.js';
 import { asksWhatNext } from './build.js';
 import { activeBeat, settledNow, touchedSettled, retireSettled, dueToday } from '../planner/model.js';
 import { notYet, notYetLine } from '../planner/timed.js';
+import { closesOut, nextThingLine } from './wrapped.js';
+import { needsPresence, notePresent, rememberPeople } from '../planner/presence.js';
 import { opposedJobs, jobsLine, jobsTouched, planTexts } from '../planner/aims.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { giftsText } from '../library/powers.js';
@@ -288,6 +290,17 @@ export async function gatherInputs(chatId, chatKey) {
             why: c.castIds.length ? 'canonically present' : 'present in the story',
         });
     }
+    // Who has been in the scene, and at which message: a moment or a beat
+    // with someone only talked about has not played out (src/planner/
+    // presence.js) - Zane, named in Adam's plan, never came.
+    try {
+        rememberPeople(allCharacters.flatMap((x) => [x.name, ...(x.aliases ?? x.base?.aliases ?? [])]).filter((n) => typeof n === 'string'));
+        const at = (SillyTavern.getContext().chat ?? []).length - 1;
+        const names = cast.filter((x) => !x.player).flatMap((x) => [x.name, ...(Array.isArray(x.aliases) ? x.aliases : [])]);
+        if (at >= 0 && names.length && needsPresence(doc.present, names, at)) updateChatDoc(chatKey, (d) => { d.present = notePresent(d.present, names, at); });
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not note who is present', err);
+    }
     // How the bloodlines of those here are seen in this place (phase 4).
     if (location && settingId) location.seenHere = seenHereLine(viewsAt(library.overview.population, parents, library.entries, locationId), bloodlineById, cast.map((m) => ({ name: m.name, ids: m.bloodlineIds ?? [] })));
 
@@ -522,6 +535,9 @@ export async function gatherInputs(chatId, chatKey) {
             // What the story set for later today, when the latest messages
             // speak of it: it does not start early (src/planner/timed.js).
             notYet: notYetLine(notYet(dueToday(doc.gm, doc.canonical.day), { today: doc.canonical.day, nowPart: c.dayPart }), (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-3).map((m) => String(m.mes ?? '')).join('\n')),
+            // The player's post closed out what they were doing: the reply
+            // brings them the next thing (src/guidance/wrapped.js).
+            nextThing: closesOut(latestPlayerPost()) ? nextThingLine({ player: SillyTavern.getContext().name1 ?? '', lead: notYet(dueToday(doc.gm, doc.canonical.day), { today: doc.canonical.day, nowPart: c.dayPart })[0]?.text ?? dueToday(doc.gm, doc.canonical.day)[0]?.text ?? '' }) : '',
             // Whose job is whose (src/planner/aims.js), when the latest
             // messages speak of it.
             jobs: jobsLine(jobsTouched(opposedJobs(planTexts(doc.gm), { player: [SillyTavern.getContext().name1 ?? ''] }), (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-3).map((m) => String(m.mes ?? '')).join('\n')), SillyTavern.getContext().name1 ?? ''),

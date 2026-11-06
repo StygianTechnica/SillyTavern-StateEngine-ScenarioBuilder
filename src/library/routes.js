@@ -100,13 +100,26 @@ export function placesFurtherOn(fromId, routes, maxLegs = 3) {
 // the bridge tomorrow", or in speech). `ways`: [{ id, names }] of the
 // places the routes from here lead to.
 // -> { id, name, together } (together: the party goes as one) or null.
-const SETTING_OUT = /\b(?:set(?:s|ting)? out|set off|mount(?:s|ed|ing)? up|rode|ride(?:s)? (?:out|off|on)|head(?:s|ed|ing)? (?:out|off|for|to|toward|towards)|(?:made|make|makes|making) (?:their|our|his|her|my|the) way|journey(?:s|ed)?|travel(?:s|led|ed|ling|ing)?|depart(?:s|ed|ing)?|(?:left|leave|leaves|leaving) for|on the road|hit the road|march(?:es|ed|ing)? (?:out|off|on|for|to)|next leg|continu(?:e|es|ed|ing) (?:on|onward|onwards|to|toward|towards|for)|(?:press|push)(?:es|ed|ing)? on|(?:go|goes|went) (?:on )?(?:to|toward|towards|for)|rode (?:on|out|off)|(?:carried|carry|carries) on)\b/i;
+const SETTING_OUT = /\b(?:set(?:s|ting)? out|set off|mount(?:s|ed|ing)? up|rode|ride(?:s)? (?:out|off|on)|head(?:s|ed|ing)? (?:out|off|for|to|toward|towards)|(?:made|make|makes|making) (?:their|our|his|her|my|the) way|journey(?:s|ed)?|travel(?:s|led|ed|ling|ing)?|depart(?:s|ed|ing)?|(?:left|leave|leaves|leaving) for|on the road|hit the road|march(?:es|ed|ing)? (?:out|off|on|for|to)|next leg|continu(?:e|es|ed|ing) (?:on|onward|onwards|to|toward|towards|for)|(?:press|push)(?:es|ed|ing)? on|(?:go|goes|went) (?:on )?(?:to|toward|towards|for)|rode (?:on|out|off)|(?:carried|carry|carries) on|disappear(?:s|ed|ing)? (?:in)?to|(?:asked|asks|asking) (?:for )?(?:the )?directions to|(?:made|makes|making) for|(?:went|goes|go|going|is|was) off to|(?:walked|walks|walking|wandered|wanders|strode|strolled|hurried|ran|jogged) (?:off |over |down |up )?(?:to|toward|towards|into))\b/i;
 const NOT_YET = /\b(?:will|would|shall|should|tomorrow|tonight|later|soon|plan(?:s|ned)?|going to|could|might|if)\b|'ll\b/i;
 const TOGETHER = /\b(?:they|we|the group|the party|everyone|together|all of (?:us|them)|companions)\b/i;
+// "So he could practice" says why, not that the trip is only planned.
+const PURPOSE = /\bso (?:that )?(?:he|she|they|i|we|you|it)\s+(?:could|would|might|can)\b/gi;
+const notYet = (s) => NOT_YET.test(s.replace(PURPOSE, ' '));
+// Kinds of place a post may name instead of the place ("the gun range"):
+// the words for the kind, and the last words of names of that kind.
+const KINDS = [
+    { said: ['range', 'firing range', 'gun range', 'shooting range', 'target range'], ends: ['range'] },
+    { said: ['gym', 'training room', 'training hall', 'dojo'], ends: ['gym', 'dojo'] },
+    { said: ['infirmary', 'medbay', 'med bay', 'clinic', 'sickbay', 'sick bay'], ends: ['infirmary', 'medbay', 'clinic', 'sickbay', 'bay'] },
+    { said: ['mess', 'mess hall', 'canteen', 'cafeteria', 'dining hall'], ends: ['mess', 'canteen', 'cafeteria'] },
+    { said: ['garage', 'motor pool', 'hangar'], ends: ['garage', 'pool', 'hangar'] },
+    { said: ['armory', 'armoury'], ends: ['armory', 'armoury'] },
+];
 export function headingAlong(text, ways) {
     const plain = String(text ?? '').replace(/"[^"]*"|“[^”]*”/g, ' ').replace(/’/g, "'");
     const sentences = plain.replace(/\s+/g, ' ').match(/[^.!?…]+[.!?…]*/g) ?? [];
-    const going = sentences.filter((s) => SETTING_OUT.test(s) && !NOT_YET.test(s));
+    const going = sentences.filter((s) => SETTING_OUT.test(s) && !notYet(s));
     if (!going.length) return null;
     const bare = (n) => String(n ?? '').toLowerCase().replace(/^the\s+/, '').replace(/[^a-z0-9'À-ɏ]+/g, ' ').trim();
     const lower = ` ${bare(plain)} `;
@@ -117,9 +130,17 @@ export function headingAlong(text, ways) {
             if (name.length >= 4 && lower.includes(` ${name} `) && (!best || name.length > best.len)) best = { id: w.id, name: String(n), len: name.length };
         }
     }
+    // No name: the kind of place a going sentence heads for, when just one
+    // of the places has a name of that kind ("the gun range" - The Range).
+    if (!best) {
+        const said = ` ${bare(going.join(' '))} `;
+        const kinds = KINDS.filter((k) => k.said.some((w) => said.includes(` ${w} `)));
+        const fits = kinds.length ? (ways ?? []).filter((w) => (w.names ?? []).some((n) => { const words = bare(n).split(' '); return kinds.some((k) => k.ends.includes(words[words.length - 1])); })) : [];
+        return fits.length === 1 ? { id: fits[0].id, name: String(fits[0].names[0]), together: going.some((s) => TOGETHER.test(s)), byKind: true } : null;
+    }
     // Spoken of only where the plan is told ("we'll reach the bridge by
     // nightfall") is not setting out.
-    if (!best || sentences.filter((s) => ` ${bare(s)} `.includes(` ${bare(best.name)} `)).every((s) => NOT_YET.test(s))) return null;
+    if (sentences.filter((s) => ` ${bare(s)} `.includes(` ${bare(best.name)} `)).every((s) => notYet(s))) return null;
     return { id: best.id, name: best.name, together: going.some((s) => TOGETHER.test(s)) };
 }
 

@@ -11,7 +11,7 @@ import { URGENCIES, LEVELS, PACINGS, LEVEL_CADENCE, FIRST_OUTLINE_AFTER, isVeile
 import { SHAPES, shapeCurve, targetAt } from '../planner/shapes.js';
 import {
     getPlannerStatus, runDay, runCheck, runInspire, runOutline, runBeat, queueRequest, withdrawRequest, addInspiration, removeInspiration,
-    setMotifs, peek, setHold, storyState, setShape, editOutlineBeat, lockOutlineBeat, removeOutlineBeat, addOutlineBeat,
+    setMotifs, peek, setHold, storyState, setShape, editOutlineBeat, lockOutlineBeat, removeOutlineBeat, addOutlineBeat, moveOutlineBeat, stepOutlineBeat,
     finishOutlineBeat, restoreOutlineBeat, setOutlineText, setJoin, finishVolume, editFinishedVolume, removeChronicleLine, steerObjects,
     runIdeas, acceptIdea, dismissIdea, editProposal, addAgendaItem, removeAgendaItem, removeDayItem, addSettledItem, removeSettledItem, setCreationMode,
     writeStarter, postStarter, starterSpeakers,
@@ -171,7 +171,42 @@ function shapePicker(current, onPick) {
     }, h('b', {}, s.label), h('small', {}, s.blurb))));
 }
 
-function beatRow(gm, beat, { veiled, chatId, chatKey, busy }) {
+// Dragging a beat still to come to another place in the outline: the beat
+// being dragged, and where it would land.
+let dragging = '';
+const clearDrop = () => document.querySelectorAll('.sb-gm-drop-before, .sb-gm-drop-after, .sb-gm-drop-end').forEach((el) => el.classList.remove('sb-gm-drop-before', 'sb-gm-drop-after', 'sb-gm-drop-end'));
+// The row's half the pointer is over: before it or after it.
+const dropAfter = (e, el) => { const r = el.getBoundingClientRect(); return e.clientY > r.top + r.height / 2; };
+
+function dragHandlers(chatKey, beat, act, index, open) {
+    return {
+        draggable: open ? 'true' : null,
+        ondragstart: open ? (e) => { dragging = beat.id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', beat.id); e.currentTarget.classList.add('sb-gm-dragging'); } : null,
+        ondragend: (e) => { dragging = ''; e.currentTarget.classList.remove('sb-gm-dragging'); clearDrop(); },
+        ondragover: (e) => {
+            if (!dragging) return;
+            e.preventDefault();
+            e.stopPropagation();
+            clearDrop();
+            e.currentTarget.classList.add(dropAfter(e, e.currentTarget) ? 'sb-gm-drop-after' : 'sb-gm-drop-before');
+        },
+        ondrop: (e) => {
+            if (!dragging) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const id = dragging;
+            dragging = '';
+            clearDrop();
+            // Its place among the act's beats without the one being dragged.
+            const others = act.beats.filter((b) => b.id !== id);
+            const at = others.findIndex((b) => b.id === beat.id);
+            if (id === beat.id || at < 0) return;
+            if (moveOutlineBeat(chatKey, id, act.id, at + (dropAfter(e, e.currentTarget) ? 1 : 0))) done();
+        },
+    };
+}
+
+function beatRow(gm, beat, { veiled, chatId, chatKey, busy, act = null, index = 0 }) {
     if (veiled) {
         return h('div', { class: 'sb-gm-row sb-gm-veiled' }, icon('fa-mask'), h('span', { class: 'sb-muted' }, 'A beat to come'),
             h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); peek(chatKey, beat.id); done(); } }, 'peek'));
@@ -192,13 +227,16 @@ function beatRow(gm, beat, { veiled, chatId, chatKey, busy }) {
     }
     const open = beat.status === 'pending' || beat.status === 'active';
     const off = busy ? 'true' : null;
-    return h('div', { class: `sb-gm-row sb-gm-beat sb-gm-beat-${beat.status}` },
+    return h('div', { class: `sb-gm-row sb-gm-beat sb-gm-beat-${beat.status}`, ...(act ? dragHandlers(chatKey, beat, act, index, open) : {}) },
+        open && act ? h('span', { class: 'sb-gm-grip', title: 'Drag to move this beat' }, icon('fa-grip-vertical')) : null,
         head,
         h('div', { class: 'sb-gm-text' }, beat.text, beat.note ? h('small', { class: 'sb-hint' }, ` (${beat.note})`) : null),
         h('div', { class: 'sb-chips' },
             beat.by === 'user' ? h('span', { class: 'sb-chip', title: 'Your beat' }, icon('fa-user-pen')) : null,
             ...beat.ties.slice(0, 3).map((t) => h('span', { class: 'sb-chip' }, t)),
             open ? h('div', { class: 'sb-iconbtn', title: beat.locked ? 'Locked: the planner keeps it as written. Click to unlock.' : 'Lock it: the planner keeps it as written', onclick: () => { lockOutlineBeat(chatKey, beat.id, !beat.locked); done(); } }, icon(beat.locked ? 'fa-lock' : 'fa-lock-open')) : null,
+            open && act ? h('div', { class: 'sb-iconbtn', title: 'Move up', onclick: () => { if (stepOutlineBeat(chatKey, beat.id, -1)) done(); } }, icon('fa-arrow-up')) : null,
+            open && act ? h('div', { class: 'sb-iconbtn', title: 'Move down', onclick: () => { if (stepOutlineBeat(chatKey, beat.id, 1)) done(); } }, icon('fa-arrow-down')) : null,
             open ? h('div', { class: 'sb-iconbtn', title: 'Edit', onclick: () => startEdit(`beat:${beat.id}`, beat.text) }, icon('fa-pen')) : null,
             open ? h('div', { class: 'sb-iconbtn', title: 'Regenerate this beat', onclick: busy ? null : () => startEdit(`regen:${beat.id}`, ''), 'aria-disabled': off }, icon('fa-dice')) : null,
             // A skipped beat (the planner judged it could no longer happen):
@@ -285,10 +323,16 @@ function outlineCard(gm, show) {
         ...(outline?.acts ?? []).map((act, i) => {
             // Spoilers: the current act and what is done show; acts to come are veiled.
             const ahead = cur && i > cur.index;
-            return h('div', { class: `sb-gm-act${cur && i === cur.index ? ' current' : ''}` },
+            // Dropped on the act but on no beat: to the end of it.
+            const onAct = {
+                ondragover: (e) => { if (!dragging) return; e.preventDefault(); clearDrop(); e.currentTarget.classList.add('sb-gm-drop-end'); },
+                ondragleave: (e) => { if (e.currentTarget === e.target) e.currentTarget.classList.remove('sb-gm-drop-end'); },
+                ondrop: (e) => { if (!dragging) return; e.preventDefault(); const id = dragging; dragging = ''; clearDrop(); if (moveOutlineBeat(chatKey, id, act.id, act.beats.filter((b) => b.id !== id).length)) done(); },
+            };
+            return h('div', { class: `sb-gm-act${cur && i === cur.index ? ' current' : ''}`, ...onAct },
                 h('div', { class: 'sb-gm-sub' }, `Chapter ${i + 1}: ${act.title}`,
                     act.beats.length < 10 && !isEditing(`add:${act.id}`) ? h('a', { href: '#', class: 'sb-gm-peek', onclick: (e) => { e.preventDefault(); startEdit(`add:${act.id}`, ''); } }, '+ beat') : null),
-                ...act.beats.map((b) => beatRow(gm, b, { veiled: ahead && b.status === 'pending' && isVeiled(gm, b.id, show), chatId, chatKey, busy })),
+                ...act.beats.map((b, j) => beatRow(gm, b, { veiled: ahead && b.status === 'pending' && isVeiled(gm, b.id, show), chatId, chatKey, busy, act, index: j })),
                 isEditing(`add:${act.id}`) ? inlineEditor(`add:${act.id}`, { onSave: (text) => addOutlineBeat(chatKey, act.id, text), placeholder: `A new beat for "${act.title}"`, saveLabel: 'Add', saveIcon: 'fa-plus', hint: 'Your beat is locked: the planner keeps it. Ctrl+Enter to add, Esc to cancel.' }) : null);
         }),
         isEditing('regen-outline') ? regeneratePanel(chatId, chatKey) : null,

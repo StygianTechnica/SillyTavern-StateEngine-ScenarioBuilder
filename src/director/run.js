@@ -950,7 +950,9 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         }
         // Someone listed ELSEWHERE cannot turn up in this scene - unless the
         // player's own post brings them (src/director/whereabouts.js).
-        const farAway = elsewhereEntering(parsed.enters, { characters, elsewhere, castIds: baseCast, userPost: [...messages].reverse().find((m) => m.isUser)?.text ?? '', namedIn: peopleNamedIn, namesOf: callNames });
+        // Those the beat has waited on too long are not kept out for being
+        // away a while: they come to the player, as the beat needs.
+        const farAway = elsewhereEntering(parsed.enters.filter((n) => !overdue.some((c) => c.name === n)), { characters, elsewhere, castIds: baseCast, userPost: [...messages].reverse().find((m) => m.isUser)?.text ?? '', namedIn: peopleNamedIn, namesOf: callNames });
         if (farAway.length) {
             console.info(LOG_PREFIX, `${farAway.join(', ')} ${farAway.length === 1 ? 'is' : 'are'} elsewhere - not brought into this scene`);
             parsed.enters = parsed.enters.filter((n) => !farAway.includes(n));

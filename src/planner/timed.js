@@ -17,7 +17,8 @@ const WHEN = new RegExp(`\\b(?:tonight|this (?:morning|afternoon|evening)|(?:the
 const NOT_SET = /\b(?:not|never|no longer|cancel(?:s|led|ed)?|called off|call(?:ing)? off|postponed|if|unless|would have|could have|wish|wonder|maybe|perhaps|last night|yesterday)\b|n't\b/i;
 
 // -> [{ what, when }]: each sentence naming a happening and its time.
-export function timedHappenings(text) {
+// max: how many, the latest kept.
+export function timedHappenings(text, max = 3) {
     const plain = String(text ?? '').replace(/[“”]/g, '"').replace(/’/g, "'").replace(/\s+/g, ' ');
     const sentences = plain.match(/[^.!?…]+[.!?…]*/g) ?? [];
     const out = [];
@@ -29,7 +30,7 @@ export function timedHappenings(text) {
         const what = cut(s.replace(/^(?:so|and|but|well|look|okay|ok|now|it seems|it looks like)[,\s]+/i, ''), 220);
         if (!out.some((x) => x.what === what)) out.push({ what, when: when.toLowerCase() });
     }
-    return out.slice(0, 3);
+    return out.slice(-max);
 }
 
 const PARTS = ['dawn', 'morning', 'midday', 'afternoon', 'evening', 'night'];

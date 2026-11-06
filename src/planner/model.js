@@ -145,6 +145,9 @@ function normalizeDay(d) {
         day: d.day,
         madeAt: str(d.madeAt),
         madeTurn: int(d.madeTurn),
+        // The chat index when the plan was made: its moments' people are
+        // looked for from there on (src/planner/presence.js).
+        madeIndex: Number.isInteger(d.madeIndex) ? d.madeIndex : -1,
         // The outline's beat when the plan was made: a new beat makes the
         // rest of the day again (duePasses).
         beatId: str(d.beatId),
@@ -352,9 +355,9 @@ export function settleRequests(gm) {
 
 // Takes a DAY pass's answer in as the day's plan. Requests it planned for
 // are marked; ids are the planner's own (m1, m2...).
-export function setDayPlan(gm, plan, { day, turn, at = new Date().toISOString() }) {
+export function setDayPlan(gm, plan, { day, turn, index = -1, at = new Date().toISOString() }) {
     const moments = (plan.moments ?? []).map((m, i) => normalizeMoment({ ...m, id: `m${i + 1}`, status: 'pending', source: m.happening && gm.agenda.some((x) => x.id === m.happening) ? `agenda:${m.happening}` : m.source }, i)).filter(Boolean).slice(0, MOMENT_LIMIT);
-    gm.day = normalizeDay({ day, madeAt: at, madeTurn: turn, beatId: activeBeat(gm.outline)?.id ?? '', moments, agendas: plan.agendas, offscreen: plan.offscreen });
+    gm.day = normalizeDay({ day, madeAt: at, madeTurn: turn, madeIndex: index, beatId: activeBeat(gm.outline)?.id ?? '', moments, agendas: plan.agendas, offscreen: plan.offscreen });
     // Requests planned for an earlier day that never happened wait again.
     for (const r of gm.queue) if (r.status === 'planned') { r.status = 'waiting'; r.plannedAs = []; }
     planRequests(gm, plan.requests, moments);
@@ -403,11 +406,13 @@ export function unseenTies(ties, texts, player = '') {
 // requests: [{ request, moments: [index into add, from 1] }] }. seen: the
 // chat the pass read (with `player`); a moment it calls done whose people
 // that chat never shows stays pending - the model said so, the story did not.
-export function applyCheck(gm, check, { seen = null, player = '' } = {}) {
+// absent(moment) -> the people it has taking part who have not been in the
+// scene since the plan was made (src/planner/presence.js): named is not there.
+export function applyCheck(gm, check, { seen = null, player = '', absent = () => [] } = {}) {
     if (!gm.day) return;
     const mark = (id, status, note) => {
         const m = gm.day.moments.find((x) => x.id === clean(id));
-        if (status === 'done' && m && seen && unseenTies(m.ties, seen, player).length) return;
+        if (status === 'done' && m && ((seen && unseenTies(m.ties, seen, player).length) || absent(m).length)) return;
         if (m && m.status === 'pending') {
             m.status = status;
             if (note) m.note = clean(note);
@@ -431,7 +436,7 @@ export function applyCheck(gm, check, { seen = null, player = '' } = {}) {
 // seen: the chat and the director's briefing - a moment done there has
 // its people in them (as applyCheck).
 // -> true when a beat was skipped (the plan needs a CHECK).
-export function applyBeats(gm, beats, { seen = null, player = '', index = -1 } = {}) {
+export function applyBeats(gm, beats, { seen = null, player = '', index = -1, absent = () => [] } = {}) {
     if (!beats?.length) return false;
     // A seed planted in passing, or one the story has left no room for.
     for (const b of beats.filter((x) => /^s\d+$/i.test(clean(x.id)))) {
@@ -454,7 +459,7 @@ export function applyBeats(gm, beats, { seen = null, player = '', index = -1 } =
     for (const b of beats) {
         const m = gm.day.moments.find((x) => x.id === clean(b.id).toLowerCase());
         if (!m || m.status !== 'pending') continue;
-        if (b.status === 'done' && seen && unseenTies(m.ties, seen, player).length) continue;
+        if (b.status === 'done' && ((seen && unseenTies(m.ties, seen, player).length) || absent(m).length)) continue;
         m.status = b.status === 'done' ? 'done' : 'skipped';
         m.note = clean(b.note);
         if (m.status === 'skipped') skipped = true;
@@ -841,6 +846,44 @@ export function addBeat(gm, actId, text) {
     act.beats.push(beat);
     settleActive(gm.outline);
     return beat;
+}
+
+// The user moves a beat still to come: into act `actId` at `index` (its
+// place among that act's beats as they stand without it). Beats already
+// played out stay where they are, and nothing goes in front of them; an act
+// keeps at most BEAT_LIMIT beats. The beat under way stays the beat now.
+// -> true when it moved.
+export function moveBeat(gm, id, actId, index) {
+    const acts = gm.outline?.acts ?? [];
+    const from = acts.find((a) => a.beats.some((b) => b.id === id));
+    const to = acts.find((a) => a.id === actId);
+    const beat = from?.beats.find((b) => b.id === id);
+    if (!beat || !to || past(beat) || (to !== from && to.beats.length >= BEAT_LIMIT)) return false;
+    const rest = to.beats.filter((b) => b.id !== id);
+    // Not before the last beat of the act already played out.
+    const floor = rest.reduce((n, b, i) => (past(b) ? i + 1 : n), 0);
+    const at = Math.max(floor, Math.min(rest.length, Number.isInteger(index) ? index : rest.length));
+    const before = acts.map((a) => a.beats.map((b) => b.id).join(',')).join('|');
+    if (to !== from) from.beats = from.beats.filter((b) => b.id !== id);
+    to.beats = [...rest.slice(0, at), beat, ...rest.slice(at)];
+    if (acts.map((a) => a.beats.map((b) => b.id).join(',')).join('|') === before) return false;
+    // A moved beat is the user's arrangement: the planner keeps it.
+    beat.locked = true;
+    settleActive(gm.outline);
+    return true;
+}
+
+// One step up or down (-1, 1) through the outline, across acts: the
+// buttons beside a beat, for touch screens where dragging does not work.
+export function stepBeat(gm, id, step) {
+    const acts = gm.outline?.acts ?? [];
+    const ai = acts.findIndex((a) => a.beats.some((b) => b.id === id));
+    if (ai < 0) return false;
+    const bi = acts[ai].beats.findIndex((b) => b.id === id);
+    const others = acts[ai].beats.length - 1;
+    if (step < 0 && bi === 0) return ai > 0 && moveBeat(gm, id, acts[ai - 1].id, acts[ai - 1].beats.length);
+    if (step > 0 && bi === others) return ai < acts.length - 1 && moveBeat(gm, id, acts[ai + 1].id, 0);
+    return moveBeat(gm, id, acts[ai].id, bi + (step < 0 ? -1 : 1));
 }
 
 // A regenerated beat (the BEAT pass): new words from the planner, so it is

@@ -162,6 +162,26 @@ export function decide(classification, policy) {
     }
 }
 
+// Whether a scene summary is about people none of whom are in the scene:
+// it names library characters, and every one it names is away.
+// objects: Map id -> { type, name }; here: ids in the scene.
+export function cutAway(summary, objects, here = []) {
+    const text = String(summary ?? '');
+    if (!text.trim() || !objects?.size) return false;
+    const inScene = new Set(here);
+    const named = [];
+    for (const obj of objects.values()) {
+        if (obj?.type !== 'character' || !obj.name) continue;
+        const full = String(obj.name).trim();
+        // The whole name, or a word of it written as a name ("Miller").
+        const words = full.split(/\s+/).filter((w) => w.length >= 3 && /^\p{Lu}/u.test(w) && !/^(?:The|And|Von|Van|Der|Del|Dr\.?|Mr\.?|Mrs\.?|Lady|Lord|Sir)$/.test(w));
+        const forms = [full, ...words.filter((w) => w !== full)];
+        const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (forms.some((n) => new RegExp(`(^|[^\\p{L}])${esc(n)}(?!\\p{L})`, 'u').test(text))) named.push(obj.id);
+    }
+    return named.length > 0 && named.every((id) => !inScene.has(id));
+}
+
 // Every difference worth acting on.
 //   input: { canonical, observed (readObserved), lastObserved (readObserved
 //            or {}), objects: Map id -> { id, type, name, confirmed },
@@ -175,11 +195,16 @@ export function detectDrift({ canonical, observed, lastObserved = {}, objects = 
     const items = [];
     const policyOf = (field) => (POLICY_VALUES.includes(policies?.[field]) ? policies[field] : DEFAULT_POLICIES[field]);
     const decideFor = decide;
+    // A reply that cuts away to others elsewhere ("As Cyril departed to the
+    // gun range, Miller turned back to planning with Vex, Doc and Galice")
+    // is not the scene: its summary and title are not taken.
+    const away = cutAway(observed.summary, objects, [...list(canonical.castIds), ...list(observed.cast)]);
 
     for (const [field, { canonical: key }] of Object.entries(OBSERVED_FIELDS)) {
         const obs = observed[field];
         const can = canonical[key];
         if (isBlank(field, obs)) continue;
+        if (away && (field === 'summary' || field === 'title')) continue;
         if (valuesEqual(field, obs, can)) continue;
         if (field in lastObserved && valuesEqual(field, obs, lastObserved[field])) continue;
         const policy = policyOf(field);

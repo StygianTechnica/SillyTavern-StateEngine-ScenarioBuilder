@@ -101,6 +101,7 @@ import { normalizeCombatMeta, STANCES } from '../director/combat.js';
 import { normalizeSuspended } from '../director/suspended.js';
 import { emptyHearts, normalizeHearts, JEALOUSY_MODES } from '../director/jealousy.js';
 import { emptyCompany, normalizeCompany } from '../director/company.js';
+import { normalizePresent } from '../planner/presence.js';
 import { normalizeEvent, normalizeEventsDone, normalizeEventsComing } from '../events/model.js';
 import { normalizeTemplates } from '../events/setup.js';
 import { emptyChanges, normalizeChanges } from '../state/changes-model.js';
@@ -510,6 +511,9 @@ export function emptyChatDoc() {
         // How the player character has felt with the others: who they want
         // around, and the user's word on it (src/director/company.js).
         company: emptyCompany(),
+        // Who has been in the scene, by name, and the latest chat index
+        // (src/planner/presence.js).
+        present: {},
     };
 }
 
@@ -561,6 +565,7 @@ export function normalizeChatDoc(doc) {
         suspended: normalizeSuspended(d.suspended),
         hearts: normalizeHearts(d.hearts),
         company: normalizeCompany(d.company),
+        present: normalizePresent(d.present),
     };
 }
 

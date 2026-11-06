@@ -437,7 +437,10 @@ export function buildNow(input) {
     // What the story set for later today (src/planner/timed.js): the heist
     // set for tonight came over the intercom in the morning.
     const notYet = clean(input.notYet);
-    if (!arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet) return '';
+    // The player's post closed out what they were doing (src/guidance/
+    // wrapped.js): Cyril's practice at the range, and the reply cut away.
+    const nextThing = next ? '' : clean(input.nextThing);
+    if (!arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (corrections) orders.push(corrections);
@@ -452,6 +455,7 @@ export function buildNow(input) {
     if (sides) orders.push(sides);
     if (jobs) orders.push(jobs);
     if (notYet) orders.push(notYet);
+    if (nextThing) orders.push(nextThing);
     if (named) orders.push(named);
     if (settled.length) orders.push(`Settled and done with - no one acts as if it were otherwise, and no one argues it, asks about it or brings it up again unless someone else does: ${settled.map(unstop).join('; ')}.`);
     return `[Game master's note for this reply, not part of the story: ${orders.join(' ')}${player ? ` Write only the others; never ${clean(player.name)}.` : ''}]`;

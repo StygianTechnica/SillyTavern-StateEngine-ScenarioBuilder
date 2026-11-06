@@ -89,6 +89,13 @@ export function buildDayPrompt(input) {
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (echo them as images and turns of fate, never as literal events)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));
     const story = storyText(input.story);
     if (story) parts.push('', 'WHERE THE STORY IS GOING (let today serve this beat and this aim, without forcing it)', story);
+    // The beats after the next, and what the chat set a time for beyond the
+    // latest messages: the day built toward neither (src/planner/timed.js).
+    const coming = texts(input.coming, 3).filter((t) => t !== clean(input.story?.next) && t !== clean(input.story?.beat));
+    if (coming.length) parts.push('', 'LATER IN THE OUTLINE (where the story is headed after that)', ...coming.map((t) => `- ${t}`));
+    const said = list(input.saidWhen).filter((x) => clean(x?.what) && clean(x?.when));
+    if (said.length) parts.push('', 'WHAT THE CHAT SET A TIME FOR (the recent chat, oldest first; the latest words win, and "tonight" said on an earlier day is past)', ...said.map((x) => `- ${cut(x.what, 200)} [${clean(x.when)}]`));
+    const buildsTo = said.length || coming.length;
     parts.push(...untouchedPart(input.untouched, `FACTIONS NOT YET IN PLAY (an agenda, an off-screen move or a moment of the day may come from one of these where it fits - someone of theirs, word of them; work or an offer ${userName} is given can come from them, not always from the same faction)`));
     // The beat's people the story has not shown yet: an agenda alone keeps
     // them off stage, so the day brings them to the player.
@@ -117,6 +124,7 @@ export function buildDayPrompt(input) {
         `PLAN ${input.rest ? 'THE REST OF THE DAY' : 'THE DAY'}${clean(input.dateText) ? ` - ${clean(input.dateText)}` : ''}${clean(input.dayPart) ? `, starting ${clean(input.dayPart)}` : ''}`,
         ...(clean(input.place) ? [`The scene is at ${clean(input.place)}${clean(input.situation) ? `, where ${unstopFirst(input.situation)}` : ''}. That is where things stand - already played. The plan picks up after it; moments elsewhere happen only if the story would plausibly go there today.`] : []),
         'Two to five moments, in the order they could happen: something someone does, an arrival, news, a discovery, a complication, a quiet beat. Each grows out of what is above, moves a thread, a person\'s agenda or a request along, and leaves the player free to respond. Vary them: not every moment is a crisis.',
+        `Spread them across the day from now to its end, not all in the next hour - and not more of what the scene is already doing.${buildsTo ? ` When something is set for later today (above), the day builds to it: the moments get the people ready and bring them together for it, and the last of them is it beginning at its time.` : ''}`,
         `A moment is what the world does around ${userName}, never what ${userName} does: its subject is someone else, a faction, or the world itself (news, an arrival, a turn of events). Never "${userName} goes" or "${userName} and a friend confront" - you do not play ${userName}. Where a moment answers something ${userName} might do, that goes in its trigger and the moment is how the world answers it (trigger "if ${userName} goes to the docks", moment "a crew is waiting there with a job").`,
         ...(clean(input.story?.beat) ? [
             `At least one moment moves the beat now along, done by the people it names. An agenda fits the beat: someone the beat has acting today wants to get there (they may hesitate or bargain on the way), not the opposite - unless the latest chat shows them refusing it.`,
