@@ -815,7 +815,7 @@ function plannedSection(chatKey, messages) {
         let waited = 0;
         updateChatDoc(chatKey, (d) => {
             stampBeats(d.gm, stampIndex());
-            waited = newcomerWait(d.gm, newcomers.length ? activeBeat(d.gm.outline)?.id : '', d.turn);
+            waited = newcomerWait(d.gm, newcomers.length ? activeBeat(d.gm.outline)?.id : '', d.turn, { beatNow: activeBeat(d.gm.outline)?.id ?? '' });
         });
         const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3), newcomers, returning: beatReturning(gm, newcomers), waited });
         // The world meanwhile: nothing while the scene is tense or lingering;

@@ -63,4 +63,13 @@ describe('a newcomer kept waiting', () => {
         expect(planSection(g, { newcomers: ['Adam Miller'], waited: 1 })).toMatch(/Not yet in the story: Adam Miller/);
         expect(newcomerWait(g, 'b3', 20)).toBe(0);
     });
+    it('keeps the count through a turn no one was awaited, on the same beat', () => {
+        const g = gm();
+        newcomerWait(g, 'b1', 10);
+        expect(newcomerWait(g, '', 12, { beatNow: 'b1' })).toBe(0);
+        expect(newcomerWait(g, 'b1', 14)).toBe(4);
+        // A new beat starts over.
+        newcomerWait(g, '', 15, { beatNow: 'b2' });
+        expect(g.newcomer).toBeNull();
+    });
 });

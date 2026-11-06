@@ -323,12 +323,15 @@ function enrichThin(chatId, chatKey, settingId, guidance) {
 const isNewTurn = (type) => !type || type === 'normal';
 
 // Those the beat has waited on past the firm line (src/planner/run.js
-// overdueNewcomers) who can come in now: not here already, not taken out
-// by hand, not waiting where the story left off, not dead.
+// overdueNewcomers) who can come in now: not taken out by hand, not
+// waiting where the story left off, not dead. One already in the cast whom
+// the chat has not shown since the beat began is among them: in the cast
+// is not in the story (Zane, left in the cast by a replaced swipe, never
+// written in) - they are written arriving, the cast unchanged.
 function overdueHere(chatKey, characters, castIds, { heldOut = new Set(), waitingNow = new Set(), dead = [] } = {}) {
     return overdueNewcomers(chatKey)
         .map((tie) => characters.find((c) => !isPower(c) && callNames(c).some((n) => n.toLowerCase() === tie.toLowerCase() || n.toLowerCase().startsWith(`${tie.toLowerCase()} `))))
-        .filter((c, i, all) => c && all.indexOf(c) === i && !castIds.includes(c.id) && !heldOut.has(c.id) && !waitingNow.has(c.id) && !dead.some((d) => d.id === c.id));
+        .filter((c, i, all) => c && all.indexOf(c) === i && !heldOut.has(c.id) && !waitingNow.has(c.id) && !dead.some((d) => d.id === c.id));
 }
 
 // Who arrives and leaves, by name (and the new people who are here).
@@ -1131,6 +1134,12 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             if (await markDead(chatKey, { id: c.id, name: c.name, how, source: 'director', chatId, reply: replyIndex })) console.info(LOG_PREFIX, `${c.name} died: ${how || 'in the story'}`);
         }
         moves = after.names;
+        // In the cast but never shown since the beat began: written arriving.
+        const unshown = overdue.filter((c) => baseCast.includes(c.id) && after.castIds.includes(c.id)).map((c) => c.name);
+        if (unshown.length) {
+            console.info(LOG_PREFIX, `${unshown.join(', ')} in the cast but never shown - written arriving`);
+            moves = { ...moves, in: [...new Set([...moves.in, ...unshown])] };
+        }
         if (moves.in.length || moves.out.length) {
             const note2 = [moves.in.length ? `${moves.in.join(', ')} arrive${moves.in.length === 1 ? 's' : ''}` : '', moves.out.length ? `${moves.out.join(', ')} leave${moves.out.length === 1 ? 's' : ''}` : ''].filter(Boolean).join('; ');
             setCanonical(chatKey, { castIds: after.castIds }, { chatId, source: 'director', note: note2 });
@@ -1256,11 +1265,13 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         const heldOut = new Set(doc2.held.filter((h) => h.field === 'cast' && h.op === 'remove' && h.until > doc2.turn).map((h) => h.objectId));
         const overdue = overdueHere(chatKey, characters, castNow, { heldOut, waitingNow, dead: doc2.dead })
             .filter((c) => !elsewhereEntering([c.name], { characters, elsewhere: [...ground.barred.values()], castIds: castNow, userPost: [...messages].reverse().find((m) => m.isUser)?.text ?? '', namedIn: peopleNamedIn, namesOf: callNames }).length);
-        if (overdue.length) {
-            const names = overdue.map((c) => c.name);
+        const joining = overdue.filter((c) => !castNow.includes(c.id));
+        if (joining.length) {
+            const names = joining.map((c) => c.name);
             console.info(LOG_PREFIX, `${names.join(', ')} brought in on the swipe - the beat has waited on them too long`);
-            setCanonical(chatKey, { castIds: [...castNow, ...overdue.map((c) => c.id)] }, { chatId, source: 'director', note: `${names.join(', ')} arrive${names.length === 1 ? 's' : ''}` });
+            setCanonical(chatKey, { castIds: [...castNow, ...joining.map((c) => c.id)] }, { chatId, source: 'director', note: `${names.join(', ')} arrive${names.length === 1 ? 's' : ''}` });
         }
+        if (overdue.length > joining.length) console.info(LOG_PREFIX, `${overdue.filter((c) => castNow.includes(c.id)).map((c) => c.name).join(', ')} in the cast but never shown - written arriving`);
         const names = [...new Set([...still, ...overdue].map((c) => c.name))];
         if (names.length) moves = { in: names, out: [] };
     }

@@ -1001,8 +1001,10 @@ export function undoUnseenBeats(gm, texts, player = '', whole = null) {
 // A newcomer the active beat is waiting on: since which turn, so the
 // director's line grows firmer the longer they keep not turning up.
 // -> replies waited (0 the first time).
-export function newcomerWait(gm, beatId, turn) {
-    if (!beatId) { gm.newcomer = null; return 0; }
+// A turn with no one awaited keeps the count for the beat: Zane, taken as
+// present for a reply he was never in, started the beat's wait over.
+export function newcomerWait(gm, beatId, turn, { beatNow = '' } = {}) {
+    if (!beatId) { if (gm.newcomer && gm.newcomer.beatId !== beatNow) gm.newcomer = null; return 0; }
     if (gm.newcomer?.beatId !== beatId) gm.newcomer = { beatId, since: turn };
     return Math.max(0, turn - gm.newcomer.since);
 }

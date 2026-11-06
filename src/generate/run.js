@@ -211,6 +211,56 @@ export function sidesOf(entry, { fields = {}, brief = '', all, relations = [] })
     });
 }
 
+// The one side the story gives a person it brought in, for one with no side
+// of its own: a faction the passages name beside them, or the side of
+// someone they name them with ("part of Enrique's crew" - Enrique is of
+// the Medina Syndicate). Victor Reyes, "part of Enrique's crew back in the
+// day", had no side when he was filled, and came out working for Omicron
+// Innovations - the one company the premise names, tied to 19 of the
+// world's 28 people (Assassins Inc). Pure.
+//   text: the story passages; -> sidesOf()'s shape plus from (the words
+//   that tie them), or null
+const BELONGS = /\b(?:part of|member of|one of|works? for|worked for|serv(?:es|ed)|with|from|joined|left|quit|broke (?:with|from)|ex-|former|old)\b|'s (?:crew|gang|people|men|outfit|organi[sz]ation|syndicate|team|family|cartel|operation|ring|circle|lieutenants?|enforcers?|goons?|associates?)\b/i;
+export function storySide(entry, text, { all, relations = [] }) {
+    const t = String(text ?? '').replace(/’/g, "'");
+    if (!entry?.name || !t.trim()) return null;
+    const own = [entry.name, ...((entry.base ?? entry).aliases ?? [])].map((n) => String(n ?? '').trim()).filter((n) => n.length >= 3);
+    const ownWords = own.flatMap((n) => [n, ...n.split(/\s+/).filter((w) => w.length >= 3 && /^\p{Lu}/u.test(w))]);
+    const sentences = t.split(/(?<=[.!?…"”])\s+|\n+/);
+    // The sentences that speak of them, and the one after each ("This guy,
+    // Victor Reyes - he was part of...").
+    const about = [];
+    sentences.forEach((s, i) => { if (ownWords.some((n) => names(s, n))) about.push(s, sentences[i + 1] ?? ''); });
+    if (!about.length) return null;
+    const scores = new Map();
+    const firstAt = new Map();
+    const score = (id, w, at) => { scores.set(id, (scores.get(id) ?? 0) + w); if (!firstAt.has(id)) firstAt.set(id, at); };
+    const against = /\b(?:against|enem(?:y|ies)|rivals?|hunt(?:s|ed|ing)?|fights?|fought|target(?:s|ed)?)\b/i;
+    about.forEach((s, at) => {
+        if (!s) return;
+        const tie = BELONGS.test(s) ? 2 : 1;
+        for (const f of all.faction ?? []) {
+            if ([f.name, ...(f.aliases ?? [])].some((n) => names(s, n))) score(f.id, against.test(s) ? 0.5 : tie + 1, at);
+        }
+        for (const p of all.character ?? []) {
+            if (p.id === entry.id) continue;
+            const pn = [p.name, ...(p.aliases ?? []), ...String(p.name).split(/\s+/).filter((w) => w.length >= 3)];
+            if (!pn.some((n) => names(s, n))) continue;
+            const side = sidesOf(p, { all, relations })[0];
+            // "Enrique's crew" ties them to Enrique; "Zane continued," only
+            // has Zane saying it.
+            const theirs = pn.some((n) => n.length >= 3 && new RegExp(`(^|[^\\p{L}])${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'s (?:crew|gang|people|men|outfit|organi[sz]ation|syndicate|team|family|cartel|operation|ring|circle|lieutenants?|enforcers?|goons?|associates?|right hand)\\b`, 'iu').test(s));
+            if (side) score(side.id, against.test(s) ? 0.25 : theirs ? 4 : tie, at);
+        }
+    });
+    if (!scores.size) return null;
+    const [bestId] = [...scores.entries()].sort((a, b) => b[1] - a[1] || firstAt.get(a[0]) - firstAt.get(b[0]))[0];
+    const side = sidesOf({ name: entry.name, faction: bestId }, { all, relations }).find((s) => s.id === bestId);
+    if (!side) return null;
+    const from = about.find((s) => s && (names(s, side.name) || BELONGS.test(s))) ?? about[0];
+    return { ...side, ties: side.ties.filter((x) => x.otherId !== entry.id), from: from.replace(/\s+/g, ' ').trim().slice(0, 240) };
+}
+
 // The sides of the people an entry is tied to, for one with no side of its
 // own: a protégée, a friend or a partner stands where they stand - without
 // this, Galice's protégée came out working for the corporation Galice's
@@ -369,7 +419,18 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     // the user's ties, the link fields, then the story's for pairs not covered.
     const authored = getSettingDoc(ctx.settingId).relations;
     const own = sidesOf(entry, { fields: draft?.fields ?? {}, brief, all, relations: authored });
-    const sides = own.length ? own : tiedSides(entry, { all, relations: authored });
+    // Lore is written from where the chat brings it up (its passages) - and
+    // so is anything the story brought in (fromStory): Cyril's post made
+    // Alonso Vasquez a chief who broke from Enrique's syndicate with his
+    // people, and the fill, never shown it, made him Omicron's head of
+    // security.
+    // Enriched from its sheet too: whatever the story or the director made.
+    const storyMade = fromStory || (entry?.id && ['story', 'director', 'steer'].includes(getEntryMeta(ctx.settingId, entry.id).origin));
+    const loreStory = (type.id === 'lore' || storyMade) && entry?.id && !story ? chatPassagesFor(entry, draft) : '';
+    // A person the story brought in, with no side of their own: the one the
+    // story gives them, kept to (storySide).
+    const told = !own.length && storyMade && type.id === 'character' ? storySide(entry, [(entry?.base ?? entry)?.description, story, loreStory].filter(Boolean).join('\n'), { all, relations: authored }) : null;
+    const sides = own.length ? own : told ? [told] : tiedSides(entry, { all, relations: authored });
     for (const side of sides) {
         const story = (await storyRelationships({ id: side.id, name: side.name })).filter((x) => !(x.otherId && pairCovered(side.id, x.otherId, authored)) && x.otherId !== entry?.id);
         for (const r of story.slice(0, Math.max(0, 8 - side.ties.length))) side.ties.push({ otherId: r.otherId, line: relationshipLine(side.name, r) });
@@ -381,14 +442,6 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     // it is already tied to them (playerTie).
     const player = playerTie(entry, { all, relations: authored, playerId: playerIdOf(ctx.settingId, all.character ?? []) });
     const others = allEntries.filter((e) => e.id !== entry?.id && (!player || player.tied || e.id !== player.id));
-    // Lore is written from where the chat brings it up (its passages) - and
-    // so is anything the story brought in (fromStory): Cyril's post made
-    // Alonso Vasquez a chief who broke from Enrique's syndicate with his
-    // people, and the fill, never shown it, made him Omicron's head of
-    // security.
-    // Enriched from its sheet too: whatever the story or the director made.
-    const storyMade = fromStory || (entry?.id && ['story', 'director', 'steer'].includes(getEntryMeta(ctx.settingId, entry.id).origin));
-    const loreStory = (type.id === 'lore' || storyMade) && entry?.id && !story ? chatPassagesFor(entry, draft) : '';
     // Nothing in a story's own event needs a new name: no pool, so none is offered.
     const namePool = story ? null : namePoolFor(ctx.settingId, all, { cultureId: naming.cultureId, placeId: parentForPrompt, factionIds });
     const base = {
@@ -409,7 +462,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         creating: task === 'create',
         relationNames: [...others.filter((e) => tiedIds.has(e.id)), ...others.filter((e) => !tiedIds.has(e.id))].map((e) => e.name).slice(0, 25),
         place: placeCtx,
-        sides: sides.map((s) => ({ name: s.name, description: s.description, ties: s.ties.map((t) => t.line), ...(s.through ? { through: s.through } : {}) })),
+        sides: sides.map((s) => ({ name: s.name, description: s.description, ties: s.ties.map((t) => t.line), ...(s.through ? { through: s.through } : {}), ...(s.from ? { from: s.from } : {}) })),
         player: player ? { name: player.name, tied: player.tied } : null,
         // A place inside another: what that place is for, and whether what
         // is in it is its owners' (a fortress's rooms) or its own (a club on

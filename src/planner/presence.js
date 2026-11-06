@@ -87,3 +87,14 @@ export function isKnownPerson(tie) {
     const words = t.split(' ');
     return [...PEOPLE].some((n) => { const has = n.split(' '); return words.every((w) => has.includes(w)); });
 }
+
+// Of `people` (each a list of their names), those `text` names - any of
+// their names, or a word of one that is not a title, as a whole word. Pure.
+const TITLES = /^(?:the|of|and|dr\.?|mr\.?|mrs\.?|ms\.?|lt\.?|sgt\.?|captain|chief|lord|lady|ser|sir|king|queen|doctor|officer|agent|old|young|big|little)$/i;
+export function shownOf(people, text) {
+    const t = String(text ?? '').replace(/’/g, "'");
+    return (people ?? []).filter((names) => (names ?? []).some((n) => {
+        const forms = [clean(n), ...clean(n).split(' ').filter((w) => !TITLES.test(w))].filter((f) => f.length >= 3);
+        return forms.some((f) => new RegExp(`(^|[^\\p{L}])${esc(f)}(?!\\p{L})`, 'iu').test(t));
+    }));
+}

@@ -31,7 +31,7 @@ import { asksWhatNext } from './build.js';
 import { activeBeat, settledNow, touchedSettled, retireSettled, dueToday } from '../planner/model.js';
 import { notYet, notYetLine } from '../planner/timed.js';
 import { closesOut, nextThingLine } from './wrapped.js';
-import { needsPresence, notePresent, rememberPeople } from '../planner/presence.js';
+import { needsPresence, notePresent, rememberPeople, shownOf } from '../planner/presence.js';
 import { opposedJobs, jobsLine, jobsTouched, planTexts } from '../planner/aims.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { giftsText } from '../library/powers.js';
@@ -295,9 +295,18 @@ export async function gatherInputs(chatId, chatKey) {
     // presence.js) - Zane, named in Adam's plan, never came.
     try {
         rememberPeople(allCharacters.flatMap((x) => [x.name, ...(x.aliases ?? x.base?.aliases ?? [])]).filter((n) => typeof n === 'string'));
-        const at = (SillyTavern.getContext().chat ?? []).length - 1;
-        const names = cast.filter((x) => !x.player).flatMap((x) => [x.name, ...(Array.isArray(x.aliases) ? x.aliases : [])]);
-        if (at >= 0 && names.length && needsPresence(doc.present, names, at)) updateChatDoc(chatKey, (d) => { d.present = notePresent(d.present, names, at); });
+        const chatNow = SillyTavern.getContext().chat ?? [];
+        const at = chatNow.length - 1;
+        // Only those of the cast the latest message shows: being in the cast
+        // is not being in the story - Zane, put in the cast by a swipe that
+        // was then replaced, was taken as there, and the beat stopped
+        // waiting on him.
+        const names = shownOf(cast.filter((x) => !x.player).map((x) => [x.name, ...(Array.isArray(x.aliases) ? x.aliases : [])]), String(chatNow[at]?.mes ?? '')).flat();
+        // Presence the recent chat does not bear out goes: noted from a
+        // swipe since replaced, or from the cast alone before this check.
+        const stale = Object.entries(doc.present ?? {}).filter(([n, i]) => i >= at - 10 && chatNow[i] && !shownOf([[n]], String(chatNow[i].mes ?? '')).length).map(([n]) => n);
+        if (stale.length) updateChatDoc(chatKey, (d) => { d.present = Object.fromEntries(Object.entries(d.present).filter(([n]) => !stale.includes(n))); });
+        if (at >= 0 && names.length && needsPresence(getChatDoc(chatKey).present, names, at)) updateChatDoc(chatKey, (d) => { d.present = notePresent(d.present, names, at); });
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not note who is present', err);
     }

@@ -211,7 +211,12 @@ ${input.populationLine} Let what you write fit this mix.`);
     if (input.sides?.length) {
         const lines = input.sides.map((s) => [`- ${s.name} (faction)${s.through ? `, which ${s.through} is one of` : ''}${s.description ? ` - ${cut(s.description, 200)}` : ''}`, ...s.ties.map((t) => `  - ${cut(t, 200)}`)].join('\n'));
         const through = [...new Set(input.sides.map((s) => s.through).filter(Boolean))];
-        parts.push(through.length
+        // The one side the story gives a person it brought in (src/generate/
+        // run.js storySide): kept to - Victor Reyes, of Enrique's old crew,
+        // came out working for the one company the premise names.
+        const told = input.sides.find((s) => s.from);
+        if (told) parts.push(`# Its side (the story ties it to ${told.name}: "${cut(told.from, 240)}")\n${lines.join('\n')}\nIt belongs to ${told.name} - a member, or one who broke from it if the story says so - and to no other group. Its role, goals and background are within ${told.name}; other groups come into its past or plans only as ${told.name}'s allies, rivals and enemies listed here, seen from ${told.name}'s side. Tie it to no other faction or company, however large it looms in the setting.`);
+        else parts.push(through.length
             ? `# Its side (through ${through.join(' and ')}, whom it is tied to: someone close to them - a protégé, a friend, a partner - stands with their side and works where they work, sharing its friends and enemies, unless what is written or the user's direction says otherwise, as for a spy or a rival)\n${lines.join('\n')}`
             : `# Its side (it is one of these - their friends are its friends, their rivals and enemies are its rivals and enemies, unless the user's direction says otherwise, as for a spy or a traitor)\n${lines.join('\n')}`);
     }

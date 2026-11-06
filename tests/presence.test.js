@@ -51,3 +51,16 @@ describe('a moment with someone who never came is not done', () => {
         expect(g.day.moments[0].status).toBe('skipped');
     });
 });
+
+import { shownOf } from '../src/planner/presence.js';
+describe('in the cast is not in the story', () => {
+    // Assassins Inc: Zane, left in the cast by a swipe since replaced, was
+    // taken as present at the reply that cut away to HQ without him.
+    const reply = 'Hours later, back at White Cerberus headquarters, Doc looked up from her terminal as Miller strode into the room.';
+    it('only those the message names', () => {
+        expect(shownOf([['Zane', 'Viper-7'], ['Doc', 'Dr. Kaida'], ['Adam Miller', 'Chief'], ['Galice Buckar']], reply)).toEqual([['Doc', 'Dr. Kaida'], ['Adam Miller', 'Chief']]);
+        expect(shownOf([['Adam Miller']], 'Adam strode in.')).toEqual([['Adam Miller']]);
+        expect(shownOf([['Ser Brannoc']], 'The knight bowed.')).toEqual([]);
+        expect(shownOf([['Captain Hale']], 'Captain Hale stepped onto the bridge.')).toEqual([['Captain Hale']]);
+    });
+});
