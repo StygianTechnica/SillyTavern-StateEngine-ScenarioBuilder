@@ -73,6 +73,28 @@ function latestUserPostText() {
     return typeof chat[userAt]?.mes === 'string' ? chat[userAt].mes : '';
 }
 
+// Whether the scene's place now is where the director moved it for the
+// player's latest post (its last change of place, made after that post).
+function directorMovedHere(doc) {
+    const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system);
+    const post = [...chat].reverse().find((m) => m.is_user);
+    const since = Date.parse(post?.send_date ?? '');
+    const last = [...(doc.history ?? [])].reverse().find((h) => h.after?.locationId && !h.undone);
+    if (!last || last.source !== 'director' || last.after.locationId !== doc.canonical.locationId) return false;
+    return !Number.isFinite(since) || Date.parse(last.at) >= since - 2000;
+}
+
+// The one place the director made for the player's latest post, or null.
+// On a swipe the director makes places but moves nothing - the move is the
+// first reply's - so its street stood apart from the reply's.
+export function directorMadeNow(places) {
+    const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system);
+    const since = Date.parse([...chat].reverse().find((m) => m.is_user)?.send_date ?? '');
+    if (!Number.isFinite(since)) return null;
+    const made = (places ?? []).filter((p) => (p.meta?.origin ?? p.origin) === 'director' && Number(p.createdAt ?? p.base?.createdAt) >= since - 2000);
+    return made.length === 1 ? made[0] : null;
+}
+
 // The latest turn: the player's last message and the reply after it.
 function latestTurnText() {
     const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system);
@@ -293,7 +315,13 @@ async function reconcileOnce() {
             // the walls are known) is that place, not a new one: the story's
             // changing words for one place no longer pile up as candidates.
             places ??= settingId ? await listEntries(chatId, settingId, 'location') : [];
-            const known = places.find((p) => p.id !== item.observed && samePlaceName(short, p));
+            // Where the director moved the scene for this very turn is the
+            // place the reply tells of, whatever it calls it: the director
+            // made "the street outside Signal Box HQ", and the reply's
+            // "Street outside White Cerberus Headquarters" became a second,
+            // unconfirmed street the scene was moved to.
+            const directors = directorMovedHere(doc) ? places.find((p) => p.id === doc.canonical.locationId) : directorMadeNow(places);
+            const known = directors ?? places.find((p) => p.id !== item.observed && samePlaceName(short, p));
             if (known && await resolveObject(chatId, item.observed, known.id)) {
                 objects.set(known.id, known);
                 item.observed = known.id;

@@ -524,8 +524,8 @@ export async function gatherInputs(chatId, chatKey) {
     // shows it.
     const lately = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system && !m.is_user).slice(-4).map((m) => String(m.mes ?? ''));
     const wrongPronouns = pronounSlips(castFor, lately.join('\n\n'), { others: allCharacters.map((ch) => ch.name) });
-    const events = Object.values(await getRawValues(chatId, ['ar__ctx_recent_events']).catch(() => ({}))).map(String);
-    const wrongOrders = commandSlips(castFor, leaders, [...replies, ...notes, ...events]);
+    const recentEvents = Object.values(await getRawValues(chatId, ['ar__ctx_recent_events']).catch(() => ({}))).map(String);
+    const wrongOrders = commandSlips(castFor, leaders, [...replies, ...notes, ...recentEvents]);
     const corrected = new Set(slips.map((s) => s.name));
 
     return {
