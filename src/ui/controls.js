@@ -4,6 +4,7 @@
 
 import { h, icon } from './dom.js';
 import { splitList, joinList } from '../library/world-options.js';
+import { tagHue, addTags, removeTag } from './catalog-model.js';
 
 // Toggleable chips for `options`, plus any custom values already chosen and
 // an input to add more. value/onChange use ", "-joined text.
@@ -78,4 +79,39 @@ export function fieldWithTools(label, control, tools = [], hint = null, cls = ''
         h('div', { class: 'sb-field-head' }, h('span', { class: 'sb-field-label' }, label), h('span', { class: 'sb-field-tools' }, tools)),
         control,
         hint ? h('small', { class: 'sb-hint' }, hint) : null);
+}
+
+// A tag as a coloured chip (the same hue for the same tag everywhere). With
+// `onRemove`, an x takes it off; with `onclick`, the chip toggles.
+export function tagChip(tag, { onRemove = null, onclick = null, on = false, count = null } = {}) {
+    return h('span', {
+        class: `sb-tag-chip${on ? ' on' : ''}${onclick ? ' sb-clickable' : ''}`,
+        style: `--sb-tag-hue: ${tagHue(tag)}`,
+        title: onclick ? (on ? `Stop filtering by #${tag}` : `Filter by #${tag}`) : null,
+        onclick,
+    }, `#${tag}`, count !== null ? h('small', { class: 'sb-count' }, ` ${count}`) : null,
+    onRemove ? h('span', { class: 'sb-tag-x', title: `Remove #${tag}`, onclick: (e) => { e.stopPropagation(); onRemove(tag); } }, icon('fa-xmark')) : null);
+}
+
+// An entry's tags on its sheet: chips with an x, and an input to add more -
+// the setting's own tags offered as you type (Enter or a comma adds).
+let tagListId = 0;
+export function tagEditor({ tags, known = [], onChange }) {
+    const listId = `sb-tags-${++tagListId}`;
+    const offer = known.filter((k) => !tags.some((t) => t.toLowerCase() === k.toLowerCase()));
+    const add = (input) => {
+        const next = addTags(tags, input.value, known);
+        input.value = '';
+        if (next.length !== tags.length) onChange(next);
+    };
+    return h('span', { class: 'sb-tag-editor' },
+        tags.map((t) => tagChip(t, { onRemove: (x) => onChange(removeTag(tags, x)) })),
+        h('input', {
+            class: 'text_pole sb-tag-input', list: listId, placeholder: tags.length ? '+ tag' : '+ add a tag', title: 'Add a tag - pick one the setting already uses, or type a new one (Enter)',
+            onkeydown: (e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); add(e.target); } },
+            // A tag picked from the list goes on at once; one typed, on Enter or on leaving the box.
+            oninput: (e) => { if ((!e.inputType || e.inputType === 'insertReplacementText') && offer.includes(e.target.value)) add(e.target); },
+            onchange: (e) => add(e.target),
+        }),
+        h('datalist', { id: listId }, offer.map((k) => h('option', { value: k }))));
 }

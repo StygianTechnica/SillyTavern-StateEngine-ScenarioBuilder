@@ -209,6 +209,20 @@ describe('the story in the plans', () => {
             .toMatchObject({ beatDone: true, tension: { threat: 5, uncertainty: 2, emotional: null, reason: 'a lie' } });
         expect(readCheck({ tension: { reason: 'x' } }).tension).toBeNull();
     });
+
+    // Assassins Inc: shown "beat_done":false, the model copied it every time -
+    // Adam made the assignment word for word and the beat stayed open, so the
+    // heist was never planned. Its moment ids came back as "[m2]" too.
+    it('the beat is asked with no answer to copy, and "yes" or "[m2]" are read', () => {
+        const check = buildCheckPrompt({ moments: [], beat: 'Adam assigns Cyril and Inji' }).prompt;
+        expect(check).toContain('{"beat_done":"<yes or no>",');
+        expect(check).not.toMatch(/"beat_done":\s*false/);
+        expect(readCheck({ beat_done: 'yes' }).beatDone).toBe(true);
+        expect(readCheck({ beat_done: 'Yes - Adam assigned them.' }).beatDone).toBe(true);
+        expect(readCheck({ beat_done: 'no' }).beatDone).toBe(false);
+        expect(readCheck({ beat_done: false }).beatDone).toBe(false);
+        expect(readCheck({ done: [{ id: '[M2]', how: 'it happened' }], skipped: ['[m3]'] })).toMatchObject({ done: [{ id: 'm2' }], skipped: [{ id: 'm3' }] });
+    });
 });
 
 describe('the outline pass', () => {

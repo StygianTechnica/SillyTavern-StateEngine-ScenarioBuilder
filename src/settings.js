@@ -61,8 +61,10 @@ const DEFAULTS = {
     // Midjourney parameters. The user's last choices.
     imagePrompts: structuredClone(DEFAULT_IMAGE_OPTIONS),
     // Catalog browser preferences: view per chapter ('grid' | 'list' |
-    // 'tree'), sort order.
-    catalog: { views: {}, sort: 'name' },
+    // 'tree'), sort order (the old one for every chapter; sorts: per type),
+    // the filter per type (src/ui/catalog-model.js normalizeFilter), saved
+    // filters per setting id ([{ name, type, filter, sort }]).
+    catalog: { views: {}, sort: 'name', sorts: {}, filters: {}, saved: {} },
     // Quests (src/quests/): make quest objects from Archivist's quest seeds,
     // goals and plans automatically; how many active quests are tracked.
     quests: { autoCreate: true, tracked: 5 },
@@ -184,6 +186,9 @@ export function getSettings() {
     for (const [key, value] of Object.entries(DEFAULT_IMAGE_OPTIONS)) settings.imagePrompts[key] ??= structuredClone(value);
     for (const [key, value] of Object.entries(DEFAULT_IMAGE_OPTIONS.midjourney)) settings.imagePrompts.midjourney[key] ??= value;
     settings.catalog.views ??= {};
+    settings.catalog.sorts ??= {};
+    settings.catalog.filters ??= {};
+    settings.catalog.saved ??= {};
     settings.generation.detail ??= 'standard';
     settings.generation.maxTokens ??= 1200;
     settings.generation.autoEnrich ??= true;

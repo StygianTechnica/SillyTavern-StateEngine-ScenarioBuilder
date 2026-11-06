@@ -21,7 +21,7 @@ import { changeScene } from '../state/scene-actions.js';
 import { syncNow } from '../guidance/sync.js';
 import { getSettings } from '../settings.js';
 import { safeImageSrc } from '../images/attach.js';
-import { entityHistory, chatStatusOf, STATUS_LABELS, placeMap } from './catalog-model.js';
+import { entityHistory, chatStatusOf, STATUS_LABELS, placeMap, tagsOf } from './catalog-model.js';
 import { renderImagePanel } from './image-panel.js';
 import { placeSurroundings, imageSourceFor } from '../images/prompt.js';
 import { renderQuestTab } from './quest-board.js';
@@ -45,7 +45,7 @@ import { suggestRoutes, suggestEnvironment, randomClimate } from '../generate/pl
 import { suggestGifts, suggestActs } from '../generate/gifts.js';
 import { hasArchivist, storyRelationships } from '../library/story-relations.js';
 import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
-import { sparkButton, fieldWithTools, diceButton } from './controls.js';
+import { sparkButton, fieldWithTools, diceButton, tagEditor } from './controls.js';
 import { generateEntry, canGenerateFor, rollEntryName, generateAlias } from '../generate/run.js';
 import { ALIAS_KINDS, kindLabel, aliasInfoFor, aliasLabel } from '../library/alias-kinds.js';
 import { cultureChoices, resolveCulture, inheritedCulture } from '../naming/cultures.js';
@@ -379,7 +379,7 @@ export async function renderSheet(type, all) {
                 }, { iconName: 'fa-turn-up', title: `Put ${entry.name} inside it - ${s.why}` }))) : null,
             h('div', { class: 'sb-chips' },
                 status !== 'unused' ? h('span', { class: `sb-badge sb-badge-${status}` }, STATUS_LABELS[status]) : null,
-                (draft?.meta.tags ?? entry.meta?.tags ?? []).map((t) => h('span', { class: 'sb-tag' }, `#${t}`)),
+                tagEditor({ tags: draft?.meta.tags ?? entry.meta?.tags ?? [], known: tagsOf(allEntries), onChange: (tags) => setTags(entry, tags) }),
                 entry.confirmed === false ? h('span', { class: 'sb-badge' }, 'not in the setting yet') : null,
                 !isNew && isDead(doc, entry.id) ? h('span', { class: 'sb-badge sb-danger', title: (doc.dead.find((d) => d.id === entry.id)?.how) || 'Died in this story' }, icon('fa-skull'), ' Dead in this story') : null),
             // How they died - the director's guess can be wrong; yours stands.
@@ -1497,7 +1497,6 @@ function gmTab({ entry }) {
     if (ws.editing) {
         return h('div', { class: 'sb-tabpane' },
             field('Secrets and GM notes', textArea('meta.gmNotes', ws.draft.meta.gmNotes, 6), 'Never put into the guidance.'),
-            field('Tags', h('input', { class: 'text_pole', value: csv(ws.draft.meta.tags), placeholder: 'comma-separated', oninput: (e) => set('meta.tags', fromCsv(e.target.value)) })),
             h('label', { class: 'checkbox_label' }, h('input', { type: 'checkbox', checked: ws.draft.meta.pinned, onchange: (e) => set('meta.pinned', e.target.checked) }), h('span', {}, 'Pin to the top of the chapter')),
             h('label', { class: 'checkbox_label', title: 'For canon you do not want embellished: generated detail is never added to this entry.' },
                 h('input', { type: 'checkbox', checked: ws.draft.meta.canonLocked, onchange: (e) => set('meta.canonLocked', e.target.checked) }),
@@ -1514,6 +1513,14 @@ function gmTab({ entry }) {
 }
 
 // ---- actions
+
+// Tags from the sheet's header: into the draft while editing, otherwise kept
+// at once.
+function setTags(entry, tags) {
+    if (ws.editing && ws.draft) set('meta.tags', tags);
+    else if (entry.id) setEntryMeta(ws.ctx.settingId, entry.id, { tags });
+    rerender();
+}
 
 async function saveSheet(type, entry, defs, isNew) {
     const { chatId, chatKey, settingId } = ws.ctx;

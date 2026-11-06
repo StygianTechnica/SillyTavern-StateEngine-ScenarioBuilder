@@ -11,11 +11,14 @@ import { getSettingDoc } from '../store/setting-store.js';
 import { buildTree, wouldCreateCycle, childrenOf, pathOf } from '../library/hierarchy.js';
 import { truncate } from '../guidance/build.js';
 import { safeImageSrc } from '../images/attach.js';
-import { filterEntries, sortEntries, tagsOf, chatStatusOf, STATUS_LABELS } from './catalog-model.js';
+import {
+    filterEntries, sortEntries, groupEntries, tagsOf, chatStatusOf, STATUS_LABELS, QUICK_FILTERS, quickMatch, factionsByEntry, fieldText,
+    normalizeFilter, isFiltering, saveFilter, EMPTY_FILTER, TAG_MODES, NO_FACTION, reparentCheck,
+} from './catalog-model.js';
 import { renderSheet } from './sheet.js';
 import { ws, rerender, openSheet, markDirty, stopEditing } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
-import { chipSelect, selectWithCustom, diceButton, sparkButton, fieldWithTools } from './controls.js';
+import { chipSelect, selectWithCustom, diceButton, sparkButton, fieldWithTools, tagChip } from './controls.js';
 import {
     WORLD_TYPES, TONES, THEMES, MAGIC_KINDS, MAGIC_PRESENCE, MAGIC_POWER, MAGIC_RESTRICTIONS, TECH_LEVELS, TECH_FLAVORS, TECH_SPREAD, TECH_ABSENT_SUGGESTIONS,
     eraGroups, randomFor, techForEra, splitList, joinList,
@@ -42,6 +45,9 @@ const CHAPTER_BLURBS = Object.freeze({
     scene: 'Prepared encounters and set pieces - for this chat.',
     event: 'Festivals, raids and scheduled happenings - for this chat.',
 });
+
+// What a dragged place carries (the tree, the cards and the list).
+const DRAG_TYPE = 'text/x-sb-location';
 
 // Types whose entries sit somewhere (a "location" field), so "Within" applies.
 const PLACED = new Set(['location', 'item', 'creature', 'scene']);
@@ -75,7 +81,7 @@ export async function renderCatalog() {
     } else {
         const type = types.find((t) => t.id === ws.chapter);
         const board = type.id === 'quest' && viewOf('quest') === 'board' ? await renderQuestBoard(type) : null;
-        content = chapterPage(type, all, doc, board);
+        content = chapterPage(type, all, doc, board, await fieldDefs(type).catch(() => []));
     }
     return h('div', { class: 'sb-catalog' }, rail, h('div', { class: 'sb-content' }, content));
 }
@@ -88,7 +94,6 @@ function railItem(key, iconName, label, count, color) {
             ws.chapter = key;
             ws.entryId = null;
             ws.search = '';
-            ws.tag = '';
             ws.status = '';
             ws.within = '';
             rerender();
@@ -377,21 +382,55 @@ async function scanLore() {
     }
 }
 
-function chapterPage(type, all, doc, board = null) {
+// The chapter's filter and sort, kept per viewer and per type in the
+// settings (like the view); a saved filter is per setting.
+const filterOf = (typeId) => normalizeFilter(getSettings().catalog.filters?.[typeId]);
+function setFilter(typeId, patch) {
+    const c = getSettings().catalog;
+    c.filters ??= {};
+    c.filters[typeId] = normalizeFilter({ ...filterOf(typeId), ...patch });
+    saveSettings();
+    rerender();
+}
+function setSort(typeId, sort) {
+    const c = getSettings().catalog;
+    c.sorts ??= {};
+    c.sorts[typeId] = sort;
+    saveSettings();
+    rerender();
+}
+// Fields worth filtering and sorting by: short values, not prose.
+const FACET_KINDS = new Set(['text', 'enum', 'list', 'ref', 'refs', 'number', 'boolean']);
+const facetFields = (defs) => (defs ?? []).filter((d) => FACET_KINDS.has(d.kind) && d.name !== 'name' && d.name !== 'aliases');
+
+function chapterPage(type, all, doc, board = null, defs = []) {
     const { settingId } = ws.ctx;
     const entries = all[type.id];
+    const everything = Object.values(all).flat();
     const parents = getParents(settingId);
     const locations = all.location ?? [];
-    const names = new Map(Object.values(all).flat().map((e) => [e.id, e.name]));
+    const names = new Map(everything.map((e) => [e.id, e.name]));
     const pathLabel = (id) => pathOf(parents, id).map((x) => names.get(x)).filter(Boolean).join(' › ');
     const view = viewOf(type.id);
-    const sort = getSettings().catalog.sort;
+    const facets = facetFields(defs);
+    const catalog = getSettings().catalog;
+    let sort = catalog.sorts?.[type.id] ?? catalog.sort ?? 'name';
+    if (sort.startsWith('field:') && !facets.some((d) => `field:${d.name}` === sort)) sort = 'name';
 
+    const f = filterOf(type.id);
+    if (f.field && !facets.some((d) => d.name === f.field)) f.field = '';
+    const ctx = { doc, parents, playerId: getSettingDoc(settingId).playerId ?? '', factions: factionsByEntry(everything), nameOf: (id) => names.get(id) ?? '' };
     const bloodline = type.id === 'lore' ? ws.bloodlineFilter ?? '' : '';
-    const filtered = sortEntries(filterEntries(entries, { search: ws.search, tag: ws.tag, status: ws.status, within: ws.within, bloodline }, { doc, parents }), sort, doc);
-    const filtering = !!(ws.search || ws.tag || ws.status || ws.within || bloodline);
+    const filtered = sortEntries(filterEntries(entries, { search: ws.search, status: ws.status, within: ws.within, bloodline, ...f }, ctx), sort, doc, ctx);
+    const filtering = !!(ws.search || ws.status || ws.within || bloodline || isFiltering(f));
+    const clearFilters = () => { ws.search = ''; ws.status = ''; ws.within = ''; ws.bloodlineFilter = ''; setFilter(type.id, EMPTY_FILTER); };
 
-    const tags = tagsOf(entries);
+    const hasFactions = type.id !== 'faction' && entries.some((e) => ctx.factions.get(e.id)?.length);
+    const sorts = [
+        { value: 'name', label: 'A–Z' }, { value: 'recent', label: 'Recently edited' }, { value: 'status', label: 'In play first' },
+        ...(hasFactions || sort === 'faction' ? [{ value: 'faction', label: 'By faction' }] : []),
+        ...facets.map((d) => ({ value: `field:${d.name}`, label: `By ${d.label}` })),
+    ];
     const views = [['grid', 'fa-grip', 'Cards'], ['list', 'fa-list', 'List']];
     if (type.id === 'location') views.unshift(['tree', 'fa-sitemap', 'Tree - places inside places', 'Tree'], ['map', 'fa-map', 'Map - places where they lie, one level at a time', 'Map']);
     if (type.id === 'quest') views.unshift(['board', 'fa-table-columns', 'Board', 'Board']);
@@ -401,11 +440,10 @@ function chapterPage(type, all, doc, board = null) {
             class: 'text_pole', type: 'search', placeholder: `Search ${type.plural.toLowerCase()}…`, value: ws.search,
             oninput: (e) => { ws.search = e.target.value; clearTimeout(chapterPage.t); chapterPage.t = setTimeout(rerender, 250); },
         })),
-        tags.length ? select([{ value: '', label: 'Any tag' }, ...tags.map((t) => ({ value: t, label: `#${t}` }))], ws.tag, { title: 'Tag', onchange: (e) => { ws.tag = e.target.value; rerender(); } }) : null,
         type.id === 'lore' && entries.some((e) => e.meta?.bloodline?.on === true) ? select([{ value: '', label: 'All lore' }, { value: 'only', label: 'Bloodlines' }, { value: 'none', label: 'Not bloodlines' }], bloodline, { title: 'Bloodlines', onchange: (e) => { ws.bloodlineFilter = e.target.value; rerender(); } }) : null,
         select([{ value: '', label: 'Any status' }, ...Object.entries(STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))], ws.status, { title: 'Status in this chat', onchange: (e) => { ws.status = e.target.value; rerender(); } }),
         PLACED.has(type.id) && locations.length ? select([{ value: '', label: 'Anywhere' }, ...locations.map((l) => ({ value: l.id, label: `Within ${pathLabel(l.id) || l.name}` })).sort((a, b) => a.label.localeCompare(b.label))], ws.within, { title: 'Where', onchange: (e) => { ws.within = e.target.value; rerender(); } }) : null,
-        view !== 'tree' && view !== 'map' ? select([{ value: 'name', label: 'A–Z' }, { value: 'recent', label: 'Recently edited' }, { value: 'status', label: 'In play first' }], sort, { title: 'Sort', onchange: (e) => { getSettings().catalog.sort = e.target.value; saveSettings(); rerender(); } }) : null,
+        view !== 'tree' && view !== 'map' ? select(sorts, sort, { title: 'Sort', onchange: (e) => setSort(type.id, e.target.value) }) : null,
         h('div', { class: 'sb-viewtoggle' }, views.map(([v, i, label, text]) => h('div', { class: `sb-viewbtn${view === v ? ' active' : ''}`, title: label, onclick: () => setView(type.id, v) }, icon(i), text ? ` ${text}` : null))),
         type.id === 'lore' && hasArchivistLore() ? button(ws.loreScanning ? 'Scanning…' : 'Scan Archivist', () => void scanLore(), { iconName: ws.loreScanning ? 'fa-spinner fa-spin' : 'fa-book-open-reader', disabled: !!ws.loreScanning, title: 'Take the lore Archivist has found in this chat into the library' }) : null,
         button('Generate', () => { ws.genPanel = ws.genPanel === type.id ? null : type.id; rerender(); }, { iconName: 'fa-wand-magic-sparkles', title: `Generate a new ${type.noun} - from your idea, or a surprise` }),
@@ -423,15 +461,24 @@ function chapterPage(type, all, doc, board = null) {
                 button(`Create the first ${type.noun}`, () => openSheet('new'), { iconName: 'fa-plus', cls: 'sb-primary' }),
                 button('Generate one', () => { ws.genPanel = type.id; rerender(); }, { iconName: 'fa-wand-magic-sparkles' })));
     } else if (!filtered.length) {
-        body = h('div', { class: 'sb-callout' }, icon('fa-filter-circle-xmark'), h('span', {}, 'Nothing matches.'), button('Clear filters', () => { ws.search = ''; ws.tag = ''; ws.status = ''; ws.within = ''; ws.bloodlineFilter = ''; rerender(); }));
+        body = h('div', { class: 'sb-callout' }, icon('fa-filter-circle-xmark'), h('span', {}, 'Nothing matches.'), button('Clear filters', clearFilters));
     } else if (view === 'tree' && !filtering) {
         body = locationTree(entries, doc, parents);
     } else if (view === 'map' && !filtering) {
         body = locationMap(entries, doc);
-    } else if (view === 'list') {
-        body = h('div', { class: 'sb-listview' }, filtered.map((e) => listRow(e, type, doc, pathLabel)));
     } else {
-        body = h('div', { class: 'sb-grid' }, filtered.map((e) => card(e, type, doc, pathLabel)));
+        // Cards or a list, in groups under a heading for a faction or field
+        // sort; places can be dragged onto each other to move them inside.
+        const dnd = type.id === 'location' ? placeDragging(entries, parents, names) : null;
+        const groups = groupEntries(filtered, sort, ctx);
+        const draw = (list) => (view === 'list'
+            ? h('div', { class: 'sb-listview' }, list.map((e) => dnd ? dnd.item(listRow(e, type, doc, pathLabel), e.id) : listRow(e, type, doc, pathLabel)))
+            : h('div', { class: 'sb-grid' }, list.map((e) => dnd ? dnd.item(card(e, type, doc, pathLabel), e.id) : card(e, type, doc, pathLabel))));
+        body = [
+            dnd ? dnd.root() : null,
+            groups.length === 1 && !groups[0].label ? draw(groups[0].entries)
+                : groups.map((g) => h('section', { class: 'sb-group' }, h('div', { class: 'sb-group-head' }, h('span', {}, g.label), h('small', { class: 'sb-count' }, String(g.entries.length))), draw(g.entries))),
+        ];
     }
 
     return h('div', { class: 'sb-chapter' },
@@ -440,9 +487,126 @@ function chapterPage(type, all, doc, board = null) {
             h('div', {}, h('h2', {}, CHAPTER_LABELS[type.id] ?? type.plural), h('small', { class: 'sb-hint' }, CHAPTER_BLURBS[type.id] ?? '')),
             h('span', { class: 'sb-count-big' }, filtering ? `${filtered.length} of ${entries.length}` : String(entries.length))),
         toolbar,
+        entries.length ? filterBar(type, entries, f, ctx, facets, sort) : null,
         ws.genPanel === type.id ? generatePanel(type, all, pathLabel) : null,
         (view === 'tree' || view === 'map') && filtering ? h('small', { class: 'sb-hint' }, `Filtering shows a flat list; clear the filters to see the ${view}.`) : null,
         body);
+}
+
+// The filters under the toolbar: quick filters for what Scenario Builder
+// knows (only those that would narrow the chapter), the chapter's tags
+// combined all of / any of / none of, a faction, any field ("Role is
+// guard"), and filters saved under a name for this setting.
+function filterBar(type, entries, f, ctx, facets, sort) {
+    const { settingId } = ws.ctx;
+    const toggle = (list, v) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+    const quick = QUICK_FILTERS.map((q) => ({ ...q, n: entries.filter((e) => quickMatch(q.id, e, ctx)).length, on: f.quick.includes(q.id) }))
+        .filter((q) => q.on || (q.n > 0 && q.n < entries.length));
+    const tags = tagsOf(entries);
+    const tagCount = (t) => entries.filter((e) => (e.meta?.tags ?? []).includes(t)).length;
+    const factionIds = type.id === 'faction' ? [] : [...new Set(entries.flatMap((e) => ctx.factions.get(e.id) ?? []))]
+        .sort((a, b) => (ctx.nameOf(a) || a).localeCompare(ctx.nameOf(b) || b));
+    const field = facets.find((d) => d.name === f.field);
+    const many = field && (field.kind === 'list' || field.kind === 'refs');
+    const values = field ? [...new Set(entries.flatMap((e) => {
+        const t = fieldText(e, field.name, ctx.nameOf);
+        return many ? t.split(', ') : [t];
+    }).filter(Boolean))].sort((a, b) => a.localeCompare(b)).slice(0, 80) : [];
+    const saved = (getSettings().catalog.saved?.[settingId] ?? []).filter((s) => s.type === type.id);
+    const storeSaved = (list) => {
+        const c = getSettings().catalog;
+        c.saved ??= {};
+        c.saved[settingId] = [...(c.saved[settingId] ?? []).filter((s) => s.type !== type.id), ...list];
+        saveSettings();
+        rerender();
+    };
+    const apply = (s) => {
+        const c = getSettings().catalog;
+        (c.filters ??= {})[type.id] = normalizeFilter(s.filter);
+        (c.sorts ??= {})[type.id] = s.sort;
+        saveSettings();
+        rerender();
+    };
+    const listId = `sb-field-values-${type.id}`;
+
+    return h('div', { class: 'sb-filterbar' },
+        quick.length ? h('div', { class: 'sb-filter-group' }, quick.map((q) => h('span', {
+            class: `sb-quick${q.on ? ' on' : ''}`, title: q.title,
+            onclick: () => setFilter(type.id, { quick: toggle(f.quick, q.id) }),
+        }, icon(q.icon), ` ${q.label}`, h('small', { class: 'sb-count' }, ` ${q.n}`)))) : null,
+        tags.length ? h('div', { class: 'sb-filter-group' },
+            icon('fa-tags'),
+            f.tags.length ? select(TAG_MODES.map(([v, l]) => ({ value: v, label: l })), f.tagMode, { class: 'text_pole sb-tagmode', title: 'Entries with all of these tags, any of them, or none of them', onchange: (e) => setFilter(type.id, { tagMode: e.target.value }) }) : null,
+            tags.map((t) => tagChip(t, { on: f.tags.includes(t), count: tagCount(t), onclick: () => setFilter(type.id, { tags: toggle(f.tags, t) }) }))) : null,
+        factionIds.length || f.faction ? select([
+            { value: '', label: 'Any faction' }, { value: NO_FACTION, label: 'In no faction' },
+            ...factionIds.map((id) => ({ value: id, label: ctx.nameOf(id) || id })),
+        ], f.faction, { title: 'Faction - its members, the places it holds', onchange: (e) => setFilter(type.id, { faction: e.target.value }) }) : null,
+        facets.length ? h('div', { class: 'sb-filter-group' },
+            select([{ value: '', label: 'Any field…' }, ...facets.map((d) => ({ value: d.name, label: d.label }))], f.field, { title: 'Filter by a field - e.g. Role is guard', onchange: (e) => setFilter(type.id, { field: e.target.value, fieldValue: '' }) }),
+            field ? [
+                h('span', { class: 'sb-hint' }, many ? 'has' : 'is'),
+                h('input', { class: 'text_pole sb-field-value', list: listId, value: f.fieldValue, placeholder: 'anything set', title: 'Part of the value is enough; empty: any entry with this field set', onchange: (e) => setFilter(type.id, { fieldValue: e.target.value }) }),
+                h('datalist', { id: listId }, values.map((v) => h('option', { value: v }))),
+            ] : null) : null,
+        saved.length || isFiltering(f) ? h('div', { class: 'sb-filter-group sb-saved' },
+            saved.map((s) => h('span', { class: 'sb-quick sb-saved-chip', title: `Apply "${s.name}"`, onclick: () => apply(s) }, icon('fa-bookmark'), ` ${s.name}`,
+                h('span', { class: 'sb-tag-x', title: `Forget "${s.name}"`, onclick: (e) => { e.stopPropagation(); storeSaved(saved.filter((x) => x !== s)); } }, icon('fa-xmark')))),
+            isFiltering(f) ? h('input', {
+                class: 'text_pole sb-save-filter', placeholder: 'Save filter as…', title: 'Name this filter (e.g. "my villains") and press Enter - kept for this setting',
+                onkeydown: (e) => { if (e.key === 'Enter') { e.preventDefault(); const name = e.target.value.trim(); if (name) { storeSaved(saveFilter(saved, { name, type: type.id, filter: f, sort })); toast('success', `Saved "${name}".`); } } },
+            }) : null,
+            isFiltering(f) ? button('', () => setFilter(type.id, EMPTY_FILTER), { iconName: 'fa-filter-circle-xmark', title: 'Clear these filters' }) : null) : null);
+}
+
+// Dragging places onto each other in the card and list views: onto a place
+// to put it inside, onto the strip on top to make it a region of its own.
+// The map keeps its own dragging (ws.mapDragging); while a card is dragged,
+// background redraws wait (ws.cardDragging).
+function placeDragging(entries, parents, names) {
+    const { settingId } = ws.ctx;
+    const placeIds = new Set(entries.map((e) => e.id));
+    const carrying = (e) => [...(e.dataTransfer?.types ?? [])].includes(DRAG_TYPE);
+    const end = (el) => { ws.cardDragging = null; el?.classList.remove('sb-dragging'); };
+    const mark = (el, targetId) => {
+        const check = reparentCheck(parents, ws.cardDragging, targetId, placeIds);
+        el.classList.toggle('sb-drop', check === 'ok');
+        el.classList.toggle('sb-drop-no', check === 'cycle');
+    };
+    const unmark = (el) => el.classList.remove('sb-drop', 'sb-drop-no');
+    const wire = (el, targetId) => {
+        el.addEventListener('dragover', (e) => { if (!carrying(e)) return; e.preventDefault(); mark(el, targetId); });
+        el.addEventListener('dragleave', () => unmark(el));
+        el.addEventListener('drop', (e) => {
+            if (!carrying(e)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            unmark(el);
+            const id = e.dataTransfer.getData(DRAG_TYPE);
+            end(null);
+            const check = reparentCheck(parents, id, targetId, placeIds);
+            if (check === 'cycle') return toast('warning', 'A place cannot go inside itself or one of its own parts.');
+            if (check !== 'ok') return;
+            if (!setParent(settingId, id, targetId)) return toast('warning', 'A place cannot go inside itself or one of its own parts.');
+            toast('success', targetId ? `${names.get(id)} is now inside ${names.get(targetId)}.` : `${names.get(id)} is now a region of its own.`);
+            rerender();
+        });
+        return el;
+    };
+    return {
+        item(el, id) {
+            el.setAttribute('draggable', 'true');
+            el.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData(DRAG_TYPE, id);
+                e.dataTransfer.effectAllowed = 'move';
+                ws.cardDragging = id;
+                el.classList.add('sb-dragging');
+            });
+            el.addEventListener('dragend', () => end(el));
+            return wire(el, id);
+        },
+        root: () => wire(h('div', { class: 'sb-drop-root sb-drop-root-cards', title: 'Drag a place here to take it out of the place it is in' }, icon('fa-arrow-up'), ' Drag a place onto another to put it inside - or here to make it a region of its own'), null),
+    };
 }
 
 // "Inside: (a new region)" - a new top-level place; left empty, a new place
@@ -575,7 +739,7 @@ function card(entry, type, doc, pathLabel) {
             h('div', { class: 'sb-card-name' }, entry.meta?.pinned ? icon('fa-thumbtack') : null, h('span', {}, entry.name)),
             subtitle ? h('small', { class: 'sb-card-sub' }, subtitle) : null,
             entry.description ? h('p', { class: 'sb-card-desc' }, truncate(entry.description, 110)) : null,
-            h('div', { class: 'sb-card-foot' }, statusBadge(entry, doc), (entry.meta?.tags ?? []).slice(0, 3).map((t) => h('span', { class: 'sb-tag' }, `#${t}`)))));
+            h('div', { class: 'sb-card-foot' }, statusBadge(entry, doc), (entry.meta?.tags ?? []).slice(0, 3).map((t) => tagChip(t)))));
 }
 
 function listRow(entry, type, doc, pathLabel) {
@@ -585,7 +749,7 @@ function listRow(entry, type, doc, pathLabel) {
         h('div', { class: 'sb-listrow-main' },
             h('div', { class: 'sb-listrow-head' }, entry.meta?.pinned ? icon('fa-thumbtack') : null, h('b', {}, entry.name), subtitle ? h('small', { class: 'sb-hint' }, subtitle) : null),
             entry.description ? h('small', { class: 'sb-listrow-desc' }, truncate(entry.description, 140)) : null),
-        h('div', { class: 'sb-listrow-side' }, statusBadge(entry, doc), (entry.meta?.tags ?? []).slice(0, 3).map((t) => h('span', { class: 'sb-tag' }, `#${t}`))));
+        h('div', { class: 'sb-listrow-side' }, statusBadge(entry, doc), (entry.meta?.tags ?? []).slice(0, 3).map((t) => tagChip(t))));
 }
 
 // The location tree: drag a place onto another to put it inside, onto the
@@ -602,7 +766,7 @@ function locationTree(entries, doc, parents) {
         e.preventDefault();
         e.stopPropagation();
         e.currentTarget.classList.remove('sb-drop');
-        const id = e.dataTransfer.getData('text/x-sb-location');
+        const id = e.dataTransfer.getData(DRAG_TYPE);
         if (!id || id === targetId) return;
         if (targetId && wouldCreateCycle(parents, id, targetId)) return toast('warning', 'A place cannot go inside itself or one of its own parts.');
         setParent(settingId, id, targetId);
@@ -624,7 +788,7 @@ function locationTree(entries, doc, parents) {
             kids ? h('small', { class: 'sb-count', title: 'places inside' }, String(kids)) : null,
             statusBadge(entry, doc),
             h('span', { class: 'sb-tree-add', title: `Add a place inside ${entry.name}`, onclick: (e) => { e.stopPropagation(); ws.newParent = n.id; openSheet('new'); } }, icon('fa-plus')));
-        row.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/x-sb-location', n.id); e.dataTransfer.effectAllowed = 'move'; });
+        row.addEventListener('dragstart', (e) => { e.dataTransfer.setData(DRAG_TYPE, n.id); e.dataTransfer.effectAllowed = 'move'; });
         row.addEventListener('dragover', over);
         row.addEventListener('dragleave', leave);
         row.addEventListener('drop', drop(n.id));

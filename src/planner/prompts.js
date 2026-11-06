@@ -215,14 +215,17 @@ export function buildCheckPrompt(input) {
     );
     if (clean(input.beat)) parts.push(
         `If the talk under way in THE LATEST CHAT is where the beat above should come about, and no pending moment lands it, add one for its outcome: what the people the beat names decide or do as the talk comes to its point.`,
-        'Say whether the story has now played out the beat above ("beat_done": true), or not yet (false).',
+        'Say whether the story has now played out the beat above: "yes" when THE LATEST CHAT has shown what it says happen (said or done, even in other words), "no" when it has not come about yet.',
     );
     if (input.askTension) parts.push('Rate the story\'s tension as the latest chat leaves it, each from 0 (none) to 5 (unbearable): threat (danger to people), uncertainty (open questions, mistrust, the unknown) and emotional (what is at stake between people), with a few words on what drives it.');
     parts.push(
         'Answer in this JSON shape:',
-        '{"done":[{"id":"<moment id>","how":"<a few words>"}],"skipped":[{"id":"<moment id>","why":"<a few words>"}],',
+        // The beat asked first and with no value to copy: shown as
+        // "beat_done":false, a small model answered false every time and
+        // Assassins Inc's beat stayed open after Adam had done it word for word.
+        `{${clean(input.beat) ? '"beat_done":"<yes or no>",' : ''}"done":[{"id":"<moment id>","how":"<a few words>"}],"skipped":[{"id":"<moment id>","why":"<a few words>"}],`,
         ` "add":[{"text":"<what happens around ${userName}>","when":"<time of day or any time>","trigger":"<condition or empty>","ties":["<names>"],"droppable":true}],`,
-        ` "requests":[{"request":"<request id>","moments":[<number of each added moment that answers it, from 1>]}]${clean(input.beat) ? ',\n "beat_done":false' : ''}${input.askTension ? ',\n "tension":{"threat":0,"uncertainty":0,"emotional":0,"reason":"<what drives it>"}' : ''}}`,
+        ` "requests":[{"request":"<request id>","moments":[<number of each added moment that answers it, from 1>]}]${input.askTension ? ',\n "tension":{"threat":0,"uncertainty":0,"emotional":0,"reason":"<what drives it>"}' : ''}}`,
     );
     return { system, prompt: parts.join('\n') };
 }
@@ -247,13 +250,15 @@ export function readCheck(json, { playerNames = [] } = {}) {
     const all = list(json.add).map(readMoment);
     const add = all.filter((m) => m && !(list(playerNames).length && playerLed(m.text, playerNames))).slice(0, 2);
     const renumber = (n) => { const i = add.indexOf(all[n - 1]); return i < 0 ? 0 : i + 1; };
-    const ids = (v, key) => list(v).map((x) => (typeof x === 'string' ? { id: clean(x).toLowerCase(), [key]: '' } : isObject(x) ? { id: clean(x.id).toLowerCase(), [key]: cut(x[key], 160) } : null)).filter((x) => x?.id);
+    // "[m2]" as the plan lists it is m2.
+    const bare = (v) => clean(v).replace(/^\[|\]$/g, '').trim().toLowerCase();
+    const ids = (v, key) => list(v).map((x) => (typeof x === 'string' ? { id: bare(x), [key]: '' } : isObject(x) ? { id: bare(x.id), [key]: cut(x[key], 160) } : null)).filter((x) => x?.id);
     return {
         done: ids(json.done, 'how'),
         skipped: ids(json.skipped, 'why'),
         add,
         requests: readLinks(json.requests).map((r) => ({ ...r, moments: r.moments.map(renumber).filter(Boolean) })).filter((r) => r.moments.length),
-        beatDone: json.beat_done === true || json.beatDone === true,
+        beatDone: [json.beat_done, json.beatDone].some((v) => v === true || /^\s*(?:yes|y|true|done)\b/i.test(typeof v === 'string' ? v : '')),
         tension: readTension(json.tension),
     };
 }

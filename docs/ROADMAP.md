@@ -218,26 +218,32 @@ These came after spec v0.5 and should be folded into its next revision.
   "after the fire" pictures.
 - [ ] Groups (SB-122: "Act I", "Harbor District"), multi-select bulk
   operations (SB-125), an "in play / recently used" view (SB-121).
-- [ ] **Tags, filters and sorting in the catalog (added 2026-10-21).** Today a
-  chapter has a search box, ONE tag filter, a status filter (in scene / in
-  play / unused) and "within a place"; sorts by name, recent or status;
-  tags are typed on the sheet as comma-separated text. Wanted:
-  - Quick filters for what Scenario Builder already knows: powers only,
-    the dead only (this chat), active characters (in the scene or in play)
-    and inactive ones, the player character, canon-locked, made by the
-    story or the director, generated and not yet reviewed.
-  - Filter and group by faction membership (a character's Factions, a
-    place's), and by any field - "Role is guard", "Danger is high".
-  - Sort by faction, by a field, or by a key the user defines.
-  - A proper tagging system: tags picked from the setting's own list
-    (autocomplete, colours), added to many entries at once (with SB-125's
-    multi-select), shown as chips on cards, several tags combined in a
-    filter (all of / any of / none of).
-  - User-defined keys: the user's own fields for sorting and filtering
-    ("Act", "Allegiance", "Threat") - probably State Engine baseline
-    fields added on request (SB-102), so they also reach the guidance.
-  - Saved filters ("my villains", "Act II cast") per setting.
-- [ ] Drag-and-drop re-parenting in card/list views (only the tree has it now).
+- [x] **Tags, filters and sorting in the catalog** (added 2026-10-21) - done
+  (`ui/catalog-model.js`, the filter bar in `ui/catalog.js`): quick filters
+  for what Scenario Builder knows (active, inactive, the player, dead in
+  this chat, powers, canon-locked, from the story or the director, to
+  review - only those that would narrow the chapter are shown, with
+  counts); the chapter's tags as coloured chips combined all of / any of /
+  none of; a faction filter (a faction's Members and Related, the entry's
+  own Factions and faction ties, or "in no faction"); any field ("Role is
+  guard" - part of the value is enough, empty means set at all); sorts by
+  name, recently edited, in play first, faction or any field, a faction or
+  field sort grouped under headings; filters saved under a name per
+  setting ("my villains"), applied or forgotten from their chips. Filter
+  and sort are remembered per chapter for this viewer (settings
+  `catalog.filters` / `catalog.sorts` / `catalog.saved`). Tags are edited
+  on the sheet's header as chips (x to remove; the setting's own tags
+  offered as you type), and shown coloured on cards and list rows.
+- [ ] Tags, next: add a tag to many entries at once (waits on SB-125's
+  multi-select); user-defined keys ("Act", "Allegiance") as State Engine
+  baseline fields on request (SB-102) - once they are fields, the field
+  filter and sort take them as they are.
+- [x] Drag-and-drop re-parenting in card/list views - done: in the places
+  chapter, drag a card or list row onto another place to put it inside, or
+  onto the strip above to make it a region of its own; a drop inside one
+  of its own parts is refused with a warning (and marked red while
+  dragging). Background redraws wait while a card is dragged
+  (`ws.cardDragging`); the map's own dragging is unchanged.
 - [x] Location connections with travel time (SB-111): routes on a location's
   Details tab, in the guidance, the director's dossier and the graph; a move
   along a route (or between the places the ends are in) moves the clock on
