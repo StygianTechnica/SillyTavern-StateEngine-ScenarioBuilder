@@ -33,7 +33,8 @@ import { asksWhatNext } from './build.js';
 import { activeBeat, settledNow, touchedSettled, retireSettled, dueToday } from '../planner/model.js';
 import { notYet, notYetLine } from '../planner/timed.js';
 import { closesOut, nextThingLine } from './wrapped.js';
-import { needsPresence, notePresent, rememberPeople, shownOf } from '../planner/presence.js';
+import { needsPresence, notePresent, rememberPeople, shownOf, takingPart, isKnownPerson } from '../planner/presence.js';
+import { pushBack } from './pushback.js';
 import { opposedJobs, jobsLine, jobsTouched, planTexts } from '../planner/aims.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { giftsText } from '../library/powers.js';
@@ -590,9 +591,17 @@ export async function gatherInputs(chatId, chatKey) {
             sides: sidesText(sidesApart(cast, library.relations ?? [], (fid) => factionNames.get(fid) ?? '').filter((s) => !corrected.has(s.name))),
             // What the latest replies or Archivist's notes got wrong against
             // the library (src/guidance/canon.js) - put right in the chat.
-            corrections: [correctionText({ slips, dead: deadNow }), pronounText(wrongPronouns, wrongOrders)].filter(Boolean).join(' '),
+            correctionsNow: [correctionText({ slips, dead: deadNow }), pronounText(wrongPronouns, wrongOrders)].filter(Boolean).join(' '),
             // The player asks what comes next: the outline's beat now answers.
             next: settings.planner?.enabled === true && asksWhatNext(latestPlayerPost()) ? (activeBeat(doc.gm.outline)?.text ?? '') : '',
+            // The player questions it: no closing ranks, and the job as the
+            // plan gives it (src/guidance/pushback.js).
+            ...((b) => {
+                const player = cast.find((c) => c.player)?.name ?? '';
+                const people = b ? [...takingPart(b.text, b.ties ?? [], { isPerson: isKnownPerson, player }), ...(player && new RegExp(`\\b${player.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(b.text) ? [player] : [])] : [];
+                const p = pushBack({ post: latestPlayerPost(), player, cast, beat: b ? { text: b.text, people } : null });
+                return { pushFair: p.fair, pushTeam: p.team };
+            })(settings.planner?.enabled === true ? activeBeat(doc.gm.outline) : null),
             // Who has died in this story (src/state/death.js).
             // Only the dead the latest messages speak of.
             dead: deadText(doc, { about: whoTheyWere, recentText: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-6).map((m) => String(m.mes ?? '')).join('\n') }),

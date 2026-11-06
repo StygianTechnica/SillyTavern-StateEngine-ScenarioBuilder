@@ -439,7 +439,10 @@ export function buildNow(input) {
     const sides = clean(input.sides);
     // What the latest replies or Archivist's notes got wrong against the
     // library (src/guidance/canon.js): put right before anything else.
-    const corrections = clean(input.corrections);
+    // (Its own key: `corrections` is the list told before the chat, and one
+    // key for both let that list overwrite these - the Galice pronoun and
+    // order corrections never reached the narrator.)
+    const corrections = clean(input.correctionsNow);
     // Someone the player just named who is not here, and who here knows
     // them (src/guidance/spoken.js): Inji, asked about Zane - his rival, a
     // fellow White Cerberus agent - said he had never heard the name.
@@ -458,7 +461,11 @@ export function buildNow(input) {
     // (src/guidance/spoken.js elsewhereNow): a cutaway's people at HQ were
     // all written into the gun range when Zane came.
     const elsewhere = [...new Set((input.elsewhere ?? []).map(clean).filter(Boolean))].filter((n) => !arriving.includes(n));
-    if (!elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
+    // The player questions it (src/guidance/pushback.js): no closing ranks,
+    // and the job as the plan gave it.
+    const pushFair = clean(input.pushFair);
+    const pushTeam = clean(input.pushTeam);
+    if (!pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (corrections) orders.push(corrections);
@@ -473,6 +480,8 @@ export function buildNow(input) {
     // the beat gives Cyril): no one stands in for them.
     if (next) orders.push(`${player ? clean(player.name) : 'The player character'} asks what comes next - the answer is where the story goes now: ${unstop(next)}. Those it names are the ones in it, in the parts it gives them; no one else takes their place and no one it names is left out. Bring it in this reply.`);
     if (sides) orders.push(sides);
+    if (pushTeam) orders.push(pushTeam);
+    if (pushFair) orders.push(pushFair);
     if (jobs) orders.push(jobs);
     if (notYet) orders.push(notYet);
     if (nextThing) orders.push(nextThing);

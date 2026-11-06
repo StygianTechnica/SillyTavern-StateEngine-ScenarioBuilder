@@ -59,10 +59,10 @@ describe('the correction in the chat', () => {
         const corrections = correctionText({ slips: [{ name: 'Doctor Adrigo Tole', faction: 'White Cerberus', theirs: ['Omicron Innovations'] }], dead: ['Marcus Hale'] });
         expect(corrections).toMatch(/^Correction: Doctor Adrigo Tole is not of White Cerberus and never was - Doctor Adrigo Tole is of Omicron Innovations\./);
         expect(corrections).toMatch(/Correction: Marcus Hale is dead\./);
-        const note = buildNow({ corrections, settled: ['The deal is off.'], cast: [{ name: 'Cyril', player: true }] });
+        const note = buildNow({ correctionsNow: corrections, settled: ['The deal is off.'], cast: [{ name: 'Cyril', player: true }] });
         expect(note).toMatch(/^\[Game master's note for this reply, not part of the story: Correction: Doctor Adrigo Tole/);
         expect(note).toMatch(/Settled and done with/);
-        expect(buildNow({ corrections: '' })).toBe('');
+        expect(buildNow({ correctionsNow: '' })).toBe('');
         expect(correctionText()).toBe('');
     });
 });
