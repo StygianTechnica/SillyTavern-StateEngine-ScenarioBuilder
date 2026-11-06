@@ -44,7 +44,7 @@ import { hasArchivist, storyRelationships, relationshipLine } from '../library/s
 import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from '../library/powers.js';
 import { namedAtAll } from '../validate/drift.js';
 import { circling } from './loops.js';
-import { shownLeaving } from './departures.js';
+import { shownLeaving, shownArriving } from './departures.js';
 import { goesAlone, goesTogether, namedGoing } from './going-along.js';
 import { timedHappenings } from '../planner/timed.js';
 
@@ -60,7 +60,7 @@ import { buildPeoplePrompt, readPeople } from './people.js';
 import { unknownsFor, toldInChat, mergeTold, PERSPECTIVE_TOKENS } from './perspective.js';
 import { getSettingDoc, getEntryMeta } from '../store/setting-store.js';
 import { planStamp } from '../planner/model.js';
-import { directorPlan, takeBeats, takeSets, takeSettled, markActive, overdueNewcomers } from '../planner/run.js';
+import { directorPlan, takeBeats, takeSets, takeSettled, markActive, overdueNewcomers, beatWaitingOn } from '../planner/run.js';
 import { livePoolFor, takeFromPool, byType, rollNameFor, markNameUsed } from '../naming/run.js';
 import { poolLine, swapInvented, applySwaps } from '../naming/live.js';
 import { bloodlinesOf, decideLineage, mixFor } from '../library/bloodlines.js';
@@ -929,6 +929,17 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         const left = new Set(parsed.leaves.map((n) => String(n).toLowerCase()));
         const seen = peopleNamedIn(parsed.situation, characters).filter((c) => !baseCast.includes(c.id) && !heldOut.has(c.id) && !waitingNow.has(c.id) && !callNames(c).some((n) => left.has(n.toLowerCase())));
         if (seen.length) parsed.enters = [...new Set([...parsed.enters, ...seen.map((c) => c.name)])];
+        // Whoever the briefing's own prose has arriving where the player is,
+        // with no ENTERS line: Zane "suddenly appeared on the scene", and the
+        // narrator - told the player was alone - wrote the team elsewhere.
+        const playerHere = playerIdOf(settingId, characters);
+        const cameIn = characters.filter((c) => !isPower(c) && c.id !== playerHere && !baseCast.includes(c.id) && !heldOut.has(c.id) && !waitingNow.has(c.id)
+            && !doc.dead.some((d) => d.id === c.id) && !parsed.enters.some((n) => callNames(c).some((x) => x.toLowerCase() === String(n).toLowerCase()))
+            && shownArriving(callNames(c), parsed.note));
+        if (cameIn.length) {
+            console.info(LOG_PREFIX, `${cameIn.map((c) => c.name).join(', ')} arrive${cameIn.length === 1 ? 's' : ''} in the briefing with no ENTERS line - taken as entering`);
+            parsed.enters = [...parsed.enters, ...cameIn.map((c) => c.name)];
+        }
         // Someone the latest chat shows walking out does not come straight
         // back in: the reply they left in still shows them there.
         const latestText = [...messages.slice(-2).map((m) => m.text), parsed.situation ?? ''].join('\n');
@@ -953,7 +964,11 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         // player's own post brings them (src/director/whereabouts.js).
         // Those the beat has waited on too long are not kept out for being
         // away a while: they come to the player, as the beat needs.
-        const farAway = elsewhereEntering(parsed.enters.filter((n) => !overdue.some((c) => c.name === n)), { characters, elsewhere, castIds: baseCast, userPost: [...messages].reverse().find((m) => m.isUser)?.text ?? '', namedIn: peopleNamedIn, namesOf: callNames });
+        // So are those the beat now is waiting on (src/planner/run.js
+        // beatWaitingOn): the game master bringing Zane to Cyril is the beat.
+        const awaited = beatWaitingOn(chatKey).map((t) => t.toLowerCase());
+        const wanted = (n) => overdue.some((c) => c.name === n) || awaited.some((t) => { const c = characters.find((x) => callNames(x).some((y) => y.toLowerCase() === String(n).toLowerCase())); return !!c && callNames(c).some((y) => y.toLowerCase() === t || y.toLowerCase().startsWith(`${t} `)); });
+        const farAway = elsewhereEntering(parsed.enters.filter((n) => !wanted(n)), { characters, elsewhere, castIds: baseCast, userPost: [...messages].reverse().find((m) => m.isUser)?.text ?? '', namedIn: peopleNamedIn, namesOf: callNames });
         if (farAway.length) {
             console.info(LOG_PREFIX, `${farAway.join(', ')} ${farAway.length === 1 ? 'is' : 'are'} elsewhere - not brought into this scene`);
             parsed.enters = parsed.enters.filter((n) => !farAway.includes(n));

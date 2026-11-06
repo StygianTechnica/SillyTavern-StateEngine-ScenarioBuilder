@@ -77,3 +77,15 @@ describe('a section of the prompt echoed in the note', () => {
         expect(note.note).not.toContain('SET FOR LATER');
     });
 });
+
+import { shownArriving } from '../src/director/departures.js';
+describe('someone the briefing has arriving is in the scene', () => {
+    const note = 'As he finished up and started to head back, Zane suddenly appeared on the scene, having arrived to discuss tonight\'s mission plans.\n\nOutside the gun range, the base buzzed. Doc paced around, while Vex came in to check the screens back at HQ.';
+    it('reads plain arrivals where the scene is, not ones elsewhere', () => {
+        expect(shownArriving(['Zane'], note)).toBe(true);
+        expect(shownArriving(['Vex'], note)).toBe(false);
+        expect(shownArriving(['Doc'], note)).toBe(false);
+        expect(shownArriving(['Mira'], 'Mira might arrive by nightfall.')).toBe(false);
+        expect(shownArriving(['Captain Hale'], 'The airlock hissed and Captain Hale stepped in.')).toBe(true);
+    });
+});

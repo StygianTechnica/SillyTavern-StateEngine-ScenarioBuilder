@@ -158,6 +158,20 @@ export function overdueNewcomers(chatKey) {
     }
 }
 
+// Those the beat now is waiting on, the firm line passed or not: the game
+// master may bring them to the player though they have been away a while.
+// [] with the planner off.
+export function beatWaitingOn(chatKey) {
+    try {
+        if (plannerSettings().enabled !== true) return [];
+        const doc = getChatDoc(chatKey);
+        return beatNewcomers(doc.gm, doc);
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not read who the beat waits on', err);
+        return [];
+    }
+}
+
 // One pass at a time per chat; a pass of the same kind already queued is
 // not queued again.
 const queued = new Set();

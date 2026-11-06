@@ -33,6 +33,20 @@ export function shownLeaving(names, text) {
 const COMING = /\b(?:arriv(?:e|es|ed|ing)|enter(?:s|ed|ing)?|c[oa]me(?:s)? (?:in|back|over|up|through|into|along)|coming (?:in|back|over|through|into|along)|(?:walk|stroll|stride|step|burst|storm|slip|march|wander|limp|stumble|hurri)(?:s|ed|es|ing)? (?:in|into|through|over|up|back)|strode (?:in|into|through|over|up)|show(?:s|ed|ing)? up|turn(?:s|ed|ing)? up|appear(?:s|ed|ing)?|join(?:s|ed|ing)?|(?:call|wave|beckon|summon|bring|brought|fetch)(?:s|ed|es|ing)?\b[^.!?\n]{0,30}\b(?:over|in|here|along|up)|turn(?:s|ed)? to (?:face )?|look(?:s|ed)? (?:at|up at|over at)|(?:said|says|asked|asks|told|tells|whispered|snapped|growled) to|(?:greet(?:s|ed)?|fac(?:es|ed|ing)|hug(?:s|ged)?|kiss(?:es|ed)?|punch(?:es|ed)?|shove[sd]?|grab(?:s|bed)?))\b/i;
 const DOUBT = /\b(?:not|n't|never|no|if|unless|would|might|could|maybe|perhaps|probably|likely|whether|think|thought|doubt(?:ed)?|wonder(?:ed)?|rememb(?:er|ered)|recall(?:ed)?|used to|had (?:been|once|always|often|never))\b|n't\b|'d\b/i;
 
+// Whether a briefing's own prose has someone arrive where the scene is:
+// "Zane suddenly appeared on the scene, having arrived to discuss tonight's
+// mission plans" - with no ENTERS line, so the narrator, told the player was
+// alone, wrote around him. Only plain arrivals, never a sentence set
+// elsewhere ("Back at HQ, Doc came in").
+const ARRIVES = /\b(?:arriv(?:e|es|ed|ing)|appear(?:s|ed|ing)|show(?:s|ed)? up|turn(?:s|ed)? up|walk(?:s|ed)? in(?:to)?|stride[s]? in|strode in(?:to)?|step(?:s|ped)? in(?:to)?|c[oa]me(?:s)? in(?:to)?|enter(?:s|ed)|join(?:s|ed))\b/i;
+const ELSEWHERE = /\b(?:meanwhile|elsewhere|back at|back in|across (?:the )?(?:city|town|base)|at (?:the )?(?:hq|headquarters|office)|outside the|in the distance|off[- ]screen)\b/i;
+export function shownArriving(names, text) {
+    const list = (names ?? []).map((n) => String(n ?? '').trim()).filter((n) => n.length > 1);
+    if (!list.length) return false;
+    const named = new RegExp(`\\b(?:${list.map(escape).join('|')})\\b`, 'i');
+    return String(text ?? '').split(/(?<=[.!?…"”])\s+|\n+/).some((s) => named.test(s) && ARRIVES.test(s) && !ELSEWHERE.test(s) && !DOUBT.test(s));
+}
+
 export function shownComing(names, text) {
     const list = (names ?? []).map((n) => String(n ?? '').trim()).filter((n) => n.length > 1);
     if (!list.length) return false;
