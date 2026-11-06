@@ -29,6 +29,7 @@ import { listEntries } from '../library/library.js';
 import { placeOverview, isLaterAge } from '../library/world-options.js';
 import { timeFor, techOf, readTravelMode, modeLabel } from '../library/travel.js';
 import { pathOf } from '../library/hierarchy.js';
+import { postSpan } from './post-span.js';
 
 const FALLBACK_CALENDAR = Object.freeze({
     id: 'gregorian', label: 'Gregorian', unit: 'seconds', secondsPerMinute: 60, minutesPerHour: 60, hoursPerDay: 24, leapYearRule: 'gregorian',
@@ -320,7 +321,9 @@ export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, so
     if (!delta) return null;
     const doc = getChatDoc(chatKey);
     const planned = doc.clock.planned;
-    updateChatDoc(chatKey, (d) => { d.clock.planned = null; d.clock.turnFrom = null; });
+    // Where the turn began is kept until the next turn: a swipe takes this
+    // reply's catch-up back, and the new reply counts from there again.
+    updateChatDoc(chatKey, (d) => { d.clock.planned = null; });
     try {
         await setVariableValue(chatId, PRESET_NAME, 'scene_deltatime', '');
     } catch (err) {
@@ -336,6 +339,24 @@ export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, so
     console.info(LOG_PREFIX, `the story's time passed: "${delta}" - ${target === null ? 'not understood by State Engine' : moves ? 'the clock catches up' : 'within what the clock already moved'}`);
     if (!moves) return null;
     return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The story moved time on: ${delta}`, sourceMessage });
+}
+
+// After a reply, swipes too: what the player's post says its action took
+// ("spent several hours at the gun range") is the least the turn covers,
+// counted from where the turn began. Tied to the reply, like the story's
+// catch-up: a swipe takes it back and the new reply puts it again.
+// -> the history entry, or null.
+export async function catchUpWithPost(chatId, chatKey, settingId, postText, sourceMessage = '') {
+    const span = postSpan(postText);
+    if (!span) return null;
+    const doc = getChatDoc(chatKey);
+    const now = doc.canonical.time;
+    if (!Number.isFinite(now)) return null;
+    const from = doc.clock.turnFrom ?? now;
+    const target = await advanceFrom(settingId, from, span);
+    if (target === null || target <= now) return null;
+    console.info(LOG_PREFIX, `the player's post took ${span} - the clock catches up`);
+    return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The player's post took ${span}`, sourceMessage });
 }
 
 // The default advance for a reply nobody planned.

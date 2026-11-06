@@ -31,7 +31,10 @@ import { beatsOf, undoBeatsFrom, unplantSeedsFrom } from '../planner/model.js';
 import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
 import { noteMood } from '../director/company.js';
-import { catchUpWithStory, holdStoryWeather, travelAlong } from '../calendar/clock.js';
+import { catchUpWithStory, catchUpWithPost, holdStoryWeather, travelAlong } from '../calendar/clock.js';
+
+// The player's latest post (SillyTavern's chat).
+const latestPlayerText = () => { try { return String([...(SillyTavern.getContext().chat ?? [])].reverse().find((m) => m && !m.is_system && m.is_user)?.mes ?? ''); } catch { return ''; } };
 import { detectDrift, decide, DEFAULT_POLICIES, namedOnlyAsOwner, namedAtAll, readObserved, applyAccepted, correctionText, describeItem, applyHolds, followPlayer, OBSERVED_FIELDS } from './drift.js';
 
 export const DRIFT_CHANGED_EVENT = 'scenario_builder_drift_changed';
@@ -382,6 +385,8 @@ async function reconcileOnce() {
         // A move along a route takes its travel time.
         if (acceptedFields.has('location') && canonical.locationId !== doc.canonical.locationId) await travelAlong(chatId, chatKey, settingId, doc.canonical.locationId, canonical.locationId, replySource, { text: [latestTurnText()] });
         if (storyTime) await catchUpWithStory(chatId, chatKey, settingId, storyTime, replySource);
+        // What the player's post said it took, if the clock is still short of it.
+        await catchUpWithPost(chatId, chatKey, settingId, latestPlayerText(), replySource);
     }
     if (newReply && playerId) await takePlayerMood(chatId, chatKey, playerId, canonical.castIds, characterEntries, replySource);
     if (restore.size) await pushCanonicalToObserved(chatId, chatKey, { fields: [...restore] });
