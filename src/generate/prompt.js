@@ -209,7 +209,9 @@ ${input.populationLine} Let what you write fit this mix.`);
     // (src/generate/run.js sidesOf): it shares their friends and enemies.
     // With no side of its own, the sides of those it is tied to (tiedSides).
     if (input.sides?.length) {
-        const lines = input.sides.map((s) => [`- ${s.name} (faction)${s.through ? `, which ${s.through} is one of` : ''}${s.description ? ` - ${cut(s.description, 200)}` : ''}`, ...s.ties.map((t) => `  - ${cut(t, 200)}`)].join('\n'));
+        // Its people by name: someone new of it knows some of them, and its
+        // ties name them, not "a small team within her group".
+        const lines = input.sides.map((s) => [`- ${s.name} (faction)${s.through ? `, which ${s.through} is one of` : ''}${s.description ? ` - ${cut(s.description, 200)}` : ''}`, ...((s.members ?? []).length ? [`  - its people include: ${s.members.join(', ')}`] : []), ...s.ties.map((t) => `  - ${cut(t, 200)}`)].join('\n'));
         const through = [...new Set(input.sides.map((s) => s.through).filter(Boolean))];
         // The one side the story gives a person it brought in (src/generate/
         // run.js storySide): kept to - Victor Reyes, of Enrique's old crew,
@@ -313,10 +315,12 @@ ${input.populationLine} Let what you write fit this mix.`);
     ];
     // A new entry may be tied into the setting: up to three relationships
     // to entries that already exist.
-    const relationNames = task === 'create' ? (input.relationNames ?? []).slice(0, 25) : [];
+    // A person filled with no ties yet (input.tieUp) too: one the story or
+    // the director brought in.
+    const relationNames = task === 'create' || input.tieUp ? (input.relationNames ?? []).slice(0, 25) : [];
     if (relationNames.length) {
         template.push(['relations', '[{"name": "...", "kind": "..."}]']);
-        needs.push(`- "relations": up to THREE existing entries it is connected to, and how ("kind" in a few words: ally, rival, serves, sibling, owes...). Choose only from: ${relationNames.join(', ')}. [] if none fits.${input.sides?.length ? ' Each must agree with how its side stands with that entry: never a friend, ally or confidant of its side\'s rival or enemy.' : ''}`);
+        needs.push(`- "relations": up to THREE existing entries it is connected to, and how ("kind" in a few words: member of, ally, rival, serves, sibling, owes...). Choose only from: ${relationNames.join(', ')}.${input.sides?.length ? ` Its side first ("member of"), then people of it it works with. Each must agree with how its side stands with that entry: never a friend, ally or confidant of its side's rival or enemy.` : ''} [] if none fits.`);
         keys.push('relations');
     }
     parts.push(`# Your task\n${job}`);

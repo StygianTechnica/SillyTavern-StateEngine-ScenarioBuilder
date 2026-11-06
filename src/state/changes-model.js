@@ -51,17 +51,35 @@ const callNames = (e) => [...new Set([clean(e.name), ...(e.aliases ?? []).map(cl
 // change must be this one's, not theirs. Assassins Inc: a line about Cyril
 // within six words of Inji had Inji's current description say his body
 // "now hosts Cyril Moriarty's consciousness".
-export function changeIn(text, entry, { others = [] } = {}) {
+// One regex for many names (whole words), or null for none.
+export function namesRegex(names) {
+    const list = [...new Set((names ?? []).map(clean).filter((n) => n.length > 2))].sort((a, b) => b.length - a.length);
+    return list.length ? new RegExp(`\\b(?:${list.map(escape).join('|')})\\b`, 'i') : null;
+}
+
+export function changeIn(text, entry, { others = [], othersRe = undefined } = {}) {
     const re = BY_TYPE[entry?.type];
     if (!re) return '';
-    const own = new Set(callNames(entry).map((n) => n.toLowerCase()));
-    const names = (others ?? []).map(clean).filter((n) => n.length > 2 && !own.has(n.toLowerCase()));
-    const naming = (part) => names.some((n) => new RegExp(`\\b${escape(n)}\\b`, 'i').test(part));
+    const mine = callNames(entry);
+    // Most memories never name it: a plain look first (the scan read 1470
+    // memories against every object, a regex built for each - 15 seconds
+    // with the page frozen).
+    const low = String(text ?? '').toLowerCase();
+    if (!mine.some((n) => low.includes(n.toLowerCase()))) return '';
+    const own = new Set(mine.map((n) => n.toLowerCase()));
+    const rest = othersRe !== undefined ? othersRe : namesRegex((others ?? []).filter((n) => !own.has(clean(n).toLowerCase())));
+    // A name of its own is never someone else's.
+    const naming = (part) => {
+        if (!rest) return false;
+        const m = part.match(new RegExp(rest.source, 'gi')) ?? [];
+        return m.some((n) => !own.has(n.toLowerCase()));
+    };
+    const mineRe = mine.map((name) => [name, new RegExp(`\\b${escape(name)}\\b`, 'i')]);
     for (const sentence of clean(text).split(/(?<=[.!?])\s+/)) {
         const hit = re.exec(sentence);
         if (!hit || NOT_YET.test(sentence)) continue;
-        for (const name of callNames(entry)) {
-            const at = sentence.search(new RegExp(`\\b${escape(name)}\\b`, 'i'));
+        for (const [name, nameRe] of mineRe) {
+            const at = sentence.search(nameRe);
             if (at < 0) continue;
             const between = at < hit.index ? sentence.slice(at + name.length, hit.index) : sentence.slice(hit.index + hit[0].length, at);
             if (between.split(/\s+/).filter(Boolean).length > 6) continue;
@@ -86,11 +104,12 @@ export function changesFrom(memories, { entries = [], seen = [], first = false }
     const look = first ? fresh.slice(-FIRST_LOOK) : fresh;
     const byId = new Map();
     const candidates = (entries ?? []).filter((e) => e?.id && BY_TYPE[e.type]);
-    const everyone = candidates.flatMap(callNames);
+    // Built once for the scan.
+    const everyoneRe = namesRegex(candidates.flatMap(callNames));
     for (const m of look) {
         const named = new Set(m.entity_ids ?? []);
         for (const e of candidates) {
-            const sentence = changeIn(m.text, e, { others: everyone });
+            const sentence = changeIn(m.text, e, { othersRe: everyoneRe });
             if (!sentence) continue;
             // The memory is about it, or names it outright.
             if (named.size && !named.has(e.id) && !callNames(e).some((n) => new RegExp(`\\b${escape(n)}\\b`, 'i').test(m.text))) continue;

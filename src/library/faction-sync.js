@@ -133,6 +133,8 @@ export function briefMemberships(brief, factions) {
 
 // Where one mention of a faction puts someone: 'leads', 'member of',
 // 'outside' (set against it or gone from it), or null (only mentioned).
+const JOB_FOR = /\b(?:specialists?|analysts?|technicians?|techs?|engineers?|medics?|doctors?|nurses?|officers?|scouts?|drivers?|pilots?|hackers?|fixers?|couriers?|handlers?|recruiters?|instructors?|trainers?|mercenar(?:y|ies)|assassins?|snipers?|directors?|managers?|captains?|sergeants?|squires?|pages?|stewards?|clerks?|scribes?|healers?|priests?|priestesses?|apprentices?|researchers?|scientists?|chemists?|accountants?|lawyers?|bodyguards?|spokes(?:man|woman|person)|quartermasters?|armou?rers?|mechanics?|smiths?|blacksmiths?|cooks?|bartenders?)\s+(?:for|at|to|with)\s+(?:the\s+)?$/i;
+
 function mentionStand(text, start, name) {
     // Its clause: from the last break before the name to the next after it.
     const before = text.slice(0, start).split(/[.;:!?\n,]|\b(?:and|but|while|who|whom|though|yet|whose)\b/i).pop().split(/\s+/).filter(Boolean).slice(-5).join(' ');
@@ -143,6 +145,9 @@ function mentionStand(text, start, name) {
     if (LEAD.test(before) || LEAD.test(next)) return 'leads';
     // "in the Iron Hand" is in it; "heard of the Iron Hand" is not.
     if (MEMBER.test(before) || MEMBER.test(next) || /\b(in|inside|within|among|under)\s+(the\s+)?$/i.test(`${before} `)) return 'member of';
+    // A job held there: "Surveillance Specialist for White Cerberus", "squire
+    // to the Order", "medic at the Clinic".
+    if (JOB_FOR.test(`${before} `)) return 'member of';
     return null;
 }
 

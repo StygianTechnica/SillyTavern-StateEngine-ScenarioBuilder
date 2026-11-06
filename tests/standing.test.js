@@ -27,7 +27,7 @@ describe('what the story says someone did', () => {
         expect(markIn('Doc was not wrong.', doc)).toMatchObject({ sign: 1 });
     });
     it('reads the scorn in the user\'s posts - lists of names and her / she', () => {
-        expect(scornIn("It wasn't the first time Doc or Galice sprang to ridiculous conclusions.", people, { post: true }).map((x) => x.id)).toEqual(['doc', 'gal']);
+        expect(scornIn("It wasn't the first time Doc or Galice sprang to ridiculous conclusions.", people, { post: true }).map((x) => x.id).sort()).toEqual(['doc', 'gal']);
         expect(scornIn('Doc kept talking. She was a stupid woman who made ridiculous assumptions.', people, { post: true }).map((x) => x.id)).toEqual(['doc']);
         // "He" in the user's post is Cyril, not the last man named.
         expect(scornIn('Inji left. He didn\'t want to look stupid.', people, { post: true })).toEqual([]);
@@ -82,5 +82,18 @@ describe('what the narrator and the planner are told', () => {
         expect(cast).toContain('How Adam Miller sees Doc now: doubted');
         expect(sidelinedText([{ name: 'Doc', level: -2 }, { name: 'Vex', level: -1 }])).toBe('Not taken seriously now: Doc - give them fewer moments and never the lead or the answer others wait on.');
         expect(sidelinedText([{ name: 'Vex', level: -1 }])).toBe('');
+    });
+});
+
+// From the user's latest post: the scorn is hers, not Adam's or Inji's.
+describe('whose the scorn is', () => {
+    const adam = { id: 'adm', name: 'Adam Miller', aliases: ['Adam', 'Miller'], gender: 'm' };
+    const all = [doc, galice, inji, cyril, adam];
+    it('the one nearest before it, and those joined to them', () => {
+        expect(scornIn("Doc talked on. He was baffled as to why Adam didn't call her out more for the stupid things that came out of her mouth.", all, { post: true }).map((x) => x.id)).toEqual(['doc']);
+        expect(scornIn("He was annoyed at Inji playing hero to protect Doc's feelings over a stupid remark.", all, { post: true }).map((x) => x.id)).toEqual(['doc']);
+        expect(scornIn('Adam left. These women were going to drive White Cerberus into the ground with their stupidity.', all, { post: true })).toEqual([]);
+        expect(scornIn('Galice and Doc had said all kinds of ridiculous things.', all, { post: true }).map((x) => x.id).sort()).toEqual(['doc', 'gal']);
+        expect(scornIn('Doc and Galice argued. Both of them were nosy.', all, { post: true }).map((x) => x.id).sort()).toEqual(['doc', 'gal']);
     });
 });

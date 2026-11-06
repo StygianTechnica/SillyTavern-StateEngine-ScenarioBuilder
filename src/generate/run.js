@@ -191,6 +191,11 @@ export function sidesOf(entry, { fields = {}, brief = '', all, relations = [] })
     // Not a field that sets it against a faction (its enemies, its target).
     const against = (field) => /rival|enem|oppos|hunt|target|against|war|hate|fear/i.test(field);
     for (const [k, v] of Object.entries({ ...(entry?.base ?? entry ?? {}), ...fields })) if (!against(k)) for (const x of Array.isArray(v) ? v : [v]) if (typeof x === 'string') add(x);
+    // What State Engine links it to: the director's tie for someone the
+    // story brought in (Lena, tied to White Cerberus, came out "for an
+    // underground rebel organization" - the link sits on the object, not in
+    // its fields).
+    for (const x of [...(entry?.related_entity_ids ?? []), ...(entry?.base?.related_entity_ids ?? [])]) if (typeof x === 'string') add(x);
     if (entry?.id) {
         for (const r of runtimeRefs(entry)) if (!against(r.field)) r.ids.forEach(add);
         for (const f of all.faction ?? []) if (Object.entries(f.base ?? f).some(([k, v]) => !against(k) && (Array.isArray(v) ? v : [v]).includes(entry.id))) add(f.id);
@@ -207,7 +212,12 @@ export function sidesOf(entry, { fields = {}, brief = '', all, relations = [] })
         const rel = relationsOf(side, allEntries);
         for (const o of rel.outgoing) for (const x of o.ids) tie(x, `${side.name} → ${byId.get(x).name}: ${fieldLabel(o.field)}`);
         for (const r of rel.incoming) tie(r.id, `${byId.get(r.id).name} → ${side.name}: ${fieldLabel(r.field)}`);
-        return { id, name: side.name, description: side.description ?? side.base?.description ?? '', ties: ties.slice(0, 8) };
+        // Its people, by name: someone new of it knows some of them.
+        const members = [...new Set([
+            ...((side.base ?? side).members ?? []),
+            ...(relations ?? []).filter((r) => r.to === id && /member|serves|works for|leads/.test(r.kind)).map((r) => r.from),
+        ])].filter((m) => m !== entry?.id && byId.get(m)?.type === 'character').slice(0, 6);
+        return { id, name: side.name, description: side.description ?? side.base?.description ?? '', ties: ties.slice(0, 8), members };
     });
 }
 
@@ -436,7 +446,11 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         for (const r of story.slice(0, Math.max(0, 8 - side.ties.length))) side.ties.push({ otherId: r.otherId, line: relationshipLine(side.name, r) });
     }
     // Those its side has ties to come first among the entries it may relate to.
-    const tiedIds = new Set(sides.flatMap((s) => [s.id, ...s.ties.map((t) => t.otherId)]));
+    const tiedIds = new Set(sides.flatMap((s) => [s.id, ...(s.members ?? []), ...s.ties.map((t) => t.otherId)]));
+    // A person filled with no ties of their own yet is tied in too: Lena,
+    // made by the director, came out with no faction and no one she knew.
+    const tieUp = task === 'fill' && type.id === 'character' && !!entry?.id && !relationsFor(entry.id, authored).length;
+    const nameOfMember = (id) => (all.character ?? []).find((c) => c.id === id)?.name;
     // The player character: a new person or group is tied to the others and
     // meets them in the story - never their friend out of nowhere - unless
     // it is already tied to them (playerTie).
@@ -460,9 +474,11 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
         detail: settings.generation.detail,
         parentName: parentForPrompt ? pathOf(parents, parentForPrompt).map((id) => nameOfId.get(id)).filter(Boolean).join(' › ') || nameOfId.get(parentForPrompt) : '',
         creating: task === 'create',
-        relationNames: [...others.filter((e) => tiedIds.has(e.id)), ...others.filter((e) => !tiedIds.has(e.id))].map((e) => e.name).slice(0, 25),
+        tieUp,
+        // People and groups only: a relationship to a room or a gun is not one.
+        relationNames: [...others.filter((e) => tiedIds.has(e.id)), ...others.filter((e) => !tiedIds.has(e.id))].filter((e) => !tieUp || ['character', 'faction', 'creature'].includes(e.type)).map((e) => e.name).slice(0, 25),
         place: placeCtx,
-        sides: sides.map((s) => ({ name: s.name, description: s.description, ties: s.ties.map((t) => t.line), ...(s.through ? { through: s.through } : {}), ...(s.from ? { from: s.from } : {}) })),
+        sides: sides.map((s) => ({ name: s.name, description: s.description, ties: s.ties.map((t) => t.line), members: (s.members ?? []).map(nameOfMember).filter(Boolean), ...(s.through ? { through: s.through } : {}), ...(s.from ? { from: s.from } : {}) })),
         player: player ? { name: player.name, tied: player.tied } : null,
         // A place inside another: what that place is for, and whether what
         // is in it is its owners' (a fortress's rooms) or its own (a club on
@@ -534,8 +550,11 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
             return other ? { otherId: other.id, name: other.name, kind: String((typeof r === 'object' && r?.kind) || 'knows').toLowerCase().slice(0, 40) } : null;
         }).filter(Boolean).slice(0, 3);
     }
-    if (task === 'create' && type.id === 'character') {
-        const joined = withMemberships(result.values.relations ?? [], brief, all.faction ?? []);
+    if ((task === 'create' || tieUp) && type.id === 'character') {
+        // A fill reads its own new words too: "Surveillance Specialist for
+        // White Cerberus" is one of its people.
+        const said = tieUp ? [brief, result.values.role, values.role, result.values.background].filter((t) => typeof t === 'string').join('. ') : brief;
+        const joined = withMemberships(result.values.relations ?? [], said, all.faction ?? []);
         if (joined.length) result.values.relations = joined;
     }
     return { values: result.values, dropped: result.dropped, lineage: { ids: kin.ids, how: kin.how, unknown: kin.unknown } };

@@ -15,7 +15,8 @@
 import { LOG_PREFIX } from '../constants.js';
 import { getObject } from '../api/objects.js';
 import { updateChatDoc } from '../store/chat-store.js';
-import { getEntryMeta } from '../store/setting-store.js';
+import { getEntryMeta, getSettingDoc } from '../store/setting-store.js';
+import { addRelation, relationsFor } from '../library/relations-edit.js';
 import { getObjectType, getObjectTypes, listEntries, updateEntry, setEntryMeta, mayAddGeneratedDetail, getParents, setParent } from '../library/library.js';
 import { baselineFields, foldRegion } from '../library/fields.js';
 import { chooseParent } from './place-parent.js';
@@ -165,6 +166,12 @@ async function enrichOne(job) {
             setEntryMeta(settingId, job.objectId, { generated: [...new Set([...generated, ...Object.keys(patch)])] });
             // Kept so it can be put back (src/generate/revert.js).
             await recordEnrichment(settingId, job.objectId, enrichmentRecord({ id: newLocalId('e'), at: new Date().toISOString(), source: 'auto', before: Object.fromEntries(Object.keys(patch).map((k) => [k, now[k] ?? null])), after: patch }));
+        }
+        // A person with no ties yet: the side and the people the fill tied
+        // them to (Lena came out of the director with none - no faction, no
+        // one she knew).
+        if (type.id === 'character' && Array.isArray(values.relations) && values.relations.length && !relationsFor(job.objectId, getSettingDoc(settingId).relations ?? []).length) {
+            for (const r of values.relations) if (r?.otherId) addRelation(settingId, { from: job.objectId, to: r.otherId, kind: r.kind, note: 'from the fill' });
         }
         // A place left at the top of the map: its written description may
         // name or fit a district now (src/generate/place-parent.js).

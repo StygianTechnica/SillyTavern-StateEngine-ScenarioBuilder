@@ -71,18 +71,40 @@ const namesOf = (p) => [...new Set([clean(p?.name), ...(p?.aliases ?? []).map(cl
 // The mark `text` makes on `person` ({ name, aliases }), or null. others:
 // everyone else's names - one named between them and the words is the one
 // it is about.
+// Regexes made once and kept: built for every sentence, name and saying,
+// a chat's first scan froze the page for seconds.
+const CACHE = new Map();
+const cached = (key, make) => {
+    if (!CACHE.has(key)) {
+        if (CACHE.size > 4000) CACHE.clear();
+        CACHE.set(key, make());
+    }
+    return CACHE.get(key);
+};
+const wordRe = (n) => cached(`w:${n}`, () => new RegExp(String.raw`\b${escape(n)}\b`, 'i'));
+const namesRe = (names) => {
+    const list = [...new Set(names)].filter((n) => n.length >= 3).sort((a, b) => b.length - a.length);
+    return list.length ? cached(`n:${list.join('|')}`, () => new RegExp(String.raw`\b(?:${list.map(escape).join('|')})\b`, 'gi')) : null;
+};
+const sayingsFor = (name) => cached(`s:${name}`, () => SAYINGS.map((s) => ({ ...s, rx: new RegExp(s.re.replace('{N}', String.raw`\b${escape(name)}`), 'i') })));
+// Whether the text names them at all - a plain look, before any regex.
+const mentions = (text, p) => {
+    const low = String(text ?? '').toLowerCase();
+    return [...namesOf(p), clean(p?.name).split(' ')[0]].some((n) => n.length >= 3 && low.includes(n.toLowerCase()));
+};
+
 export function markIn(text, person, { others = [] } = {}) {
+    if (!mentions(text, person)) return null;
     const own = new Set(namesOf(person).map((n) => n.toLowerCase()));
-    const rest = (others ?? []).map(clean).filter((n) => n.length >= 3 && !own.has(n.toLowerCase()));
-    const naming = (part) => rest.some((n) => new RegExp(String.raw`\b${escape(n)}\b`, 'i').test(part));
+    const rest = namesRe((others ?? []).map(clean).filter((n) => !own.has(n.toLowerCase())));
+    const naming = (part) => !!rest && (part.match(rest) ?? []).some((n) => !own.has(n.toLowerCase()));
     // Speech is what people say, not what happened... except a post's own
     // words of scorn are the player character's judgment; kept.
     for (const sentence of clean(text).split(/(?<=[.!?])\s+/)) {
         if (NOT_DONE.test(sentence)) continue;
         for (const name of namesOf(person)) {
-            for (const s of SAYINGS) {
-                const re = new RegExp(s.re.replace('{N}', String.raw`\b${escape(name)}`), 'i');
-                const m = sentence.match(re);
+            for (const s of sayingsFor(name)) {
+                const m = sentence.match(s.rx);
                 if (!m) continue;
                 const inner = m[0].slice(name.length);
                 if (naming(inner)) continue;
@@ -110,8 +132,10 @@ const PRONOUN = { f: /\b(?:she|her)\b/i, m: /\b(?:he|him|his)\b/i, they: /\b(?:t
 // ("He didn't want to look stupid" is Cyril, not the last man named).
 export function scornIn(text, people = [], { speech = true, post = false } = {}) {
     const t = speech ? clean(text) : clean(String(text ?? '').replace(/["“][^"”]*["”]/g, ' '));
-    const list = (people ?? []).filter((p) => clean(p?.name));
-    const wordRe = (n) => new RegExp(String.raw`\b${escape(n)}\b`, 'i');
+    // No scorn, nothing to find; and only those the text names at all
+    // (and the player character, for a "he" that is theirs).
+    if (!SCORN.test(t)) return [];
+    const list = (people ?? []).filter((p) => clean(p?.name) && (p.player || mentions(t, p)));
     const callNames = (p) => [...namesOf(p), clean(p.name).split(' ')[0]].filter((n) => n.length >= 3);
     const at = (s, p) => Math.min(...callNames(p).map((n) => { const i = s.search(wordRe(n)); return i < 0 ? Infinity : i; }));
     const player = list.find((p) => p.player);
@@ -121,13 +145,36 @@ export function scornIn(text, people = [], { speech = true, post = false } = {})
         const named = list.map((p) => ({ p, i: at(s, p) })).filter((x) => x.i < Infinity).sort((a, b) => a.i - b.i);
         const hit = s.match(SCORN);
         if (hit && !/\?\s*$/.test(s)) {
+            // The one mentioned nearest before the scorn is the one it is
+            // about - "why Adam didn't call her out for the stupid things"
+            // is her, not Adam - with any joined to them by and / or ("Doc
+            // or Galice sprang to ridiculous conclusions").
             const before = s.slice(0, hit.index);
-            const who = named.filter((x) => x.i < hit.index).map((x) => x.p);
-            for (const [g, re] of Object.entries(PRONOUN)) {
-                if (!re.test(before)) continue;
-                if (g === 'they') who.push(...last.they);
-                else if (post && player?.gender === g && !named.some((x) => x.p.gender === g && !x.p.player)) continue;
-                else if (last[g]) who.push(last[g]);
+            const refs = named.filter((x) => x.i < hit.index).map((x) => {
+                const len = (s.slice(x.i).match(/^[\p{L}'’.-]+(?:\s+\p{Lu}[\p{L}'’-]*)*/u)?.[0] ?? '').replace(/['’]s$/, '').length;
+                return { i: x.i, end: x.i + len, who: [x.p], name: true };
+            });
+            for (const m of before.matchAll(/\b(she|her|he|him|his|they|them|their)\b/gi)) {
+                const w = m[1].toLowerCase();
+                const g = /^(she|her)$/.test(w) ? 'f' : /^(he|him|his)$/.test(w) ? 'm' : 'they';
+                let who = [];
+                if (g === 'they') who = last.they.length >= 2 ? last.they : [];
+                else if (post && player?.gender === g && !named.some((x) => x.p.gender === g && !x.p.player)) who = [player];
+                else {
+                    const here = named.filter((x) => x.i < m.index && x.p.gender === g).at(-1)?.p;
+                    who = here ? [here] : last[g] ? [last[g]] : [];
+                }
+                refs.push({ i: m.index, end: m.index + m[0].length, who, name: false });
+            }
+            refs.sort((a, b) => a.i - b.i);
+            const near = refs.at(-1);
+            const who = near ? [...near.who] : [];
+            if (near?.name) {
+                for (let k = refs.length - 2; k >= 0; k--) {
+                    const gap = s.slice(refs[k].end, refs[k + 1].i);
+                    if (!refs[k].name || !/^\s*(?:,|and|or|&|,\s*and|,\s*or)\s*$/i.test(gap)) break;
+                    who.push(...refs[k].who);
+                }
             }
             for (const p of new Set(who)) if (!p.player) out.push({ id: p.id, text: cut(s, 220) });
         }
