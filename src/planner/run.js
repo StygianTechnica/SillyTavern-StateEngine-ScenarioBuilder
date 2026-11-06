@@ -19,13 +19,14 @@
 // back to takeBeats(). Never throws.
 
 import { LOG_PREFIX } from '../constants.js';
+import { opposedJobs, jobsLine, planTexts } from './aims.js';
 import { getSettings, isActive } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
 import { getBoundSettingId, listEntries, getObjectTypes, createEntry, updateEntry, isCanonOnly, mayAddGeneratedDetail, allKnowledge, playerIdOf, setParent } from '../library/library.js';
 import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { setQuestMeta, questMeta } from '../quests/sync.js';
-import { callModel } from '../generate/llm.js';
+import { callModel, plannerConnection } from '../generate/llm.js';
 import { fitOutlinePrompt, promptBudget } from './fit.js';
 import { readModelJson } from '../generate/prompt.js';
 import { plannerTriggers, retirePlannerTriggers, latestUserIndex } from '../triggers/run.js';
@@ -48,8 +49,9 @@ import { stillWaiting } from '../director/suspended.js';
 import {
     buildDayPrompt, readDayPlan, buildCheckPrompt, readCheck, buildInspirePrompt, readInspiration, buildOutlinePrompt, readOutline, wholeOutline, outlineToCome,
     buildBeatPrompt, readBeat, buildRecapPrompt, readRecap, readRecapText, closeCutJson, buildIdeasPrompt, readIdeas,
-    buildSteerObjectsPrompt, readSteerObjects, buildStarterPrompt, readStarter, writesForPlayer, withoutPlayerBeats,
+    buildSteerObjectsPrompt, readSteerObjects, buildStarterPrompt, readStarter, writesForPlayer, withoutPlayerBeats, playerLed,
 } from './prompts.js';
+import { storyLogicLines, buildOutlineCheckPrompt, readOutlineCheck, applyOutlineCheck, newBeatsToCome } from './logic.js';
 import { povRule } from '../director/perspective.js';
 import { livePoolFor, byType } from '../naming/run.js';
 import { poolLine } from '../naming/live.js';
@@ -169,11 +171,13 @@ async function runPass(kind, chatKey, fn) {
 async function ask({ system, prompt }, maxTokens = 0, { salvage = null } = {}) {
     const tokens = Math.max(plannerSettings().maxTokens || 1200, maxTokens);
     const messages = [{ role: 'system', content: system }, { role: 'user', content: prompt }];
-    const raw = await callModel(messages, tokens);
+    // The planner's own connection, when one is chosen.
+    const use = plannerConnection();
+    const raw = await callModel(messages, tokens, use);
     const json = readModelJson(raw);
     if (json) return json;
     console.info(LOG_PREFIX, 'the planner\'s answer was not JSON - asking again');
-    const again = await callModel([...messages, { role: 'assistant', content: String(raw ?? '').slice(0, 4000) }, { role: 'user', content: 'That answer could not be read. Reply again with ONLY the JSON object asked for - start with { and end with }, with every quote inside a text escaped as \\" and paragraphs as \\n.' }], tokens);
+    const again = await callModel([...messages, { role: 'assistant', content: String(raw ?? '').slice(0, 4000) }, { role: 'user', content: 'That answer could not be read. Reply again with ONLY the JSON object asked for - start with { and end with }, with every quote inside a text escaped as \\" and paragraphs as \\n.' }], tokens, use);
     const second = readModelJson(again);
     if (second) return second;
     const saved = salvage?.(again) ?? salvage?.(raw);
@@ -261,6 +265,23 @@ async function storySoFar(gm, guidance) {
     return lines.join('\n');
 }
 
+// The story's logic for an outline pass (src/planner/logic.js). Never throws.
+async function logicFor(chatId, settingId, gm, wish = '') {
+    try {
+        const known = await knownEntries(chatId, settingId).catch(() => []);
+        const nameOf = (id) => known.find((e) => e.id === id)?.name ?? '';
+        return storyLogicLines({
+            knowledge: settingId ? await allKnowledge(settingId, nameOf).catch(() => []) : [],
+            settled: keptSettled(gm.settled).map((x) => x.text),
+            jobs: jobsLine(opposedJobs(planTexts(gm), { player: [userName()] }), userName()),
+            wish: [...new Set([wish, gm.volume?.outlineWish, gm.volume?.direction].map((w) => String(w ?? '').trim()).filter(Boolean))].join(' '),
+        });
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'no story logic for the outline', err);
+        return [];
+    }
+}
+
 // Writes the outline, or reviews it against the story (`rewrite`: starts
 // it over, keeping what is done and - unless keepLocked is false - what
 // the user locked).
@@ -288,6 +309,11 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
         const volume = doc.gm.volume;
         const newVolume = writing && volume.number > 1 && !beatsOf(doc.gm.outline).some((b) => b.status === 'done') ? { number: volume.number } : null;
         if (newVolume && !wish) wish = volume.direction;
+        // The story's logic (src/planner/logic.js): who believes what is not
+        // so, what is settled, whose job is whose, the user's turns - kept
+        // whole when the prompt is trimmed, and what the check holds to.
+        const logic = await logicFor(chatId, settingId, doc.gm, wish);
+        const sofar = await storySoFar(doc.gm, guidance);
         // Fitted to the model's context, with room for the answer (fit.js).
         const fitted = fitOutlinePrompt({
             dossier: await dossierWithNames(chatId, settingId, guidance, ctx),
@@ -303,13 +329,14 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
             wish,
             // The volume's steer, on every pass - not only its first outline.
             steer: doc.gm.volume.direction,
-            storySoFar: await storySoFar(doc.gm, guidance),
+            storySoFar: sofar,
+            logic,
             underWay: chatLength > UNDER_WAY_AFTER,
             startAct: startIndex >= 0 ? { index: startIndex, title: shape.acts[startIndex].title } : null,
             newVolume,
             pacing: plannerSettings().pacing,
             untouched: await factionsToBringIn(chatId, settingId),
-        }, promptBudget(getSettings().director.contextTokens, OUTLINE_TOKENS));
+        }, promptBudget(plannerConnection().contextTokens, OUTLINE_TOKENS));
         if (fitted.trimmed.length) console.info(LOG_PREFIX, `the outline prompt was trimmed to fit the model's context (${fitted.tokens} of ${fitted.budget} tokens): ${fitted.trimmed.join(', ')}`);
         if (!fitted.fits) console.warn(LOG_PREFIX, `the outline prompt is still over the model's context after trimming (${fitted.tokens} of ${fitted.budget} tokens)`);
         const outlinePrompt = { system: fitted.system, prompt: fitted.prompt };
@@ -347,6 +374,23 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
         const pruned = withoutPlayerBeats(parsed, [userName()], lockedIds);
         if (pruned.dropped.length) console.info(LOG_PREFIX, `the outline's beats for ${userName()} to play were left out:`, pruned.dropped);
         parsed = pruned.outline;
+        // Checked before it is kept (settings.planner.checkOutline): one more
+        // call, only when it is newly written or its beats to come changed.
+        let checked = '';
+        if (plannerSettings().checkOutline !== false && (writing || newBeatsToCome(parsed, beatsOf(doc.gm.outline)))) {
+            try {
+                const check = readOutlineCheck(await ask(buildOutlineCheckPrompt({ userName: userName(), logic, outline: parsed, lockedIds, writing, storySoFar: sofar }), CHECK_TOKENS));
+                const applied = applyOutlineCheck(parsed, check, { lockedIds, writing, playerLed: (t) => playerLed(t, [userName()]) });
+                if (applied.changed.length) {
+                    console.info(LOG_PREFIX, 'the outline check fixed:', applied.changed);
+                    parsed = applied.outline;
+                }
+                checked = applied.changed.length ? `; checked - ${applied.changed.length} fixed: ${applied.changed.join(' | ')}` : '; checked - nothing to fix';
+            } catch (err) {
+                console.warn(LOG_PREFIX, 'the outline check failed - the outline is kept as written', err);
+                checked = '; not checked (the check failed)';
+            }
+        }
         // The conditions the outline wants watched: story triggers.
         await plannerTriggers(chatId, chatKey, parsed.triggers ?? []);
         updateChatDoc(chatKey, (d) => {
@@ -361,7 +405,7 @@ export async function runOutline(chatId, chatKey, { rewrite = false, keepLocked 
             d.gm.outlineWanted = false;
         });
         const beats = beatsOf(getChatDoc(chatKey).gm.outline).length;
-        return `${parsed.acts.length} act${parsed.acts.length === 1 ? '' : 's'}, ${beats} beats`;
+        return `${parsed.acts.length} act${parsed.acts.length === 1 ? '' : 's'}, ${beats} beats${checked}`;
     });
 }
 
@@ -388,6 +432,7 @@ export async function runBeat(chatId, chatKey, beatId, wish = '') {
             // The volume's steer, on every pass - not only its first outline.
             steer: doc.gm.volume.direction,
             storySoFar: await storySoFar(doc.gm, guidance),
+            logic: await logicFor(chatId, settingId, doc.gm, wish),
         })));
         if (!beat) throw new Error('No beat came back.');
         let changed = false;
@@ -431,6 +476,7 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             place: (guidance.location?.path ?? []).slice(-1)[0] ?? '',
             situation: doc.canonical.sceneSummary,
             settled: keptSettled(doc.gm.settled).map((x) => x.text),
+            jobs: jobsLine(opposedJobs(planTexts(doc.gm), { player: [userName()] }), userName()),
             happenings: dueHappenings(doc.gm, doc.canonical.day, 1).map((x) => ({ id: x.id, text: x.text, when: x.when, due: x.day > doc.canonical.day ? 'tomorrow' : 'today', late: x.late, promise: x.source === 'promise' })),
             world: world?.part ?? null,
         });
@@ -667,6 +713,15 @@ export function directorPlan(chatKey, messages) {
         console.warn(LOG_PREFIX, 'nothing settled for the director', err);
     }
     const plan = plannedSection(chatKey, messages);
+    // Whose job is whose (src/planner/aims.js): planner on or off - the
+    // director's SETTLED lines and briefings said "the heist" for Enrique's.
+    let jobs = '';
+    try {
+        const line = jobsLine(opposedJobs(planTexts(getChatDoc(chatKey).gm), { player: [userName()] }), userName());
+        if (line) jobs = `WHOSE JOB IS WHOSE (say whose it is every time - never a bare "the heist")\n${line.replace(/^Whose job is whose: /, '')}`;
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'no aims for the director', err);
+    }
     // What the story set for today or keeps putting off: planner on or off.
     let due = '';
     try {
@@ -683,7 +738,7 @@ export function directorPlan(chatKey, messages) {
     } catch (err) {
         console.warn(LOG_PREFIX, 'no company lines for the director', err);
     }
-    return [triggered, settled, due, company, plan].filter(Boolean).join('\n\n');
+    return [triggered, settled, jobs, due, company, plan].filter(Boolean).join('\n\n');
 }
 
 function plannedSection(chatKey, messages) {
@@ -886,6 +941,8 @@ const RECAP_TOKENS = 2000;
 // A whole outline - several chapters of beats - needs more room than a
 // small pass: cut off, it was no JSON at all.
 const OUTLINE_TOKENS = 2400;
+// The outline check's answer: a few fixed beats.
+const CHECK_TOKENS = 1000;
 
 // A volume's steer names people, places and groups the library lacks (its
 // antagonist, the temple it sets out for): one call takes them out with the

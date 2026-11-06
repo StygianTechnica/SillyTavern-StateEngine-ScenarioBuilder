@@ -123,7 +123,15 @@ const DEFAULTS = {
     // outlineEvery, ideasEvery); pacing: 'off' | 'gentle' |
     // 'brisk' | 'fast' (how readily an idle scene moves on); showSpoilers:
     // the day plan is shown in the GM Plan tab (off: veiled).
-    planner: { enabled: true, level: 'moderate', checkEvery: null, dayExpire: null, outlineEvery: null, ideasEvery: null, pacing: 'gentle', showSpoilers: false, maxTokens: 1200, steerObjects: true },
+    // profileId / contextTokens: the planner's own connection - the outline,
+    // the day plan and their checks are background calls that think about
+    // the whole story, and gain the most from a bigger model than the one
+    // the chat runs on ('' / 0: the generation connection and the
+    // director's context). checkOutline: one more call after an outline is
+    // written or its beats to come change, holding them to what the story
+    // has settled, who knows what and what the user asked
+    // (src/planner/logic.js).
+    planner: { enabled: true, level: 'moderate', checkEvery: null, dayExpire: null, outlineEvery: null, ideasEvery: null, pacing: 'gentle', showSpoilers: false, maxTokens: 1200, steerObjects: true, profileId: '', contextTokens: 0, checkOutline: true },
     // The world meanwhile (docs/DESIGN - THE WORLD MEANWHILE.md): people and
     // factions off scene pursue schemes of their own. level: 'off' |
     // 'quiet' (moved by the planner's DAY pass - no call of its own) |

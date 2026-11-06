@@ -82,6 +82,9 @@ export function buildDayPrompt(input) {
     }
     const settled = texts(input.settled, 12);
     if (settled.length) parts.push('', 'SETTLED IN THE STORY (true and agreed - no moment acts as if it were otherwise, argues it again or asks for it again)', ...settled.map((t) => `- ${t}`));
+    // src/planner/aims.js: every moment says whose it is ("stop Enrique's
+    // heist", never "the heist").
+    if (clean(input.jobs)) parts.push('', 'WHOSE JOB IS WHOSE (every moment and agenda names whose it is - "stop Enrique\'s heist", never a bare "the heist")', clean(input.jobs));
     if (input.requests?.length) parts.push('', `WHAT THE USER WOULD LIKE TO SEE (fit these in where they are natural; each id is the request's)`, requestsText(input.requests));
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (echo them as images and turns of fate, never as literal events)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));
     const story = storyText(input.story);
@@ -326,10 +329,13 @@ export function buildOutlinePrompt(input) {
     }
     parts.push(...steerLines(input.steer));
     if (clean(input.wish) && clean(input.wish) !== clean(input.steer)) parts.push('', 'WHAT THE USER WANTS FROM THIS OUTLINE (follow it)', `- ${cut(input.wish, 4000)}`);
+    // Who knows what, what is settled, whose job is whose, the user's turns
+    // (src/planner/logic.js) - never trimmed (src/planner/fit.js).
+    if (list(input.logic).length) parts.push('', 'THE STORY\'S LOGIC (true - every beat keeps to it)', ...input.logic);
     parts.push(
         '',
         outline && !input.rewrite ? 'REVIEW THE OUTLINE' : 'WRITE THE OUTLINE',
-        `${outline && !input.rewrite ? 'Bring it up to date with the story: mark the beats the story has played out "done", the one under way "active", and any the story has made impossible "skipped". Rewrite or replace beats still to come if the story has moved somewhere better - keep each kept beat\'s id. Never add a new beat for something that has already happened. ' : ''}One act per act of the shape, in its order, ${beatsPerAct(input.pacing)} beats each. A beat is a turn in the story, loose enough to happen many ways ("the alliance is tested by a betrayal from within"), growing out of the threads, factions, frictions and people above. Everyday moments - a watch, a meal, waking, making camp, a stretch of road where nothing happens - are never beats, and nor is the journey itself: a beat is what happens where they arrive. Each beat happens in one place; two places are two beats, in the order the story will reach them (somewhere beyond the bridge comes after the bridge). Let each act's beats reach that act's target tension. A beat still to come is what the world and the other people do around ${userName} - an arrival, a betrayal, an offer, an attack, news - never what ${userName} does, thinks or feels ("${userName} confronts", "${userName} goes outside to think"): you do not play ${userName}, so such a beat never happens. When a turn needs ${userName} to act, the beat is what the others do that puts it before ${userName}, or how the world answers once ${userName} has acted. A beat already "done" may tell what ${userName} did. Add a few seeds: small things to plant early so a later beat pays off.`,
+        `${outline && !input.rewrite ? 'Bring it up to date with the story: mark the beats the story has played out "done", the one under way "active", and any the story has made impossible "skipped". Rewrite or replace beats still to come if the story has moved somewhere better - keep each kept beat\'s id. Never add a new beat for something that has already happened. ' : ''}One act per act of the shape, in its order, ${beatsPerAct(input.pacing)} beats each. A beat is a turn in the story, loose enough to happen many ways ("the alliance is tested by a betrayal from within"), growing out of the threads, factions, frictions and people above. Everyday moments - a watch, a meal, waking, making camp, a stretch of road where nothing happens - are never beats, and nor is the journey itself: a beat is what happens where they arrive. Each beat happens in one place; two places are two beats, in the order the story will reach them (somewhere beyond the bridge comes after the bridge). Let each act's beats reach that act's target tension. A beat still to come is what the world and the other people do around ${userName} - an arrival, a betrayal, an offer, an attack, news - never what ${userName} does, thinks or feels ("${userName} confronts", "${userName} goes outside to think"): you do not play ${userName}, so such a beat never happens. When a turn needs ${userName} to act, the beat is what the others do that puts it before ${userName}, or how the world answers once ${userName} has acted. A beat already "done" may tell what ${userName} did. No one in a beat acts on what they do not know: someone who believes a person dead is never angered by them or hunts them, until a beat of its own has them learn the truth - and a reveal never comes before a later beat that needs it kept. No one robs, raids or works against their own operation, event or people. The last beats grow out of what the story has shown of ${userName}: a choice only between things ${userName} has shown real pull toward. Add a few seeds: small things to plant early so a later beat pays off.`,
         'Answer in this JSON shape:',
         '{"premise":"<what this story is about, two or three sentences>","themes":["<theme>"],',
         ' "acts":[{"title":"<act title>","beats":[{"id":"<the id of a beat kept from above, or empty for a new one>","text":"<the beat>","ties":["<names>"],"status":"pending|active|done|skipped"}]}],',
@@ -478,10 +484,11 @@ export function buildBeatPrompt(input) {
             parts.push(`${b.id === input.beatId ? '>>' : '-'} ${b.text} - ${b.status}`);
         }
     });
+    if (list(input.logic).length) parts.push('', 'THE STORY\'S LOGIC (true - the beat keeps to it)', ...input.logic);
     parts.push(
         '',
         'WRITE IT AGAIN',
-        `A different turn in the story for the same place in the outline: it follows from the beats before it and leads toward the ones after. Not a rewording of "${clean(old?.text)}" - a different idea. It is what the world or the other people do around ${userName}, never what ${userName} does, thinks or feels.`,
+        `A different turn in the story for the same place in the outline: it follows from the beats before it and leads toward the ones after. Not a rewording of "${clean(old?.text)}" - a different idea. It is what the world or the other people do around ${userName}, never what ${userName} does, thinks or feels. No one in it acts on what they do not know, works against their own, or spoils a beat after it.`,
         ...steerLines(input.steer),
         ...(clean(input.wish) ? [`The user wants: ${clean(input.wish)}`] : []),
         'Answer in this JSON shape: {"text":"<the beat, one sentence>","ties":["<names of the people, places, factions or threads it involves>"]}',

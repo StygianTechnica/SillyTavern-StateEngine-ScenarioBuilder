@@ -29,6 +29,7 @@ import { sidesApart, sidesText } from './sides.js';
 import { factionSlips, deadActing, correctionText } from './canon.js';
 import { asksWhatNext } from './build.js';
 import { activeBeat, settledNow, touchedSettled, retireSettled } from '../planner/model.js';
+import { opposedJobs, jobsLine, jobsTouched, planTexts } from '../planner/aims.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { giftsText } from '../library/powers.js';
 import { latestUserIndex } from '../triggers/run.js';
@@ -517,6 +518,9 @@ export async function gatherInputs(chatId, chatKey) {
             // What the story has settled (src/planner/model.js settledSection).
             // Only what the latest messages touch, the user's own always.
             settled: settledNow(getChatDoc(chatKey).gm.settled ?? [], settledOpts),
+            // Whose job is whose (src/planner/aims.js), when the latest
+            // messages speak of it.
+            jobs: jobsLine(jobsTouched(opposedJobs(planTexts(doc.gm), { player: [SillyTavern.getContext().name1 ?? ''] }), (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-3).map((m) => String(m.mes ?? '')).join('\n')), SillyTavern.getContext().name1 ?? ''),
             // Whose side each is on, where the sides here are at odds
             // (src/guidance/sides.js).
             sides: sidesText(sidesApart(cast, library.relations ?? [], (fid) => factionNames.get(fid) ?? '').filter((s) => !corrected.has(s.name))),

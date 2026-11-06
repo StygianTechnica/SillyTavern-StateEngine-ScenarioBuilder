@@ -30,16 +30,25 @@ function textOf(result) {
     return '';
 }
 
-async function callNow(given, maxTokens) {
+// The planner's own connection, when it has one (settings.planner): its
+// profile and context, else the generation connection's.
+export function plannerConnection() {
+    const s = getSettings();
+    const profileId = s.planner?.profileId || '';
+    const contextTokens = profileId && s.planner?.contextTokens > 0 ? s.planner.contextTokens : s.director?.contextTokens;
+    return { profileId: profileId || s.connectionProfileId || '', contextTokens };
+}
+
+async function callNow(given, maxTokens, use = {}) {
     const context = SillyTavern.getContext();
     // Fitted to the model's context with room for the answer
     // (settings.director.contextTokens - the same model, unless a
     // generation profile is chosen; see fit-text.js).
-    const fitted = fitMessages(given, getSettings().director?.contextTokens, maxTokens);
+    const fitted = fitMessages(given, use.contextTokens ?? getSettings().director?.contextTokens, maxTokens);
     if (fitted.cut) console.info(LOG_PREFIX, `a prompt was trimmed to fit the model's context (${fitted.tokens} of ${fitted.budget} tokens, ${fitted.cut} cut${fitted.cut === 1 ? '' : 's'})`);
     if (!fitted.fits) console.warn(LOG_PREFIX, `a prompt is still over the model's context after trimming (${fitted.tokens} of ${fitted.budget} tokens) - the answer may be cut short`);
     const messages = fitted.messages;
-    const profileId = getSettings().connectionProfileId;
+    const profileId = use.profileId ?? getSettings().connectionProfileId;
     if (profileId) {
         const svc = context.ConnectionManagerRequestService;
         if (typeof svc?.sendRequest !== 'function') throw new Error('The chosen connection profile cannot be used (Connection Manager is unavailable).');
@@ -80,8 +89,10 @@ const afterReply = () => (replying ? new Promise((resolve) => waiting.push(resol
 // messages: [{ role: 'system' | 'user', content }]. Resolves to the reply
 // text; rejects with a readable reason. Queued, and held while a reply is
 // being written.
-export function callModel(messages, maxTokens = 900) {
-    const run = chain.then(afterReply).then(() => callNow(messages, maxTokens));
+// use: { profileId, contextTokens } - another connection than the
+// generation one (the planner's, plannerConnection()).
+export function callModel(messages, maxTokens = 900, use = {}) {
+    const run = chain.then(afterReply).then(() => callNow(messages, maxTokens, use));
     chain = run.catch((err) => console.warn(LOG_PREFIX, 'generation failed', err));
     return run;
 }

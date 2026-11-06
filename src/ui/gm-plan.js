@@ -17,6 +17,7 @@ import {
     writeStarter, postStarter, starterSpeakers,
 } from '../planner/run.js';
 import { confirmAction } from './confirm.js';
+import { listConnectionProfiles } from './connection-profiles.js';
 import { armTrigger, retireTrigger, clearFinishedTriggers } from '../triggers/run.js';
 import { listEntries, getSettingSummary, playerIdOf } from '../library/library.js';
 import { standings, chooseFor } from '../director/company.js';
@@ -762,6 +763,19 @@ function settingsCard(gm) {
             'Light: few background calls. Heavy: a check after every reply.'),
         field('Pacing', select(PACINGS.map(([value, label]) => ({ value, label })), p.pacing, { onchange: (e) => set({ pacing: e.target.value }) }),
             'How readily a quiet scene moves on in time.'),
+        // The outline and the day plan think about the whole story: a bigger
+        // model than the chat's does them far better, and they are rare.
+        h('div', { class: 'sb-row' },
+            field('Planning connection', select([{ value: '', label: 'Same as generation' }, ...listConnectionProfiles().map((c) => ({ value: c.id, label: c.name })), ...(p.profileId && !listConnectionProfiles().some((c) => c.id === p.profileId) ? [{ value: p.profileId, label: '(profile no longer exists)' }] : [])], p.profileId || '', {
+                onchange: (e) => set({ profileId: e.target.value }),
+            }), 'The outline, the day plan and their checks. A bigger model here (a 24B) writes far better outlines; the chat and the director keep their own.'),
+            p.profileId ? field('Its context (tokens)', h('input', {
+                type: 'number', class: 'text_pole', min: 2048, max: 200000, step: 512, value: p.contextTokens > 0 ? p.contextTokens : '', placeholder: String(s.director.contextTokens),
+                onchange: (e) => set({ contextTokens: e.target.value === '' ? 0 : Math.min(200000, Math.max(2048, Math.round(Number(e.target.value)))) }),
+            }), 'The planning model\'s context window - its prompts are trimmed to fit.') : null),
+        h('label', { class: 'checkbox_label', title: 'One more call after an outline is written or its beats to come change.' },
+            h('input', { type: 'checkbox', checked: p.checkOutline !== false, onchange: (e) => set({ checkOutline: e.target.checked }) }),
+            h('span', {}, 'Check the outline before keeping it - what is settled, who knows what, what you asked for')),
         h('div', { class: 'sb-row' },
             num('checkEvery', cadence.check, 'Check every (replies)', '0: only when a planned moment falls through'),
             num('dayExpire', cadence.dayExpire, 'Re-plan after (replies)', 'when one day runs long'),

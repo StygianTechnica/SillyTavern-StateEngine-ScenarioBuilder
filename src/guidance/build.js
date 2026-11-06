@@ -431,7 +431,10 @@ export function buildNow(input) {
     // them (src/guidance/spoken.js): Inji, asked about Zane - his rival, a
     // fellow White Cerberus agent - said he had never heard the name.
     const named = clean(input.spokenNow);
-    if (!arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named) return '';
+    // Whose job is whose (src/planner/aims.js): "the heist" said bare, the
+    // team drifted toward pulling Enrique's instead of stopping it.
+    const jobs = clean(input.jobs);
+    if (!arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (corrections) orders.push(corrections);
@@ -444,6 +447,7 @@ export function buildNow(input) {
     // the beat gives Cyril): no one stands in for them.
     if (next) orders.push(`${player ? clean(player.name) : 'The player character'} asks what comes next - the answer is where the story goes now: ${unstop(next)}. Those it names are the ones in it, in the parts it gives them; no one else takes their place and no one it names is left out. Bring it in this reply.`);
     if (sides) orders.push(sides);
+    if (jobs) orders.push(jobs);
     if (named) orders.push(named);
     if (settled.length) orders.push(`Settled and done with - no one acts as if it were otherwise, and no one argues it, asks about it or brings it up again unless someone else does: ${settled.map(unstop).join('; ')}.`);
     return `[Game master's note for this reply, not part of the story: ${orders.join(' ')}${player ? ` Write only the others; never ${clean(player.name)}.` : ''}]`;
