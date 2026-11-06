@@ -138,9 +138,14 @@ async function enrichOne(job) {
         // with what an old Region field says (src/library/fields.js).
         const seed = job.adoptedId && thinDescription(base.description) ? String(base.description).trim() : '';
         const oldRegion = type.id === 'location' ? String(base.region ?? '').trim() : '';
-        const brief = seed ? `It is: ${foldRegion(seed, oldRegion)} - keep that, and write the description out from it.` : '';
+        // For a person the description is looks only: what the line says of
+        // them is their role, background and ties.
+        const what = seed ? foldRegion(seed, oldRegion) : '';
+        const brief = !seed ? ''
+            : type.id === 'character' ? `What the story says of them: ${what} - their role, background, ties and goals keep to that.`
+                : `It is: ${what} - keep that, and write the description out from it.`;
         const draft = { name: obj.name, aliases: base.aliases ?? [], description: seed ? '' : base.description ?? '', fields: Object.fromEntries(fields.map((f) => [f.name, base[f.name] ?? null])) };
-        const { values } = await generateEntry({ task: 'fill', type, ctx: { chatId, chatKey: job.chatKey, settingId }, fields, entry: obj, draft, all, brief, story: job.story ?? '' });
+        const { values } = await generateEntry({ task: 'fill', type, ctx: { chatId, chatKey: job.chatKey, settingId }, fields, entry: obj, draft, all, brief, story: job.story ?? '', fromStory: !!job.adoptedId });
 
         // Re-read: only what is STILL empty is written - or the seed, while
         // it is still the same line.

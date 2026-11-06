@@ -129,6 +129,9 @@ function playerRule(input) {
 // lore the story brought up keeps to what the story says of it.
 const LORE_RULE = 'This is lore: a piece of knowledge about the world - a fact, a belief, a rumour, a suspicion, a custom or a piece of history - not a person, place or group. Write about the knowledge itself: what it says, who holds or spreads it, how sure they are and why it matters. Its other names are what this knowledge itself is called (a legend\'s other titles, a scandal\'s nickname) - never the names, nicknames or titles of the people it concerns; leave them empty when it has none. Every other field describes the knowledge too, never a person it is about.';
 const LORE_STORY_RULE = 'The story passages above are where this lore comes from: keep to what they say. Who believes it and how sure they are stay as the story has them - a suspicion stays a suspicion, a rumour a rumour, never proven fact. Add only detail that fits them and contradicts nothing in them.';
+// Anything else the story brought in: what it says of them is who they are.
+const ENTRY_STORY_RULE = 'The story passages above are where this entry comes from, and what they say of it is true: who or what it is, what it did, whom it served or broke with, what became of it. Every field keeps to that - its role, background, ties and goals start from it, never from a different job or allegiance. What the story only remembers or guesses stays as uncertain as the story has it. Add only detail that fits the passages and contradicts nothing in them.';
+const storyRule = (type) => (type?.id === 'lore' ? LORE_STORY_RULE : ENTRY_STORY_RULE);
 
 // The rule for names the text mentions (docs/DESIGN - NAMING.md, 4.1): the
 // model writes plain words and names already in the setting; any new
@@ -250,7 +253,7 @@ ${input.populationLine} Let what you write fit this mix.`);
             f.name !== 'name' && isText(f) ? namesRule : '',
             clean(input.story) ? STORY_RULE : '',
             type?.id === 'lore' ? LORE_RULE : '',
-            clean(input.loreStory) ? LORE_STORY_RULE : '',
+            clean(input.loreStory) ? storyRule(type) : '',
             playerRule(input),
             placeRule,
             input.brief ? `${input.creating ? 'What the user wants' : "The user's direction"}: ${cut(input.brief, 400)}` : '',
@@ -284,7 +287,7 @@ ${input.populationLine} Let what you write fit this mix.`);
     if (placeRule) job += `\n${placeRule}`;
     if (clean(input.story)) job += `\n${STORY_RULE}`;
     if (type?.id === 'lore') job += `\n${LORE_RULE}`;
-    if (clean(input.loreStory)) job += `\n${LORE_STORY_RULE}`;
+    if (clean(input.loreStory)) job += `\n${storyRule(type)}`;
     const pcRule = playerRule(input);
     if (pcRule) job += `\n${pcRule}`;
     if (namesRule) job += `\n${namesRule}`;

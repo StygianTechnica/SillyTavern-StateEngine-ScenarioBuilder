@@ -274,8 +274,9 @@ function chatPassagesFor(entry, draft) {
 }
 
 // story: the chat an event or scene came from (src/director/run.js) - what
-// is written is what happened there, with no one made up.
-export async function generateEntry({ task, type, ctx, fields, entry = null, draft = null, all, targetField = null, brief = '', parentId = null, naming = {}, story = '' }) {
+// is written is what happened there, with no one made up. fromStory: the
+// entry was taken in from the story - the chat's passages about it lead.
+export async function generateEntry({ task, type, ctx, fields, entry = null, draft = null, all, targetField = null, brief = '', parentId = null, naming = {}, story = '', fromStory = false }) {
     const gate = canGenerateFor(ctx.settingId, entry?.id);
     if (!gate.ok) throw new Error(gate.reason);
 
@@ -380,8 +381,14 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     // it is already tied to them (playerTie).
     const player = playerTie(entry, { all, relations: authored, playerId: playerIdOf(ctx.settingId, all.character ?? []) });
     const others = allEntries.filter((e) => e.id !== entry?.id && (!player || player.tied || e.id !== player.id));
-    // Lore is written from where the chat brings it up (its passages).
-    const loreStory = type.id === 'lore' && entry?.id && !story ? chatPassagesFor(entry, draft) : '';
+    // Lore is written from where the chat brings it up (its passages) - and
+    // so is anything the story brought in (fromStory): Cyril's post made
+    // Alonso Vasquez a chief who broke from Enrique's syndicate with his
+    // people, and the fill, never shown it, made him Omicron's head of
+    // security.
+    // Enriched from its sheet too: whatever the story or the director made.
+    const storyMade = fromStory || (entry?.id && ['story', 'director', 'steer'].includes(getEntryMeta(ctx.settingId, entry.id).origin));
+    const loreStory = (type.id === 'lore' || storyMade) && entry?.id && !story ? chatPassagesFor(entry, draft) : '';
     // Nothing in a story's own event needs a new name: no pool, so none is offered.
     const namePool = story ? null : namePoolFor(ctx.settingId, all, { cultureId: naming.cultureId, placeId: parentForPrompt, factionIds });
     const base = {
