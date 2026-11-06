@@ -262,11 +262,11 @@ function changeItem(s, type) {
         h('div', { class: 'sb-row' }, h('i', { class: `fa-solid ${type?.icon ?? 'fa-star'}` }), h('b', {}, s.name),
             h('small', { class: 'sb-hint' }, current ? 'has a current description - update it?' : 'update its description for this story?')),
         h('ul', { class: 'sb-gm-threads' }, s.texts.map((t) => h('li', {}, t))),
-        s.draft ? field('How it is now (this chat)', draft, 'Replaces its description in this chat\'s guidance and image prompts. The setting\'s description is not changed.') : null,
+        s.draft ? field('What changed (this chat)', draft, 'Added after its description in this chat\'s guidance and image prompts; the description itself is not changed.') : null,
         h('div', { class: 'sb-actions' },
             s.draft
                 ? button('Use it', async () => { useChange(chatKey, s.id, draft.value); ws.dirty = false; await syncNow(); rerender(); }, { iconName: 'fa-check', cls: 'sb-primary' })
-                : button(writingChange === s.id ? 'Writing…' : 'Write how it is now', () => void write(), { iconName: writingChange === s.id ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles', cls: 'sb-primary', disabled: !!writingChange, title: 'One model call: its description, rewritten for what the story did to it' }),
+                : button(writingChange === s.id ? 'Writing…' : 'Write what changed', () => void write(), { iconName: writingChange === s.id ? 'fa-spinner fa-spin' : 'fa-wand-magic-sparkles', cls: 'sb-primary', disabled: !!writingChange, title: 'One model call: a short note on what the story changed, added after its description' }),
             s.draft ? button('Write again', () => void write(), { iconName: 'fa-rotate', disabled: !!writingChange }) : null,
             button('Open sheet', () => openSheet(s.objectId, s.type), { iconName: 'fa-pen' }),
             button('Not needed', () => { dismissChange(chatKey, s.id); rerender(); }, { iconName: 'fa-xmark', title: 'Take it off the list - the description stays as it is' })));

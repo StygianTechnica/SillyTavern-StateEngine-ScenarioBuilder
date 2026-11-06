@@ -631,8 +631,8 @@ function overviewTab({ type, entry, isNew, defs, doc, all, names, parents, allEn
     if (ws.editing) {
         return h('div', { class: 'sb-tabpane' },
             h('div', { dataset: { field: 'description' } }, fieldWithTools('Description', textArea('description', ws.draft.description, 5), [spark('description', ws.draft.description)], 'The setting\'s description - true in every chat on this setting.', genClass('description'))),
-            !isNew && type.scope === 'world' ? field('Current description (this chat)', textArea('narrative', ws.draft.narrative, 4, { placeholder: 'Only when the story has changed it - a forest after the fire. Replaces the description above in this chat.' }),
-                'Used instead of the description in this chat\'s guidance and image prompts. Leave empty to use the description.') : null,
+            !isNew && type.scope === 'world' ? field('Changed in this story (this chat)', textArea('narrative', ws.draft.narrative, 4, { placeholder: 'Only what the story has changed - a scar, a burned wing. Added after the description above in this chat.' }),
+                'Added after the description in this chat\'s guidance and image prompts, and holds where the two differ. Leave empty when nothing has changed.') : null,
             // Saves at once, apart from the draft - so it can be set while
             // editing too; a new character's goes with the draft.
             lineageCard(type, entry, all, { isNew }));
@@ -644,13 +644,13 @@ function overviewTab({ type, entry, isNew, defs, doc, all, names, parents, allEn
     return h('div', { class: 'sb-tabpane' },
         type.id === 'location' && !isNew ? placeMapCard(entry, { names, parents, allEntries }) : null,
         type.id === 'location' && !isNew ? oldRegionCard(entry) : null,
+        base,
         narrative ? h('div', { class: 'sb-narrative' },
-            h('div', { class: 'sb-section-title' }, icon('fa-hourglass-half'), ' Now, in this story',
+            h('div', { class: 'sb-section-title' }, icon('fa-hourglass-half'), ' Now, in this story (added to the description)',
                 h('span', { class: 'sb-spacer' }),
                 h('span', { class: 'sb-iconbtn', title: 'Back to the previous text', onclick: () => { revertNarrative(ws.ctx.chatKey, entry.id); void syncNow(); } }, icon('fa-rotate-left')),
-                h('span', { class: 'sb-iconbtn', title: 'Clear - use the description again', onclick: () => { setNarrative(ws.ctx.chatKey, entry.id, ''); void syncNow(); } }, icon('fa-xmark'))),
+                h('span', { class: 'sb-iconbtn', title: 'Clear - the description alone again', onclick: () => { setNarrative(ws.ctx.chatKey, entry.id, ''); void syncNow(); } }, icon('fa-xmark'))),
             h('div', { class: 'sb-prose' }, narrative)) : null,
-        narrative ? h('details', { class: 'sb-base-desc' }, h('summary', {}, 'Original description'), base) : base,
         glance.length ? h('dl', { class: 'sb-glance' }, glance.flatMap((d) => [h('dt', {}, d.label), h('dd', {}, String(entry.base?.[d.name] ?? entry[d.name]))])) : null,
         // Bloodlines (src/ui/bloodline-cards.js): a lore entry that is one, a
         // character's own, who lives in a place or joins a faction.
@@ -1463,7 +1463,8 @@ async function imageTab({ type, entry, isNew, doc, parents }) {
     const from = imageSourceFor({ narrative: told?.text, narrativeAt: told?.updatedAt, descriptionAt: entry.meta?.descriptionAt, picked: picks[entry.id] });
     return renderImagePanel({
         type, entry,
-        narrative: from === 'chat' ? told?.text ?? '' : '',
+        // The story's change with the description it is added to.
+        narrative: from === 'chat' && told?.text ? [entry.base?.description ?? entry.description ?? '', told.text].join(' ').trim() : '',
         source: told?.text ? { from, pick: (v) => { picks[entry.id] = v; rerender({ force: true }); } } : null,
         environment: { climate: surroundings ? surroundings.climate : inherited.climate?.value ?? '', lighting: inherited.lighting?.value ?? '' },
         surroundings: surroundings ?? {},

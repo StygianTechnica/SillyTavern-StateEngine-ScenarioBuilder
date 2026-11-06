@@ -452,7 +452,11 @@ export function buildNow(input) {
     // wrapped.js): Cyril's practice at the range, and the reply cut away.
     // Someone arriving is the next thing: no time skip past them.
     const nextThing = next || arriving.length ? '' : clean(input.nextThing);
-    if (!arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
+    // Those the last reply or an arrival's reason names who are not here
+    // (src/guidance/spoken.js elsewhereNow): a cutaway's people at HQ were
+    // all written into the gun range when Zane came.
+    const elsewhere = [...new Set((input.elsewhere ?? []).map(clean).filter(Boolean))].filter((n) => !arriving.includes(n));
+    if (!elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (corrections) orders.push(corrections);
@@ -460,6 +464,7 @@ export function buildNow(input) {
         ? `${arriving[0]} comes in now - they arrive where everyone can see and speak or act, with their own reason for coming.`
         : `${andList(arriving)} come in now - each arrives where everyone can see and speaks or acts, with their own reason for coming.`);
     if (arriving.length) orders[orders.length - 1] += arrivalWhere(arriving, input);
+    if (elsewhere.length) orders.push(`Not in this scene: ${andList(elsewhere)} - ${elsewhere.length === 1 ? 'they are' : 'they are all'} elsewhere, and do not come in, speak or act in this reply.`);
     if (triggered.length) orders.push(`It happens now: ${triggered.join(' ')}`);
     if (dodging) orders.push(dodging);
     // The beat's people are who it is (Adam kept sending others on the job

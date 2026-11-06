@@ -14,6 +14,7 @@
 // SB-304, SB-503).
 
 import { LOG_PREFIX } from '../constants.js';
+import { describedNow } from '../state/narrative.js';
 import { getSettings, isActive } from '../settings.js';
 import { getCurrentChatRef, chatKeyFor } from '../store/chat-ref.js';
 import { getChatDoc, updateChatDoc, SCENARIO_CHANGED_EVENT } from '../store/chat-store.js';
@@ -57,7 +58,7 @@ import { protectedText, stanceFor } from '../director/combat.js';
 import { eventValues } from '../events/model.js';
 import { knownAsText, keptNames } from '../library/alias-kinds.js';
 import { libraryMemberships } from '../library/faction-sync.js';
-import { spokenOf, spokenNowText } from './spoken.js';
+import { spokenOf, spokenNowText, elsewhereNow } from './spoken.js';
 import { livePoolFor, byType } from '../naming/run.js';
 import { narratorPoolLine } from '../naming/live.js';
 import { personGender } from '../naming/classify.js';
@@ -158,16 +159,17 @@ export async function gatherInputs(chatId, chatKey) {
             // What is here: places off it (rooms, streets), the place it is
             // part of, and the items and creatures the library puts here.
             const allLocations = await listEntries(chatId, settingId, 'location');
-            placeTexts = new Map(allLocations.map((l) => [l.id, { name: l.name, description: doc.narrative[l.id]?.text || l.base?.description || l.description || '' }]));
+            placeTexts = new Map(allLocations.map((l) => [l.id, { name: l.name, description: describedNow(l.base?.description || l.description, doc.narrative[l.id]?.text) }]));
             const here = placeOverview(library.overview, parents, library.entries, obj.id);
             const tech = techOf({ techLevel: here?.tech?.level, laterAge: isLaterAge(here) });
-            const short = (o) => ({ name: o.name, description: doc.narrative[o.id]?.text || o.description || '' });
+            const short = (o) => ({ name: o.name, description: describedNow(o.description, doc.narrative[o.id]?.text) });
             const places = allLocations.filter((l) => parents[l.id] === obj.id).map(short);
             const partOf = parents[obj.id] ? allLocations.find((l) => l.id === parents[obj.id]) : null;
-            // The story's current description wins over the base one.
+            // What the story changed, added to the description (it holds
+            // where they differ).
             location = {
                 path: locationPath,
-                description: doc.narrative[obj.id]?.text || obj.description || '',
+                description: describedNow(obj.description, doc.narrative[obj.id]?.text),
                 conditions: await readField(chatId, obj.id, 'se__location.conditions', 'conditions'),
                 environment,
                 indoor: c.indoor,
@@ -268,7 +270,7 @@ export async function gatherInputs(chatId, chatKey) {
             factionIds: (memberships.get(id) ?? []).filter((f) => factionNames.has(f)),
             keptNames: settingId ? keptNames(obj.aliases ?? base.aliases ?? [], library.entries?.[id]?.aliasInfo ?? {}, (x) => aliasUsers.get(x) ?? '', (x) => aliasUsers.has(x) && !nameById0.has(x)) : [],
             role: await readField(chatId, id, 'se__character.role', 'role'),
-            description: doc.narrative[id]?.text || obj.description || '',
+            description: describedNow(obj.description, doc.narrative[id]?.text),
             // she / he from their own prose: without it a stray "his" in the
             // story turned a woman into a man. Their description first - the
             // other fields only when it says nothing (src/naming/classify.js).
@@ -454,7 +456,7 @@ export async function gatherInputs(chatId, chatKey) {
                 for (const o of await listEntries(chatId, settingId, type)) mentioned.push({ id: o.id, names: [o.name, ...(o.aliases ?? o.base?.aliases ?? [])] });
             }
             lore = relevantLore(await listEntries(chatId, settingId, 'lore'), { recentText, sceneIds, mentioned })
-                .map(({ entry: o, why }) => ({ id: o.id, name: o.name, description: doc.narrative[o.id]?.text || o.description || '', why }));
+                .map(({ entry: o, why }) => ({ id: o.id, name: o.name, description: describedNow(o.description, doc.narrative[o.id]?.text), why }));
         } catch (err) {
             console.warn(LOG_PREFIX, 'no lore for the guidance', err);
         }
@@ -540,6 +542,15 @@ export async function gatherInputs(chatId, chatKey) {
             arriving: settings.director.enabled ? (doc.director.moves?.in ?? []) : [],
             // Why each comes, from the plan (src/planner/model.js arrivalReasons).
             arrivingFor: settings.director.enabled ? (doc.director.arrivingFor ?? {}) : {},
+            // Who the reply before the player's post, or those reasons, name
+            // and who is not here: they stay where they are.
+            elsewhere: elsewhereNow(allCharacters, {
+                lastReply: replyBeforePost(),
+                reasons: settings.director.enabled ? Object.values(doc.director.arrivingFor ?? {}) : [],
+                playerPost: latestPlayerPost(),
+                here: castIds,
+                skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id)].filter(Boolean),
+            }),
             // What the story has settled (src/planner/model.js settledSection).
             // Only what the latest messages touch, the user's own always.
             settled: settledNow(getChatDoc(chatKey).gm.settled ?? [], settledOpts),
@@ -761,3 +772,10 @@ function ageOfKind(text, ids, byId) {
     if (!v?.lifespan) return '';
     return ageLine(ageIn(text), { lifespan: v.lifespan, note: v.lifespanNote, singular: lineageLabel(ids, byId) });
 }
+// The narrator's reply before the player's latest post - the scene as it
+// stood (on a swipe, not the reply being replaced).
+const replyBeforePost = () => {
+    const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system);
+    const u = chat.findLastIndex((m) => m.is_user);
+    return String((u > 0 ? chat.slice(0, u) : []).findLast((m) => !m.is_user)?.mes ?? '');
+};

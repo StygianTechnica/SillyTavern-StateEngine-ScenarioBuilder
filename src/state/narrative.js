@@ -36,3 +36,16 @@ export function revertNarrative(chatKey, objectId) {
         else delete doc.narrative[objectId];
     });
 }
+
+// How an object reads in this chat: its description, with what the story
+// changed added after it - the change holds where they differ. It used to
+// stand in for the description, and a rewrite that forgot the rest lost
+// it: Inji's look became only "his body now hosts Cyril's consciousness".
+// Pure.
+export function describedNow(description, now) {
+    const base = String(description ?? '').trim();
+    const told = String(now ?? '').trim();
+    if (!told) return base;
+    if (!base) return told;
+    return `${base} Now, in this story (this holds where it differs): ${told}`;
+}

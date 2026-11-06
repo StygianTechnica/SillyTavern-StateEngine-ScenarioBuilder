@@ -75,3 +75,17 @@ export function spokenNowText(list = [], max = 2) {
         return `${clean(p.name)}, just named and not here, is someone ${listOf(k)} know${one ? 's' : ''}${who ? ` (${who})` : ''}: they speak of ${clean(p.name)} as someone known, never as a stranger.`;
     }).join(' ');
 }
+
+// Library people the reply before the player's post named, or the reasons
+// of those arriving name, who are not in the scene: they stay where they
+// are. Assassins Inc - a cutaway had Doc, Galice, Vex and Miller at HQ;
+// the next reply, Zane coming "for Adam's assignment of Cyril and Inji",
+// put all of them at the gun range. Not those the player's post names
+// (Cyril may be going to them), nor anyone here, nor `skip`.
+// -> [name], at most `max`.
+export function elsewhereNow(characters, { lastReply = '', reasons = [], playerPost = '', here = [], skip = [], max = 6 } = {}) {
+    const away = new Set([...(here ?? []), ...(skip ?? [])]);
+    const called = new Set(peopleNamedIn(playerPost, characters).map((c) => c.id));
+    const named = peopleNamedIn([lastReply, ...(reasons ?? [])].join('\n'), characters);
+    return named.filter((c) => !away.has(c.id) && !called.has(c.id)).map((c) => clean(c.name)).filter(Boolean).slice(0, max);
+}

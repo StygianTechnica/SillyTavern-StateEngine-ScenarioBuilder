@@ -71,6 +71,9 @@ export async function writeChange(chatId, chatKey, settingId, id, { use = false 
             name: entry.name, type: s.type, description: entry.base?.description ?? entry.description ?? '',
             current: getChatDoc(chatKey).narrative[s.objectId]?.text ?? '', changes: s.texts,
             overview: [overview.premise, overview.tone && `Tone: ${overview.tone}.`].filter(Boolean).join(' '),
+            // A person's he or she, from their own sheet: the change model
+            // has no other way to know it.
+            pronoun: s.type === 'character' ? await pronounOf(entry) : '',
         });
         const { askReliably } = await import('../generate/run.js');
         const result = await askReliably(prompt, (_p, text) => {
@@ -90,20 +93,42 @@ export async function writeChange(chatId, chatKey, settingId, id, { use = false 
     }
 }
 
+async function pronounOf(entry) {
+    try {
+        const { personGender } = await import('../naming/classify.js');
+        const base = entry.base ?? {};
+        const text = (v) => (typeof v === 'string' ? v : '');
+        const g = personGender({ name: entry.name, own: [entry.description, base.description], more: [text(base.personality), text(base.voice), text(base.goals), text(base.background)] });
+        return g === 'm' ? 'he' : g === 'f' ? 'she' : '';
+    } catch { return ''; }
+}
+
 // The draft (or the user's edit of it) becomes the current description.
 export function useChange(chatKey, id, text) {
     const s = getChatDoc(chatKey).changes.suggestions.find((x) => x.id === id);
     const value = clean(text ?? s?.draft);
     if (!s || !value) return false;
     setNarrative(chatKey, s.objectId, value);
-    updateChatDoc(chatKey, (d) => { d.changes.suggestions = d.changes.suggestions.map((x) => (x.id === id ? { ...x, status: 'used', draft: value } : x)); });
+    updateChatDoc(chatKey, (d) => {
+        d.changes.suggestions = d.changes.suggestions.map((x) => (x.id === id ? { ...x, status: 'used', draft: value } : x));
+        settle(d, id);
+    });
     return true;
 }
 
 export function dismissChange(chatKey, id) {
-    updateChatDoc(chatKey, (d) => { d.changes.suggestions = d.changes.suggestions.map((x) => (x.id === id ? { ...x, status: 'dismissed' } : x)); });
+    updateChatDoc(chatKey, (d) => {
+        d.changes.suggestions = d.changes.suggestions.map((x) => (x.id === id ? { ...x, status: 'dismissed' } : x));
+        settle(d, id);
+    });
 }
 
 export function editChangeDraft(chatKey, id, text) {
     updateChatDoc(chatKey, (d) => { d.changes.suggestions = d.changes.suggestions.map((x) => (x.id === id ? { ...x, draft: String(text ?? '').slice(0, 2000) } : x)); });
+}
+
+// A change used or turned down: its memories never offer it again.
+function settle(d, id) {
+    const keys = d.changes.suggestions.find((x) => x.id === id)?.keys ?? [];
+    d.changes.done = [...new Set([...(d.changes.done ?? []), ...keys])];
 }

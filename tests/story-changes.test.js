@@ -70,3 +70,66 @@ describe('writing how it is now', () => {
         expect(readChangeAnswer('ok')).toBe('');
     });
 });
+
+// Assassins Inc: Inji's current description said his body "now hosts Cyril
+// Moriarty's consciousness" - a change that was Cyril's, not his.
+describe('a change that is someone else\'s', () => {
+    const inji = { id: 'in', type: 'character', name: 'Inji Miyama', aliases: ['Inji'] };
+    const others = ['Cyril', 'Cyril Moriarty', 'Vex', 'Inji Miyama', 'Inji'];
+    it('is not theirs', () => {
+        expect(changeIn('Inji freed Cyril from the cell.', inji, { others })).toBe('');
+        expect(changeIn('Inji watched as Cyril was transformed into a machine.', inji, { others })).toBe('');
+        expect(changeIn('Inji, beside Cyril, was branded.', inji, { others })).toBe('');
+    });
+    it('is still theirs when it is', () => {
+        expect(changeIn('Inji was scarred by the blast.', inji, { others })).toContain('scarred');
+        expect(changeIn('Vex scarred Inji across the cheek.', inji, { others })).toContain('scarred');
+        const found = changesFrom([{ id: 'm1', text: 'Inji freed Cyril.', entity_ids: ['in', 'cy'] }], { entries: [inji, { id: 'cy', type: 'character', name: 'Cyril', aliases: ['Cyril Moriarty'] }] }).found;
+        expect(found.map((f) => f.name)).toEqual(['Cyril']);
+    });
+    it('the rewrite keeps to them, and to their pronoun', () => {
+        const p = buildChangePrompt({ name: 'Inji Miyama', type: 'character', description: 'Lean and wiry.', changes: ['Inji was scarred.'], pronoun: 'he' });
+        expect(p.user).toMatch(/what happened to anyone else, or what the setting says of others, is not part of it/);
+        expect(p.user).toMatch(/Inji Miyama is a man: he, him, his\./);
+    });
+});
+
+// Assassins Inc: one memory about Cyril's implant was offered - and, with
+// auto, written - 40 times in a day: the chat had more memories than were
+// kept as read, and a change turned down came back.
+describe('a change offered once', () => {
+    const implant = { id: 'imp', type: 'item', name: "Cyril's implant", aliases: [] };
+    const memories = [{ id: 'm_old', text: "Galice broke through the encrypted code block from Cyril's implant." }, ...Array.from({ length: 1200 }, (_, i) => ({ id: `m${i}`, text: 'Vex lit a cigarette.' }))];
+    it('every memory is read once, however many there are', () => {
+        const first = changesFrom(memories, { entries: [implant], seen: [], first: false });
+        expect(first.found).toHaveLength(1);
+        expect(changesFrom(memories, { entries: [implant], seen: first.seen }).found).toEqual([]);
+    });
+    it('turned down or used, it never comes back', () => {
+        const found = changesFrom(memories.slice(0, 1), { entries: [implant] }).found;
+        let list = addChanges(normalizeChanges({}), found, { newId: () => 'c1' });
+        list.suggestions[0].status = 'dismissed';
+        list = addChanges(list, found, { newId: () => 'c2' });
+        expect(list.suggestions.map((s) => s.id)).toEqual(['c1']);
+        expect(list.done).toEqual(['m_old']);
+        // Even once the old suggestion is gone from the list.
+        expect(addChanges({ ...list, suggestions: [] }, found, { newId: () => 'c3' }).suggestions).toEqual([]);
+    });
+});
+
+// A story change is added to the description, never in its place: Inji's
+// whole look was lost to "his body now hosts Cyril's consciousness".
+import { describedNow } from '../src/state/narrative.js';
+describe('a change added to the description', () => {
+    it('keeps the description', () => {
+        expect(describedNow('Lean and wiry, white hair, a crooked nose.', 'A fresh scar runs along his jaw.'))
+            .toBe('Lean and wiry, white hair, a crooked nose. Now, in this story (this holds where it differs): A fresh scar runs along his jaw.');
+        expect(describedNow('Dense green woods.', '')).toBe('Dense green woods.');
+        expect(describedNow('', 'Burned to stumps.')).toBe('Burned to stumps.');
+    });
+    it('the note says only what changed, and what lasts', () => {
+        const p = buildChangePrompt({ name: 'Vex', type: 'character', description: 'Emerald eyes.', changes: ['Vex was scarred.'], pronoun: 'she' });
+        expect(p.user).toMatch(/do not repeat it or sum it up/);
+        expect(p.user).toMatch(/A passing mood, a moment or a scene is not a change/);
+    });
+});
