@@ -322,6 +322,15 @@ function enrichThin(chatId, chatKey, settingId, guidance) {
 
 const isNewTurn = (type) => !type || type === 'normal';
 
+// Those the beat has waited on past the firm line (src/planner/run.js
+// overdueNewcomers) who can come in now: not here already, not taken out
+// by hand, not waiting where the story left off, not dead.
+function overdueHere(chatKey, characters, castIds, { heldOut = new Set(), waitingNow = new Set(), dead = [] } = {}) {
+    return overdueNewcomers(chatKey)
+        .map((tie) => characters.find((c) => !isPower(c) && callNames(c).some((n) => n.toLowerCase() === tie.toLowerCase() || n.toLowerCase().startsWith(`${tie.toLowerCase()} `))))
+        .filter((c, i, all) => c && all.indexOf(c) === i && !castIds.includes(c.id) && !heldOut.has(c.id) && !waitingNow.has(c.id) && !dead.some((d) => d.id === c.id));
+}
+
 // Who arrives and leaves, by name (and the new people who are here).
 function castAfter(characters, castIds, { enters, leaves }, made, playerId = '') {
     const byName = new Map();
@@ -954,8 +963,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         // A newcomer the beat has waited on past the firm line comes in now:
         // the game master only ever wrote Adam's arrival as what comes next
         // (src/planner/run.js overdueNewcomers).
-        const overdue = overdueNewcomers(chatKey).map((tie) => characters.find((c) => !isPower(c) && callNames(c).some((n) => n.toLowerCase() === tie.toLowerCase() || n.toLowerCase().startsWith(`${tie.toLowerCase()} `))))
-            .filter((c) => c && !baseCast.includes(c.id) && !heldOut.has(c.id) && !waitingNow.has(c.id) && !doc.dead.some((d) => d.id === c.id));
+        const overdue = overdueHere(chatKey, characters, baseCast, { heldOut, waitingNow, dead: doc.dead });
         if (overdue.length) {
             console.info(LOG_PREFIX, `${overdue.map((c) => c.name).join(', ')} brought in - the beat has waited on them too long`);
             parsed.enters = [...new Set([...parsed.enters, ...overdue.map((c) => c.name)])];
@@ -1225,6 +1233,25 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
                 const now = getChatDoc(chatKey).canonical.time;
                 if (Number.isFinite(now)) await setTime(chatId, chatKey, settingId, now, { source: 'director', note: `The weather turns: ${parsed.weather.values.join(', ')}${parsed.weather.why ? ` (${parsed.weather.why})` : ''}` });
             }
+        }
+    }
+
+    // A swipe keeps the cast the turn began with - but someone the beat has
+    // waited on past the firm line still comes in. Swipes never changed the
+    // cast, so Zane, waited on for ten replies, could not reach Cyril at the
+    // gun range however often the reply was swiped (Assassins Inc). Only
+    // ever adds, so swiping again does not stack.
+    if (!isNewTurn(type) && settingId) {
+        const doc2 = getChatDoc(chatKey);
+        const castNow = doc2.canonical.castIds;
+        const heldOut = new Set(doc2.held.filter((h) => h.field === 'cast' && h.op === 'remove' && h.until > doc2.turn).map((h) => h.objectId));
+        const overdue = overdueHere(chatKey, characters, castNow, { heldOut, waitingNow, dead: doc2.dead })
+            .filter((c) => !elsewhereEntering([c.name], { characters, elsewhere: [...ground.barred.values()], castIds: castNow, userPost: [...messages].reverse().find((m) => m.isUser)?.text ?? '', namedIn: peopleNamedIn, namesOf: callNames }).length);
+        if (overdue.length) {
+            const names = overdue.map((c) => c.name);
+            console.info(LOG_PREFIX, `${names.join(', ')} brought in on the swipe - the beat has waited on them too long`);
+            setCanonical(chatKey, { castIds: [...castNow, ...overdue.map((c) => c.id)] }, { chatId, source: 'director', note: `${names.join(', ')} arrive${names.length === 1 ? 's' : ''}` });
+            moves = { in: names, out: [] };
         }
     }
 

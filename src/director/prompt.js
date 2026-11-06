@@ -1026,7 +1026,7 @@ export function parseDirectorNote(raw) {
     text = keep.join('\n')
         .replace(/^\s*(?:#+\s*)?(?:\**)?(?:gm\s+)?(?:briefing|note|director'?s note)(?:\**)?\s*:?\s*$/gim, '')
         // A heading for the format lines left on its own ("FORMAT").
-        .replace(/^\s*(?:#+\s*)?(?:\**)?(?:the\s+)?format(?:\s+lines)?(?:\**)?\s*:?\s*$/gim, '')
+        .replace(/^\s*(?:#+\s*)?(?:\**)?(?:the\s+)?(?:end of (?:the\s+)?)?format(?:\s+lines)?(?:\s+(?:ends?|end here|done|over|complete))?(?:\**)?\s*[:.]?\s*$/gim, '')
         .replace(/^\s*here(?:'s| is) (?:the|my|your) briefing[^\n]*\n/i, '')
         .replace(/^\s*#+\s+/gm, '')
         .replace(/\n{3,}/g, '\n\n')

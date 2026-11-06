@@ -113,6 +113,13 @@ describe('format lines a small model bent', () => {
         expect(parsed.note).toContain('Galice sat quietly');
         for (const junk of ['ENTERES', 'New ENTERS', 'AWAY', 'SETTLED', 'BARGAIN', 'FIGHT', 'DIES']) expect(parsed.note).not.toContain(junk);
     });
+    it('drops a "FORMAT ENDS." marker', () => {
+        // The briefing after another swipe, as it was kept.
+        const parsed = parseDirectorNote('FORMAT ENDS.\n\nThe sound of gunfire has ceased, replaced by an eerie silence.');
+        expect(parsed.note).toBe('The sound of gunfire has ceased, replaced by an eerie silence.');
+        expect(parseDirectorNote('End of format lines:\nRain on the keep.').note).toBe('Rain on the keep.');
+        expect(parseDirectorNote('The format of the duel ends at first blood.').note).toContain('format of the duel');
+    });
     it('leaves prose and a bare BACK alone', () => {
         expect(formatLineAsMeant('BACK')).toBe('BACK');
         expect(formatLineAsMeant('BACK:')).toBe('BACK');
