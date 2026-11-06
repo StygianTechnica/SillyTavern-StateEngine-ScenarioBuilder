@@ -518,8 +518,14 @@ export async function gatherInputs(chatId, chatKey) {
     const leaders = new Map();
     for (const r of library.relations ?? []) if (r.kind === 'leads' && factionNames.has(r.to)) leaders.set(r.to, [...(leaders.get(r.to) ?? []), { id: r.from, name: allCharacters.find((ch) => ch.id === r.from)?.name ?? '' }].filter((x) => x.name));
     const castFor = cast.map((c) => ({ ...c, aliases: Array.isArray(c.aliases) ? c.aliases : allCharacters.find((ch) => ch.id === c.id)?.aliases ?? [] }));
-    const wrongPronouns = pronounSlips(castFor, replies[replies.length - 1] ?? '', { others: allCharacters.map((ch) => ch.name) });
-    const wrongOrders = commandSlips(castFor, leaders, [replies[replies.length - 1] ?? '', ...notes]);
+    // The last few replies, not only the latest: on a swipe the latest is the
+    // one being replaced, and a slip a reply back (Galice "stepped forward,
+    // his voice firm") came again. The correction holds while any of them
+    // shows it.
+    const lately = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system && !m.is_user).slice(-4).map((m) => String(m.mes ?? ''));
+    const wrongPronouns = pronounSlips(castFor, lately.join('\n\n'), { others: allCharacters.map((ch) => ch.name) });
+    const events = Object.values(await getRawValues(chatId, ['ar__ctx_recent_events']).catch(() => ({}))).map(String);
+    const wrongOrders = commandSlips(castFor, leaders, [...replies, ...notes, ...events]);
     const corrected = new Set(slips.map((s) => s.name));
 
     return {
