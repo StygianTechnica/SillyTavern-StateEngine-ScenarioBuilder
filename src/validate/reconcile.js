@@ -31,7 +31,7 @@ import { beatsOf, undoBeatsFrom, unplantSeedsFrom } from '../planner/model.js';
 import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
 import { noteMood } from '../director/company.js';
-import { catchUpWithStory, catchUpWithPost, holdStoryWeather, travelAlong } from '../calendar/clock.js';
+import { catchUpWithStory, catchUpWithPost, catchUpWithTimeOfDay, holdStoryWeather, travelAlong } from '../calendar/clock.js';
 
 // The player's latest post (SillyTavern's chat).
 const latestPlayerText = () => { try { return String([...(SillyTavern.getContext().chat ?? [])].reverse().find((m) => m && !m.is_system && m.is_user)?.mes ?? ''); } catch { return ''; } };
@@ -387,6 +387,8 @@ async function reconcileOnce() {
         if (storyTime) await catchUpWithStory(chatId, chatKey, settingId, storyTime, replySource);
         // What the player's post said it took, if the clock is still short of it.
         await catchUpWithPost(chatId, chatKey, settingId, latestPlayerText(), replySource);
+        // The time of day the reply opens on ("As dusk settled..."), if later.
+        await catchUpWithTimeOfDay(chatId, chatKey, settingId, latestReplyText(), replySource);
     }
     if (newReply && playerId) await takePlayerMood(chatId, chatKey, playerId, canonical.castIds, characterEntries, replySource);
     if (restore.size) await pushCanonicalToObserved(chatId, chatKey, { fields: [...restore] });

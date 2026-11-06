@@ -30,6 +30,7 @@ import { placeOverview, isLaterAge } from '../library/world-options.js';
 import { timeFor, techOf, readTravelMode, modeLabel } from '../library/travel.js';
 import { pathOf } from '../library/hierarchy.js';
 import { postSpan } from './post-span.js';
+import { saidTimeOfDay } from './said-time.js';
 
 const FALLBACK_CALENDAR = Object.freeze({
     id: 'gregorian', label: 'Gregorian', unit: 'seconds', secondsPerMinute: 60, minutesPerHour: 60, hoursPerDay: 24, leapYearRule: 'gregorian',
@@ -316,6 +317,17 @@ export async function advanceBy(chatId, chatKey, settingId, text, { planned = fa
 // takes the last one again. Taken whenever the answer is written (src/
 // validate/reconcile.js), not only on the pass that first sees the reply.
 // -> the history entry, or null.
+// Where the turn began, when nothing kept it - a turn begun before it was
+// kept, or after the clock was set by hand: the time now, kept for every
+// catch-up after it, so they count from one start and never stack. Without
+// it the clock stood still: Cyril spent several hours at the range and
+// dusk fell, and it stayed midday (Assassins Inc).
+function pinTurnFrom(chatKey, now) {
+    if (!Number.isFinite(now)) return null;
+    updateChatDoc(chatKey, (d) => { if (!Number.isFinite(d.clock.turnFrom)) d.clock.turnFrom = now; });
+    return getChatDoc(chatKey).clock.turnFrom;
+}
+
 export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, sourceMessage = '') {
     const delta = String(deltaText ?? '').trim();
     if (!delta) return null;
@@ -333,7 +345,7 @@ export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, so
     if (!Number.isFinite(now)) return null;
     // Counted only from where the turn began: from "now" each pass would
     // stack - Assassins Inc's swipes put 12 hours on a post of 3.
-    const from = doc.clock.turnFrom ?? planned?.from ?? null;
+    const from = doc.clock.turnFrom ?? planned?.from ?? pinTurnFrom(chatKey, now);
     if (!Number.isFinite(from)) return null;
     const target = await advanceFrom(settingId, from, delta);
     const { def } = await calendarFor(settingId);
@@ -356,12 +368,31 @@ export async function catchUpWithPost(chatId, chatKey, settingId, postText, sour
     const now = doc.canonical.time;
     if (!Number.isFinite(now)) return null;
     // Only from where the turn began: never stacked on itself.
-    const from = doc.clock.turnFrom;
+    const from = doc.clock.turnFrom ?? pinTurnFrom(chatKey, now);
     if (!Number.isFinite(from)) return null;
     const target = await advanceFrom(settingId, from, span);
     if (target === null || target <= now) return null;
     console.info(LOG_PREFIX, `the player's post took ${span} - the clock catches up`);
     return setTime(chatId, chatKey, settingId, target, { source: 'story', note: `The player's post took ${span}`, sourceMessage });
+}
+
+// After a reply, swipes too: the time of day its narration opens on ("As
+// dusk settled over Arcadia City"), when that is later today than the
+// clock. Forward only, within half a day; tied to the reply like the other
+// catch-ups. -> the history entry, or null.
+export async function catchUpWithTimeOfDay(chatId, chatKey, settingId, replyText, sourceMessage = '') {
+    const said = saidTimeOfDay(replyText);
+    if (!said) return null;
+    const now = getChatDoc(chatKey).canonical.time;
+    if (!Number.isFinite(now)) return null;
+    const { def } = await calendarFor(settingId);
+    const fraction = timeOfDayFraction(said, def);
+    if (fraction === null) return null;
+    const perDay = secondsPerDay(def);
+    const to = dayIndexOf(def, now) * perDay + Math.round(fraction * perDay);
+    if (to <= now + 15 * (def.secondsPerMinute || 60) || to - now > HALF_DAY * perDay) return null;
+    console.info(LOG_PREFIX, `the reply opens at ${said} - the clock catches up`);
+    return setTime(chatId, chatKey, settingId, to, { source: 'story', note: `The story says it is ${said}`, sourceMessage });
 }
 
 // The default advance for a reply nobody planned.
@@ -394,6 +425,8 @@ export async function jumpTo(chatId, chatKey, settingId, text) {
     }
     if (!Number.isFinite(to)) return null;
     await setTime(chatId, chatKey, settingId, to, { source: 'user', note: `Set the date: ${text}` });
+    // The user's time is where this turn now counts from.
+    updateChatDoc(chatKey, (d) => { d.clock.turnFrom = to; });
     updateChatDoc(chatKey, (d) => { d.clock.planned = null; });
     return to;
 }
