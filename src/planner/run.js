@@ -726,7 +726,7 @@ export function directorPlan(chatKey, messages) {
     let due = '';
     try {
         const doc = getChatDoc(chatKey);
-        due = dueSection(doc.gm, doc.canonical.day);
+        due = dueSection(doc.gm, doc.canonical.day, doc.canonical.dayPart);
     } catch (err) {
         console.warn(LOG_PREFIX, 'nothing due for the director', err);
     }

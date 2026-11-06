@@ -28,7 +28,8 @@ import { circling } from '../director/loops.js';
 import { sidesApart, sidesText } from './sides.js';
 import { factionSlips, deadActing, correctionText } from './canon.js';
 import { asksWhatNext } from './build.js';
-import { activeBeat, settledNow, touchedSettled, retireSettled } from '../planner/model.js';
+import { activeBeat, settledNow, touchedSettled, retireSettled, dueToday } from '../planner/model.js';
+import { notYet, notYetLine } from '../planner/timed.js';
 import { opposedJobs, jobsLine, jobsTouched, planTexts } from '../planner/aims.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { giftsText } from '../library/powers.js';
@@ -518,6 +519,9 @@ export async function gatherInputs(chatId, chatKey) {
             // What the story has settled (src/planner/model.js settledSection).
             // Only what the latest messages touch, the user's own always.
             settled: settledNow(getChatDoc(chatKey).gm.settled ?? [], settledOpts),
+            // What the story set for later today, when the latest messages
+            // speak of it: it does not start early (src/planner/timed.js).
+            notYet: notYetLine(notYet(dueToday(doc.gm, doc.canonical.day), { today: doc.canonical.day, nowPart: c.dayPart }), (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-3).map((m) => String(m.mes ?? '')).join('\n')),
             // Whose job is whose (src/planner/aims.js), when the latest
             // messages speak of it.
             jobs: jobsLine(jobsTouched(opposedJobs(planTexts(doc.gm), { player: [SillyTavern.getContext().name1 ?? ''] }), (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-3).map((m) => String(m.mes ?? '')).join('\n')), SillyTavern.getContext().name1 ?? ''),

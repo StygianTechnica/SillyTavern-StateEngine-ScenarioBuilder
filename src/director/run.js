@@ -44,6 +44,8 @@ import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from
 import { namedAtAll } from '../validate/drift.js';
 import { circling } from './loops.js';
 import { shownLeaving } from './departures.js';
+import { goesAlone, goesTogether, namedGoing } from './going-along.js';
+import { timedHappenings } from '../planner/timed.js';
 
 // How many replies a broken-off fight's wounds are remembered.
 const WOUNDS_KEPT = 30;
@@ -335,7 +337,7 @@ function castAfter(characters, castIds, { enters, leaves }, made, playerId = '')
 
 // Moves the scene: finds (or makes) the place, takes the player character
 // and the named companions along. -> { from, castIds } or null.
-async function moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, known = [], canCreate, playerNames = [] }) {
+async function moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, latestText = '', known = [], canCreate, playerNames = [] }) {
     const doc = getChatDoc(chatKey);
     const from = doc.canonical.locationId || guidance.location?.id || '';
     const places = await listEntries(chatId, settingId, 'location');
@@ -393,8 +395,17 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
     // them (the dead that rushed the party down the stairs). On a real
     // journey creatures stay where they were.
     const near = made || parents[place.id] === from || parents[from] === place.id || (!!parentId && parents[place.id] === parentId);
-    const along = move.along.map(byName).filter(Boolean);
-    const named = near ? peopleNamedIn(recentText, characters.filter((c) => castIds.includes(c.id))).map((c) => c.id) : [];
+    // On a short hop those the player's message shows going come along -
+    // everyone the recent chat names only when it moves the whole company
+    // ("the party rushed down the stairs"). Going alone, no one does: not
+    // even those the MOVE line lists.
+    const alone = goesAlone(latestText, playerNames);
+    const along = alone ? [] : move.along.map(byName).filter(Boolean);
+    const here = characters.filter((c) => castIds.includes(c.id));
+    const named = !near || alone ? []
+        : !clean(latestText) || goesTogether(latestText) ? peopleNamedIn(recentText, here).map((c) => c.id)
+        : namedGoing(latestText, here.map((c) => ({ id: c.id, names: callNames(c) })));
+    if (alone) console.info(LOG_PREFIX, `${playerNames[0] || 'the player character'} goes alone - no one comes along`);
     const next = [...new Set([...(playerId && castIds.includes(playerId) ? [playerId] : playerId ? [playerId] : []), ...along, ...named])];
     const left = castIds.filter((id) => !next.includes(id)).map((id) => characters.find((c) => c.id === id)?.name).filter(Boolean);
     const patch = { locationId: place.id, castIds: next, creatureIds: near ? [...doc.canonical.creatureIds] : [] };
@@ -848,7 +859,13 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         const routes = listRoutes(settingId);
         // With no place for the scene yet (or after one was deleted), any
         // place the library has.
-        const reach = from ? [...routesFrom(from, routes).map((r) => r.otherId), ...placesFurtherOn(from, routes).map((p) => p.id)] : known.filter((e) => e.type === 'location').map((e) => e.id);
+        // The rooms and buildings beside this one count too, though no route
+        // joins them yet: "left Adam Miller's office to head to the armory"
+        // goes to the Armory down the hall (a route is guessed on the way).
+        const parents = getParents(settingId);
+        const up = from ? parents[from] ?? '' : '';
+        const beside = from ? known.filter((e) => e.type === 'location' && e.id !== from && (parents[e.id] === from || (up && (parents[e.id] === up || e.id === up)))).map((e) => e.id) : [];
+        const reach = from ? [...new Set([...routesFrom(from, routes).map((r) => r.otherId), ...placesFurtherOn(from, routes).map((p) => p.id), ...beside])] : known.filter((e) => e.type === 'location').map((e) => e.id);
         const ways = reach.map((id) => known.find((e) => e.id === id)).filter(Boolean).map((e) => ({ id: e.id, names: [e.name, ...e.aliases] }));
         const heading = headingAlong(latestUserText, ways);
         const invented = move && (routeName(move.place) || !knownAs(move.place, known.filter((e) => e.type === 'location')));
@@ -881,7 +898,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         }
     }
     if (isNewTurn(type) && settingId && move) {
-        const moved = await moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, known, playerNames, canCreate: !headed && settings.director.allowCreate && !canonOnly });
+        const moved = await moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, latestText: latestUserText, known, playerNames, canCreate:!headed && settings.director.allowCreate && !canonOnly });
         if (moved) {
             movedFrom = moved.from;
             baseCast = moved.castIds;
@@ -1186,7 +1203,11 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // no change as idle.
     if (isNewTurn(type) && settingId) {
         takeBeats(chatKey, parsed.beats);
-        takeSets(chatKey, parsed.sets);
+        // What the latest chat set for a time, when no SET line took it in
+        // ("a major heist tonight at the Arcadia Museum"): it waits for then.
+        const caught = parsed.sets.length ? [] : timedHappenings(messages.slice(-2).map((m) => m.text).join('\n')).map((x) => ({ who: '', what: x.what, when: x.when }));
+        if (caught.length) console.info(LOG_PREFIX, `set for a time in the chat, with no SET line: ${caught.map((x) => `${x.what} (${x.when})`).join('; ')}`);
+        takeSets(chatKey, parsed.sets.length ? parsed.sets : caught);
         takeSettled(chatKey, parsed.settled);
         takeHeard(chatKey, parsed.heard);
         takeHeartLines(chatKey, parsed, hearts);

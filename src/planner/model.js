@@ -58,6 +58,7 @@
 // }
 import { normalizeTriggers, triggerLines } from '../triggers/model.js';
 import { emptyWorld, normalizeWorld } from '../world/model.js';
+import { notYetWords } from './timed.js';
 
 export const URGENCIES = Object.freeze([['soon', 'Soon'], ['today', 'Today'], ['whenever', 'Whenever it fits']]);
 export const LEVELS = Object.freeze([['light', 'Light'], ['moderate', 'Moderate'], ['heavy', 'Heavy']]);
@@ -1478,14 +1479,20 @@ export function retireSettled(gm, turn, touchedIds = [], after = SETTLED_RETIRE)
 // The director's DUE TODAY section - what the story set, and what keeps
 // being put off - and what the story set for later days. Planner on or
 // off; '' when there is nothing.
-export function dueSection(gm, today) {
+export function dueSection(gm, today, nowPart = '') {
     const due = dueToday(gm, today).sort((a, b) => b.late - a.late);
     const later = Number.isInteger(today) ? gm.agenda.filter((x) => isOpen(x) && x.source === 'promise' && x.day > today).slice(0, 4) : [];
     if (!due.length && !later.length) return '';
     const lines = [];
     if (due.length) {
         lines.push('DUE TODAY (private - set earlier in the story, or put off before; it happens today. Those who set it keep it in person - nobody stands in for them, and it is not swapped for something else - unless the story shows a real reason they cannot; then it is put off, never forgotten):');
-        for (const x of due) lines.push(`- [${x.id}] ${x.text}${x.when ? ` (${x.when})` : ''}${lateWords(x.late) ? ` - ${lateWords(x.late)}` : ''}`);
+        for (const x of due) {
+            // Set for later today: it waits for its time (the heist set for
+            // tonight does not come over the intercom in the morning).
+            const wait = x.day === today ? notYetWords(x, nowPart) : '';
+            const late = wait ? '' : lateWords(x.late);
+            lines.push(`- [${x.id}] ${x.text}${x.when ? ` (${x.when})` : ''}${wait ? ` - ${wait}` : late ? ` - ${late}` : ''}`);
+        }
     }
     if (later.length) {
         lines.push('SET FOR LATER (private - what the story has set for coming days; those involved remember it and work toward it):');
