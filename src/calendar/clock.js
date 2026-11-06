@@ -331,7 +331,10 @@ export async function catchUpWithStory(chatId, chatKey, settingId, deltaText, so
     }
     const now = doc.canonical.time;
     if (!Number.isFinite(now)) return null;
-    const from = doc.clock.turnFrom ?? planned?.from ?? now;
+    // Counted only from where the turn began: from "now" each pass would
+    // stack - Assassins Inc's swipes put 12 hours on a post of 3.
+    const from = doc.clock.turnFrom ?? planned?.from ?? null;
+    if (!Number.isFinite(from)) return null;
     const target = await advanceFrom(settingId, from, delta);
     const { def } = await calendarFor(settingId);
     const tolerance = Math.max(15 * (def.secondsPerMinute || 60), 0.25 * ((planned?.to ?? now) - from));
@@ -352,7 +355,9 @@ export async function catchUpWithPost(chatId, chatKey, settingId, postText, sour
     const doc = getChatDoc(chatKey);
     const now = doc.canonical.time;
     if (!Number.isFinite(now)) return null;
-    const from = doc.clock.turnFrom ?? now;
+    // Only from where the turn began: never stacked on itself.
+    const from = doc.clock.turnFrom;
+    if (!Number.isFinite(from)) return null;
     const target = await advanceFrom(settingId, from, span);
     if (target === null || target <= now) return null;
     console.info(LOG_PREFIX, `the player's post took ${span} - the clock catches up`);

@@ -800,6 +800,27 @@ export function isPlaceholder(value) {
 }
 
 // A format line, whether or not it could be read - never left in the prose.
+// The format lines' keys, in capitals as the prompt writes them.
+const FORMAT_KEYS = 'TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED';
+const KEY_COLON = new RegExp(`^(\\s*(?:[-*]\\s*)?\\**)(${FORMAT_KEYS})(\\**)\\s*:\\s*(?!\\|)(.*)$`);
+// (A bare "BACK" is a line of its own, not a heading.)
+const KEY_HEADING = new RegExp(`^\\s*(?:[-*#]\\s*)*\\**(?:[A-Za-z]+\\s+(?:${FORMAT_KEYS})(?:\\s+lines?)?\\**\\s*:?|(?:${FORMAT_KEYS})\\s+lines?\\**\\s*:?)\\s*$`);
+// A line as the format meant it: a misspelt key put right ("ENTERES"), a
+// colon taken for the bar ("SETTLED: x" -> "SETTLED | x"). -> the line, or
+// null for one to drop: empty ("AWAY: None") or a heading ("New ENTERS:").
+export function formatLineAsMeant(raw) {
+    let line = String(raw ?? '').replace(/^(\s*(?:[-*]\s*)?\**)(?:ENTERES|ENTRES|ENTRIES|ENTERSS)\b/, '$1ENTERS').replace(/^(\s*(?:[-*]\s*)?\**)(?:LEAVS|LEAVESS)\b/, '$1LEAVES');
+    const colon = line.match(KEY_COLON);
+    if (colon) {
+        const value = colon[4].trim();
+        if (!value && colon[2] === 'BACK') return `${colon[1]}BACK`;
+        if (!value || /^(?:none|n\/a|nothing|no one|nobody|-)\.?$/i.test(value)) return null;
+        line = `${colon[1]}${colon[2]}${colon[3]} | ${value}`;
+    } else if (KEY_HEADING.test(line) && /[A-Z]{3}/.test(line)) return null;
+    if (/^\s*(?:[-*]\s*)?\**[A-Z]+\**\s*\|\s*(?:none|n\/a|nothing|-)\.?\s*$/i.test(line) && new RegExp(`^\\s*(?:[-*]\\s*)?\\**(?:${FORMAT_KEYS})\\b`).test(line)) return null;
+    return line;
+}
+
 // A line opening with a heading in capitals, two words or more, then a bar
 // or a colon: "DUE TODAY |", "SET FOR LATER:", "WHO IS HERE -".
 export const HEADER_ECHO = /^\s*(?:[-*]\s*)?\**[A-Z][A-Z']+(?:\s+[A-Z][A-Z']+)+\**\s*(?:\(|\||:|\s-\s)/;
@@ -837,7 +858,12 @@ export function parseDirectorNote(raw) {
     const settled = [];
     let away = '';
     let back = '';
-    for (const line of text.split('\n')) {
+    for (const raw of text.split('\n')) {
+        // A format line bent by a small model - "ENTERES | Zane", "AWAY:
+        // None", "SETTLED: ..." - is read as meant; an empty one ("FIGHT:
+        // None") or a heading for them ("New ENTERS:") is dropped.
+        const line = formatLineAsMeant(raw);
+        if (line === null) continue;
         // AWAY | <what is left hanging> / BACK | <how the story returns>
         // (src/director/suspended.js). A bare "BACK" will do.
         const aw = line.match(/^\s*(?:[-*]\s*)?\**(AWAY|BACK)\**\s*(?::?\s*\|\s*(.*?)\s*|\s*)$/i);

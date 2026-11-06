@@ -89,3 +89,34 @@ describe('someone the briefing has arriving is in the scene', () => {
         expect(shownArriving(['Captain Hale'], 'The airlock hissed and Captain Hale stepped in.')).toBe(true);
     });
 });
+
+import { formatLineAsMeant } from '../src/director/prompt.js';
+describe('format lines a small model bent', () => {
+    // The director's note after a swipe, as it reached the narrator.
+    const note = [
+        'Galice sat quietly, reviewing intel files on Enrique Medina\'s operation.',
+        '',
+        'New ENTERS:',
+        'ENTERES | Zane | armed and in tactical attire, arrives at the training room where Cyril is setting up his gear | tied to Adam Miller\'s summons',
+        '',
+        'AWAY: None',
+        'SETTLED: The focus remains on stopping Enrique\'s heist tonight.',
+        'BARGAIN: None',
+        'SET: None',
+        'FIGHT: None',
+        'DIES: None',
+    ].join('\n');
+    it('reads them as meant, and none reaches the narrator', () => {
+        const parsed = parseDirectorNote(note);
+        expect(parsed.enters).toEqual(['Zane']);
+        expect(parsed.settled).toEqual(['The focus remains on stopping Enrique\'s heist tonight.']);
+        expect(parsed.note).toContain('Galice sat quietly');
+        for (const junk of ['ENTERES', 'New ENTERS', 'AWAY', 'SETTLED', 'BARGAIN', 'FIGHT', 'DIES']) expect(parsed.note).not.toContain(junk);
+    });
+    it('leaves prose and a bare BACK alone', () => {
+        expect(formatLineAsMeant('BACK')).toBe('BACK');
+        expect(formatLineAsMeant('BACK:')).toBe('BACK');
+        expect(formatLineAsMeant('Now the rain falls on the keep.')).toBe('Now the rain falls on the keep.');
+        expect(formatLineAsMeant('Set: the table was laid for three.')).toBe('Set: the table was laid for three.');
+    });
+});
