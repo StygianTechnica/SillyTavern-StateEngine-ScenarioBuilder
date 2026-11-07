@@ -7,8 +7,9 @@
 // read (src/library/faction-sync.js libraryMemberships). Pure, but for the
 // helpers at the bottom that save.
 //
-// roster: { tiers: [{ id, name, people: [{ id, title }] }] } - tiers[0] is
-// the top; people in one tier are peers.
+// roster: { style, tiers: [{ id, name, people: [{ id, title }] }] } - tiers[0]
+// is the top; people in one tier are peers. style: what kind of group the
+// user says it is ("a mob family"), which Suggest names the tiers for.
 
 const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const isObject = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
@@ -23,12 +24,16 @@ export function normalizeRoster(x) {
         people: (Array.isArray(t.people) ? t.people : []).filter((p) => isObject(p) && clean(p.id) && !seen.has(p.id) && seen.add(p.id))
             .map((p) => ({ id: clean(p.id), title: clean(p.title).slice(0, 80) })),
     }));
-    return { tiers };
+    return { style: clean(isObject(x) ? x.style : '').slice(0, 120), tiers };
 }
 
 export const rosterOf = (faction) => normalizeRoster(faction?.meta?.roster);
 export const rosterIds = (roster) => normalizeRoster(roster).tiers.flatMap((t) => t.people.map((p) => p.id));
 export const hasRoster = (roster) => normalizeRoster(roster).tiers.length > 0;
+
+export function setStyle(roster, style) {
+    return { ...normalizeRoster(roster), style: clean(style).slice(0, 120) };
+}
 
 // Where someone stands: { tier (0 = top), tierName, title } or null.
 export function placeIn(roster, personId) {
@@ -137,14 +142,15 @@ export function tierFor(roster, { kind = '', role = '' } = {}) {
 // ---- suggesting one (one model call, on the user's word)
 
 // people: [{ id, name, role, description }]. Pure.
-export function buildRosterPrompt({ faction = {}, people = [], overview = '' } = {}) {
+export function buildRosterPrompt({ faction = {}, people = [], overview = '', style = '' } = {}) {
     const list = people.map((p, i) => `${i + 1}. ${clean(p.name)}${clean(p.role) ? ` - ${clean(p.role).slice(0, 120)}` : ''}${clean(p.description) ? `: ${clean(p.description).slice(0, 200)}` : ''}`).join('\n');
     const user = [
         clean(overview) ? `# The setting\n${clean(overview).slice(0, 400)}` : '',
         `# The faction: ${clean(faction.name)}\n${clean(faction.description).slice(0, 700) || '(no description)'}${clean(faction.goals) ? `\nGoals: ${clean(faction.goals).slice(0, 300)}` : ''}`,
+        clean(style) ? `# What kind of group it is\n${clean(style)} - the user says so; this outweighs what the description suggests. Name the tiers as such a group names its ranks.` : '',
         `# Its people\n${list || '(none yet)'}`,
         '# Your task',
-        `Lay out ${clean(faction.name)}'s chain of command as tiers from the top down. First work out what kind of group it is from its description, then name the tiers the way its own people would - for example a mob family: Boss, Underboss, Capos, Soldiers, Associates; a corporation: CEO, Executives, Directors, Staff; an army or police force: its ranks; a church or cult: High Priest, Elders, Acolytes; a guild: Guildmaster, Masters, Journeymen, Apprentices; a street gang: Shot-caller, Lieutenants, Crew - in this setting's own flavour, never generic words like "Tier 1". Two to five tiers; people of equal rank share a tier. Place every person listed by their number, going by their role and description; give each a short title of their own when their role gives one. Keep a tier empty rather than invent anyone.`,
+        `Lay out ${clean(faction.name)}'s chain of command as tiers from the top down. First work out what kind of group it is (from what the user says it is, else from its description), then name the tiers the way its own people would - for example a mob family: Boss, Underboss, Capos, Soldiers, Associates; a corporation: CEO, Executives, Directors, Staff; an army or police force: its ranks; a church or cult: High Priest, Elders, Acolytes; a guild: Guildmaster, Masters, Journeymen, Apprentices; a street gang: Shot-caller, Lieutenants, Crew - in this setting's own flavour, never generic words like "Tier 1". Two to five tiers; people of equal rank share a tier. Place every person listed by their number, going by their role and description; give each a short title of their own when their role gives one. Keep a tier empty rather than invent anyone.`,
         'Answer with JSON only: {"tiers":[{"name":"<tier name>","people":[{"n":<number>,"title":"<their title, or empty>"}]}]}',
     ].filter(Boolean).join('\n\n');
     return { system: 'You lay out the ranks of a roleplay\'s factions. You answer with JSON only.', user };
@@ -170,3 +176,4 @@ export function readRoster(text, people = []) {
     if (!tiers.length) return null;
     return normalizeRoster({ tiers });
 }
+

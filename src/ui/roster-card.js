@@ -16,7 +16,7 @@ import { libraryMemberships, MEMBER_KINDS } from '../library/faction-sync.js';
 import { LOG_PREFIX } from '../constants.js';
 import {
     rosterOf, rosterIds, hasRoster, addTier, renameTier, removeTier, moveTier, placePerson, setTitle, removePerson,
-    buildRosterPrompt, readRoster,
+    buildRosterPrompt, readRoster, setStyle,
 } from '../library/roster.js';
 
 const DRAG = 'text/sb-roster-person';
@@ -96,6 +96,8 @@ export function rosterCard(type, entry, all) {
         h('div', { class: 'sb-card-title' }, icon('fa-sitemap'), ' Chain of command',
             h('span', { class: 'sb-spacer' }),
             button(suggesting ? 'Suggesting…' : 'Suggest', () => void suggest(entry, all, roster, unplaced), { iconName: 'fa-wand-magic-sparkles', title: 'Lay out tiers named for this kind of group, with its people placed (one model call)', disabled: suggesting })),
+        h('label', { class: 'sb-roster-style' }, h('span', { class: 'sb-field-label' }, 'Kind of group'),
+            h('input', { class: 'text_pole', value: roster.style, placeholder: 'e.g. a mob family, a megacorp, a holy order - Suggest names the tiers for it', onchange: (e) => save(setStyle(roster, e.target.value)) })),
         hasRoster(roster) ? null : h('small', { class: 'sb-hint' }, 'Who is above whom. Add tiers named the way this faction names them, or let Suggest lay them out.'),
         ...tiers,
         unplacedBand,
@@ -119,6 +121,7 @@ async function suggest(entry, all, roster, unplaced) {
         const prompt = buildRosterPrompt({
             faction: { name: entry.name, description: entry.base?.description ?? entry.description ?? '', goals: entry.base?.goals ?? entry.goals ?? '' },
             people: list,
+            style: roster.style,
             overview: [o?.premise, o?.tone && `Tone: ${o.tone}.`].filter(Boolean).join(' '),
         });
         const result = await askReliably(prompt, (_p, text) => {
@@ -129,7 +132,7 @@ async function suggest(entry, all, roster, unplaced) {
             toast('warning', 'No chain of command came back - try again.');
             return;
         }
-        setEntryMeta(settingId, entry.id, { roster: result.values });
+        setEntryMeta(settingId, entry.id, { roster: { ...result.values, style: roster.style } });
         void syncNow();
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not suggest a chain of command', err);

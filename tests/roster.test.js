@@ -90,3 +90,14 @@ describe('the store keeps them', () => {
         expect(normalizeEntryMeta({ inPerson: 'nonsense' }).inPerson).toBe('');
     });
 });
+
+import { setStyle } from '../src/library/roster.js';
+describe('what kind of group the user says it is', () => {
+    it('is kept and outweighs the description', () => {
+        const r = setStyle({}, 'a mob family');
+        expect(normalizeRoster(r).style).toBe('a mob family');
+        const p = buildRosterPrompt({ faction: { name: 'Medina Syndicate', description: 'A loose network of street gangs.' }, people: [], style: 'a mob family' });
+        expect(p.user).toContain('# What kind of group it is\na mob family - the user says so');
+        expect(buildRosterPrompt({ faction: { name: 'X' } }).user).not.toContain('What kind of group');
+    });
+});
