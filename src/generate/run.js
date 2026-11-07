@@ -20,7 +20,7 @@ import { genderFrom, personGender } from '../naming/classify.js';
 import { callModel } from './llm.js';
 import { storyRelationships, relationshipLine } from '../library/story-relations.js';
 import { relationsFor, pairCovered, authoredLine } from '../library/relations-edit.js';
-import { lorePassages } from '../library/lore.js';
+import { lorePassages, passagesNaming } from '../library/lore.js';
 import { getSettingDoc } from '../store/setting-store.js';
 import { useStateEngineJsonParser } from './json.js';
 import { LOG_PREFIX } from '../constants.js';
@@ -375,6 +375,14 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     }
 
     const values = draft ? { description: draft.description, aliases: draft.aliases, ...draft.fields } : {};
+    // A new entry the user names in the catalog that the chat already speaks
+    // of is written from what the chat says: Cyril's post named Delvin "Ice"
+    // Timmors, one of Enrique's men who runs drones - typing the name was
+    // not enough, the post had to be pasted in. Never a place (a new place
+    // is made, not found in the chat), and never for a story event (story).
+    const newName = !entry?.id && type.id !== 'location' && !story ? String(naming.name || draft?.name || '').trim() : '';
+    const named = newName ? { name: newName, aliases: draft?.aliases ?? [], description: [brief, draft?.description].filter(Boolean).join(' ') } : null;
+    const namedStory = named ? passagesNaming(newName, chatPassagesFor(named, { ...draft, name: newName })) : '';
     // The place it is in: the chosen parent; a saved location's own parent
     // (enriching an existing room keeps its fortress in view); another
     // entry's location field.
@@ -410,7 +418,7 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     const narrativeText = entry?.id ? getChatDoc(ctx.chatKey).narrative[entry.id]?.text ?? '' : '';
     const rollsName = task === 'create' && !(draft?.name ?? entry?.name) && !naming.name;
     const gender = type.id === 'character'
-        ? genderOf({ chosen: naming.gender, texts: [brief], name: draft?.name ?? entry?.name ?? '', own: [values.description, entry?.description, entry?.base?.description, narrativeText], story: [story] }) || (rollsName ? (Math.random() < 0.5 ? 'f' : 'm') : '')
+        ? genderOf({ chosen: naming.gender, texts: [brief], name: draft?.name ?? entry?.name ?? '', own: [values.description, entry?.description, entry?.base?.description, narrativeText], story: [story, namedStory] }) || (rollsName ? (Math.random() < 0.5 ? 'f' : 'm') : '')
         : '';
     if (task === 'create' && !(draft?.name ?? entry?.name)) {
         if (naming.name) fixedName = naming.name;
@@ -435,11 +443,11 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     // people, and the fill, never shown it, made him Omicron's head of
     // security.
     // Enriched from its sheet too: whatever the story or the director made.
-    const storyMade = fromStory || (entry?.id && ['story', 'director', 'steer'].includes(getEntryMeta(ctx.settingId, entry.id).origin));
-    const loreStory = (type.id === 'lore' || storyMade) && entry?.id && !story ? chatPassagesFor(entry, draft) : '';
+    const storyMade = fromStory || !!namedStory || (entry?.id && ['story', 'director', 'steer'].includes(getEntryMeta(ctx.settingId, entry.id).origin));
+    const loreStory = namedStory || ((type.id === 'lore' || storyMade) && entry?.id && !story ? chatPassagesFor(entry, draft) : '');
     // A person the story brought in, with no side of their own: the one the
     // story gives them, kept to (storySide).
-    const told = !own.length && storyMade && type.id === 'character' ? storySide(entry, [(entry?.base ?? entry)?.description, story, loreStory].filter(Boolean).join('\n'), { all, relations: authored }) : null;
+    const told = !own.length && storyMade && type.id === 'character' ? storySide(entry ?? named, [(entry?.base ?? entry)?.description, story, loreStory].filter(Boolean).join('\n'), { all, relations: authored }) : null;
     const sides = own.length ? own : told ? [told] : tiedSides(entry, { all, relations: authored });
     for (const side of sides) {
         const story = (await storyRelationships({ id: side.id, name: side.name })).filter((x) => !(x.otherId && pairCovered(side.id, x.otherId, authored)) && x.otherId !== entry?.id);

@@ -49,6 +49,7 @@ import { removeLink, addLink, listRelations, addRelation, removeRelation, relati
 import { sparkButton, fieldWithTools, diceButton, tagEditor } from './controls.js';
 import { standingCard } from './standing-card.js';
 import { rosterCard } from './roster-card.js';
+import { factionsCard } from './factions-card.js';
 import { pronounFixRow } from './pronoun-fix.js';
 import { looksLikeGroup, makeGroup } from '../library/as-group.js';
 import { generateEntry, canGenerateFor, rollEntryName, generateAlias } from '../generate/run.js';
@@ -671,6 +672,7 @@ function overviewTab({ type, entry, isNew, defs, doc, all, names, parents, allEn
         isNew ? null : populationCard(type, entry, all),
         isNew ? null : giftsCard(type, entry, all, defs),
         isNew ? null : rosterCard(type, entry, all),
+        isNew ? null : factionsCard(type, entry, all),
         isNew ? null : standingCard(type, entry, all),
         isNew ? null : combatCard(type, entry, all),
         isNew ? null : heartCard(type, entry, all),

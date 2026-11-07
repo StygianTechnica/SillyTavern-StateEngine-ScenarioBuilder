@@ -229,6 +229,8 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
             const kin = item.kind === 'character' && bloodlines.length ? decideLineage({ brief: `${item.name}. ${item.description}`, bloodlines, mix }) : null;
             const obj = await createEntry(chatId, settingId, item.kind, data, { origin: 'director', ...(item.provisional ? { provisional: true } : {}), ...(kin?.ids.length ? { lineage: { ids: kin.ids, note: '' } } : {}) });
             if (!obj) continue;
+            // A nickname the story gave ("Ice") stays findable.
+            if (item.aliases?.length) await updateEntry(chatId, settingId, obj.id, { aliases: item.aliases }).catch((err) => console.warn(LOG_PREFIX, `could not keep ${item.name}'s other names`, err));
             // "An Iron Hand enforcer": one of its people, as the briefing says.
             if (item.kind === 'character') {
                 factions ??= await listEntries(chatId, settingId, 'faction').catch(() => []);
@@ -1443,7 +1445,8 @@ export async function addNamedPeople(chatId, chatKey) {
         // The same guards as the game master's own additions.
         const wanted = result.values.people
             .filter((p) => !knownAs(p.name, everything))
-            .map((p) => ({ kind: 'character', name: p.name, description: p.description, here: false }));
+            .filter((p) => !(p.aliases ?? []).some((a) => knownAs(a, everything)))
+            .map((p) => ({ kind: 'character', name: p.name, description: p.description, here: false, ...(p.aliases ? { aliases: p.aliases } : {}) }));
         if (!wanted.length) return [];
         const made = await createNeeded(chatId, chatKey, settingId, wanted, null);
         if (made.length) console.info(LOG_PREFIX, `the story named new people: ${made.map((m) => m.name).join(', ')}`);

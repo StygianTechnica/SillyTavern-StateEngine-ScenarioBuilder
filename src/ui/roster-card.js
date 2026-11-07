@@ -22,6 +22,17 @@ import {
 const DRAG = 'text/sb-roster-person';
 let suggesting = false;
 
+// Out of a faction altogether: its chain, its Members field and any "member
+// of" relationship to it. Used from the faction's sheet and the person's.
+export async function takeOutOfFaction(faction, personId) {
+    const { settingId, chatId } = ws.ctx;
+    const members = Array.isArray(faction.base?.members ?? faction.members) ? (faction.base?.members ?? faction.members) : [];
+    if (members.includes(personId)) await updateEntry(chatId, settingId, faction.id, { members: members.filter((m) => m !== personId) });
+    for (const r of listRelations(settingId)) if (r.from === personId && r.to === faction.id && MEMBER_KINDS.has(String(r.kind).toLowerCase())) removeRelation(settingId, r.id);
+    setEntryMeta(settingId, faction.id, { roster: removePerson(rosterOf(faction), personId) });
+    void syncNow();
+}
+
 export function rosterCard(type, entry, all) {
     if (type.id !== 'faction' || !entry?.id) return null;
     const { settingId, chatId } = ws.ctx;
@@ -33,14 +44,10 @@ export function rosterCard(type, entry, all) {
     const unplaced = [...belongs.keys()].filter((id) => !placed.has(id) && nameOf(id));
     const save = (next) => { setEntryMeta(settingId, entry.id, { roster: next }); void syncNow(); rerender({ force: true }); };
 
-    // Out of the faction altogether: the chain, the Members field and any
-    // "member of" relationship to it.
     const leave = async (id) => {
         if (!await confirmAction(`Take ${nameOf(id)} out of ${entry.name}?`)) return;
-        const members = Array.isArray(entry.base?.members ?? entry.members) ? (entry.base?.members ?? entry.members) : [];
-        if (members.includes(id)) await updateEntry(chatId, settingId, entry.id, { members: members.filter((m) => m !== id) });
-        for (const r of listRelations(settingId)) if (r.from === id && r.to === entry.id && MEMBER_KINDS.has(String(r.kind).toLowerCase())) removeRelation(settingId, r.id);
-        save(removePerson(roster, id));
+        await takeOutOfFaction(entry, id);
+        rerender({ force: true });
     };
 
     const chip = (id, title, { inTier = true } = {}) => h('span', {

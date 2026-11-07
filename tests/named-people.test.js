@@ -31,6 +31,22 @@ describe('newly named people', () => {
         expect(readPeople('There are some new people here.', input)).toBeNull();
     });
 
+    // Cyril's post: 'one of Enrique's men, Delvin "Ice" Timmors'. The model
+    // answered with a form the post never has word for word - no one made.
+    it('knows a name written with a nickname inside, by any of its forms', () => {
+        const post = { text: 'Cyril found himself remembering one of Enrique\'s men, Delvin "Ice" Timmors. He was good with drones. Ice would think his drone had failed.', known: ['Cyril', 'Enrique Medina'] };
+        const delvin = { name: 'Delvin Timmors', description: "Enrique's drone man.", aliases: ['Ice', 'Ice Timmors'] };
+        for (const said of ['Delvin Timmors', 'Ice Timmors', 'Delvin "Ice" Timmors', 'Delvin “Ice” Timmors', 'Ice']) {
+            expect(readPeople(`${said} | Enrique's drone man.`, post)).toEqual([delvin]);
+        }
+        // Two forms of him are one person.
+        expect(readPeople("Delvin Timmors | Enrique's drone man.\nIce | the same", post)).toHaveLength(1);
+        // Known by his nickname already: not made again.
+        expect(readPeople("Delvin Timmors | Enrique's drone man.", { ...post, known: ['Ice'] })).toEqual([]);
+        // A nickname in parentheses too.
+        expect(readPeople('Maria Vos | a fixer', { text: 'They called on Maria (Needle) Vos.' })[0]).toEqual({ name: 'Maria Vos', description: 'a fixer', aliases: ['Needle', 'Needle Vos'] });
+    });
+
     it('matches a name as written, not inside another word', () => {
         expect(namedInText('Karin smiled', 'Arin')).toBe(false);
         expect(namedInText('Arin smiled', 'Arin')).toBe(true);

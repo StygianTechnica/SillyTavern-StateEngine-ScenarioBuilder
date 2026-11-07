@@ -186,6 +186,18 @@ const PLAIN = new Set('about after again also because been before being both cou
 // Words found in most messages (the player character's name) say nothing.
 // messages: [{ name, text }]; lore: { name, aliases, description }.
 // -> text ('' when nothing fits)
+// The passages only when they name `name` - every word of it (≥ 3 letters),
+// in any order or with a nickname between ("Delvin "Ice" Timmors" names
+// Delvin Timmors). A new entry the user names in the catalog is written from
+// the chat only when the chat really speaks of it, never from a brief's
+// words alone. -> the passages, or ''.
+export function passagesNaming(name, passages) {
+    const words = String(name ?? '').split(/\s+/).map((w) => w.replace(/[^\p{L}\p{N}'’-]/gu, '')).filter((w) => w.length >= 3);
+    const text = String(passages ?? '');
+    if (!words.length || !text.trim()) return '';
+    return words.every((w) => new RegExp(`(^|[^\\p{L}])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}])`, 'iu').test(text)) ? text : '';
+}
+
 export function lorePassages(messages, lore, { max = 4, chars = 700 } = {}) {
     const list = (messages ?? []).filter((m) => String(m?.text ?? '').trim());
     if (!list.length) return '';
