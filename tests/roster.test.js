@@ -78,3 +78,15 @@ describe('a suggested chain', () => {
         expect(readRoster('no json', people)).toBe(null);
     });
 });
+
+import { normalizeEntryMeta } from '../src/store/schema.js';
+describe('the store keeps them', () => {
+    // The store keeps only the entry fields it knows: the chain and "In
+    // person" were dropped on every save, so Add a tier did nothing.
+    it('keeps a roster and In person through a save', () => {
+        const m = normalizeEntryMeta({ roster: { tiers: [{ id: 't1', name: 'Boss', people: [{ id: 'serlos', title: 'Patriarch' }] }] }, inPerson: 'later' });
+        expect(m.roster.tiers[0]).toEqual({ id: 't1', name: 'Boss', people: [{ id: 'serlos', title: 'Patriarch' }] });
+        expect(m.inPerson).toBe('later');
+        expect(normalizeEntryMeta({ inPerson: 'nonsense' }).inPerson).toBe('');
+    });
+});

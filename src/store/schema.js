@@ -111,6 +111,7 @@ import { normalizeCultureDef } from '../naming/cultures.js';
 import { normalizePool } from '../naming/live.js';
 import { normalizeRouteTimes, MODES } from '../library/travel.js';
 import { emptyPopulation, normalizePopulation, normalizeBloodline, normalizeLineage, normalizePlacePopulation, normalizeMembers } from '../library/bloodlines.js';
+import { normalizeRoster } from '../library/roster.js';
 
 export const SETTING_SCHEMA_VERSION = 1;
 export const CHAT_SCHEMA_VERSION = 1;
@@ -216,6 +217,13 @@ export function normalizeEntryMeta(meta) {
         lineage: normalizeLineage(m.lineage),
         population: normalizePlacePopulation(m.population),
         members: normalizeMembers(m.members),
+        // Characters: whether they come in person - '' (where the story
+        // takes them), 'remote' (send their people) or 'later' (from the
+        // shadows until their beat) - src/guidance/spoken.js.
+        inPerson: ['remote', 'later'].includes(m.inPerson) ? m.inPerson : '',
+        // Factions: the chain of command - named tiers of people with
+        // titles (src/library/roster.js).
+        roster: normalizeRoster(m.roster),
     };
 }
 
