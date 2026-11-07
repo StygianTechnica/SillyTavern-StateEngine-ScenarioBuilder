@@ -243,7 +243,7 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
             let atTop = false;
             if (item.kind === 'location' && (!parent || parent === chain[chain.length - 1]?.id)) {
                 placesFull ??= await listEntries(chatId, settingId, 'location').catch(() => []);
-                const chosen = chooseParent({ brief: [item.name, item.why].filter(Boolean).join('. '), description: item.description ?? '', locations: placesFull.filter((p) => p.id !== obj.id).map((p) => ({ id: p.id, name: p.name, aliases: p.aliases ?? p.base?.aliases ?? [], description: p.description ?? p.base?.description ?? '' })), parents: getParents(settingId), sceneId: locationId });
+                const chosen = chooseParent({ brief: [item.name, item.why].filter(Boolean).join('. '), description: item.description ?? '', locations: placesFull.filter((p) => p.id !== obj.id).map((p) => ({ id: p.id, name: p.name, aliases: p.aliases ?? p.base?.aliases ?? [], description: p.description ?? p.base?.description ?? '' })), parents: getParents(settingId), sceneId: locationId, where: item.where ?? '' });
                 // 'top' is the place around the story - the town the scene is
                 // in, not the nation above it - and it is placed again once
                 // it is written.

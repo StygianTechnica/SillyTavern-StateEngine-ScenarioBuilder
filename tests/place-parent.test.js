@@ -94,7 +94,10 @@ describe('where a new place goes', () => {
             ]);
             expect(chooseParent({ brief: 'a jazz club', sceneId: 'osaka', ...japan })).toEqual({ id: 'osaka', why: 'top' });
             expect(chooseParent({ brief: 'a jazz club', sceneId: 'tokyo', ...japan })).toEqual({ id: 'kabuki', why: 'fits' });
+            // Not said to be near: out in the city, not the district the
+            // scene is in - unless the director says nearby.
             expect(chooseParent({ brief: 'a ramen shop', sceneId: 'kabuki', ...japan })).toEqual({ id: 'tokyo', why: 'top' });
+            expect(chooseParent({ brief: 'a ramen shop', sceneId: 'kabuki', where: 'nearby', ...japan })).toEqual({ id: 'kabuki', why: 'top' });
         });
     });
 
@@ -105,9 +108,102 @@ describe('where a new place goes', () => {
             ['p', 'Planet Vex', 'A desert world below.'],
             ['camp', 'Dune Camp', 'A camp.', 'p'],
         ]);
-        expect(chooseParent({ brief: 'a pawn shop', sceneId: 'r', ...space })).toEqual({ id: 'r', why: 'fits' });
+        expect(chooseParent({ brief: 'a pawn shop', sceneId: 'r', ...space })).toEqual({ id: 's', why: 'top' });
+        expect(chooseParent({ brief: 'a pawn shop', sceneId: 'r', where: 'nearby', ...space })).toEqual({ id: 'r', why: 'top' });
         expect(chooseParent({ brief: 'a crashed shuttle', sceneId: 'camp', ...space })).toEqual({ id: 'p', why: 'top' });
         expect(chooseParent({ brief: 'a crashed shuttle', ...space })).toBe(null);
         expect(chooseParent({ brief: 'anything', locations: [] })).toBe(null);
+    });
+
+    // By size, not by "district": the nearest bigger place around the story.
+    describe('goes in the nearest place around the story that is bigger than it', () => {
+        it('a gallery in the museum the scene is in, not the art district across town (cyberpunk)', () => {
+            const arc = map([
+                ['city', 'Arcadia City', 'A polluted coastal megacity.'],
+                ['nexus', 'Nexus Galleries', 'The arts district: galleries, studios and museums.', 'city'],
+                ['sq', 'Firebrand Square', 'A plaza of old monuments.', 'city'],
+                ['mus', "Saint Aora's Museum", "Saint Aora's Museum is a sprawling, decaying mausoleum to art and beauty.", 'sq'],
+                ['alc', 'Darkened Alcove', 'A shadowed recess off the main gallery.', 'mus'],
+            ]);
+            expect(chooseParent({ brief: 'West Wing Gallery', description: 'A long hall of old portraits.', sceneId: 'mus', ...arc })).toEqual({ id: 'mus', why: 'top' });
+            expect(chooseParent({ brief: 'Museum storage room', sceneId: 'alc', ...arc })).toEqual({ id: 'mus', why: 'top' });
+            // A building is beside the museum only when it is said to be near.
+            expect(chooseParent({ brief: 'a cafe', sceneId: 'mus', where: 'nearby', ...arc })).toEqual({ id: 'sq', why: 'top' });
+            expect(chooseParent({ brief: 'a cafe', description: 'A cafe across the square.', sceneId: 'mus', ...arc })).toEqual({ id: 'sq', why: 'top' });
+        });
+
+        it("an enemy's base is out on the map, never across the plaza (cyberpunk)", () => {
+            const arc = map([
+                ['city', 'Arcadia City', 'A polluted coastal megacity.'],
+                ['slums', 'The Drowned Blocks', 'The slums: half-submerged tenements where gangs hide out.', 'city'],
+                ['sq', 'Firebrand Square', 'A plaza of old monuments.', 'city'],
+                ['mus', "Saint Aora's Museum", 'A decaying museum.', 'sq'],
+            ]);
+            const hideout = { brief: "Enrique's safehouse", description: 'A fortified safehouse where the Medina Syndicate plans its jobs.', sceneId: 'mus', ...arc };
+            expect(chooseParent({ ...hideout, where: 'elsewhere' }).id).not.toMatch(/^(sq|mus)$/);
+            // Nothing said: a building is elsewhere.
+            expect(chooseParent(hideout).id).not.toMatch(/^(sq|mus)$/);
+            expect(chooseParent({ ...hideout, where: 'elsewhere' })).toEqual(chooseParent(hideout));
+            // Even when the scene's own square is what fits, it is not there.
+            const square = map([
+                ['city', 'Arcadia City', 'A megacity.'],
+                ['sq', 'Firebrand Square', 'The nightlife district: clubs and bars.', 'city'],
+                ['mus', "Saint Aora's Museum", 'A decaying museum.', 'sq'],
+            ]);
+            expect(chooseParent({ brief: 'a rival jazz club', sceneId: 'mus', where: 'elsewhere', ...square })).toEqual({ id: 'city', why: 'top' });
+            expect(chooseParent({ brief: 'a rival jazz club', sceneId: 'mus', where: 'nearby', ...square })).toEqual({ id: 'sq', why: 'top' });
+        });
+
+        it('inside means part of where the scene is', () => {
+            const arc = map([
+                ['city', 'Arcadia City', 'A megacity.'],
+                ['sq', 'Firebrand Square', 'A plaza.', 'city'],
+                ['mus', "Saint Aora's Museum", 'A decaying museum.', 'sq'],
+            ]);
+            expect(chooseParent({ brief: 'The Restoration Workshop', sceneId: 'mus', where: 'inside', ...arc })).toEqual({ id: 'mus', why: 'top' });
+            expect(chooseParent({ brief: 'The restoration room', sceneId: 'mus', where: 'inside', ...arc })).toEqual({ id: 'mus', why: 'top' });
+        });
+
+        it('a room in the house being explored, not its neighbourhood (real world)', () => {
+            const town = map([
+                ['t', 'Millbrook', 'A quiet market town.'],
+                ['elm', 'Elm Street', 'A street of old houses.', 't'],
+                ['h', 'The Harlow House', 'A boarded-up Victorian house.', 'elm'],
+            ]);
+            expect(chooseParent({ brief: 'the attic', sceneId: 'h', ...town })).toEqual({ id: 'h', why: 'top' });
+            expect(chooseParent({ brief: 'a locked bedroom', sceneId: 'h', ...town })).toEqual({ id: 'h', why: 'top' });
+        });
+
+        it('a vault said to be elsewhere is not in the building the scene is in (fantasy)', () => {
+            const fort = map([
+                ['w', 'Alvarand', 'A kingdom of the north.'],
+                ['f', "Niamh's Fortress", 'A fortress on the cliffs.', 'w'],
+                ['q', "Niamh's quarters", 'Her private rooms.', 'f'],
+            ]);
+            expect(chooseParent({ brief: 'Cache chamber', description: 'A sealed vault beneath the ruined temple to the northeast.', sceneId: 'q', ...fort })).toEqual({ id: 'w', why: 'top' });
+            expect(chooseParent({ brief: 'War room', description: 'A cramped chamber.', sceneId: 'q', ...fort })).toEqual({ id: 'f', why: 'top' });
+        });
+
+        it('on a map of nations, a nation goes in the continent (fantasy, larger scale)', () => {
+            const world = map([
+                ['e', 'Eloria', 'A continent of warring kingdoms.'],
+                ['v', 'Kingdom of Valdria', 'An old kingdom.', 'e'],
+                ['b', 'Brennhold', 'A walled town.', 'v'],
+            ]);
+            expect(chooseParent({ brief: 'the Empire of Sard', sceneId: 'b', ...world })).toEqual({ id: 'e', why: 'top' });
+        });
+
+        it('on a map of worlds, a planet goes in the star system, a city on the planet (sci-fi)', () => {
+            const sky = map([
+                ['sec', 'Orion Reach', 'A frontier galaxy arm.'],
+                ['sys', 'Tau Ceti System', 'A star system of three worlds.', 'sec'],
+                ['p', 'Kessa Prime', 'An ocean planet.', 'sys'],
+                ['c', 'Port Halden', 'A floating city.', 'p'],
+                ['bar', 'The Drift', 'A dockside bar.', 'c'],
+            ]);
+            expect(chooseParent({ brief: 'an ice moon', sceneId: 'bar', ...sky })).toEqual({ id: 'sys', why: 'top' });
+            expect(chooseParent({ brief: 'a mining colony', sceneId: 'bar', ...sky })).toEqual({ id: 'p', why: 'top' });
+            expect(chooseParent({ brief: 'the back room', sceneId: 'bar', ...sky })).toEqual({ id: 'bar', why: 'top' });
+        });
     });
 });

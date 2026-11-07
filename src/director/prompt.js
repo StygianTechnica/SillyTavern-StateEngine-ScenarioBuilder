@@ -603,7 +603,8 @@ export function buildDirectorPrompt(input) {
         parts.push(
             '',
             'Anything your briefing relies on that the facts above do not have - a place the characters are about to go to, a person, creature or group about to matter, a piece of lore or history, an event that is happening or coming - give it its details, mention it in the briefing, and add one line per thing (at most two). The last part says what it is TIED to: a person, place, faction or thread named above (by name), or the message that brought it up:',
-            'NEW location | <name> | <one-sentence description that says where it is - a room or part of the place the scene is in names that place> | <tied to>',
+            'NEW location | <name> | <one-sentence description that says where it is - a room or part of the place the scene is in names that place> | <inside, nearby or elsewhere> | <tied to>',
+            'For a location: inside = a room or part of the place the scene is in; nearby = close enough to walk to now; elsewhere = somewhere else on the map (an enemy\'s base, a distant town).',
             'NEW character | <name> | <one-sentence description> | <here or nearby> | <tied to>',
             `Someone who takes part in the scene - speaks, acts, is spoken to, or is singled out by a description - but has no name yet is a character too: give them a short descriptive name from the words the story itself uses to describe them (a man the story calls "eyepatched" is ${EXAMPLE_UNNAMED[0]}) and add the word unnamed as the last part. The name is only an example: never use it unless the story describes someone that way. Background crowds ("several others", "the guards") are not.`,
             'NEW character | <descriptive name from the story\'s own words> | <one-sentence description> | here | unnamed',
@@ -1007,12 +1008,16 @@ export function parseDirectorNote(raw) {
                 seen.add(name.toLowerCase());
                 // A character's fourth part says where they are; its fifth, and
                 // every other kind's fourth, what it is tied to.
+                // A location's fourth part says whether it is inside where the
+                // scene is, nearby, or elsewhere on the map.
                 const isPerson = kind === 'character';
+                const isPlace = kind === 'location';
                 const where = isPerson && /^(here|nearby|elsewhere|later|present|away)\b/i.test(clean(m[4])) ? clean(m[4]) : '';
-                const why = clean(isPerson ? (where ? m[5] : m[4]) : m[4]);
+                const placeAt = isPlace && /^(inside|in|here|within|nearby|near|beside|next|close|elsewhere|away|far|distant)\b/i.test(clean(m[4])) ? clean(m[4]).toLowerCase() : '';
+                const why = clean(isPerson || isPlace ? (where || placeAt ? m[5] : m[4]) : m[4]);
                 // "unnamed": known by a description until the story names them.
                 const provisional = isPerson && /^(unnamed|no name|nameless|provisional)\b/i.test(why);
-                created.push({ kind, name, description: clean(m[3]), here: isPerson ? !/nearby|elsewhere|later|away/i.test(where) : true, why: provisional ? '' : why, ...(provisional ? { provisional: true } : {}) });
+                created.push({ kind, name, description: clean(m[3]), here: isPerson ? !/nearby|elsewhere|later|away/i.test(where) : true, why: provisional ? '' : why, ...(provisional ? { provisional: true } : {}), ...(placeAt ? { where: placeAt } : {}) });
             }
             continue;
         }

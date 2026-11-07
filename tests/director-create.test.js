@@ -204,6 +204,21 @@ describe('copied format lines', () => {
         // ...and none of them is left in the briefing.
         expect(parsed.note).toBe('Graxx waits at the gate.');
     });
+    it('reads whether a new place is inside, nearby or elsewhere, and what it is tied to', () => {
+        const parsed = parseDirectorNote([
+            'x',
+            "NEW location | Enrique's Safehouse | A fortified safehouse in the slums. | elsewhere | Enrique Medina",
+            'NEW location | West Wing Gallery | The museum\'s long portrait hall. | inside | the heist',
+        ].join('\n'));
+        expect(parsed.created.map((c) => [c.name, c.where, c.why])).toEqual([
+            ["Enrique's Safehouse", 'elsewhere', 'Enrique Medina'],
+            ['West Wing Gallery', 'inside', 'the heist'],
+        ]);
+        // The old four-part line still reads: no mark, the tie in fourth place.
+        const old = parseDirectorNote('x\nNEW location | Wine cellar | A damp cellar. | the taproom');
+        expect(old.created[0].where).toBeUndefined();
+        expect(old.created[0].why).toBe('the taproom');
+    });
     it('still reads real values', () => {
         const parsed = parseDirectorNote('x\nMOVE | The Junkyard | Varyn | outdoors\nENTERS | Niamh');
         expect(parsed.move).toEqual({ place: 'The Junkyard', along: ['Varyn'], indoor: false });
