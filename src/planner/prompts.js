@@ -17,6 +17,8 @@ import { readWorld } from '../world/prompts.js';
 const clean = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
 const cut = (v, n) => { const t = clean(v); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 // A sentence to follow a comma: lower-case start, no closing stop.
+// Evening, dusk or night: little of the day is left to spread a plan over.
+const lateInDay = (part) => /\b(?:evening|dusk|sunset|twilight|night|midnight|late)\b/i.test(clean(part));
 const unstopFirst = (v) => { const t = clean(v).replace(/[.!?]+$/, ''); return t ? t.charAt(0).toLowerCase() + t.slice(1) : ''; };
 const isObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const list = (v) => (Array.isArray(v) ? v : []);
@@ -125,11 +127,15 @@ export function buildDayPrompt(input) {
         '',
         `PLAN ${input.rest ? 'THE REST OF THE DAY' : 'THE DAY'}${clean(input.dateText) ? ` - ${clean(input.dateText)}` : ''}${clean(input.dayPart) ? `, starting ${clean(input.dayPart)}` : ''}`,
         ...(clean(input.place) ? [`The scene is at ${clean(input.place)}${clean(input.situation) ? `, where ${unstopFirst(input.situation)}` : ''}. That is where things stand - already played. The plan picks up after it; moments elsewhere happen only if the story would plausibly go there today.`] : []),
-        'Two to five moments, in the order they could happen: something someone does, an arrival, news, a discovery, a complication, a quiet beat. Each grows out of what is above, moves a thread, a person\'s agenda or a request along, and leaves the player free to respond. Vary them: not every moment is a crisis.',
-        `Spread them across the day from now to its end, not all in the next hour - and not more of what the scene is already doing.${buildsTo ? ` When something is set for later today (above), the day builds to it: the moments get the people ready and bring them together for it, and the last of them is it beginning at its time.` : ''}`,
+        'Three to five moments, in the order they could happen: something someone does, an arrival, news, a discovery, a complication, a quiet beat. Each grows out of what is above, moves a thread, a person\'s agenda or a request along, and leaves the player free to respond. Vary them: not every moment is a crisis.',
+        // Late in the day the plan came back as two quiet moments of people
+        // taking up positions - on the night of the heist (Assassins Inc).
+        lateInDay(input.dayPart)
+            ? `It is ${clean(input.dayPart)}, but the day does not end at bedtime while something is under way: an operation, a hunt or a vigil can run on for hours, through the night. The moments follow what is under way through those hours, one after another, and together they carry the beat now and what the scene is set up for to a turning point - an arrival, a clash, a choice that cannot wait. No moment is only someone taking up a position or getting ready.${buildsTo ? ' What was set for tonight (above) happens in them.' : ''} Only when nothing is under way does the night wind down to rest.`
+            : `Spread them across the day from now to its end, not all in the next hour - and not more of what the scene is already doing.${buildsTo ? ` When something is set for later today (above), the day builds to it: the moments get the people ready and bring them together for it, and the last of them is it beginning at its time.` : ''}`,
         `A moment is what the world does around ${userName}, never what ${userName} does: its subject is someone else, a faction, or the world itself (news, an arrival, a turn of events). Never "${userName} goes" or "${userName} and a friend confront" - you do not play ${userName}. Where a moment answers something ${userName} might do, that goes in its trigger and the moment is how the world answers it (trigger "if ${userName} goes to the docks", moment "a crew is waiting there with a job").`,
         ...(clean(input.story?.beat) ? [
-            `At least one moment moves the beat now along, done by the people it names. An agenda fits the beat: someone the beat has acting today wants to get there (they may hesitate or bargain on the way), not the opposite - unless the latest chat shows them refusing it.`,
+            `The first moment moves the beat now along - "${clean(input.story.beat).replace(/[.!?]+$/, '')}" - done by the people it names. An agenda fits the beat: someone the beat has acting today wants to get there (they may hesitate or bargain on the way), not the opposite - unless the latest chat shows them refusing it.`,
             `If the talk under way in THE LATEST CHAT is where the beat now should come about (a briefing whose beat is the assignment, a negotiation whose beat is the deal), plan its outcome as the first moment: what the people the beat names decide or do as the talk comes to its point (e.g. "the leader hands out the assignments: the two of them go in, with a partner"). Its trigger is empty, its time "any time". That is not the talk said again - it is where the talk lands, so the story does not drift past it.`,
         ] : []),
         `Every moment is something that has NOT happened yet: what comes next, later today, or from somewhere else - never what THE LATEST CHAT already shows, said again or a little reworded. A talk under way is not a moment; what it leads to, once it is over, can be${clean(input.story?.beat) ? ' - and so can where it lands, when the beat now comes about there (above)' : ''}. Give each its time of day and the names it involves.`,

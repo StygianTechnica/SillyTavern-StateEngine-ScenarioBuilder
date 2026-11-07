@@ -2,6 +2,7 @@
 // story says), Review (what the story added, open questions, candidates),
 // History (every change, with undo) and Preview (the exact outputs).
 
+import { looksLikeGroup, makeGroup } from '../library/as-group.js';
 import { getSettings } from '../settings.js';
 import { STANCES, STANCE_LABELS, combatOptions } from '../director/combat.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
@@ -177,6 +178,13 @@ export async function renderReview() {
             h('div', { class: 'sb-actions' },
                 button('Open sheet', () => openSheet(a.objectId, a.type), { iconName: 'fa-pen', cls: 'sb-primary' }),
                 ['off', 'failed', 'held'].includes(a.enrich) ? button('Add detail', () => enrichListed(chatId, chatKey, settingId, a.id), { iconName: 'fa-wand-magic-sparkles', title: a.error || 'Write its empty fields from the setting\'s context' }) : null,
+                // "Enrique's operatives": a crowd, not one person.
+                a.type === 'character' && looksLikeGroup(a.name) ? button("It's a group", async () => {
+                    if (!await confirmAction(`Make "${a.name}" a group - a creature kind that turns up in numbers (its count in the scene goes down as they fall) - instead of one person?`)) return;
+                    if (!await makeGroup(chatId, chatKey, settingId, a.objectId)) toast('error', 'Could not make it a group - see the console.');
+                    done();
+                    rerender();
+                }, { iconName: 'fa-people-group', title: 'Nameless people in numbers - goons, guards, a mob - are a creature kind, not a character' }) : null,
                 button('Done', () => dismissAdopted(chatKey, a.id), { iconName: 'fa-check', title: 'Take it off this list' }),
                 button('Reject', async () => {
                     if (!await confirmAction(`Reject "${a.name}"? It is removed from the library, and later mentions of it are corrected rather than taken in again.`)) return;

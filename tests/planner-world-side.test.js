@@ -28,9 +28,9 @@ describe('the day plan', () => {
     it('asks for the world around the player character, and for the beat to move', () => {
         const { prompt } = buildDayPrompt({ userName: 'Cyril', messages: [], story: { shape: 'Thriller', act: 'The Call', beat: 'Adam assigns Cyril to the job.' } });
         expect(prompt).toContain('A moment is what the world does around Cyril, never what Cyril does');
-        expect(prompt).toContain('At least one moment moves the beat now along');
+        expect(prompt).toContain('The first moment moves the beat now along');
         expect(prompt).toContain('An agenda fits the beat');
-        expect(buildDayPrompt({ userName: 'Cyril', messages: [] }).prompt).not.toContain('At least one moment moves the beat');
+        expect(buildDayPrompt({ userName: 'Cyril', messages: [] }).prompt).not.toContain('moment moves the beat now along');
         expect(buildCheckPrompt({ userName: 'Cyril', messages: [], moments: [] }).prompt).toContain('never what Cyril does');
     });
 
