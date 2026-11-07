@@ -322,7 +322,7 @@ export async function renderSheet(type, all) {
             }, { iconName: 'fa-gamepad', cls: isPlayer ? 'sb-primary' : '', title: isPlayer ? 'The character you play - the guidance never writes their words, actions, thoughts or feelings. Click to unmark.' : 'The character you play. The guidance is then written from the other characters\' side and never speaks for this one.' }));
             // A crowd taken in as one person ("Enrique's operatives").
             if (!isPlayer && looksLikeGroup(entry.name)) quick.push(button("It's a group", async () => {
-                if (!await confirmAction(`Make "${entry.name}" a group - a creature kind that turns up in numbers (its count in the scene goes down as they fall) - instead of one person? This character is replaced.`)) return;
+                if (!await confirmAction(`Make "${entry.name}" a group - a creature kind that turns up in numbers (its count in the scene goes down as they fall) - instead of one person? Its description is rewritten for the group (one model call). This character is replaced.`)) return;
                 const id = await makeGroup(ws.ctx.chatId, ws.ctx.chatKey, ws.ctx.settingId, entry.id);
                 if (!id) return void toast('error', 'Could not make it a group - see the console.');
                 openSheet(id, 'creature');

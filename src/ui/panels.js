@@ -180,7 +180,7 @@ export async function renderReview() {
                 ['off', 'failed', 'held'].includes(a.enrich) ? button('Add detail', () => enrichListed(chatId, chatKey, settingId, a.id), { iconName: 'fa-wand-magic-sparkles', title: a.error || 'Write its empty fields from the setting\'s context' }) : null,
                 // "Enrique's operatives": a crowd, not one person.
                 a.type === 'character' && looksLikeGroup(a.name) ? button("It's a group", async () => {
-                    if (!await confirmAction(`Make "${a.name}" a group - a creature kind that turns up in numbers (its count in the scene goes down as they fall) - instead of one person?`)) return;
+                    if (!await confirmAction(`Make "${a.name}" a group - a creature kind that turns up in numbers (its count in the scene goes down as they fall) - instead of one person? Its description is rewritten for the group (one model call).`)) return;
                     if (!await makeGroup(chatId, chatKey, settingId, a.objectId)) toast('error', 'Could not make it a group - see the console.');
                     done();
                     rerender();

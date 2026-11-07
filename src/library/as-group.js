@@ -22,16 +22,49 @@ export function looksLikeGroup(name) {
     return guessCreatureForm(clean(name)) === 'kind';
 }
 
+// The prompt that rewrites one person's description as a group's: what
+// they look like as a type, how they work in numbers. Pure.
+export function buildGroupPrompt({ name = '', description = '', role = '', overview = '' } = {}) {
+    const user = [
+        clean(overview) ? `# The setting\n${clean(overview).slice(0, 400)}` : '',
+        `# ${clean(name)} - written as if one person\n${clean(description) || '(no description)'}${clean(role) ? `\nRole: ${clean(role)}` : ''}`,
+        '# Your task',
+        `"${clean(name)}" are not one person but a group - nameless people who turn up in numbers. Rewrite the description for the group as a type: what one of them looks like and wears, how they carry themselves and work together, and what marks them as one of this group. Two to four sentences, plural throughout ("they", never he or she), keeping what still fits and dropping anything only one person could have (a name, a single scar, a life story). No preamble.`,
+    ].filter(Boolean).join('\n\n');
+    return { system: 'You write short descriptions for a roleplay\'s world. You answer with the description only.', user, plain: true };
+}
+
+async function groupDescription(entry, settingId) {
+    try {
+        const { askReliably } = await import('../generate/run.js');
+        const { getOverview } = await import('./library.js');
+        const base = entry.base ?? entry;
+        const o = getOverview(settingId);
+        const prompt = buildGroupPrompt({ name: entry.name, description: base.description ?? entry.description, role: typeof base.role === 'string' ? base.role : entry.role, overview: [o?.premise, o?.tone && `Tone: ${o.tone}.`].filter(Boolean).join(' ') });
+        const result = await askReliably(prompt, (_p, text) => {
+            const t = clean(String(text ?? '').replace(/^\s*description\s*:\s*/i, '').replace(/^["']|["']$/g, ''));
+            return t.length >= 20 ? { values: t.slice(0, 1500), dropped: [], error: null } : { values: '', dropped: [], error: 'no description' };
+        }, 400);
+        return result.error ? '' : result.values;
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not rewrite the description for the group', err);
+        return '';
+    }
+}
+
 // -> the new creature's id, or '' (nothing changed). Never throws.
 export async function makeGroup(chatId, chatKey, settingId, characterId) {
     try {
         const entry = await getEntry(chatId, settingId, characterId);
         if (!entry || entry.type !== 'character') return '';
         const base = entry.base ?? entry;
+        // Its description rewritten for the group (one call); the old one
+        // if that fails.
+        const description = await groupDescription(entry, settingId) || clean(base.description ?? entry.description);
         const created = await createEntry(chatId, settingId, 'creature', {
             name: entry.name,
             aliases: base.aliases ?? entry.aliases ?? [],
-            description: clean(base.description ?? entry.description),
+            description,
         }, { origin: entry.meta?.origin || 'story' });
         if (!created?.id) return '';
         setEntryMeta(settingId, created.id, { creatureForm: 'kind', parentId: entry.meta?.parentId ?? null });
