@@ -60,7 +60,8 @@ import { protectedText, stanceFor } from '../director/combat.js';
 import { eventValues } from '../events/model.js';
 import { knownAsText, keptNames } from '../library/alias-kinds.js';
 import { libraryMemberships } from '../library/faction-sync.js';
-import { spokenOf, spokenNowText, elsewhereNow } from './spoken.js';
+import { rosterOf, placeIn, rosterLeaders, standingWords } from '../library/roster.js';
+import { spokenOf, spokenNowText, elsewhereNow, notInPerson, heldOutNamed } from './spoken.js';
 import { livePoolFor, byType } from '../naming/run.js';
 import { narratorPoolLine } from '../naming/live.js';
 import { personGender } from '../naming/classify.js';
@@ -270,6 +271,8 @@ export async function gatherInputs(chatId, chatKey) {
             // The names kept to a few, for the director (who here does not know them).
             factions: (memberships.get(id) ?? []).map((f) => aliasUsers.get(f)).filter(Boolean),
             factionIds: (memberships.get(id) ?? []).filter((f) => factionNames.has(f)),
+            // Where they stand in each faction's chain of command (src/library/roster.js).
+            ranks: (memberships.get(id) ?? []).map((f) => { const fac = factionList.find((x) => x.id === f); const at = fac ? standingWords(placeIn(rosterOf(fac), id)) : ''; return at ? { faction: fac.name, at } : null; }).filter(Boolean),
             keptNames: settingId ? keptNames(obj.aliases ?? base.aliases ?? [], library.entries?.[id]?.aliasInfo ?? {}, (x) => aliasUsers.get(x) ?? '', (x) => aliasUsers.has(x) && !nameById0.has(x)) : [],
             role: await readField(chatId, id, 'se__character.role', 'role'),
             description: describedNow(obj.description, doc.narrative[id]?.text),
@@ -521,7 +524,8 @@ export async function gatherInputs(chatId, chatKey) {
     // Someone here with the wrong pronouns, or giving orders that are their
     // absent leader's (Galice, "his voice firm", handing out Adam's jobs).
     const leaders = new Map();
-    for (const r of library.relations ?? []) if (r.kind === 'leads' && factionNames.has(r.to)) leaders.set(r.to, [...(leaders.get(r.to) ?? []), { id: r.from, name: allCharacters.find((ch) => ch.id === r.from)?.name ?? '' }].filter((x) => x.name));
+    for (const f of factionList) for (const p of rosterLeaders(rosterOf(f))) leaders.set(f.id, [...(leaders.get(f.id) ?? []), { id: p.id, name: allCharacters.find((ch) => ch.id === p.id)?.name ?? '' }].filter((x) => x.name));
+    for (const r of library.relations ?? []) if (r.kind === 'leads' && factionNames.has(r.to) && !leaders.has(r.to)) leaders.set(r.to, [...(leaders.get(r.to) ?? []), { id: r.from, name: allCharacters.find((ch) => ch.id === r.from)?.name ?? '' }].filter((x) => x.name));
     const castFor = cast.map((c) => ({ ...c, aliases: Array.isArray(c.aliases) ? c.aliases : allCharacters.find((ch) => ch.id === c.id)?.aliases ?? [] }));
     // The last few replies, not only the latest: on a swipe the latest is the
     // one being replaced, and a slip a reply back (Galice "stepped forward,
@@ -537,6 +541,11 @@ export async function gatherInputs(chatId, chatKey) {
     const nameOfId = (id) => allCharacters.find((ch) => ch.id === id)?.name ?? '';
     const wrongTies = relationSlips((library.relations ?? []).filter((r) => hereIds.has(r.from) && hereIds.has(r.to)).map((r) => ({ a: nameOfId(r.from), b: nameOfId(r.to), kind: r.kind, note: r.note })).filter((r) => r.a && r.b), notes.join(String.fromCharCode(10)));
     const corrected = new Set(slips.map((s) => s.name));
+    // Those their sheet holds out of the scene (src/guidance/spoken.js): a
+    // boss who sends their people, or one saved for their beat - free once
+    // the beat now names them (planner on).
+    const beatNow = settings.planner?.enabled === true ? activeBeat(doc.gm.outline) : null;
+    const heldOut = heldOutNamed(allCharacters, [latestPlayerPost(), replyBeforePost(), ...(doc.gm?.day?.agendas ?? []).map((a) => `${a.who}. ${a.will ?? ''}`)], { here: castIds, beatTies: beatNow?.ties ?? [] });
 
     return {
         guidance: {
@@ -583,6 +592,16 @@ export async function gatherInputs(chatId, chatKey) {
                 here: castIds,
                 skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id)].filter(Boolean),
             }),
+            // Those the player's posts say would not come in person (a boss
+            // who sends his people): only their people turn up.
+            // And those set on their sheet to stay out of the field, when the
+            // latest messages or the day's agendas bring them up.
+            notInPerson: [...new Set([
+                ...notInPerson(recentPlayerPosts(30), allCharacters, { here: castIds }),
+                ...heldOut.remote,
+            ])],
+            // Those saved for their beat: not met in person before it.
+            savedForLater: heldOut.later,
             // What the story has settled (src/planner/model.js settledSection).
             // Only what the latest messages touch, the user's own always.
             settled: settledNow(getChatDoc(chatKey).gm.settled ?? [], settledOpts),
@@ -776,6 +795,8 @@ export async function syncGuidance() {
 // say, it is cleared.
 // The player's latest post - the one the next reply answers.
 const latestPlayerPost = () => String([...(SillyTavern.getContext().chat ?? [])].reverse().find((m) => m && !m.is_system && m.is_user)?.mes ?? '');
+// The player's last `n` posts, oldest first.
+const recentPlayerPosts = (n) => (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system && m.is_user).slice(-n).map((m) => String(m.mes ?? ''));
 
 const NOW_KEY = 'scenario_builder_now';
 const IN_CHAT = 1;

@@ -379,7 +379,10 @@ function castLine(c) {
     const bits = [];
     if (clean(c.role)) bits.push(firstUpper(unstop(c.role)));
     const sides = (c.factions ?? []).map(clean).filter(Boolean);
-    if (sides.length) bits.push(`Of ${andList(sides)}`);
+    // With their rank where the faction has a chain of command: "Of the
+    // Medina Syndicate - Power Broker (Underbosses)".
+    const ranks = new Map((c.ranks ?? []).map((r) => [clean(r.faction), clean(r.at)]));
+    if (sides.length) bits.push(`Of ${andList(sides.map((s) => (ranks.get(s) ? `${s} - ${ranks.get(s)}` : s)))}`);
     if (clean(c.description)) bits.push(unstop(looksBrief(c.description, 360)));
     if (clean(c.lineageNote)) bits.push(firstUpper(unstop(truncate(c.lineageNote, 120))));
     // Their age for their kind (src/library/bloodlines.js ageLine).
@@ -421,7 +424,15 @@ const ASKS_PART = /\b(?:are you (?:sending|putting|taking|bringing) (?:me|us)|(?
 export const asksWhatNext = (text) => ASKS_NEXT.test(clean(text)) || ASKS_PART.test(clean(text));
 
 export function buildNow(input) {
-    const arriving = [...new Set((input.arriving ?? []).map(clean).filter(Boolean))];
+    // Those the player's posts say would not come in person (src/guidance/
+    // spoken.js notInPerson): Enrique, third in the Syndicate, sends his flunkies to a
+    // small heist - the day plan had him on the job and he stepped out of
+    // the shadows. No arrival brings them.
+    const notInPerson = [...new Set((input.notInPerson ?? []).map(clean).filter(Boolean))];
+    // Saved for their beat (the sheet's In person): the end boss is built
+    // up to, not met on the first job.
+    const later = [...new Set((input.savedForLater ?? []).map(clean).filter(Boolean))].filter((n) => !notInPerson.includes(n));
+    const arriving = [...new Set((input.arriving ?? []).map(clean).filter(Boolean))].filter((n) => !notInPerson.includes(n) && !later.includes(n));
     const triggered = (input.triggered ?? []).map((l) => clean(String(l).replace(/^-\s*/, ''))).filter(Boolean);
     // What the story settled, every reply: told only before the chat, it
     // scrolled out of mind (the Novakorp simulation taken for a real raid;
@@ -460,12 +471,12 @@ export function buildNow(input) {
     // Those the last reply or an arrival's reason names who are not here
     // (src/guidance/spoken.js elsewhereNow): a cutaway's people at HQ were
     // all written into the gun range when Zane came.
-    const elsewhere = [...new Set((input.elsewhere ?? []).map(clean).filter(Boolean))].filter((n) => !arriving.includes(n));
+    const elsewhere = [...new Set((input.elsewhere ?? []).map(clean).filter(Boolean))].filter((n) => !arriving.includes(n) && !notInPerson.includes(n) && !later.includes(n));
     // The player questions it (src/guidance/pushback.js): no closing ranks,
     // and the job as the plan gave it.
     const pushFair = clean(input.pushFair);
     const pushTeam = clean(input.pushTeam);
-    if (!pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
+    if (!notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (corrections) orders.push(corrections);
@@ -473,6 +484,8 @@ export function buildNow(input) {
         ? `${arriving[0]} comes in now - they arrive where everyone can see and speak or act, with their own reason for coming.`
         : `${andList(arriving)} come in now - each arrives where everyone can see and speaks or acts, with their own reason for coming.`);
     if (arriving.length) orders[orders.length - 1] += arrivalWhere(arriving, input);
+    if (notInPerson.length) orders.push(`${andList(notInPerson)} ${notInPerson.length === 1 ? 'does' : 'do'} not come in person - as ${player?.name ? clean(player.name) : 'the player character'} said, ${notInPerson.length === 1 ? 'they keep their' : 'they keep their'} own hands off a job like this and send ${notInPerson.length === 1 ? 'their' : 'their'} people. Only those people are here; ${andList(notInPerson)} ${notInPerson.length === 1 ? 'is' : 'are'} not met, seen or heard in this scene.`);
+    if (later.length) orders.push(`${andList(later)} ${later.length === 1 ? 'works' : 'work'} from the shadows: not met, seen or heard in person yet, and never in a fight with ${player?.name ? clean(player.name) : 'the player character'}. Their hand is felt through their underlings, their schemes and word of them - the story builds up to them.`);
     if (elsewhere.length) orders.push(`Not in this scene: ${andList(elsewhere)} - ${elsewhere.length === 1 ? 'they are' : 'they are all'} elsewhere, and do not come in, speak or act in this reply.`);
     if (triggered.length) orders.push(`It happens now: ${triggered.join(' ')}`);
     if (dodging) orders.push(dodging);

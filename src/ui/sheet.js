@@ -8,6 +8,7 @@
 import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { JEALOUSY_MODES, JEALOUSY_LABELS, jealousyOf, isLive, grievanceLine } from '../director/jealousy.js';
+import { IN_PERSON_MODES, IN_PERSON_LABELS } from '../guidance/spoken.js';
 import { openSituations } from '../world/situations.js';
 import { isWorldOn } from '../world/run.js';
 import { getObjectTypes, CHAPTER_LABELS, findSimilar, createEntry, updateEntry, setEntryMeta, getParents, setParent, findReferrers, deleteEntry, getOverview, getPlaceOverview, playerIdOf, setPlayerId, listEntries, allKnowledge, listKnowledge, saveKnowledge, removeKnowledge, mergeEntries } from '../library/library.js';
@@ -47,6 +48,7 @@ import { hasArchivist, storyRelationships } from '../library/story-relations.js'
 import { removeLink, addLink, listRelations, addRelation, removeRelation, relationsFor, pairCovered, RELATION_KINDS, MUTUAL_KINDS } from '../library/relations-edit.js';
 import { sparkButton, fieldWithTools, diceButton, tagEditor } from './controls.js';
 import { standingCard } from './standing-card.js';
+import { rosterCard } from './roster-card.js';
 import { pronounFixRow } from './pronoun-fix.js';
 import { looksLikeGroup, makeGroup } from '../library/as-group.js';
 import { generateEntry, canGenerateFor, rollEntryName, generateAlias } from '../generate/run.js';
@@ -668,6 +670,7 @@ function overviewTab({ type, entry, isNew, defs, doc, all, names, parents, allEn
         isNew ? null : lineageCard(type, entry, all),
         isNew ? null : populationCard(type, entry, all),
         isNew ? null : giftsCard(type, entry, all, defs),
+        isNew ? null : rosterCard(type, entry, all),
         isNew ? null : standingCard(type, entry, all),
         isNew ? null : combatCard(type, entry, all),
         isNew ? null : heartCard(type, entry, all),
@@ -766,6 +769,11 @@ function heartCard(type, entry, all) {
         h('div', { class: 'sb-card-title' }, icon('fa-heart-crack'), ' Heart'),
         field('Jealousy', select(JEALOUSY_MODES.map((m) => ({ value: m, label: m ? JEALOUSY_LABELS[m] : `${JEALOUSY_LABELS['']} (${on ? 'can be jealous' : 'off'})` })), mode, { onchange: (e) => save(e.target.value) }),
             'Whether they mind when someone they love, are devoted to or were promised to shows warmth to another, or breaks a vow of love. The chat\'s default is in the extension settings (Game master).'),
+        // A boss who sends their people (src/guidance/spoken.js remoteNamed):
+        // Enrique, third in the Syndicate, stepped out of the shadows at a
+        // small heist he would never have come to himself.
+        field('In person', select(IN_PERSON_MODES.map((m) => ({ value: m, label: IN_PERSON_LABELS[m] })), entry.meta?.inPerson ?? '', { onchange: (e) => { setEntryMeta(settingId, entry.id, { inPerson: e.target.value }); void syncNow(); rerender({ force: true }); } }),
+            'A boss who stays out of the field sends their people and is not written into a scene - the story only brings them when you do. One who works from the shadows (a real villain, someone who knows all the answers) is built up to: felt through their underlings and schemes, met in person only once the plan\'s beat names them. Your own posts can say it for one job too ("he wouldn\'t show up in person").'),
         // The chat calling them by the wrong pronouns (src/ui/pronoun-fix.js).
         pronounFixRow(entry, all),
         live.length ? h('div', { class: 'sb-hint' }, icon('fa-droplet'), ' In this chat:') : null,
@@ -1562,7 +1570,7 @@ async function saveSheet(type, entry, defs, isNew) {
             if (type.id === 'location' && d.meta.parentId) setParent(settingId, created.id, d.meta.parentId);
             // A generated name now taken: kept out of this world and others.
             markNameUsed(settingId, patch.name);
-            for (const r of d.pendingRelations ?? []) addRelation(settingId, { from: created.id, to: r.otherId, kind: r.kind });
+            for (const r of d.pendingRelations ?? []) addRelation(settingId, { from: created.id, to: r.otherId, kind: r.kind, role: typeof patch.role === 'string' ? patch.role : '' });
             ws.entryId = created.id;
         } else {
             if (!await updateEntry(chatId, settingId, entry.id, patch)) return toast('error', 'State Engine refused the change - see the console.');

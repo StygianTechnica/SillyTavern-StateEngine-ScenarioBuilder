@@ -236,6 +236,9 @@ export async function worldMoves(chatId, chatKey, settingId, { aim = null, userN
             places: placesMode, deaths, present: doc.canonical.castIds, placeIds: doc.canonical.locationId ? [doc.canonical.locationId] : [], playerId,
             isPerson: (id) => cast.byId.get(id)?.type === 'character',
             isFaction: (id) => cast.byId.get(id)?.type === 'faction',
+            // Who the library has leading a faction, by name: a leadership the
+            // model writes past them is not taken (src/world/situations.js).
+            leadersOf: (id) => castFacts(id, { byId: cast.byId, tiesOf: cast.tiesOf, memberships: cast.memberships, playerId, people: world.overlays.people }).leaders.map((l) => l.replace(/\s*\(.*$/, '')),
             mayKill: (id) => { const e = cast.byId.get(id); return !!e && !isDead(getChatDoc(chatKey), id) && mayDie(e, { stance }); },
         };
         // A person's side: them and their factions; a faction's: it and its people.

@@ -89,3 +89,71 @@ export function elsewhereNow(characters, { lastReply = '', reasons = [], playerP
     const named = peopleNamedIn([lastReply, ...(reasons ?? [])].join('\n'), characters);
     return named.filter((c) => !away.has(c.id) && !called.has(c.id)).map((c) => clean(c.name)).filter(Boolean).slice(0, max);
 }
+
+// Those the player's recent posts say will not turn up in person - a boss
+// who sends his people. Assassins Inc: "Enrique wouldn't show up at a small
+// heist like this in person" (and "would never do something like that
+// himself"); the day plan gave Enrique an agenda on the job and the next
+// reply had him step out of the shadows. A later post that has them come
+// ("Enrique walks in") undoes it. posts: the player's posts, oldest first.
+// -> [name], those not in `here`.
+const SAY_NOT = String.raw`(?:wouldn'?t|won'?t|would(?:\s+\w+)?\s+never|will\s+never|never|would\s+not|will\s+not|doesn'?t|does\s+not|isn'?t\s+going\s+to|is\s+not\s+going\s+to|not\s+going\s+to|can'?t\s+be\s+bothered\s+to)`;
+const COME = String.raw`(?:show(?:s|ing)?\s+(?:up|(?:his|her|their)\s+face)|come(?:s)?(?:\s+(?:himself|herself|themselves|personally|in\s+person))?\b|turn(?:s)?\s+up|be\s+there|be\s+here|appear|oversee|lead\s+(?:it|this|the\s+\w+)|bother|do\s+(?:something|anything|it|that|the\s+\w+)\s+(?:like\s+that\s+)?(?:himself|herself|themselves|personally))`;
+const THINK_NOT = String.raw`(?:didn'?t|don'?t|doesn'?t|did\s+not|do\s+not|does\s+not)\s+(?:think|expect|believe|imagine)`;
+const COMES_NOW = /\b(?:arrives?|walks?\s+in|steps?\s+(?:in|out)|shows?\s+up|turns?\s+up|is\s+here|was\s+there|appears?)\b/i;
+export function notInPerson(posts, characters, { here = [] } = {}) {
+    const at = new Set(here ?? []);
+    const verdict = new Map();
+    for (const post of posts ?? []) {
+        for (const sentence of String(post ?? '').split(/(?<=[.!?])\s+|\n+/)) {
+            for (const c of peopleNamedIn(sentence, characters)) {
+                const n = callNames(c).map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+                if (!n) continue;
+                const away = new RegExp(String.raw`\b(?:${n})\b(?!'s)[^.!?]{0,30}?\b${SAY_NOT}\b[^.!?]{0,40}?\b${COME}`, 'i').test(sentence)
+                    || new RegExp(String.raw`\b${THINK_NOT}\s+(?:that\s+)?(?:${n})\b(?!'s)\s+(?:would|will|'d|'ll)\s+(?:\w+\s+){0,2}?${COME}`, 'i').test(sentence);
+                if (away) verdict.set(c.id, c);
+                else if (new RegExp(String.raw`\b(?:${n})\b(?!'s)`, 'i').test(sentence) && COMES_NOW.test(sentence) && !/\b(?:if|when|unless|in case|might|could)\b/i.test(sentence)) verdict.delete(c.id);
+            }
+        }
+    }
+    return [...verdict.values()].filter((c) => !at.has(c.id)).map((c) => clean(c.name));
+}
+
+// Whether a character is set to stay out of the field (the sheet's "In
+// person" choice, meta.inPerson 'remote'): a boss who sends their people.
+// 'later': saved for their beat - an end boss met in person only once the
+// plan's beat brings them (Enrique, before the story has played out Bartin).
+export const IN_PERSON_MODES = Object.freeze(['', 'remote', 'later']);
+export const IN_PERSON_LABELS = Object.freeze({
+    '': 'Goes where the story takes them',
+    remote: 'Stays out of the field - sends their people',
+    later: 'Works from the shadows - met in person only when the plan\'s beat brings them',
+});
+export const inPersonOf = (c) => (IN_PERSON_MODES.includes(c?.meta?.inPerson) ? c.meta.inPerson : '');
+
+// Those held out of the scene by their sheet whom `texts` (the latest
+// messages, the day's agendas) bring up, and who are not here: only they
+// need the line. A 'later' one the beat now names (beatTies) is free.
+// -> { remote: [name], later: [name] }
+export function heldOutNamed(characters, texts, { here = [], beatTies = [] } = {}) {
+    const at = new Set(here ?? []);
+    const ties = (beatTies ?? []).map((n) => String(n ?? '').trim().toLowerCase()).filter(Boolean);
+    const tied = (c) => ties.some((t) => t === clean(c.name).toLowerCase() || t.split(/\s+/)[0] === clean(c.name).toLowerCase().split(/\s+/)[0]);
+    const held = (characters ?? []).filter((c) => !at.has(c.id) && (inPersonOf(c) === 'remote' || (inPersonOf(c) === 'later' && !tied(c))));
+    if (!held.length) return { remote: [], later: [] };
+    const named = texts === null ? held : peopleNamedIn((texts ?? []).join('\n'), held);
+    return {
+        remote: named.filter((c) => inPersonOf(c) === 'remote').map((c) => clean(c.name)),
+        later: named.filter((c) => inPersonOf(c) === 'later').map((c) => clean(c.name)),
+    };
+}
+
+// For the day's plan: everyone their sheet holds back, named or not. ''
+// when no one.
+export function heldBackText(characters, { here = [], beatTies = [] } = {}) {
+    const { remote, later } = heldOutNamed(characters, null, { here, beatTies });
+    return [
+        later.length ? `Working from the shadows, not met in person today: ${later.join(', ')} - the story builds up to them. Their hand is felt: their schemes move the world and their underlings bring the trouble and the grief, one rung at a time. No moment has them appear, fight or reveal what they know.` : '',
+        remote.length ? `Stay out of the field: ${remote.join(', ')} - they send their people and do not turn up in person.` : '',
+    ].filter(Boolean).join('\n');
+}

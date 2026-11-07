@@ -88,6 +88,7 @@ export function buildDayPrompt(input) {
     // heist", never "the heist").
     // Who has lost standing (src/state/standing-model.js): fewer moments.
     if (clean(input.sidelined)) parts.push('', 'WHO IS NOT TAKEN SERIOUSLY NOW', clean(input.sidelined));
+    if (String(input.heldBack ?? '').trim()) parts.push('', 'WHO IS HELD BACK', String(input.heldBack).trim());
     if (clean(input.jobs)) parts.push('', 'WHOSE JOB IS WHOSE (every moment and agenda names whose it is - "stop Enrique\'s heist", never a bare "the heist")', clean(input.jobs));
     if (input.requests?.length) parts.push('', `WHAT THE USER WOULD LIKE TO SEE (fit these in where they are natural; each id is the request's)`, requestsText(input.requests));
     if (input.motifs?.length) parts.push('', 'MOTIFS FROM THE USER\'S INSPIRATION (echo them as images and turns of fate, never as literal events)', input.motifs.map((m) => `- ${clean(m)}`).join('\n'));

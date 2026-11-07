@@ -42,7 +42,8 @@
 //   canonized (src/world/situations.js)
 // }
 
-import { emptyLasting, normalizeLasting, applySituations, applyChanges, applyConditions, situationHeadlines, leadershipIn } from './situations.js';
+import { emptyLasting, normalizeLasting, applySituations, applyChanges, applyConditions, situationHeadlines, leadershipIn, keepsToLeaders } from './situations.js';
+import { rosterOf, placeIn, rosterLeaders, standingWords } from '../library/roster.js';
 
 export const WORLD_LEVELS = Object.freeze([['off', 'Off'], ['quiet', 'Quiet'], ['lively', 'Lively'], ['turbulent', 'Turbulent']]);
 export const SURFACINGS = Object.freeze([['all', 'Everything'], ['talk', 'Rumours and news only'], ['log', 'Side log only']]);
@@ -404,17 +405,30 @@ export function castFacts(id, { byId = new Map(), tiesOf = () => [], memberships
     const nameOf = (x) => byId.get(x)?.name ?? '';
     const toPlayer = (x) => tiesOf(x).filter((t) => playerId && t.otherId === playerId).map((t) => tieWords(t, nameOf(playerId) || 'the player character'));
     if (e.type === 'faction') {
-        const members = [...memberships].filter(([, fs]) => (fs ?? []).includes(id)).map(([p]) => p).filter((p) => byId.has(p) && p !== playerId);
-        const said = clean(conditions[id]?.leadership) || leadershipIn(e.base?.description ?? e.description ?? '');
+        // Its chain of command (src/library/roster.js), when it has one: the
+        // top tier leads, and its people are listed in rank order, by title.
+        const chain = rosterOf(e);
+        const rankOf = (p) => { const at = placeIn(chain, p); return at ? at.tier : 99; };
+        const members = [...memberships].filter(([, fs]) => (fs ?? []).includes(id)).map(([p]) => p).filter((p) => byId.has(p) && p !== playerId)
+            .sort((a, b) => rankOf(a) - rankOf(b));
+        const ranked = (p) => standingWords(placeIn(chain, p));
+        const roleOfHere = (p) => ranked(p) || roleOf(p);
         const isOver = (p) => OVER.test(roleOf(p));
-        const byRole = members.filter((p) => LEADS.test(roleOf(p)) && !isOver(p));
-        const byTie = tiesOf(id).filter((t) => byId.get(t.otherId)?.type === 'character' && LED_BY.test(clean(t.kind).replace(/\s*\(them\)$/i, '')) && !isOver(t.otherId)).map((t) => t.otherId);
+        const top = rosterLeaders(chain).map((x) => x.id).filter((p) => byId.has(p) && !isOver(p));
+        const byRole = top.length ? top : members.filter((p) => LEADS.test(roleOf(p)) && !isOver(p));
+        const byTie = top.length ? [] : tiesOf(id).filter((t) => byId.get(t.otherId)?.type === 'character' && LED_BY.test(clean(t.kind).replace(/\s*\(them\)$/i, '')) && !isOver(t.otherId)).map((t) => t.otherId);
+        // The chat's word on who leads - unless the world model made it up
+        // past the library's leaders (keepsToLeaders): set by hand, it stands.
+        const cond = conditions[id];
+        const known = [...new Set([...byRole, ...byTie])].map(nameOf).filter(Boolean);
+        const chatSaid = clean(cond?.leadership) && (cond?.leadBy === 'user' || keepsToLeaders(cond.leadership, known)) ? clean(cond.leadership) : '';
+        const said = chatSaid || leadershipIn(e.base?.description ?? e.description ?? '');
         out.leaders = said ? [cut(said, 160)] : [...new Set([...byRole, ...byTie])].slice(0, 2).map((p) => {
-            const role = roleOf(p);
+            const role = roleOfHere(p);
             return role ? `${nameOf(p)} (${cut(role, 80)})` : nameOf(p);
         });
         out.members = members.slice(0, 8).map((p) => {
-            const role = roleOf(p);
+            const role = roleOfHere(p);
             const state = clean(people[p]?.state);
             const ties = toPlayer(p);
             return `${nameOf(p)}${role ? ` - ${cut(role, 60)}` : ''}${state ? ` (now ${cut(state, 60)})` : ''}${ties.length ? ` [${ties.join('; ')}]` : ''}`;
@@ -580,7 +594,7 @@ export function applyWorld(world, answer, { day, resolve = () => null, nameOf = 
     const sit = applySituations(world, answer?.situations, { day, resolve, placeOf, max: limits.situations ?? 0, calm: !stir.hostile, newId, at });
     for (const l of sit.log) logLine(world, { day, text: l.text, situationId: l.situationId, ties: l.ties, veiled: false });
     counts.situations = sit.started + sit.moved;
-    for (const l of applyConditions(world, answer?.factions, { day, resolve, nameOf, isFaction: changes.isFaction ?? (() => true) })) logLine(world, { day, text: l.text, ties: l.ties, veiled: true });
+    for (const l of applyConditions(world, answer?.factions, { day, resolve, nameOf, isFaction: changes.isFaction ?? (() => true), leadersOf: changes.leadersOf ?? (() => []) })) logLine(world, { day, text: l.text, ties: l.ties, veiled: true });
     markPass(world, { day, turn });
     trimSchemes(world);
     return counts;

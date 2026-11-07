@@ -19,6 +19,7 @@
 // back to takeBeats(). Never throws.
 
 import { sidelinedText } from '../state/standing-model.js';
+import { heldBackText } from '../guidance/spoken.js';
 import { LOG_PREFIX } from '../constants.js';
 import { opposedJobs, jobsLine, planTexts } from './aims.js';
 import { timedHappenings, notYet } from './timed.js';
@@ -498,6 +499,11 @@ export async function runDay(chatId, chatKey, { rest = false } = {}) {
             messages: chatMessages(),
             // Who has lost standing: fewer moments (src/state/standing-model.js).
             sidelined: sidelinedText(Object.values(doc.standing?.people ?? {})),
+            // Who their sheet holds back (src/guidance/spoken.js): an end
+            // boss saved for their beat - Dr. Tole, who knows all the
+            // answers, sprung on the player at the start - or a boss who
+            // sends their people.
+            heldBack: heldBackText(settingId ? await listEntries(chatId, settingId, 'character') : [], { beatTies: activeBeat(doc.gm.outline)?.ties ?? [], here: doc.canonical.castIds }),
             requests: waitingRequests(doc.gm).concat(doc.gm.queue.filter((r) => r.status === 'planned')),
             motifs: motifsOf(doc.gm),
             gmStyle: guidance.overview?.gmStyle ?? '',
@@ -737,7 +743,7 @@ const TENSE = 4;
 
 // The GM PLAN section for the director's prompt ('' when off or empty).
 // messages: the director's recent messages.
-export function directorPlan(chatKey, messages) {
+export function directorPlan(chatKey, messages, people = {}) {
     // Fired story triggers reach the game master, planner on or off; each
     // once (a swipe of that reply sees it again). They are marked shown
     // when the reply is prepared (src/state/lifecycle.js), and reach the
@@ -755,7 +761,7 @@ export function directorPlan(chatKey, messages) {
     } catch (err) {
         console.warn(LOG_PREFIX, 'nothing settled for the director', err);
     }
-    const plan = plannedSection(chatKey, messages);
+    const plan = plannedSection(chatKey, messages, people);
     // Whose job is whose (src/planner/aims.js): planner on or off - the
     // director's SETTLED lines and briefings said "the heist" for Enrique's.
     let jobs = '';
@@ -802,7 +808,7 @@ export function directorPlan(chatKey, messages) {
     return [triggered, settled, jobs, due, handBack, company, plan].filter(Boolean).join('\n\n');
 }
 
-function plannedSection(chatKey, messages) {
+function plannedSection(chatKey, messages, { here = null, notInPerson = [], later = [] } = {}) {
     try {
         const p = plannerSettings();
         if (p.enabled !== true) return '';
@@ -820,7 +826,7 @@ function plannedSection(chatKey, messages) {
             stampBeats(d.gm, stampIndex());
             waited = newcomerWait(d.gm, newcomers.length ? activeBeat(d.gm.outline)?.id : '', d.turn, { beatNow: activeBeat(d.gm.outline)?.id ?? '' });
         });
-        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3), newcomers, returning: beatReturning(gm, newcomers), waited });
+        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3), newcomers, returning: beatReturning(gm, newcomers), waited, here, notInPerson, later });
         // The world meanwhile: nothing while the scene is tense or lingering;
         // the lead into what comes next while it moves on or builds.
         const meanwhile = meanwhileFor(chatKey, getChatDoc(chatKey).settingId, { aim: story.aim?.word ?? '', quiet: tense || pace.aim === 'linger', lead: pace.aim === 'move on' || story.aim?.word === 'build', userIndex: latestUserIndex() });

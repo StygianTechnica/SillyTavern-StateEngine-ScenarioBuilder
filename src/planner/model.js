@@ -602,7 +602,18 @@ export function planBehindBeat(gm) {
 // waited: replies they have been awaited (newcomerWait) - past FIRM_AFTER
 // they come in this reply.
 export const FIRM_AFTER = 3;
-export function planSection(gm, { pace = null, aim = null, story = null, motifs = [], newcomers = [], returning = [], waited = 0 } = {}) {
+// Whether `who` ("Inji", "Enrique Medina") is one of `names`, by full name
+// or a shared first word.
+function personIn(who, names) {
+    const w = String(who ?? '').trim().toLowerCase();
+    if (!w) return false;
+    return (names ?? []).some((n) => {
+        const m = String(n ?? '').trim().toLowerCase();
+        return m && (m === w || m.split(/\s+/)[0] === w.split(/\s+/)[0]);
+    });
+}
+
+export function planSection(gm, { pace = null, aim = null, story = null, motifs = [], newcomers = [], returning = [], waited = 0, here = null, notInPerson = [], later = [] } = {}) {
     const lines = [];
     const beat = activeBeat(gm.outline);
     if (beat) lines.push(`- Story: ${story?.shape ? `${story.shape}, ` : ''}${story?.act ? `in "${story.act}" - ` : ''}the beat now: ${beat.text}${story?.next ? ` (then: ${story.next})` : ''}. When the scene opens a way to it - the player character asks what comes next, a talk winds down - the beat is the answer.`);
@@ -632,8 +643,18 @@ export function planSection(gm, { pace = null, aim = null, story = null, motifs 
     // until the day is planned again.
     const coming = planBehindBeat(gm) ? [] : (gm.day?.moments ?? []).filter((m) => m.status === 'pending' && !dueIds.has(m.source)).slice(0, 2);
     for (const m of coming) lines.push(`- Coming up [${m.id}]: ${m.text}${m.when ? ` (${m.when}${m.trigger ? `; ${m.trigger}` : ''})` : m.trigger ? ` (${m.trigger})` : ''}`);
+    // Whose agenda plays out off the scene: Assassins Inc gave Enrique, the
+    // Syndicate's third in command, an agenda "as Zane's diversion plays out" and the
+    // reply had him step out of the shadows at a heist the player had said
+    // he would never show up to in person.
     const agendas = (gm.day?.agendas ?? []).slice(0, 4);
-    if (agendas.length) lines.push(`- Agendas: ${agendas.map((a) => `${a.who} wants ${a.wants}${a.will ? `, and will ${a.will}` : ''}${a.hidden ? ` (hidden: ${a.hidden})` : ''}`).join('; ')}.`);
+    const whereNote = (who) => {
+        if (personIn(who, later)) return ' (works from the shadows until a later beat: not met in person yet - acts through their underlings and schemes, or as word)';
+        if (personIn(who, notInPerson)) return ' (not here, and not coming in person: works only through their people)';
+        if (Array.isArray(here) && here.length && !personIn(who, here)) return ' (not in this scene: acts from where they are, or through others)';
+        return '';
+    };
+    if (agendas.length) lines.push(`- Agendas: ${agendas.map((a) => `${a.who}${whereNote(a.who)} wants ${a.wants}${a.will ? `, and will ${a.will}` : ''}${a.hidden ? ` (hidden: ${a.hidden})` : ''}`).join('; ')}.`);
     const off = (gm.day?.offscreen ?? []).slice(0, 2);
     if (off.length) lines.push(`- Off-screen: ${off.join('; ')}.`);
     const soon = gm.queue.filter((r) => r.status === 'waiting' && r.urgency === 'soon').slice(0, 2);
@@ -653,7 +674,9 @@ const FAR_SHORT = 1;
 function aimLine(aim, act) {
     const line = `- Aim: ${aim.word} (${aim.lean}) - ${aim.why}.`;
     if (aim.word !== 'build') return line;
-    const reach = ' Bring it to the player character: it happens to them, in front of them or reaches them as word, not only out of their sight.';
+    // Assassins Inc: one flunky met in the museum, and the next reply had
+    // Enrique, the Syndicate's third in command, step out of the shadows.
+    const reach = ' Bring it to the player character: it happens to them, in front of them or reaches them as word, not only out of their sight. Build in steps: the next turn is one step up from the last - a lookout, then the crew, then whoever runs it on the ground; the one at the top comes last, only where it fits, never straight after the first flunky.';
     const far = aim.short >= FAR_SHORT ? ` The story is well short of where ${act ? `"${act}"` : 'this part of it'} wants it: this reply needs a real turn, not more of the same.` : '';
     return line + reach + far;
 }

@@ -12,6 +12,8 @@ import { getObject } from '../api/objects.js';
 import { getSettingDoc, updateSettingDoc } from '../store/setting-store.js';
 import { newLocalId } from '../store/schema.js';
 import { updateEntry } from './library.js';
+import { memberKindOf } from './faction-sync.js';
+import { tierFor, placePerson } from './roster.js';
 
 // Relationship kinds offered (any text is allowed). Mutual kinds read the
 // same from both sides.
@@ -53,8 +55,27 @@ export function listRelations(settingId) {
     return getSettingDoc(settingId).relations;
 }
 
-// rel: { from, to, kind, note, mutual }. -> the stored relationship
+// rel: { from, to, kind, note, mutual, role? }. -> the stored relationship
+// Joining a faction that has a chain of command (src/library/roster.js) is
+// a place in it, not a relationship: a generated CEO of Omicron takes the
+// top tier, a capo the Capos. With no tier that fits, it is kept as a
+// relationship, and the roster shows them as Unplaced.
 export function addRelation(settingId, rel) {
+    const joining = rel?.from && rel?.to ? memberKindOf(rel.kind) : null;
+    const roster = joining ? getSettingDoc(settingId).entries?.[rel.to]?.roster : null;
+    const tier = roster ? tierFor(roster, { kind: joining, role: rel.role ?? '' }) : '';
+    if (tier) {
+        const title = String(rel.role ?? '').replace(/\s+/g, ' ').trim().split(/[,.;]/)[0].slice(0, 80);
+        updateSettingDoc(settingId, (d) => {
+            const current = d.entries[rel.to] ?? {};
+            d.entries[rel.to] = { ...current, roster: placePerson(current.roster, rel.from, tier, title) };
+        });
+        return { id: '', from: rel.from, to: rel.to, kind: joining, note: '', mutual: false, placed: true };
+    }
+    return storeRelation(settingId, rel);
+}
+
+function storeRelation(settingId, rel) {
     const stored = { id: newLocalId('r'), from: rel.from, to: rel.to, kind: String(rel.kind || 'knows').trim(), note: String(rel.note ?? '').trim(), mutual: rel.mutual ?? MUTUAL_KINDS.has(rel.kind) };
     if (!stored.from || !stored.to || stored.from === stored.to) return null;
     updateSettingDoc(settingId, (d) => {

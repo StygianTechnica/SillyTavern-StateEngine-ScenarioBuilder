@@ -87,7 +87,7 @@ const normalizePlace = (x) => (isObject(x) && clean(x.text) ? { name: cut(x.name
 const normalizePerson = (x) => (isObject(x) && (clean(x.locationId) || clean(x.state) || clean(x.role))
     ? { name: cut(x.name, 120), locationId: clean(x.locationId), where: cut(x.where, 120), role: cut(x.role, 200), state: cut(x.state, 200), since: intOr(x.since) } : null);
 const normalizeCondition = (x) => (isObject(x) && (STANDINGS.includes(x.standing) || clean(x.leadership) || clean(x.mood))
-    ? { name: cut(x.name, 120), standing: STANDINGS.includes(x.standing) ? x.standing : 'steady', leadership: cut(x.leadership, 200), mood: cut(x.mood, 160), since: intOr(x.since) } : null);
+    ? { name: cut(x.name, 120), standing: STANDINGS.includes(x.standing) ? x.standing : 'steady', leadership: cut(x.leadership, 200), mood: cut(x.mood, 160), since: intOr(x.since), ...(x.leadBy === 'user' && clean(x.leadership) ? { leadBy: 'user' } : {}) } : null);
 const normalizeContact = (x) => (isObject(x) && Number.isInteger(x.turn)
     ? { day: intOr(x.day), turn: x.turn, prevDay: intOr(x.prevDay), visitTurn: intOr(x.visitTurn, x.turn) } : null);
 
@@ -320,7 +320,7 @@ export function uncanonize(world, recordId, day = null) {
 export function setLeadership(world, id, { name = '', leadership = '', day = null } = {}) {
     if (!clean(id)) return false;
     const prev = world.conditions[id];
-    const next = normalizeCondition({ name: name || prev?.name, standing: prev?.standing ?? 'steady', leadership, mood: prev?.mood ?? '', since: day });
+    const next = normalizeCondition({ name: name || prev?.name, standing: prev?.standing ?? 'steady', leadership, mood: prev?.mood ?? '', since: day, leadBy: 'user' });
     const keep = !!next && (!!clean(next.leadership) || !!clean(next.mood) || next.standing !== 'steady');
     if (keep) world.conditions = { ...world.conditions, [id]: next };
     else undoChange(world, 'condition', id);
@@ -372,13 +372,32 @@ export function canonizeRole(world, personId, before, { newId = (p) => `${p}${Ma
 
 // A pass's faction conditions, applied: [{ name, standing, leadership,
 // mood }]. Only a real change moves `since`. -> [text for the log].
-export function applyConditions(world, answer, { day, resolve = () => null, nameOf = () => '', isFaction = () => true } = {}) {
+// Whether a leadership line keeps to who leads: it names one of `leaders`
+// (the library's), or says the leadership changed hands. Assassins Inc: the
+// world model wrote "Enrique Medina leads the Syndicate" - he is third in
+// command under his father Serlos - and every plan after leaned on him as
+// if taking him out took the Syndicate down. Pure.
+const HANDS_CHANGED = /\b(?:took over|takes over|taken over|seized|seizes|ousted|overthrown|deposed|succeeded|succeeds|stepped down|steps down|after the death|since the death|in place of|replaced|replaces|now that|while .{1,40} (?:is|lies) (?:away|missing|dead|wounded|jailed|in hiding))\b/i;
+export function keepsToLeaders(leadership, leaders = []) {
+    const text = clean(leadership);
+    const names = (leaders ?? []).map(clean).filter(Boolean);
+    if (!text || !names.length || HANDS_CHANGED.test(text)) return true;
+    const low = text.toLowerCase();
+    // By first name or the whole name: a family name is shared (Enrique
+    // Medina is not Serlos Medina).
+    return names.some((n) => [n.toLowerCase(), n.toLowerCase().split(/\s+/)[0]].filter((w) => w.length > 1).some((w) => new RegExp(`(^|[^\\p{L}])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}])`, 'u').test(low)));
+}
+
+export function applyConditions(world, answer, { day, resolve = () => null, nameOf = () => '', isFaction = () => true, leadersOf = () => [] } = {}) {
     const log = [];
     for (const a of answer ?? []) {
         const id = resolve(a?.name);
         if (!id || !isFaction(id)) continue;
         const prev = world.conditions[id];
-        const next = normalizeCondition({ name: nameOf(id) || a.name, standing: clean(a.standing).toLowerCase(), leadership: a.leadership || prev?.leadership, mood: a.mood || prev?.mood, since: day });
+        // One the user set stands; a made-up one gives way to the library's.
+        const said = prev?.leadBy === 'user' ? '' : clean(a.leadership);
+        const leadership = said && keepsToLeaders(said, leadersOf(id)) ? said : prev?.leadership;
+        const next = normalizeCondition({ name: nameOf(id) || a.name, standing: clean(a.standing).toLowerCase(), leadership, mood: a.mood || prev?.mood, since: day, leadBy: prev?.leadBy });
         if (!next) continue;
         if (prev && prev.standing === next.standing && prev.leadership === next.leadership && prev.mood === next.mood) continue;
         world.conditions[id] = next;

@@ -171,7 +171,7 @@ async function enrichOne(job) {
         // them to (Lena came out of the director with none - no faction, no
         // one she knew).
         if (type.id === 'character' && Array.isArray(values.relations) && values.relations.length && !relationsFor(job.objectId, getSettingDoc(settingId).relations ?? []).length) {
-            for (const r of values.relations) if (r?.otherId) addRelation(settingId, { from: job.objectId, to: r.otherId, kind: r.kind, note: 'from the fill' });
+            for (const r of values.relations) if (r?.otherId) addRelation(settingId, { from: job.objectId, to: r.otherId, kind: r.kind, note: 'from the fill', role: typeof (patch.role ?? now.role) === 'string' ? (patch.role ?? now.role) : '' });
         }
         // A place left at the top of the map: its written description may
         // name or fit a district now (src/generate/place-parent.js).

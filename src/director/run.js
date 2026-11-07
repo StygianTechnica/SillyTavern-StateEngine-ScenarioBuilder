@@ -232,7 +232,7 @@ async function createNeeded(chatId, chatKey, settingId, created, locationId, cha
             // "An Iron Hand enforcer": one of its people, as the briefing says.
             if (item.kind === 'character') {
                 factions ??= await listEntries(chatId, settingId, 'faction').catch(() => []);
-                for (const m of briefMemberships(`${item.name}. ${item.description}`, factions)) addRelation(settingId, { from: obj.id, to: m.id, kind: m.kind });
+                for (const m of briefMemberships(`${item.name}. ${item.description}`, factions)) addRelation(settingId, { from: obj.id, to: m.id, kind: m.kind, role: typeof item.role === 'string' ? item.role : '' });
             }
             let parent = item.kind === 'location' ? parentForNewPlace(item, chain) : null;
             // Not a part of where the scene is: the place its words name, the
@@ -694,7 +694,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         relevant,
         timeKeeping: settings.time.enabled && !!settingId,
         askNow: settings.time.enabled && !!settingId && doc.clock.needsNow,
-        gmPlan: settingId ? [worldHere, directorPlan(chatKey, messages)].filter(Boolean).join('\n\n') : '',
+        gmPlan: settingId ? [worldHere, directorPlan(chatKey, messages, { here: (guidance.cast ?? []).map((c) => c.name), notInPerson: guidance.notInPerson ?? [], later: guidance.savedForLater ?? [] })].filter(Boolean).join('\n\n') : '',
         heartsText: hearts?.text ?? '',
         heartsReport: hearts?.report ?? null,
         unknowns: await unknownsHere(guidance.cast ?? [], messages.slice(-6).map((m) => m.text).join('\n'), characters, { chatKey, messages: messages.slice(-4) }),
