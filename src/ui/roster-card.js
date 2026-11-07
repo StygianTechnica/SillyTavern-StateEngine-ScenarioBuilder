@@ -11,7 +11,7 @@ import { ws, rerender } from './ws.js';
 import { syncNow } from '../guidance/sync.js';
 import { confirmAction } from './confirm.js';
 import { setEntryMeta, updateEntry, getOverview } from '../library/library.js';
-import { listRelations, removeRelation } from '../library/relations-edit.js';
+import { listRelations, removeRelation, addRelation } from '../library/relations-edit.js';
 import { libraryMemberships, MEMBER_KINDS } from '../library/faction-sync.js';
 import { LOG_PREFIX } from '../constants.js';
 import {
@@ -77,6 +77,23 @@ export function rosterCard(type, entry, all) {
         }, h('option', { value: '' }, '+ add someone'), ...choices.map((c) => h('option', { value: c.id }, c.name)));
     };
 
+    // Someone into the faction with no rank yet - with no tiers there is no
+    // tier to add them to (Cyril could not be added to White Cerberus).
+    const joiner = () => {
+        const inside = new Set([...placed, ...unplaced]);
+        const choices = people.filter((c) => !inside.has(c.id)).sort((a, b) => a.name.localeCompare(b.name));
+        if (!choices.length) return null;
+        return h('select', {
+            class: 'text_pole sb-roster-add',
+            onchange: (e) => {
+                if (!e.target.value) return;
+                addRelation(settingId, { from: e.target.value, to: entry.id, kind: 'member of' });
+                void syncNow();
+                rerender({ force: true });
+            },
+        }, h('option', { value: '' }, '+ add a member (no rank yet)'), ...choices.map((c) => h('option', { value: c.id }, c.name)));
+    };
+
     const tiers = roster.tiers.map((t, i) => h('div', { class: 'sb-roster-tier', ...dropTo(t.id) },
         h('div', { class: 'sb-roster-head' },
             h('span', { class: 'sb-roster-rank' }, String(i + 1)),
@@ -102,6 +119,7 @@ export function rosterCard(type, entry, all) {
         ...tiers,
         unplacedBand,
         h('div', { class: 'sb-roster-foot' },
+            joiner(),
             button('Add a tier', () => save(addTier(roster, '')), { iconName: 'fa-plus' })));
 }
 
