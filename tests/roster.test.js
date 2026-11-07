@@ -101,3 +101,22 @@ describe('what kind of group the user says it is', () => {
         expect(buildRosterPrompt({ faction: { name: 'X' } }).user).not.toContain('What kind of group');
     });
 });
+
+import { commandSlips } from '../src/guidance/canon.js';
+describe('orders go down the chain', () => {
+    const leaders = new Map([['syn', [{ id: 'serlos', name: 'Serlos Medina' }]]]);
+    const ranks = new Map([['syn', new Map([['serlos', 0], ['enrique', 2], ['bartin', 3], ['tiago', 1]])]]);
+    const enrique = { id: 'enrique', name: 'Enrique Medina', factionIds: ['syn'] };
+    const bartin = { id: 'bartin', name: 'Bartin Medina', factionIds: ['syn'] };
+    const tiago = { id: 'tiago', name: 'Tiago Moriarty', factionIds: ['syn'] };
+    const said = ['Enrique Medina gives the orders to the crew.'];
+    it('one who outranks everyone of the faction here gives them', () => {
+        expect(commandSlips([enrique, bartin], leaders, said, { ranks })).toEqual([]);
+    });
+    it('not with someone above them here', () => {
+        expect(commandSlips([enrique, tiago], leaders, said, { ranks }).map((x) => x.name)).toEqual(['Enrique Medina']);
+    });
+    it('without a chain, as before: only the leader', () => {
+        expect(commandSlips([enrique, bartin], leaders, said).map((x) => x.name)).toEqual(['Enrique Medina']);
+    });
+});

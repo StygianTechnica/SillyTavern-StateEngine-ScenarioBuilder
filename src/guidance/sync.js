@@ -534,7 +534,9 @@ export async function gatherInputs(chatId, chatKey) {
     const lately = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system && !m.is_user).slice(-4).map((m) => String(m.mes ?? ''));
     const wrongPronouns = pronounSlips(castFor, lately.join('\n\n'), { others: allCharacters.map((ch) => ch.name) });
     const recentEvents = Object.values(await getRawValues(chatId, ['ar__ctx_recent_events']).catch(() => ({}))).map(String);
-    const wrongOrders = commandSlips(castFor, leaders, [...replies, ...notes, ...recentEvents]);
+    // Each faction's chain of command: orders go down it.
+    const ranks = new Map(factionList.map((f) => [f.id, new Map(rosterOf(f).tiers.flatMap((t, i) => t.people.map((x) => [x.id, i])))]));
+    const wrongOrders = commandSlips(castFor, leaders, [...replies, ...notes, ...recentEvents], { ranks });
     // Pairs here the user wrote as rivals or enemies that Archivist's notes
     // call close (Zane and Inji, "ally, close (+2)").
     const hereIds = new Set(cast.map((c) => c.id));

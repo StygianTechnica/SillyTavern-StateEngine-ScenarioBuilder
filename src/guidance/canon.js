@@ -150,14 +150,27 @@ export function pronounSlips(people = [], text = '', { others = [] } = {}) {
 // notes. -> [{ name, leader, faction }]
 const ORDERS = /\b(?:assign(?:s|ed|ing)?\s+(?:the\s+)?(?:roles|tasks|duties|positions|teams?)|(?:gives?|gave|giving|issues?|issued|barks?|barked)\s+(?:the\s+)?orders|ordered\s+(?:the\s+)?(?:team|everyone|them|us)|put(?:s|ting)?\s+\w+\s+in\s+charge|takes?\s+command|took\s+command|is\s+in\s+command)\b/i;
 const ORDER_SAID = /\b(?:I expect (?:everyone|each of you|you all)|you(?:\s+and\s+[\p{Lu}][\p{L}]+)?\s+will\s+(?:be\s+)?(?:lead(?:ing)?|handle|take point|provide|cover)|(?:that's|that is) an order|you have your orders|let's move out)\b/iu;
-export function commandSlips(people = [], leaders = new Map(), texts = []) {
+// ranks: Map factionId -> Map personId -> tier (0 = top), from the
+// faction's chain of command (src/library/roster.js). Where there is one,
+// orders go down it: one who outranks every member of that faction here
+// gives them - Enrique, a capo, orders his people though Serlos leads -
+// and only peers or those below are put right.
+export function commandSlips(people = [], leaders = new Map(), texts = [], { ranks = new Map() } = {}) {
     const out = [];
     const here = new Set((people ?? []).map((p) => p.id));
+    const outranksAll = (fid, p) => {
+        const chain = ranks.get(fid);
+        const mine = chain?.get(p.id);
+        if (mine === undefined) return false;
+        return (people ?? []).filter((q) => q.id !== p.id && (q.factionIds ?? []).includes(fid))
+            .every((q) => { const theirs = chain.get(q.id); return theirs === undefined || theirs > mine; });
+    };
     for (const p of people ?? []) {
         if (p.player) continue;
         for (const fid of p.factionIds ?? []) {
             const heads = leaders.get(fid) ?? [];
             if (!heads.length || heads.some((h) => h.id === p.id || here.has(h.id))) continue;
+            if (outranksAll(fid, p)) continue;
             const names = namesOf(p);
             // Who says the words: the one the sentence before them starts
             // with, or - for a he / she - the one the sentence before that
