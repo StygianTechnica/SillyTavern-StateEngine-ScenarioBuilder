@@ -10,7 +10,15 @@ describe('a rivalry the notes call friendship', () => {
     it('is put right in the user\'s words', () => {
         const slips = relationSlips([{ a: 'Zane', b: 'Inji Miyama', kind: 'rival', note: 'compete lewdly over sexual conquests' }], notes);
         expect(slips).toHaveLength(1);
-        expect(relationText(slips)).toBe('Correction: between Zane and Inji Miyama it is rival - compete lewdly over sexual conquests; they are not allies or close friends, and notes that said so were wrong. They needle, compete and keep score with each other, whatever the job.');
+        expect(relationText(slips)).toBe('Correction: between Zane and Inji Miyama it is rival - compete lewdly over sexual conquests; they are not close friends, and notes that said so were wrong. The rivalry is needling and keeping score, never a fight: they never turn a weapon on each other, and against an enemy they fight side by side.');
+    });
+    it('a rivalry never reads as a fight between them; real enmity keeps them apart', () => {
+        const rival = relationText([{ a: 'Zane', b: 'Inji Miyama', kind: 'rival' }]);
+        expect(rival).not.toMatch(/whatever the job|not allies/);
+        expect(rival).toMatch(/side by side/);
+        const enemy = relationText([{ a: 'Ser Brannoc', b: 'Maelis', kind: 'enemy' }]);
+        expect(enemy).toMatch(/not allies or friends/);
+        expect(enemy).not.toMatch(/side by side/);
     });
     it('not a friendship the user wrote, nor notes that agree', () => {
         expect(relationSlips([{ a: 'Cyril', b: 'Inji Miyama', kind: 'lover' }], notes)).toEqual([]);

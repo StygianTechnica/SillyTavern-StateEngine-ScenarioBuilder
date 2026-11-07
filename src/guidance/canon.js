@@ -280,6 +280,16 @@ export function relationSlips(authored = [], notes = '') {
     return out;
 }
 
+// A rivalry is not a fight. Assassins Inc: "they are not allies ... whatever
+// the job" as the last note before the reply, mid-ambush, and the narrator
+// had Zane "return fire" on Inji. Rivals on a job needle and keep score but
+// stand together against the enemy; only real enmity keeps them apart.
+const HOSTILE = /\b(?:enem|hostile|hate|feud|nemes|despise|loathe|antagon)/i;
 export function relationText(slips = []) {
-    return slips.map((s) => `Correction: between ${s.a} and ${s.b} it is ${s.kind}${s.note ? ` - ${s.note}` : ''}; they are not allies or close friends, and notes that said so were wrong. They needle, compete and keep score with each other, whatever the job.`).join(' ');
+    return slips.map((s) => {
+        const head = `Correction: between ${s.a} and ${s.b} it is ${s.kind}${s.note ? ` - ${s.note}` : ''};`;
+        return HOSTILE.test(`${s.kind} ${s.note ?? ''}`)
+            ? `${head} they are not allies or friends, and notes that said so were wrong. They do not trust or help each other unless the story shows it.`
+            : `${head} they are not close friends, and notes that said so were wrong. The rivalry is needling and keeping score, never a fight: they never turn a weapon on each other, and against an enemy they fight side by side.`;
+    }).join(' ');
 }

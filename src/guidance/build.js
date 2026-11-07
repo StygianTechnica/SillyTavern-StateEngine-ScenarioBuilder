@@ -594,7 +594,7 @@ function correctionsSection(corrections) {
 // carried through to its result in the reply, never left hanging ("Varyn
 // aims for its joints" and then nothing) - the director's briefing can be
 // vague, and the narrator settles it. Only with a direction to follow.
-export const OUTCOMES = 'Carry every action of the other characters and creatures through to its result in this reply: a blow lands or misses, and what it does; an opponent hits back, presses or gives ground. Never leave an attack between them hanging. Only what the player character does is left to the player.';
+export const OUTCOMES = 'Carry every action of the other characters and creatures through to its result in this reply: a blow lands or misses, and what it does; an opponent hits back, presses or gives ground. Never leave an attack hanging. Only what the player character does is left to the player.';
 const withOutcomes = (part) => (part ? { ...part, full: `${part.full}
 
 ${OUTCOMES}` } : part);
