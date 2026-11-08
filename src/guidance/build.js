@@ -491,7 +491,7 @@ export function buildNow(input) {
     // The reply stays with the player character: the museum's narrator, told
     // Inji and Zane were elsewhere, still spent the reply on their sweep of
     // the galleries - the last reply again, nearly word for word.
-    if (elsewhere.length) orders.push(`Not in this scene: ${andList(elsewhere)} - ${elsewhere.length === 1 ? 'they are' : 'they are all'} elsewhere, and do not come in, speak or act in this reply. The reply stays with ${player?.name ? clean(player.name) : 'the player character'} and what is where they are - no cutting away to ${elsewhere.length === 1 ? 'them' : 'those elsewhere'}; word of ${elsewhere.length === 1 ? 'them' : 'them'} reaches ${player?.name ? clean(player.name) : 'the player character'} only by a call, a radio or a sound carrying.`);
+    if (elsewhere.length) orders.push(`Not in this scene: ${andList(elsewhere)} - ${elsewhere.length === 1 ? 'they are' : 'they are all'} elsewhere, and do not come in, speak or act in this reply. The reply stays with ${player?.name ? clean(player.name) : 'the player character'} and what is where they are - no cutting away to ${elsewhere.length === 1 ? 'them' : 'those elsewhere'}; word of ${elsewhere.length === 1 ? 'them' : 'them'} reaches ${player?.name ? clean(player.name) : 'the player character'} only by a call, a radio or a sound carrying. Begin the reply with what ${player?.name ? clean(player.name) : 'the player character'} meets where they are now.`);
     if (triggered.length) orders.push(`It happens now: ${triggered.join(' ')}`);
     if (dodging) orders.push(dodging);
     // The beat's people are who it is (Adam kept sending others on the job
