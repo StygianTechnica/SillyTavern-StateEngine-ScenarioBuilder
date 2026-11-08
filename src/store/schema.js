@@ -104,6 +104,7 @@ import { emptyCompany, normalizeCompany } from '../director/company.js';
 import { normalizePresent } from '../planner/presence.js';
 import { normalizeEvent, normalizeEventsDone, normalizeEventsComing } from '../events/model.js';
 import { normalizeTemplates } from '../events/setup.js';
+import { normalizeOp, normalizeOpsDone } from '../ops/model.js';
 import { emptyChanges, normalizeChanges } from '../state/changes-model.js';
 import { emptyStanding, normalizeStanding } from '../state/standing-model.js';
 import { normalizeAliasInfo } from '../library/alias-kinds.js';
@@ -492,6 +493,12 @@ export function emptyChatDoc() {
         eventsDone: [],
         // Planned events waiting for their day on the calendar.
         eventsComing: [],
+        // The other side's operation the GM runs (src/ops/model.js), or
+        // null; finished ones; sides already planned from the director's
+        // OPPOSED line ("<side>@<placeId>"), never planned twice.
+        op: null,
+        opsDone: [],
+        opsTried: [],
         // What the player told whom (src/director/perspective.js toldInChat):
         // { [memoryKey]: [personId] }.
         perspectiveTold: {},
@@ -568,6 +575,9 @@ export function normalizeChatDoc(doc) {
         event: normalizeEvent(d.event),
         eventsDone: normalizeEventsDone(d.eventsDone),
         eventsComing: normalizeEventsComing(d.eventsComing),
+        op: normalizeOp(d.op),
+        opsDone: normalizeOpsDone(d.opsDone),
+        opsTried: Array.isArray(d.opsTried) ? d.opsTried.filter((x) => typeof x === 'string').slice(-20) : [],
         dead: normalizeDead(d.dead),
         combatStance: STANCES.includes(d.combatStance) ? d.combatStance : '',
         changes: normalizeChanges(d.changes),

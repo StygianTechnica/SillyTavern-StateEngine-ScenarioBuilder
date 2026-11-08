@@ -662,6 +662,7 @@ export async function gatherInputs(chatId, chatKey) {
             // The fight the director keeps (src/director/fight.js).
             fight: settings.director.enabled ? doc.fight : null,
             event: settings.director.enabled ? doc.event : null,
+            op: settings.director.enabled ? doc.op : null,
             othersTracked,
             // Secrets kept from those present; oaths binding them.
             secrets: secretRules,

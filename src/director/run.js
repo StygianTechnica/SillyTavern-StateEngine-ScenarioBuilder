@@ -35,6 +35,8 @@ import { nextFight, fightFacts, woundsOf, fightPaused } from './fight.js';
 import { combatOptions, stanceFor, protectionOf, powerRatingOf, mayDie, protectedText } from './combat.js';
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
+import { opFacts, isLive as opRunning } from '../ops/model.js';
+import { opAfterBriefing, opFromDirector } from '../ops/run.js';
 import { whoCouldTurnUp, belongingHere, enemyGround, sharedScenes, lastSeen, firstMeetings, elsewhereEntering } from './whereabouts.js';
 import { rankNearby } from './company.js';
 import { arrivals, addRipple } from '../world/model.js';
@@ -192,7 +194,7 @@ const STORY_KINDS = ['event', 'scene'];
 // location; items, creatures and people who are here are placed in it;
 // what a new thing is tied to becomes its related entries. Never adds a
 // duplicate of something the library already has.
-async function createNeeded(chatId, chatKey, settingId, created, locationId, chain = [], places = [], recentText = '') {
+export async function createNeeded(chatId, chatKey, settingId, created, locationId, chain = [], places = [], recentText = '') {
     const made = [];
     // A new person's bloodline (docs/DESIGN - BLOODLINES.md, phase 2): the
     // one its own words give ("an elf courier"), else rolled from who lives
@@ -710,6 +712,10 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             ...(guidance.location?.creatures ?? []).filter((x) => x.active !== false && x.form !== 'kind').map((x) => everything.find((e) => e.id === x.id)).filter(Boolean),
         ].filter((e) => e.id !== playerIdOf(settingId, characters)), { stance: stanceFor(doc, settings) }),
         eventFacts: eventFacts(event, { placeName: event?.placeId ? everything.find((e) => e.id === event.placeId)?.name ?? '' : '', turn: getChatDoc(chatKey).turn, ways }),
+        // The other side's operation, which the director plays (src/ops/).
+        opFacts: opFacts(getChatDoc(chatKey).op, { turn: getChatDoc(chatKey).turn }),
+        opLive: opRunning(getChatDoc(chatKey).op),
+        opposition: settings.director.opposition !== false && !!settingId,
         // Only the dead the latest messages speak of.
         // The story going in circles, or the player asking whether it is over.
         loopLine: circling(messages.slice(-8), { names: (guidance.cast ?? []).filter((c) => !c.player).map((c) => c.name) }).line,
@@ -1232,6 +1238,11 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         });
         // A bout of a structured event is decided by the fight (src/events/).
         eventAfterFight(chatKey, fight);
+        // The other side's step, and its crew as the fight left them (src/ops/).
+        opAfterBriefing(chatKey, { report: parsed.operation, fight, deaths: parsed.deaths ?? [] });
+        // A rival group at work with no plan: one is written for the next
+        // reply, in the background (one call, once per side and place).
+        if (parsed.opposed && !opRunning(getChatDoc(chatKey).op)) void opFromDirector(chatId, chatKey, settingId, parsed.opposed);
         // A kind of creature beaten or driven off in the fight is gone from
         // the scene (one being that goes down is only down, not dead).
         const beaten = (fight?.fighters ?? []).filter((f) => f.side === 'foe' && (f.condition === 'down' || f.condition === 'fled'))

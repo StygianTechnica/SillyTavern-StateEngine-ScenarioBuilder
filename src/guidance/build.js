@@ -16,6 +16,7 @@ import { isPlaceholder } from '../director/prompt.js';
 import { creatureLabel } from '../library/creature-form.js';
 import { fightGuidance } from '../director/fight.js';
 import { eventGuidance } from '../events/model.js';
+import { opGuidance } from '../ops/model.js';
 import { povRule } from '../director/perspective.js';
 import { intimacySection } from './intimacy.js';
 
@@ -52,6 +53,7 @@ export const SECTIONS = Object.freeze([
     { key: 'names', title: 'Names for anyone new', priority: 3, keep: false },
     { key: 'loop', title: 'Going in circles', priority: 9, keep: true },
     { key: 'event', title: 'The event', priority: 9, keep: true },
+    { key: 'op', title: 'The other side', priority: 9, keep: true },
     { key: 'intimacy', title: 'Intimate scene', priority: 8, keep: true },
     { key: 'absent', title: 'Not in this scene', priority: 9, keep: true },
     { key: 'alone', title: 'No one else here', priority: 9, keep: true },
@@ -620,6 +622,8 @@ const BUILDERS = {
     names: (input) => (clean(input.names) ? { full: clean(input.names), compact: '' } : null),
     // A structured event's stage under way, never what comes next (src/events/).
     event: (input) => (eventGuidance(input.event) ? { full: eventGuidance(input.event), compact: '' } : null),
+    // A rival crew's operation at work - the step now, never the plan (src/ops/).
+    op: (input) => (opGuidance(input.op) ? { full: opGuidance(input.op), compact: '' } : null),
     intimacy: (input) => intimacySection(input),
     alone: (input) => aloneSection(input),
     arriving: (input) => arrivingSection(input.arriving, input),
@@ -685,6 +689,7 @@ export function buildGuidance(input) {
         powers: 'A power (a god, a spirit) called on by its champion, or over its dead champion: the narrator is told it answers.',
         fight: 'The fight the director keeps: each fighter but the player character, their condition from reply to reply, and when it ends.',
         event: 'A structured event under way (an arena, set up in the GM Plan): the stage now, and never who comes next.',
+        op: 'The operation of a rival crew the game master runs (the other side, in the GM Plan): what they are doing now, so the reply does not wait on the player.',
         arriving: 'Those the game master brings into the scene in this reply: the narrator is told to write them arriving and taking part.',
         triggered: 'Story triggers the story has just set off (Story triggers in the GM Plan): played in this reply, and on a swipe of it.',
         alone: 'Shown when the player character is the only one present: the world, its creatures and the consequences carry the reply.',
@@ -717,7 +722,7 @@ export const GUIDANCE_PARTS = Object.freeze([
     ['guidance_threads', 'THREADS BEING FOLLOWED', ['quests']],
     ['guidance_scene', 'THE SCENE NOW', ['location', 'scene', 'lore', 'spoken', 'secrets', 'corrections', 'dead', 'protected']],
     ['guidance_summary', 'WHERE THINGS STAND', ['summary']],
-    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'arriving', 'loop', 'triggered', 'fight', 'powers', 'event', 'intimacy', 'absent', 'alone', 'names']],
+    ['guidance_direction', 'WHERE THIS REPLY SHOULD GO', ['style', 'direction', 'arriving', 'loop', 'triggered', 'fight', 'powers', 'event', 'op', 'intimacy', 'absent', 'alone', 'names']],
 ]);
 
 // buildGuidance()'s result -> { [variable]: text } ('' for an empty part).

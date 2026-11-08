@@ -23,6 +23,7 @@ import { listEntries, getSettingSummary, playerIdOf } from '../library/library.j
 import { standings, chooseFor } from '../director/company.js';
 import { downloadText, safeFileName } from '../store/files.js';
 import { eventCard } from './event-card.js';
+import { opCard } from './op-card.js';
 import { worldCard } from './world-card.js';
 import { ws, rerender, markDirty } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
@@ -891,6 +892,6 @@ export async function renderGmPlan() {
     const factions = await listEntries(ws.ctx.chatId, settingId, 'faction').catch(() => []);
     return h('div', { class: 'sb-gm-plan' },
         h('div', { class: 'sb-scene-cols' },
-            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), starterCard(), volumesCard(gm), ideasCard(gm), todayCard(gm, show), settledCard(gm), agendaCard(gm, show), eventCard(places, [...people, ...creatures]), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
+            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), starterCard(), volumesCard(gm), ideasCard(gm), todayCard(gm, show), settledCard(gm), agendaCard(gm, show), eventCard(places, [...people, ...creatures]), opCard(factions, people, show), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
             h('div', { class: 'sb-gm-col' }, paceCard(gm), companyCard(people), worldCard(gm, show, [...people, ...factions]), settingsCard(gm))));
 }

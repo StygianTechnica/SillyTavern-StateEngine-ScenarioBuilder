@@ -157,3 +157,34 @@ doc.eventsComing (dated events, on the agenda).
 - The planner reads the story for events ("the tournament at midsummer"):
   put on the calendar, set up when the day comes - within the director's
   restraint (events arise from the world, never for the player).
+
+## 7. The other side (built 2026-11-07)
+
+An event is the player's programme; nothing played the opposition. A rival
+crew at work where the story is - the Medina Syndicate's museum heist -
+had no leader, no crew, no way in and nothing it was after, so the story
+waited on the player. An **operation** (`doc.op`, src/ops/) is the other
+side's plan, and the game master plays it:
+
+- **The plan** (one call, src/ops/generate.js): the leader and where they
+  are during it, two to six crew with a skill and a post each, what they
+  are after, the vehicle, how they got in, three to six steps ending in the
+  getaway (steps the story already played marked done), the conditions
+  they pull out on, and how many crew down before they cut their losses.
+  The faction's own people first; anyone new is named from the world's
+  names and added as one of its side. They do not know the player's side
+  is there unless the plan says so or the story shows it.
+- **Made** from the GM Plan tab (The other side: pick the faction, say what
+  they are doing, look the plan over as lines and change any, start it),
+  or by the director: an `OPPOSED | <group> | <what>` line when a rival
+  group is at work with no plan - planned and started in the background,
+  once per side and place, for the next reply (Settings: Plan the other
+  side). Never for the player character's own faction.
+- **Played**: the director sees the whole plan (THE OTHER SIDE) and says
+  how the step went - `OPERATION | done / held / spotted / pulling out`.
+  The narrator hears only the step under way. They do not wait: a step
+  not reported is done once its replies (2) run out; held three times, or
+  their breaking point reached (crew down, caught, dead or fled through the
+  fight tracker and DIES lines, or the leader down), they pull out for one
+  reply and are gone; the last step done, they got away with it. Keyed to
+  the reply count, so a swipe applies the same reply again.

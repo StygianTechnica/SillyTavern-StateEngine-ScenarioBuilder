@@ -396,6 +396,8 @@ export function dossierText(input) {
     if (clean(input.fightFacts)) { section('THE FIGHT SO FAR'); lines.push(clean(input.fightFacts)); }
     // A structured event under way - its current stage only (src/events/).
     if (clean(input.eventFacts)) { section('THE EVENT (a fixed programme - this stage only)'); lines.push(clean(input.eventFacts)); }
+    // The other side's operation - the GM plays them (src/ops/model.js).
+    if (clean(input.opFacts)) { section('THE OTHER SIDE (you play them; their plan is kept from the player character\'s side)'); lines.push(String(input.opFacts).trim()); }
     if (input.secrets?.length) {
         section('SECRETS AND OATHS (people act only on what they know)');
         for (const r of input.secrets.slice(0, 8)) lines.push(`- ${r}`);
@@ -452,6 +454,24 @@ const historyText = (c) => {
     const standing = (c.standing ?? []).map((s) => cut(s, 200)).filter(Boolean);
     return `${met.length ? `; has met ${met.join(', ')}` : ''}${standing.length ? `; ${standing.join('; ')}` : ''}`;
 };
+
+// The other side's lines (src/ops/): how their step went, while they have
+// a plan; a rival group at work with none, so one is made.
+function opFormat(input) {
+    if (input.opLive) {
+        return [
+            '',
+            'Under THE OTHER SIDE, a line saying how their step went in this reply: done (it is carried out), held (someone or something stopped it this time), spotted (they found out who is against them), or pulling out (they give up and go). They carry on without one.',
+            'OPERATION | <done, held, spotted or pulling out> | <how, a few words>',
+        ];
+    }
+    if (input.opposition === false) return [];
+    return [
+        '',
+        'Only if the latest chat shows a rival group at work in or around the scene on a plan of its own - a heist, a raid, a break-in, an ambush, a kidnapping - that is not on the player character\'s side, a line naming the group (or its leader) and what they are doing, so their side gets a plan:',
+        'OPPOSED | <the group> | <what they are doing, one sentence>',
+    ];
+}
 
 // input: the guidance input plus { messages: [{ name, text, isUser }],
 //   userName, previousNote, memories, limits, allowCreate, canonOnly }
@@ -559,6 +579,7 @@ export function buildDirectorPrompt(input) {
         '',
         `While there is a fight, a line for every fighter but ${userName} - each foe, and each ally who fights - saying how they stand once this reply is done. The condition is one of: unhurt, hurt, wounded, badly wounded, failing, down, fled (or won, for a foe that has beaten the others). It never gets better unless the story heals it, and blows that land make it worse: a foe struck again and again does not stay unhurt. Leave these lines out when no one is fighting:`,
         'FIGHT | <name> | <condition> | <foe or ally>',
+        ...opFormat(input),
         '',
         `If someone other than ${userName} dies in this reply - killed, not just beaten, wounded or knocked out - a line for each, with how in a few words; for creatures of a kind, how many fell (DIES | 2 zombies | cut down by Varyn). The dead stay dead:`,
         'DIES | <name> | <how>',
@@ -802,7 +823,7 @@ export function isPlaceholder(value) {
 
 // A format line, whether or not it could be read - never left in the prose.
 // The format lines' keys, in capitals as the prompt writes them.
-const FORMAT_KEYS = 'TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAMES|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED';
+const FORMAT_KEYS = 'TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAMES|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED|OPERATION|OPPOSED';
 const KEY_COLON = new RegExp(`^(\\s*(?:[-*]\\s*)?\\**)(${FORMAT_KEYS})(\\**)\\s*:\\s*(?!\\|)(.*)$`);
 // (A bare "BACK" is a line of its own, not a heading.)
 const KEY_HEADING = new RegExp(`^\\s*(?:[-*#]\\s*)*\\**(?:[A-Za-z]+\\s+(?:${FORMAT_KEYS})(?:\\s+lines?)?\\**\\s*:?|(?:${FORMAT_KEYS})\\s+lines?\\**\\s*:?)\\s*$`);
@@ -857,6 +878,8 @@ export function parseDirectorNote(raw) {
     const bargains = [];
     const sets = [];
     const settled = [];
+    let operation = null;
+    let opposed = null;
     let away = '';
     let back = '';
     for (const raw of text.split('\n')) {
@@ -936,6 +959,21 @@ export function parseDirectorNote(raw) {
             if (kind === 'JEALOUS' && cells[0] && cells[1] && jealous.length < 4) jealous.push({ who: cells[0], over: cells[1], rival: cells[2] ?? '', what: cells[3] ?? '', how: cells[4] ?? '' });
             else if (kind === 'ROMANCE' && cells[0] && cells[1] && romance.length < 3) romance.push({ one: cells[0], other: cells[1], what: cells[2] ?? '' });
             else if (kind === 'SOOTHED' && cells[0] && soothed.length < 3) soothed.push({ who: cells[0], how: cells[1] ?? '' });
+            continue;
+        }
+        // OPERATION | <done, held, spotted or pulling out> | <how> and
+        // OPPOSED | <the group> | <what they are doing> (src/ops/).
+        const op = line.match(/^\s*(?:[-*]\s*)?\**OPERATION\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
+        if (op) {
+            const word = clean(op[1]).toLowerCase().replace(/[^a-z ]/g, '');
+            const status = /^(?:pull|withdraw|retreat|flee|abort)/.test(word) ? 'pulling out' : /^(?:held|block|stopp?ed|stall|delay)/.test(word) ? 'held' : /^(?:spot|seen|aware|noticed)/.test(word) ? 'spotted' : /^(?:done|complete|finish|succe)/.test(word) ? 'done' : '';
+            if (status && !operation && !isPlaceholder(op[1])) operation = { status, how: op[2] && !isPlaceholder(op[2]) ? clean(op[2]).slice(0, 200) : '' };
+            continue;
+        }
+        const oz = line.match(/^\s*(?:[-*]\s*)?\**OPPOSED\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
+        if (oz) {
+            const who = clean(oz[1]).replace(/^["'*]+|["'*.]+$/g, '');
+            if (who && !isPlaceholder(who) && !opposed) opposed = { who: who.slice(0, 100), what: oz[2] && !isPlaceholder(oz[2]) ? clean(oz[2]).slice(0, 300) : '' };
             continue;
         }
         // HEARD | <scheme id> | <how> (src/world/model.js hearScheme)
@@ -1041,7 +1079,7 @@ export function parseDirectorNote(raw) {
     // A briefing cut off or told as story lost its "Next:" end; any other
     // paragraph is not direction.
     const parts = tidy.flaws.length && !MARKER.test(text) ? { summary: text, direction: '' } : splitNote(text);
-    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, jealous, romance, soothed, fights, deaths, risings, powers, bargains, sets, settled, away, back };
+    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, jealous, romance, soothed, fights, deaths, risings, powers, bargains, sets, settled, operation, opposed, away, back };
 }
 
 // The first library entry `text` names that nothing the scene stands on
