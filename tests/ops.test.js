@@ -136,10 +136,10 @@ describe('the operation, played', () => {
     it('held three times and they pull out, then they are gone', () => {
         let op = startOp(plan(), 10, 'op1');
         op = afterBriefing(op, { report: { status: 'held', how: 'Inji blocks the vault corridor' } }, 10);
-        op = afterBriefing(op, { report: { status: 'held' } }, 11);
+        op = afterBriefing(op, { report: { status: 'held', how: 'a guard on the door' } }, 11);
         expect(op.status).toBe('running');
         expect(op.current).toBe(1);
-        op = afterBriefing(op, { report: { status: 'held' } }, 12);
+        op = afterBriefing(op, { report: { status: 'held', how: 'the vault lock holds' } }, 12);
         expect(op.status).toBe('pulling out');
         expect(opFacts(op)).toMatch(/THEY ARE PULLING OUT/);
         expect(opGuidance(op)).toMatch(/pulling out/);
@@ -168,7 +168,7 @@ describe('the operation, played', () => {
         const start = startOp(plan(), 10, 'op1');
         const once = afterBriefing(start, { report: { status: 'done' } }, 10);
         // The swipe's briefing says nothing this time: the step is not moved twice.
-        const again = afterBriefing(once, { report: { status: 'held' } }, 10);
+        const again = afterBriefing(once, { report: { status: 'held', how: 'a locked door' } }, 10);
         expect(again.current).toBe(1);
         expect(again.held).toBe(1);
         const third = afterBriefing(again, { report: { status: 'done' } }, 10);
@@ -225,7 +225,9 @@ describe('the director, on the other side', () => {
         const op = startOp(plan(), 10, 'op1');
         const live = buildDirectorPrompt({ ...base, opLive: true, opFacts: opFacts(op) }).prompt;
         expect(live).toMatch(/THE OTHER SIDE \(you play them/);
-        expect(live).toMatch(/OPERATION \| <done, held, spotted or pulling out>/);
+        expect(live).toContain('OPERATION | <done, held, spotted, suspicious, or pulling out> | <how, a few words>');
+        expect(live).toContain('CREW | <their name> | <where they are now>');
+        expect(live).toContain('LOST | <their name, or one of their hands> | <how> | <where>');
         expect(live).not.toMatch(/OPPOSED \|/);
     });
 });

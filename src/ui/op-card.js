@@ -7,8 +7,8 @@
 
 import { getChatDoc } from '../store/chat-store.js';
 import { getSettings } from '../settings.js';
-import { planOp, startOpPlan, markOpAction, setOpCrew, clearOp, reviseOpPlan } from '../ops/run.js';
-import { isLive, currentStep, crewOut, CREW_STATES } from '../ops/model.js';
+import { planOp, startOpPlan, markOpAction, setOpCrew, clearOp, reviseOpPlan, setOpTapped } from '../ops/run.js';
+import { isLive, currentStep, crewOut, crewTotal, breakPoint, CREW_STATES } from '../ops/model.js';
 import { readOpPlan, opPlanText, matchPeople } from '../ops/generate.js';
 import { syncNow } from '../guidance/sync.js';
 import { confirmAction } from './confirm.js';
@@ -117,7 +117,7 @@ function runningView(op, chatKey, show) {
     };
     const step = currentStep(op);
     const head = h('p', {}, h('b', {}, op.side), op.status === 'pulling out' ? ' - pulling out now' : ` - step ${op.current + 1} of ${op.steps.length}${peek ? `: ${step.text}` : ''}`,
-        op.crew.length ? h('span', { class: 'sb-muted' }, ` (${crewOut(op)} of ${op.crew.length} crew out of it)`) : null);
+        crewTotal(op) ? h('span', { class: 'sb-muted' }, ` (${crewOut(op)} of ${crewTotal(op)} out of it)`) : null);
     if (!peek) {
         return h('div', {}, head,
             h('small', { class: 'sb-hint' }, 'Their plan is hidden, like the day plan.'),
@@ -131,10 +131,13 @@ function runningView(op, chatKey, show) {
             h('div', {}, h('b', {}, 'After: '), op.aim),
             op.vehicle ? h('div', {}, h('b', {}, 'Came in: '), op.vehicle) : null,
             op.entry ? h('div', {}, h('b', {}, 'Got in: '), op.entry) : null,
-            op.withdraw.length ? h('div', {}, h('b', {}, 'Pull out if: '), `${op.withdraw.join('; ')} - or ${op.breakAt} of the crew out of it.`) : null,
-            h('div', { class: 'sb-muted' }, op.aware ? `They know ${op.against || 'someone'} is against them.` : `They do not know ${op.against || 'anyone'} is here.`)),
+            h('div', {}, h('b', {}, 'Pull out if: '), `${op.withdraw.length ? `${op.withdraw.join('; ')} - or ` : ''}${breakPoint(op)} of them out of it.`),
+            op.hands ? h('div', {}, h('b', {}, 'Unnamed hands: '), `${op.hands} the story turned up, ${op.handsOut} out of it.`) : null,
+            h('div', { class: 'sb-muted' }, op.aware ? `They know ${op.against || 'someone'} is against them.` : op.suspicious ? `They know something is wrong (${op.quiet.join(', ') || 'someone'} went quiet) - not who.` : `They do not know ${op.against || 'anyone'} is here.${op.checkIn !== null ? ` Their leader checks in on ${op.quiet.join(', ')} next.` : ''}`),
+            h('label', { class: 'checkbox_label', title: 'One of their radios is in your side\'s hands: the game master gives a line or two of their chatter each reply. Set by itself when your post says you listen in on it.' },
+                h('input', { type: 'checkbox', checked: op.tapped, onchange: async (e) => { setOpTapped(chatKey, { on: e.target.checked }); await after(); } }), h('span', {}, 'We are listening on their channel'))),
         op.crew.length ? h('div', {}, op.crew.map((c, i) => h('div', { class: 'sb-gm-row' },
-            h('div', { class: 'sb-gm-text' }, h('b', {}, c.name), [c.skill, c.post].filter(Boolean).length ? ` - ${[c.skill, c.post].filter(Boolean).join('; ')}` : ''),
+            h('div', { class: 'sb-gm-text' }, h('b', {}, c.name), [c.skill, c.post].filter(Boolean).length ? ` - ${[c.skill, c.post].filter(Boolean).join('; ')}` : '', h('div', { class: 'sb-muted' }, c.where ? `now at ${c.where}` : 'not placed yet')),
             select(CREW_STATES.map((s) => ({ value: s, label: s })), c.state, { onchange: async (e) => { setOpCrew(chatKey, i, e.target.value); await after(); } })))) : null,
         h('div', {}, op.steps.map((s, i) => h('div', { class: `sb-gm-row${s.status === 'done' ? ' sb-gm-past' : ''}` },
             h('div', { class: 'sb-gm-text' }, `${i + 1}. ${s.text}`),

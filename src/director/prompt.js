@@ -20,6 +20,7 @@ import { shortTitle } from '../validate/drift.js';
 import { unknownsLines, povBrief } from './perspective.js';
 import { keptNameLines } from '../library/alias-kinds.js';
 import { heartsFormat } from './jealousy.js';
+import { saysNothingHangs } from './suspended.js';
 
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
@@ -296,6 +297,11 @@ export function dossierText(input) {
         section('WAITING WHERE THE STORY LEFT OFF (the story stepped away from this scene and must come back to it; it waits as it was - the people there stay there, and nothing there is settled until the story returns)');
         lines.push(String(input.suspendedText).trim());
     }
+    // Those the group left elsewhere when it split (src/director/suspended.js).
+    if (clean(input.splitText)) {
+        section(`ELSEWHERE SINCE THE GROUP SPLIT (they carry on where they are, not where ${clean((input.cast ?? []).find((c) => c.player)?.name) || clean(input.userName) || 'the player character'} is)`);
+        lines.push(String(input.splitText).trim());
+    }
 
     // The groups at play, what is known here, what is coming.
     const factions = (input.factions ?? []).filter((f) => clean(f?.name));
@@ -461,8 +467,12 @@ function opFormat(input) {
     if (input.opLive) {
         return [
             '',
-            `Under THE OTHER SIDE, a line saying how their step went in this reply: done (it is carried out), held (someone or something they ran into stopped it this time${input.opAware ? '' : ' - a guard, a lock, the police, bad luck; never anyone watching, hiding from or following them unseen, whom they do not know is there'}), spotted (one of them saw, heard or found clear proof of who is against them - never for a trick staged to look like an accident or a malfunction), or pulling out (they give up and go). They carry on without one.`,
-            'OPERATION | <done, held, spotted or pulling out> | <how, a few words>',
+            `Under THE OTHER SIDE, a line saying how their step went in this reply: done (it is carried out), held (someone or something they ran into stopped it this time${input.opAware ? '' : ' - a guard, a lock, the police, bad luck; never anyone watching, hiding from or following them unseen, whom they do not know is there'}), spotted (one of them saw, heard or found clear proof of who is against them - never for a trick staged to look like an accident or a malfunction), ${input.opAware ? '' : ' suspicious (they know something is wrong - someone went quiet - not who),'} or pulling out (they give up and go). They carry on without one. Held needs what held them.`,
+            `OPERATION | <done, held, spotted,${input.opAware ? '' : ' suspicious,'} or pulling out> | <how, a few words>`,
+            'A line for each of theirs who moved this reply, or has no place yet - where they are now, a spot inside the place:',
+            'CREW | <their name> | <where they are now>',
+            'A line for each of theirs taken out of it with no FIGHT line - knocked out, tied up, killed, caught - named, or "one of their hands" for one the plan has no name for:',
+            'LOST | <their name, or one of their hands> | <how> | <where>',
         ];
     }
     if (input.opposition === false) return [];
@@ -559,6 +569,10 @@ export function buildDirectorPrompt(input) {
         '',
         `Only if the latest chat steps the story away from the scene into something it must come back from - a vision, a dream, a trial in another realm, a memory - while the scene itself is left hanging (someone in danger, a plea unanswered, a fight paused), a line saying in one sentence what is left hanging there (with a MOVE line too when the detour is somewhere else):`,
         'AWAY | <what is left hanging where the story was>',
+        `Going to another room or place in the same world - the group splitting up, ${userName} going on alone - is never AWAY: it is a MOVE, and those who stay behind carry on where they are.`,
+        ...(clean(input.splitText) ? [
+            `Those under ELSEWHERE SINCE THE GROUP SPLIT are not where ${userName} is: never write them into ${userName}'s scene, and never bring ${userName} back to them. Say in a sentence what they are up to only when it bears on ${userName}. They rejoin only when the story brings them (ENTERS - they come over, or answer a call) or ${userName} goes back to them (MOVE).`,
+        ] : []),
         ...(clean(input.suspendedText) ? [
             `While the story is away, those waiting under WAITING WHERE THE STORY LEFT OFF stay there: no ENTERS for them unless the story itself brings them. Keep the detour short - it builds to its end within a few replies. When it ends (the vision fades, the trial is done, ${userName} wakes or comes back), a line, and the scene returns to where it was with no MOVE line; the briefing then picks up what was left hanging there:`,
             'BACK | <how the story returns, a few words>',
@@ -823,7 +837,7 @@ export function isPlaceholder(value) {
 
 // A format line, whether or not it could be read - never left in the prose.
 // The format lines' keys, in capitals as the prompt writes them.
-const FORMAT_KEYS = 'TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAMES|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED|OPERATION|OPPOSED';
+const FORMAT_KEYS = 'TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAMES|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED|OPERATION|OPPOSED|CREW|LOST';
 const KEY_COLON = new RegExp(`^(\\s*(?:[-*]\\s*)?\\**)(${FORMAT_KEYS})(\\**)\\s*:\\s*(?!\\|)(.*)$`);
 // (A bare "BACK" is a line of its own, not a heading.)
 const KEY_HEADING = new RegExp(`^\\s*(?:[-*#]\\s*)*\\**(?:[A-Za-z]+\\s+(?:${FORMAT_KEYS})(?:\\s+lines?)?\\**\\s*:?|(?:${FORMAT_KEYS})\\s+lines?\\**\\s*:?)\\s*$`);
@@ -880,6 +894,8 @@ export function parseDirectorNote(raw) {
     const settled = [];
     let operation = null;
     let opposed = null;
+    const crewMoves = [];
+    const crewLost = [];
     let away = '';
     let back = '';
     for (const raw of text.split('\n')) {
@@ -893,7 +909,7 @@ export function parseDirectorNote(raw) {
         const aw = line.match(/^\s*(?:[-*]\s*)?\**(AWAY|BACK)\**\s*(?::?\s*\|\s*(.*?)\s*|\s*)$/i);
         if (aw) {
             const said = isPlaceholder(aw[2]) ? '' : clean(aw[2]).replace(/^["'*]+|["'*]+$/g, '');
-            if (/^away$/i.test(aw[1])) { if (!away && said) away = said.slice(0, 400); } else if (!back) back = said || 'the story returns';
+            if (/^away$/i.test(aw[1])) { if (!away && said && !saysNothingHangs(said)) away = said.slice(0, 400); } else if (!back) back = said || 'the story returns';
             continue;
         }
         // BARGAIN | <who promises> | <what is promised> | <the price or condition>
@@ -966,8 +982,20 @@ export function parseDirectorNote(raw) {
         const op = line.match(/^\s*(?:[-*]\s*)?\**OPERATION\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
         if (op) {
             const word = clean(op[1]).toLowerCase().replace(/[^a-z ]/g, '');
-            const status = /^(?:pull|withdraw|retreat|flee|abort)/.test(word) ? 'pulling out' : /^(?:held|block|stopp?ed|stall|delay)/.test(word) ? 'held' : /^(?:spot|seen|aware|noticed)/.test(word) ? 'spotted' : /^(?:done|complete|finish|succe)/.test(word) ? 'done' : '';
+            const status = /^(?:pull|withdraw|retreat|flee|abort)/.test(word) ? 'pulling out' : /^(?:held|block|stopp?ed|stall|delay)/.test(word) ? 'held' : /^(?:spot|seen|aware|noticed)/.test(word) ? 'spotted' : /^(?:suspic|wary|uneasy|alarm|worried)/.test(word) ? 'suspicious' : /^(?:done|complete|finish|succe)/.test(word) ? 'done' : '';
             if (status && !operation && !isPlaceholder(op[1])) operation = { status, how: op[2] && !isPlaceholder(op[2]) ? clean(op[2]).slice(0, 200) : '' };
+            continue;
+        }
+        // CREW | <one of theirs> | <where they are now> and
+        // LOST | <one of theirs, or "one of their hands"> | <how> | <where>.
+        const cw = line.match(/^\s*(?:[-*]\s*)?\**CREW\**\s*:?\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*(?:\|.*)?$/i);
+        if (cw) {
+            if (!isPlaceholder(cw[1]) && !isPlaceholder(cw[2]) && crewMoves.length < 8) crewMoves.push({ name: clean(cw[1]).replace(/^["'*]+|["'*.]+$/g, '').slice(0, 80), where: clean(cw[2]).replace(/[.]+$/, '').slice(0, 120) });
+            continue;
+        }
+        const ls = line.match(/^\s*(?:[-*]\s*)?\**LOST\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*(.*?)\s*)?$/i);
+        if (ls) {
+            if (!isPlaceholder(ls[1]) && crewLost.length < 6) crewLost.push({ who: clean(ls[1]).replace(/^["'*]+|["'*.]+$/g, '').slice(0, 80), how: ls[2] && !isPlaceholder(ls[2]) ? clean(ls[2]).slice(0, 160) : '', where: ls[3] && !isPlaceholder(ls[3]) ? clean(ls[3]).slice(0, 120) : '' });
             continue;
         }
         const oz = line.match(/^\s*(?:[-*]\s*)?\**OPPOSED\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*(.*?)\s*)?$/i);
@@ -1079,7 +1107,7 @@ export function parseDirectorNote(raw) {
     // A briefing cut off or told as story lost its "Next:" end; any other
     // paragraph is not direction.
     const parts = tidy.flaws.length && !MARKER.test(text) ? { summary: text, direction: '' } : splitNote(text);
-    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, jealous, romance, soothed, fights, deaths, risings, powers, bargains, sets, settled, operation, opposed, away, back };
+    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, jealous, romance, soothed, fights, deaths, risings, powers, bargains, sets, settled, operation, opposed, crewMoves, crewLost, away, back };
 }
 
 // The first library entry `text` names that nothing the scene stands on

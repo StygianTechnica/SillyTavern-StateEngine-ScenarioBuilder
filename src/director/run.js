@@ -17,7 +17,7 @@ import { newLocalId } from '../store/schema.js';
 import { chooseParent, placeSize } from '../generate/place-parent.js';
 import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, listUnconfirmed, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf, saveKnowledge, listKnowledge, allKnowledge } from '../library/library.js';
 import { bargainItem, sameBargain, fulfilledByReturn } from '../library/knowledge.js';
-import { stillWaiting, steppedAway, suspend, returnTo, returnsHere, restorePatch, waitingIds, withoutWaiting, suspendedText } from './suspended.js';
+import { stillWaiting, steppedAway, suspend, returnTo, returnsHere, restorePatch, waitingIds, withoutWaiting, suspendedText, splitText, splitsUp, wentBack, rejoined, splitAt } from './suspended.js';
 import { routesFrom, listRoutes, headingAlong, placesFurtherOn } from '../library/routes.js';
 import { pathOf } from '../library/hierarchy.js';
 import { listRelations, relationsFor, addRelation } from '../library/relations-edit.js';
@@ -36,7 +36,7 @@ import { combatOptions, stanceFor, protectionOf, powerRatingOf, mayDie, protecte
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
 import { opFacts, isLive as opRunning } from '../ops/model.js';
-import { opAfterBriefing, opFromDirector } from '../ops/run.js';
+import { opAfterBriefing, opFromDirector, setOpTapped } from '../ops/run.js';
 import { rivalAtWork } from '../ops/detect.js';
 import { whoCouldTurnUp, belongingHere, enemyGround, sharedScenes, lastSeen, firstMeetings, elsewhereEntering } from './whereabouts.js';
 import { rankNearby } from './company.js';
@@ -48,7 +48,7 @@ import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from
 import { namedAtAll } from '../validate/drift.js';
 import { circling } from './loops.js';
 import { shownLeaving, shownArriving } from './departures.js';
-import { goesAlone, goesTogether, namedGoing, leftOut } from './going-along.js';
+import { goesAlone, goesTogether, namedGoing, leftOut, MOVING } from './going-along.js';
 import { timedHappenings } from '../planner/timed.js';
 
 // How many replies a broken-off fight's wounds are remembered.
@@ -615,6 +615,10 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     const inputs = await gatherInputs(chatId, chatKey);
     const guidance = inputs.guidance;
     const messages = recentMessages(type);
+    // One of their radios taken up to listen in (or got rid of), by the
+    // player's latest post - before the other side is briefed (src/ops/).
+    const lastPost = [...messages].reverse().find((m) => m.isUser);
+    if (lastPost) setOpTapped(chatKey, { text: lastPost.text });
     const doc = getChatDoc(chatKey);
     // The same messages in the same place: the briefing already written.
     // A place changed by hand since (the user deleted a wrong one and sent
@@ -729,7 +733,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         ].filter((e) => e.id !== playerIdOf(settingId, characters)), { stance: stanceFor(doc, settings) }),
         eventFacts: eventFacts(event, { placeName: event?.placeId ? everything.find((e) => e.id === event.placeId)?.name ?? '' : '', turn: getChatDoc(chatKey).turn, ways }),
         // The other side's operation, which the director plays (src/ops/).
-        opFacts: opFacts(getChatDoc(chatKey).op, { turn: getChatDoc(chatKey).turn }),
+        // Where the player character is, so the briefing says what is there.
+        opFacts: opFacts(getChatDoc(chatKey).op, { turn: getChatDoc(chatKey).turn, here: nameOfId(getChatDoc(chatKey).canonical.locationId) || guidance.location?.name || '', player: (guidance.cast ?? []).find((c) => c.player)?.name ?? SillyTavern.getContext().name1 }),
         opLive: opRunning(getChatDoc(chatKey).op),
         opAware: getChatDoc(chatKey).op?.aware === true,
         opposition: settings.director.opposition !== false && !!settingId,
@@ -743,6 +748,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         } }),
         powersText: powersText(atWork),
         suspendedText: suspendedText(waiting, nameOfId),
+        splitText: splitText(waiting, nameOfId),
     }, promptBudget(settings.director.contextTokens, settings.director.maxTokens));
     if (fitted.trimmed.length) console.info(LOG_PREFIX, `the director's prompt was trimmed to fit (~${fitted.tokens} of ${fitted.budget} tokens): ${fitted.trimmed.join(', ')}`);
     if (!fitted.fits) console.warn(LOG_PREFIX, `the director's prompt is still ~${fitted.tokens} tokens, over the ${fitted.budget} its model's context leaves - raise "Model context" if the model allows, or expect it to fail`);
@@ -944,11 +950,26 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // Back from a detour (BACK, or a MOVE to where the scene waits): the scene
     // the story stepped away from is put back as it was, in place of the move.
     let returned = null;
+    // The newest detour let go (splits wait on, wherever they are in the list).
+    const lastDetourOff = (list, turn) => {
+        const now = stillWaiting(list, turn);
+        const i = now.map((s) => s.split).lastIndexOf(false);
+        return i < 0 ? now : [...now.slice(0, i), ...now.slice(i + 1)];
+    };
     if (isNewTurn(type) && settingId && waiting.length) {
-        returned = returnTo(waiting, { back: parsed.back, movePlace: move?.place ?? '', matchesPlace: (name, id) => { const p = known.find((e) => e.id === id); return !!p && samePlaceName(name, p); } });
+        // Back from a step away in the same world only when the player's
+        // message goes back: the museum's BACK while Cyril searched on
+        // took him to Inji and Zane.
+        const goesBack = (entry) => headed || wentBack(latestUserText, {
+            placeNames: [nameOfId(entry.locationId)].filter(Boolean),
+            waitingNames: entry.castIds.map((id) => characters.find((c) => c.id === id)).filter(Boolean).flatMap(callNames),
+            playerNames, moving: MOVING,
+        });
+        returned = returnTo(waiting, { back: parsed.back, movePlace: move?.place ?? '', matchesPlace: (name, id) => { const p = known.find((e) => e.id === id); return !!p && samePlaceName(name, p); }, goesBack });
+        if (!returned && parsed.back) console.info(LOG_PREFIX, `BACK left alone: ${playerNames[0] || 'the player character'} does not go back to where the story stepped away from`);
         if (returned && returnsHere(returned, getChatDoc(chatKey).canonical.locationId)) {
             // Back where the scene already is: the wait ends, the cast stays.
-            updateChatDoc(chatKey, (d) => { d.suspended = stillWaiting(d.suspended, d.turn).slice(0, -1); });
+            updateChatDoc(chatKey, (d) => { d.suspended = lastDetourOff(d.suspended, d.turn); });
             console.info(LOG_PREFIX, `"back" to ${nameOfId(returned.locationId) || 'the scene'}, where the story already is - no one is put back or dropped`);
             move = null;
         } else if (returned) {
@@ -956,7 +977,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             if (!parsed.scene && returned.sceneTitle) patch.sceneTitle = returned.sceneTitle;
             if (!parsed.situation && returned.sceneSummary) patch.sceneSummary = returned.sceneSummary;
             setCanonical(chatKey, patch, { chatId, source: 'director', note: `The story returns to ${nameOfId(returned.locationId) || 'where it left off'}${returned.hanging ? ` - ${returned.hanging}` : ''}` });
-            updateChatDoc(chatKey, (d) => { d.suspended = stillWaiting(d.suspended, d.turn).slice(0, -1); });
+            updateChatDoc(chatKey, (d) => { d.suspended = lastDetourOff(d.suspended, d.turn); });
             console.info(LOG_PREFIX, `the story comes back to "${returned.sceneTitle || nameOfId(returned.locationId)}"`);
             baseCast = patch.castIds;
             move = null;
@@ -975,14 +996,43 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
     // scene as it stood before this reply waits until the story returns.
     if (isNewTurn(type) && settingId && !returned) {
         const to = getChatDoc(chatKey).canonical.locationId;
-        if (steppedAway({ away: parsed.away, moved: !!movedFrom, newPlace: !!to && !doc.inPlay.includes(to), latestText: messages.slice(-2).map((m) => m.text).join('\n') })) {
+        const lately = messages.slice(-2).map((m) => m.text).join('\n');
+        // Those the move left behind, alive.
+        const dead = new Set(getChatDoc(chatKey).dead.map((d) => d.id));
+        const behind = movedFrom ? castIds.filter((id) => !baseCast.includes(id) && !dead.has(id) && id !== playerIdOf(settingId, characters)) : [];
+        const away = steppedAway({ away: parsed.away, moved: !!movedFrom, newPlace: !!to && !doc.inPlay.includes(to), latestText: lately });
+        const otherworld = steppedAway({ moved: true, newPlace: true, latestText: lately });
+        if (away && !(behind.length && !otherworld && splitsUp(messages.slice(-3).map((m) => m.text).join('\n')))) {
             const hanging = parsed.away || doc.canonical.sceneSummary;
-            updateChatDoc(chatKey, (d) => { d.suspended = suspend(stillWaiting(d.suspended, d.turn), doc.canonical, { hanging, turn: d.turn, at: new Date().toISOString() }); });
+            updateChatDoc(chatKey, (d) => { d.suspended = suspend(stillWaiting(d.suspended, d.turn), doc.canonical, { hanging, turn: d.turn, at: new Date().toISOString(), otherworld }); });
             console.info(LOG_PREFIX, `the story steps away from "${doc.canonical.sceneTitle || nameOfId(doc.canonical.locationId)}"; it waits: ${hanging}`);
+        } else if (behind.length && !otherworld && splitsUp(messages.slice(-3).map((m) => m.text).join('\n'))) {
+            // The group split up: those who stayed carry on where they were,
+            // kept out of the player character's scene until it goes back
+            // there or the story brings them.
+            const names = behind.map((id) => nameOfId(id)).filter(Boolean);
+            const hanging = clean(parsed.situation) && peopleNamedIn(parsed.situation, characters).some((c) => behind.includes(c.id)) ? clean(parsed.situation) : doc.canonical.sceneSummary;
+            updateChatDoc(chatKey, (d) => { d.suspended = suspend(stillWaiting(d.suspended, d.turn), { ...doc.canonical, castIds: behind }, { hanging, turn: d.turn, at: new Date().toISOString(), split: true }); });
+            console.info(LOG_PREFIX, `the group split: ${names.join(', ')} stay at ${nameOfId(doc.canonical.locationId) || 'where they were'}`);
         }
     }
-    // Those waiting where the story left off stay there.
-    const waitingNow = returned ? new Set() : waitingIds(stillWaiting(getChatDoc(chatKey).suspended, getChatDoc(chatKey).turn), baseCast);
+    // Going to where some of the group stayed: they are met again there.
+    if (isNewTurn(type) && settingId && movedFrom) {
+        const met = splitAt(getChatDoc(chatKey).suspended, getChatDoc(chatKey).canonical.locationId);
+        if (met) {
+            const dead = new Set(getChatDoc(chatKey).dead.map((d) => d.id));
+            const back = met.castIds.filter((id) => !dead.has(id) && !baseCast.includes(id));
+            baseCast = [...baseCast, ...back];
+            setCanonical(chatKey, { castIds: baseCast }, { chatId, source: 'director', note: `Back with ${back.map((id) => nameOfId(id)).filter(Boolean).join(', ') || 'the others'} at ${nameOfId(met.locationId)}` });
+            updateChatDoc(chatKey, (d) => { d.suspended = rejoined(d.suspended, met.castIds); });
+        }
+    }
+    // Those waiting where the story left off stay there. Those a split left
+    // elsewhere may still come when the story brings them (ENTERS), but not
+    // by a loose mention.
+    const waitingList = stillWaiting(getChatDoc(chatKey).suspended, getChatDoc(chatKey).turn);
+    const waitingNow = returned ? new Set() : waitingIds(waitingList, baseCast);
+    const detourNow = returned ? new Set() : waitingIds(waitingList, baseCast, { splits: false });
 
     if (isNewTurn(type) && settingId) {
         // Whoever the SITUATION line has doing something is in the scene -
@@ -1056,12 +1106,16 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
                 });
             }
         }
-        const keptBack = parsed.enters.length - withoutWaiting(parsed.enters, characters, waitingNow).length;
+        const keptBack = parsed.enters.length - withoutWaiting(parsed.enters, characters, detourNow).length;
         if (keptBack) {
             console.info(LOG_PREFIX, `${keptBack} named to enter wait where the story left off - kept out of the detour`);
-            parsed.enters = withoutWaiting(parsed.enters, characters, waitingNow);
+            parsed.enters = withoutWaiting(parsed.enters, characters, detourNow);
         }
         const after = castAfter(characters.filter((c) => !isPower(c)), baseCast, parsed, made, playerIdOf(settingId, characters));
+        // Those a split left elsewhere whom the story brought over: with the
+        // player character again.
+        const cameBack = after.castIds.filter((id) => waitingNow.has(id) && !detourNow.has(id));
+        if (cameBack.length) updateChatDoc(chatKey, (d) => { d.suspended = rejoined(d.suspended, cameBack); });
         // A power that acted: quiet again for a while.
         const acted = (parsed.powers ?? []).map((p) => powerEntries.find((e) => [e.name, ...(e.aliases ?? [])].some((n) => String(n).toLowerCase() === p.name.toLowerCase()) || mentionedIn(p.name, e.name))).filter(Boolean);
         if (acted.length) {
@@ -1256,7 +1310,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         // A bout of a structured event is decided by the fight (src/events/).
         eventAfterFight(chatKey, fight);
         // The other side's step, and its crew as the fight left them (src/ops/).
-        opAfterBriefing(chatKey, { report: parsed.operation, fight, deaths: parsed.deaths ?? [] });
+        opAfterBriefing(chatKey, { report: parsed.operation, fight, deaths: parsed.deaths ?? [], moves: parsed.crewMoves ?? [], lost: parsed.crewLost ?? [] });
         // A rival group at work with no plan: one is written for the next
         // reply, in the background (one call, once per side and place).
         // Or one the recent chat shows - a rival faction's people on a job -

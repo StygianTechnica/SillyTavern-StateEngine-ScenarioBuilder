@@ -29,7 +29,12 @@
 //   aim,                         what they are after, one sentence
 //   placeId, placeName,          where it is happening
 //   vehicle, entry,              how they came, how they got in
-//   crew: [{ name, objectId, skill, post, state }]   state: CREW_STATES
+//   crew: [{ name, objectId, skill, post, state, where }]   state: CREW_STATES;
+//                                where: the spot they are at now (from their post, then CREW lines)
+//   hands, handsOut,             unnamed hands the story showed, and how many of them are out of it
+//   tapped,                      the player's side holds one of their radios and hears them
+//   quiet: [name], checkIn,      theirs gone quiet unbeknown to them, and the reply the leader calls them
+//   suspicious,                  they know something is wrong (not who)
 //   steps: [{ text, status }]    status: 'pending' | 'current' | 'done'
 //   current,                     index of the step under way
 //   withdraw: [text],            the conditions they pull out on
@@ -50,7 +55,7 @@ const OUT = new Set(['down', 'caught', 'fled', 'dead']);
 const UNSEEN = /\b(?:surveil\w*|watch\w*|observ\w*|shadow(?:s|ed|ing)?|tail(?:s|ed|ing)?|follow\w*|track\w*|hid(?:e|es|den|ing)|lurk\w*|stealth\w*|unseen|unnoticed|undetected|stak\w* out|eavesdrop\w*|wait\w* in cover)\b/i;
 // ...unless it is what they ran into: a guard watching the hall holds them.
 const IN_THE_WAY = /\b(?:guards?|police|cops?|security|patrol\w*|locks?|locked|alarms?|cameras?|staff|janitor|night watch\w*|sensors?|dogs?)\b/i;
-export const OP_REPORTS = Object.freeze(['done', 'held', 'spotted', 'pulling out']);
+export const OP_REPORTS = Object.freeze(['done', 'held', 'spotted', 'suspicious', 'pulling out']);
 export const DEFAULT_PACE = 2;
 export const HELD_LIMIT = 3;
 const MAX_CREW = 8;
@@ -73,12 +78,34 @@ const sameName = (a, b) => {
 };
 
 export const isLive = (op) => !!op && (op.status === 'running' || op.status === 'pulling out');
-export const crewOut = (op) => (op?.crew ?? []).filter((c) => OUT.has(c.state)).length;
-export const currentStep = (op) => (op && op.current >= 0 ? op.steps[op.current] ?? null : null);
+export const crewOut = (op) => (op?.crew ?? []).filter((c) => OUT.has(c.state)).length + Math.max(0, op?.handsOut ?? 0);
+// The crew and the unnamed hands the story showed.
+export const crewTotal = (op) => (op?.crew ?? []).length + Math.max(0, op?.hands ?? 0);
+// Whether the player's post takes up one of their radios to listen in
+// (true), gets rid of it (false), or says nothing of it (null). By the
+// sentence: "Rather than foolishly destroying the communicator ..., he
+// listened in on the communications" listens; "he smashed the radio" does not.
+const RADIO = /\b(?:comms?|communicators?|communications|radios?|earpieces?|headsets?|walkie[- ]talkies?|channels?|frequenc(?:y|ies)|transceivers?|comm[- ]?links?|commlinks?|sending stones?|speaking stones?)\b/i;
+const LISTEN = /\b(?:listen\w*|monitor\w*|tap(?:s|ped|ping)?\s+(?:into|in)|tapped|eavesdrop\w*|tune[sd]?\s+in|kept|keeps?|pocket\w*|held on|holds? on|hang\w* on)\b/i;
+const RID = /\b(?:destroy\w*|smash\w*|crush\w*|disabl\w*|br(?:eak|oke|oken)|switch\w* off|turn\w* off|toss\w*|threw|throws?|ditch\w*|wreck\w*)\b/i;
+export function radioTaken(text = '') {
+    let said = null;
+    for (const s of String(text ?? '').split(/(?<=[.!?…])\s+|\n+/)) {
+        if (!RADIO.test(s)) continue;
+        if (LISTEN.test(s)) said = true;
+        else if (RID.test(s)) said = false;
+    }
+    return said;
+}
+
+// Out of it before they pull out: the plan's number, and never under half
+// of everyone - hands the story turned up included.
+export const breakPoint = (op) => Math.max(1, op?.breakAt ?? 1, Math.ceil(crewTotal(op) / 2));
+export const currentStep =(op) => (op && op.current >= 0 ? op.steps[op.current] ?? null : null);
 
 function normalizeCrew(c) {
     if (!isObject(c) || !clean(c.name)) return null;
-    return { name: str(c.name, 80), objectId: str(c.objectId, 80), skill: str(c.skill, 120), post: str(c.post, 120), state: CREW_STATES.includes(c.state) ? c.state : 'active' };
+    return { name: str(c.name, 80), objectId: str(c.objectId, 80), skill: str(c.skill, 120), post: str(c.post, 120), state: CREW_STATES.includes(c.state) ? c.state : 'active', where: str(c.where, 120) };
 }
 
 export function normalizeOp(o) {
@@ -109,6 +136,12 @@ export function normalizeOp(o) {
         withdraw: (Array.isArray(o.withdraw) ? o.withdraw : []).map((w) => str(w, 160)).filter(Boolean).slice(0, 4),
         breakAt: Math.max(1, int(o.breakAt, Math.max(1, Math.ceil(crew.length / 2)))),
         aware: o.aware === true,
+        hands: Math.max(0, int(o.hands, 0)),
+        handsOut: Math.min(Math.max(0, int(o.handsOut, 0)), Math.max(0, int(o.hands, 0))),
+        tapped: o.tapped === true,
+        quiet: (Array.isArray(o.quiet) ? o.quiet : []).map((q) => str(q, 80)).filter(Boolean).slice(0, 8),
+        checkIn: Number.isInteger(o.checkIn) ? o.checkIn : null,
+        suspicious: o.suspicious === true,
         against: str(o.against, 120),
         status: OP_STATUSES.includes(o.status) ? o.status : 'running',
         pace: Math.min(Math.max(int(o.pace, DEFAULT_PACE), 1), 6),
@@ -133,6 +166,8 @@ export function startOp(plan, turn, id = 'op') {
     if (current < 0) current = o.steps.length - 1;
     o.steps = o.steps.map((s, i) => ({ ...s, status: i < current ? 'done' : i === current ? 'current' : 'pending' }));
     o.current = current;
+    // Each starts at their post.
+    o.crew = o.crew.map((c) => ({ ...c, where: c.where || c.post.replace(/^(?:posted|stationed)\s+/i, '') }));
     return o;
 }
 
@@ -151,7 +186,7 @@ export function crewIndex(op, name) {
 // null), the fight as it stands (fighters: [{ name, condition }]) and the
 // deaths (DIES: [{ name }]) moved into the operation for reply `turn`. A
 // reply applied before (a swipe) starts again from the operation as it was.
-export function afterBriefing(op, { report = null, fighters = [], deaths = [] } = {}, turn = 0) {
+export function afterBriefing(op, { report = null, fighters = [], deaths = [], moves = [], lost = [] } = {}, turn = 0) {
     let o = normalizeOp(op);
     if (!o) return null;
     if (o.at?.turn === turn && o.at.before) o = normalizeOp(o.at.before) ?? o;
@@ -171,9 +206,43 @@ export function afterBriefing(op, { report = null, fighters = [], deaths = [] } 
         const i = crewIndex(o, d.name);
         if (i >= 0) crew[i].state = 'dead';
     }
-    const fell = crew.filter((c, i) => OUT.has(c.state) && !OUT.has(o.crew[i].state)).map((c) => `${c.name} ${c.state === 'caught' ? 'caught' : c.state === 'dead' ? 'dead' : c.state === 'fled' ? 'fled' : 'down'}`);
-    o = { ...o, crew };
-    if (fell.length) o = note(o, turn, `Out of it: ${fell.join(', ')}.`);
+    // Where each is now (CREW | name | where): the leader too.
+    let leader = o.leader;
+    for (const m of moves ?? []) {
+        const where = str(m?.where, 120);
+        if (!where) continue;
+        const i = crewIndex({ crew }, m.name);
+        if (i >= 0) crew[i].where = where;
+        else if (leader.name && sameName(leader.name, m.name)) leader = { ...leader, where };
+    }
+    // Taken out of it with no fight line (LOST | who | how): one of the
+    // crew by name, or one of their unnamed hands - "one operative" Cyril
+    // took down in the storage room counted for nothing before.
+    let { hands, handsOut } = o;
+    const quiet = [...o.quiet];
+    const lostNotes = [];
+    for (const l of lost ?? []) {
+        const how = clean(l?.how).toLowerCase();
+        const state = /\b(?:dead|kill|killed|shot dead|slain|died)\b/.test(how) ? 'dead' : /\b(?:caught|captur|tied|cuffed|arrest|prisoner|zip-?tied|bound)\w*/.test(how) ? 'caught' : /\bfled|ran off|escap/.test(how) ? 'fled' : 'down';
+        const i = crewIndex({ crew }, l?.who);
+        if (i >= 0) {
+            if (OUT.has(crew[i].state)) continue;
+            crew[i].state = state;
+            quiet.push(crew[i].name);
+            lostNotes.push(`${crew[i].name} ${state}`);
+        } else {
+            hands += 1;
+            handsOut += 1;
+            quiet.push(clean(l?.where) ? `the one at ${clean(l.where)}` : 'one of the hands');
+            lostNotes.push(`one of their hands ${state}${clean(l?.where) ? ` at ${clean(l.where)}` : ''}`);
+        }
+    }
+    const fell = crew.filter((c, i) => OUT.has(c.state) && !OUT.has(o.crew[i].state) && !lostNotes.some((n) => n.startsWith(c.name))).map((c) => `${c.name} ${c.state === 'caught' ? 'caught' : c.state === 'dead' ? 'dead' : c.state === 'fled' ? 'fled' : 'down'}`);
+    o = { ...o, crew, leader, hands, handsOut };
+    if (fell.length || lostNotes.length) o = note(o, turn, `Out of it: ${[...fell, ...lostNotes].join(', ')}.`);
+    // Gone quiet while they do not know anyone is here: the leader calls
+    // them on the next reply (src/ops/model.js opFacts).
+    if (!o.aware && !o.suspicious && lostNotes.length) o = { ...o, quiet: quiet.slice(-8), checkIn: o.checkIn ?? turn + 1 };
     const leaderOut = [...(fighters ?? []), ...(deaths ?? []).map((d) => ({ name: d.name, condition: 'down' }))]
         .some((f) => o.leader.name && sameName(o.leader.name, f.name) && ['down', 'failing', 'fled'].includes(clean(f.condition).toLowerCase()));
     const how = clean(report?.how);
@@ -182,15 +251,28 @@ export function afterBriefing(op, { report = null, fighters = [], deaths = [] } 
     // watched, shadowed or hidden from ("held: Zane's careful surveillance"
     // while they walked on to the access tunnel) - only by what they ran into.
     if (said === 'held' && !o.aware && UNSEEN.test(how) && !IN_THE_WAY.test(how)) said = '';
-    if (said === 'spotted' && !o.aware) o = note({ ...o, aware: true }, turn, `They know they are not alone${how ? `: ${how}` : ''}.`);
+    // Held by nothing it can name is not held.
+    if (said === 'held' && !how) said = '';
+    if (said === 'spotted' && !o.aware) o = note({ ...o, aware: true, suspicious: false, checkIn: null }, turn, `They know they are not alone${how ? `: ${how}` : ''}.`);
+    // The check-in: the leader called those gone quiet. No one could answer
+    // (no radio of theirs in other hands) or the answer did not convince:
+    // they know something is wrong - not who.
+    if (!o.aware && o.checkIn !== null && turn >= o.checkIn) {
+        const wrong = said === 'suspicious' || !o.tapped;
+        o = { ...o, checkIn: null };
+        if (wrong && !o.suspicious) o = note({ ...o, suspicious: true }, turn, `${o.quiet.join(', ') || 'Someone'} went quiet: they know something is wrong${how && said === 'suspicious' ? ` - ${how}` : ''}.`);
+        else if (!wrong) o = note(o, turn, 'The check-in was answered: they suspect nothing yet.');
+    } else if (said === 'suspicious' && !o.aware && !o.suspicious) {
+        o = note({ ...o, suspicious: true }, turn, `They know something is wrong${how ? `: ${how}` : ''}.`);
+    }
 
     // Pulling out took its reply: it is over.
     if (o.status === 'pulling out') return { ...end(o, turn, 'withdrew', `${o.side} pulled out${how ? `: ${how}` : '.'}`), at: { turn, before } };
-    const broken = crewOut(o) >= o.breakAt || leaderOut;
+    const broken = crewOut(o) >= breakPoint(o) || leaderOut;
     if (said === 'pulling out' || broken) {
         const why = said === 'pulling out' ? how || 'they cut their losses' : leaderOut ? `${o.leader.name} is down` : `${crewOut(o)} of the crew are out of it`;
         // Every one of them out: nobody left to pull out - they are stopped.
-        if (o.crew.length && crewOut(o) >= o.crew.length) return { ...end(o, turn, 'stopped', `${o.side}'s crew was stopped: ${why}.`), at: { turn, before } };
+        if (crewTotal(o) && crewOut(o) >= crewTotal(o)) return { ...end(o, turn, 'stopped', `${o.side}'s crew was stopped: ${why}.`), at: { turn, before } };
         return { ...note({ ...o, status: 'pulling out' }, turn, `They pull out: ${why}.`), at: { turn, before } };
     }
     const step = currentStep(o);
@@ -222,7 +304,7 @@ export function reviseOp(op, plan, turn) {
     if (current < 0) current = steps.length - 1;
     const crew = (plan.crew ?? []).map((c) => {
         const was = o.crew.find((x) => sameName(x.name, c.name));
-        return { ...c, objectId: c.objectId || was?.objectId || '', state: was?.state ?? 'active' };
+        return { ...c, objectId: c.objectId || was?.objectId || '', state: was?.state ?? 'active', where: was?.where || clean(c.post).replace(/^(?:posted|stationed)\s+/i, '') };
     });
     const moved = clean(steps[current].text) !== clean(currentStep(o)?.text);
     return normalizeOp(note({
@@ -264,11 +346,15 @@ export function setCrewState(op, index, state) {
     return { ...o, crew: o.crew.map((c, i) => (i === index ? { ...c, state } : c)) };
 }
 
-const crewLine = (c) => `- ${c.name}${c.skill ? ` - ${c.skill}` : ''}${c.post ? `; posted ${c.post.replace(/^(?:posted|stationed)\s+/i, '')}` : ''}${c.state !== 'active' ? ` (${c.state})` : ''}`;
+const crewLine = (c) => `- ${c.name}${c.skill ? ` - ${c.skill}` : ''}${c.post ? `; posted ${c.post.replace(/^(?:posted|stationed)\s+/i, '')}` : ''}${c.state !== 'active' ? ` (${c.state})` : ''}: ${OUT.has(c.state) ? 'out of it' : c.where ? `now at ${c.where}` : 'NOT PLACED YET - put them somewhere that fits their part, and report it'}`;
 
 // THE OTHER SIDE, for the director: the whole plan - it plays them. An
 // operation that ended last reply is said once, so it is not carried on.
-export function opFacts(op, { turn = null } = {}) {
+// opts: turn; here (where the player character is), player (their name):
+// so the briefing says plainly what they find there - the enemy was left
+// to the player to place ("rodents scurry... distant echoes of Enrique's
+// operatives" while Cyril searched the storage rooms).
+export function opFacts(op, { turn = null, here = '', player = '' } = {}) {
     const o = normalizeOp(op);
     if (!o) return '';
     if (!isLive(o)) {
@@ -288,11 +374,23 @@ export function opFacts(op, { turn = null } = {}) {
         lines.push(`Their plan, step ${o.current + 1} of ${o.steps.length} now: ${s.text}.${next ? ` Next: ${next.text}.` : ' This is the last step: then they are gone.'}${o.held ? ` (Held up ${o.held} time${o.held > 1 ? 's' : ''} so far.)` : ''}`);
     }
     if (o.withdraw.length) lines.push(`They pull out if: ${o.withdraw.join('; ')}.`);
-    if (o.crew.length) lines.push(`Out of it so far: ${crewOut(o)} of ${o.crew.length} (they break at ${o.breakAt}).`);
+    if (o.hands) lines.push(`Besides the crew, ${o.hands} unnamed hand${o.hands > 1 ? 's' : ''} of theirs the story turned up${o.handsOut ? ` (${o.handsOut} out of it)` : ''}.`);
+    if (crewTotal(o)) lines.push(`Out of it so far: ${crewOut(o)} of ${crewTotal(o)} (they break at ${breakPoint(o)}).`);
+    // What the player character finds where they are.
+    const pc = clean(player) || 'The player character';
+    if (clean(here) && o.status !== 'pulling out') lines.push(`${pc} is at ${clean(here)}. By where each of them is, say plainly in the briefing what ${pc} finds there: any of theirs here or within earshot - at work, not waiting for anyone - the traces they left if they passed through, or that it is empty of them. Never leave it for the player to say where they are.`);
+    // A radio of theirs in other hands.
+    if (o.tapped) lines.push(`${pc}'s side holds one of their radios and hears their channel: put in the briefing one or two short lines of what the crew says on it in this reply - their real positions and progress, in their own words and codes.`);
+    // The check-in.
+    if (!o.aware && o.checkIn !== null && Number.isInteger(turn) && turn >= o.checkIn) {
+        const who = o.quiet.join(', ') || 'those gone quiet';
+        lines.push(`CHECK-IN in this reply: ${o.leader.name || 'their leader'} calls ${who} over their channel. ${o.tapped ? `${pc}'s side holds that radio and may answer: if no one answers, or the answer does not convince, say OPERATION | suspicious | <why>.` : 'No one answers: they know something is wrong.'}`);
+    }
+    if (!o.aware && o.suspicious) lines.push(`They know something is wrong - ${o.quiet.join(', ') || 'someone'} went quiet - but not who or what is behind it: they are wary, check on it, and may hurry the job or cut it short.`);
     lines.push(o.aware
         ? `They know ${o.against || 'someone'} is against them here, and act on it.`
         : `They do not know ${o.against || 'anyone'} is here against them, so nothing of theirs is set up for them - no trap, no ambush, no one lying in wait: they work to their plan, and are caught off guard if found. They learn otherwise only when the story shows them proof - one of the crew sees them, hears them, or finds clear signs of them. Something made to look like an accident or a malfunction is taken for one: they may check on it, curse it or work around it, but they do not know anyone did it.`);
-    lines.push('You play them: they do not wait for anyone. In this reply they carry their step forward - or deal with what is in their way - by their skills and posts; each knows only what they can see or are told over their own channels.');
+    lines.push('You play them: they do not wait for anyone. In this reply they carry their step forward - or deal with what is in their way - by their skills and posts; each knows only what they can see or are told over their own channels. Whoever moves, or has no place yet, gets a CREW line saying where they are now.');
     return lines.join('\n');
 }
 
@@ -302,5 +400,5 @@ export function opGuidance(op) {
     if (!isLive(o)) return '';
     if (o.status === 'pulling out') return `${o.side}'s people are pulling out now - breaking off and getting away the way they came.`;
     const unaware = o.aware ? '' : ` They do not know ${o.against || 'anyone'} is here: they are not waiting for them - no trap, no ambush - and are caught off guard if found.`;
-    return `${o.side}'s people are at work here and do not wait for anyone: ${currentStep(o).text}. Show only what the others could see or hear of it; their plan stays theirs.${unaware}`;
+    return `${o.side}'s people are at work here and do not wait for anyone: ${currentStep(o).text}. Show only what the others could see or hear of it; their plan stays theirs. Where the player character goes, show what the game master's briefing says is there - their people, their traces, or nothing.${unaware}`;
 }

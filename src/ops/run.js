@@ -11,7 +11,7 @@ import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
 import { getSettings } from '../settings.js';
-import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive } from './model.js';
+import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive, radioTaken } from './model.js';
 import { inPersonOf } from '../guidance/spoken.js';
 import { allWingsOf, wingOfPerson, markOtherWings } from '../library/wings.js';
 import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst, shapePlan, aboutThem } from './generate.js';
@@ -44,13 +44,13 @@ const key = (s) => clean(s).toLowerCase().replace(/^the\s+/, '');
 
 // After a briefing (src/director/run.js): the step moved on, held or
 // done; the crew as the fight and deaths left them.
-export function opAfterBriefing(chatKey, { report = null, fight = null, deaths = [] } = {}) {
+export function opAfterBriefing(chatKey, { report = null, fight = null, deaths = [], moves = [], lost = [] } = {}) {
     try {
         const doc = getChatDoc(chatKey);
         if (!doc.op) return;
         const live = isLive(doc.op) || doc.op.at?.turn === doc.turn;
         if (!live) return;
-        const next = afterBriefing(doc.op, { report, fighters: fight?.fighters ?? [], deaths }, doc.turn);
+        const next = afterBriefing(doc.op, { report, fighters: fight?.fighters ?? [], deaths, moves, lost }, doc.turn);
         if (next && JSON.stringify(next) !== JSON.stringify(normalizeOp(doc.op))) {
             save(chatKey, next);
             const last = next.log[next.log.length - 1];
@@ -59,6 +59,17 @@ export function opAfterBriefing(chatKey, { report = null, fight = null, deaths =
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not move the other side on', err);
     }
+}
+
+// Whether the player's side holds one of their radios: from the player's
+// latest post (src/ops/model.js radioTaken), or set by hand (`on`).
+export function setOpTapped(chatKey, { text = null, on = null } = {}) {
+    const doc = getChatDoc(chatKey);
+    if (!isLive(doc.op)) return null;
+    const said = on !== null ? on : radioTaken(text);
+    if (said === null || said === doc.op.tapped) return null;
+    console.info(LOG_PREFIX, `the other side (${doc.op.side}): ${said ? 'their channel is heard' : 'their channel is no longer heard'}`);
+    return save(chatKey, { ...doc.op, tapped: said, log: [...doc.op.log, { turn: doc.turn, text: said ? 'Their radio is in other hands: their channel is heard.' : 'Their channel is no longer heard.' }] });
 }
 
 // The user steps in (the GM Plan card).
