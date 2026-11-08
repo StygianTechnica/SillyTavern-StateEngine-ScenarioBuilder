@@ -71,9 +71,11 @@ export function wingOfPerson(personId, rootId, memberships, relations = [], fact
 // story tying someone to the job puts them on it whatever their wing.
 // people: [{ wing, wingName, tied, head }]. -> { people, ownerWing }.
 export function markOtherWings(people = [], { relations = [], factionIds = null, sideName = '' } = {}) {
-    // The head of a wing owns its jobs (Enrique heading Enrique's Crew); the
-    // head of the whole does not just by being named (Serlos, the patriarch).
-    const owner = people.find((p) => p.tied && (!p.head || p.wingHead)) ?? null;
+    // Anyone of a wing owns a job they are tied to through it - its head
+    // (Enrique heading his crew), or a boss of the whole who belongs to one
+    // (Randrés, second in command, of the Moriarty family Tiago runs). The
+    // head of the whole in no wing does not, just by being named (Serlos).
+    const owner = people.find((p) => p.tied && (!p.head || p.wing)) ?? null;
     if (!owner) return { people: people.map((p) => ({ ...p })), ownerWing: '' };
     const ownerWing = owner.wing || '';
     return {

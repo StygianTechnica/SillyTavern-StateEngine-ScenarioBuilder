@@ -111,6 +111,26 @@ describe('Enrique heading a wing of his own', () => {
     });
 });
 
+describe('Randrés, second in command, in the Moriarty family Tiago runs', () => {
+    it('owns a job he ordered through his family', () => {
+        const people = [
+            { name: 'Serlos Medina', head: true },
+            { name: 'Randrés Moriarty', wing: 'mor', wingName: 'Moriarty Family', head: true, tied: true },
+            { name: 'Tiago Reyes', wing: 'mor', wingName: 'Moriarty Family', head: true, wingHead: true },
+            { name: 'Nichiro Fukudo', wing: 'mor', wingName: 'Moriarty Family' },
+            { name: 'Delvin Timmers', wing: 'enr', wingName: "Enrique's Crew" },
+        ];
+        const marked = markOtherWings(people, { sideName: 'Medina Syndicate' });
+        expect(marked.ownerWing).toBe('mor');
+        expect(marked.people.filter((p) => p.otherWing && !p.head).map((p) => p.name)).toEqual(['Delvin Timmers']);
+    });
+    it('the patriarch in no wing still owns nothing by being named', () => {
+        const marked = markOtherWings([{ name: 'Serlos Medina', head: true, tied: true }, { name: 'Nichiro Fukudo', wing: 'mor', wingName: 'Moriarty Family' }], {});
+        expect(marked.ownerWing).toBe('');
+        expect(marked.people.some((p) => p.otherWing)).toBe(false);
+    });
+});
+
 describe('a knightly order\'s chapters, with no one tied to the job', () => {
     it('marks no one - any chapter may serve', () => {
         const people = [{ name: 'Ser Aldric', wing: 'ash', wingName: 'Chapter of Ash' }, { name: 'Dame Wren', wing: 'thorn', wingName: 'Chapter of Thorns' }];
