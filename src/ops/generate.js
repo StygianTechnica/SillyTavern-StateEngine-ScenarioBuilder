@@ -21,7 +21,8 @@ const cut = (text, max) => {
 // One of the side's people, for the prompt: rank, and whether the story
 // ties them to this job or they head it all.
 const personLine = (p) => {
-    const notes = [clean(p.rank), p.tied ? 'named in the story with this job' : '', p.head && !p.tied ? 'the head of it all - rarely on a job in person' : ''].filter(Boolean);
+    const notes = [clean(p.rank), p.tied && !p.away ? 'named in the story with this job' : '', p.head && !p.tied ? 'the head of it all - rarely on a job in person' : '',
+        p.away ? 'stays out of the field - never on a job\'s crew, never named in a step; may only have ordered it' : ''].filter(Boolean);
     return `- ${clean(p.name)}${notes.length ? ` (${notes.join('; ')})` : ''}${clean(p.description) ? `: ${cut(p.description, 100)}` : ''}`;
 };
 
@@ -70,8 +71,8 @@ export function buildOpPrompt(input) {
         `Plan ${clean(side.name)}'s operation as their leader would: a real plan with a crew, a way in and a way out, that runs whether or not anyone gets in its way.`,
         `- ${player}${against.length ? ` and ${against.join(' and ')}` : ''} ${against.length ? 'are' : 'is'} against them. ${input?.aware ? 'They know it.' : 'They do not know it: they plan for guards, locks, police and bad luck, not for them - no step is a trap or an ambush for them.'} Never plan what ${player} does.`,
         '- Who orders it and who runs it are often two people. Someone of standing - a boss, a power broker, the head of it all - orders it and keeps well away (at home, at a party, with an alibi), and a trusted lieutenant leads it on site. Someone of no great standing may lead their own job in person.',
-        people.some((p) => p.tied) ? `- ${people.filter((p) => p.tied).map((p) => clean(p.name)).join(' or ')} ${people.filter((p) => p.tied).length > 1 ? 'are' : 'is'} named in the story with this job: they ordered it or lead it, as their standing says.` : '',
-        '- The head of it all is never one of the crew, unless the story says so.',
+        people.some((p) => p.tied && !p.away) ? `- ${people.filter((p) => p.tied && !p.away).map((p) => clean(p.name)).join(' or ')} ${people.filter((p) => p.tied && !p.away).length > 1 ? 'are' : 'is'} named in the story with this job: they ordered it or lead it, as their standing says.` : '',
+        '- The head of it all is never one of the crew, unless the story says so. Nor is anyone marked as staying out of the field: belonging to the side does not make someone a crew hand.',
         '- Two to six crew, each on a CREW line of their own with what they are good at and where they are posted: everyone named in a step is on a CREW line (the one who ordered it is not).',
         '- Three to six steps in order, from getting in to getting away with it; the last step is the getaway. If the story so far has already played a step, end its line with "| done".',
         '- One to three conditions they pull out on, and how many crew down before they cut their losses.',
@@ -253,11 +254,24 @@ export function shapePlan(plan, { people = [], against = [], aware = false } = {
             p.leader = { name: p.crew[0]?.name ?? '', where: p.crew[0]?.post ?? '', objectId: p.crew[0]?.objectId ?? '' };
         }
     }
+    // Those their sheet keeps out of the field (a family scion, a boss who
+    // sends their people): never crew, never leading on site, and their
+    // name out of the steps - one of the crew does it.
+    for (const away of people.filter((x) => x.away)) {
+        p.crew = p.crew.filter((c) => !isOf(c.name, away));
+        if (isOf(p.leader.name, away)) {
+            if (!p.boss.name) p.boss = { name: p.leader.name, where: 'keeps well away while it happens', objectId: p.leader.objectId ?? '' };
+            p.leader = { name: p.crew[0]?.name ?? '', where: p.crew[0]?.post ?? '', objectId: p.crew[0]?.objectId ?? '' };
+        }
+        if (p.boss.name && isOf(p.boss.name, away)) continue;
+        const names = callNames(away);
+        p.steps = p.steps.map((s) => ({ ...s, text: names.reduce((t, n) => t.replace(wordRe(n), (_m, pre) => `${pre}one of the crew`), s.text).replace(/^one of/, 'One of') }));
+    }
     // Their own people the steps name are crew, when no CREW line has them.
     const onCrew = (person) => p.crew.some((c) => isOf(c.name, person)) || isOf(p.leader.name, person) || (p.boss.name && isOf(p.boss.name, person));
     const stepsText = p.steps.map((s) => s.text).join('\n');
     for (const person of people) {
-        if (person.head || onCrew(person) || !named(stepsText, person)) continue;
+        if (person.head || person.away || onCrew(person) || !named(stepsText, person)) continue;
         p.crew.push({ name: person.name, skill: '', post: '', objectId: person.objectId ?? '' });
     }
     p.crew = p.crew.slice(0, 8);

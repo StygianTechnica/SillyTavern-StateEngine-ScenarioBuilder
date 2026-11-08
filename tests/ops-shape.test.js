@@ -72,3 +72,39 @@ describe('who ordered it, and who runs it', () => {
         expect(user).toMatch(/everyone named in a step is on a CREW line/);
     });
 });
+
+// Bartin Medina, the family scion: of the Syndicate, but his sheet keeps him
+// out of the field - he was still drafted onto the crew.
+describe('someone their sheet keeps out of the field', () => {
+    const family = [
+        { name: 'Enrique Medina', objectId: 'enr', tied: true },
+        { name: 'Serlos Medina', objectId: 'ser', head: true },
+        { name: 'Bartin Medina', objectId: 'bar', away: 'later', rank: 'family scion' },
+        { name: 'Tiago Reyes', objectId: 'tia' },
+    ];
+    const plan = readOpPlan(`ORDERED BY: Enrique Medina | at home
+LEADER: Bartin Medina | inside the gallery
+AIM: Steal the Saint's reliquary
+CREW: Bartin Medina | charm | front desk
+CREW: Tiago Reyes | locks | vault
+STEP: Bartin distracts the night guard
+STEP: Tiago opens the vault
+STEP: Drive off in the van`, 'Medina Syndicate');
+    const shaped = shapePlan(plan, { people: family, against: [], aware: false });
+
+    it('is never on the crew or leading on site', () => {
+        expect(shaped.crew.map((c) => c.name)).toEqual(['Tiago Reyes']);
+        expect(shaped.leader.name).toBe('Tiago Reyes');
+    });
+    it('is out of the steps', () => {
+        expect(shaped.steps[0].text).toBe('One of the crew distracts the night guard');
+    });
+    it('is not drafted back from a step that names him', () => {
+        const again = shapePlan({ ...plan, crew: [], steps: [{ text: 'Bartin picks the lock', status: 'pending' }] }, { people: family });
+        expect(again.crew).toEqual([]);
+    });
+    it('the prompt tells the model so', () => {
+        const { user } = buildOpPrompt({ side: { name: 'Medina Syndicate' }, people: family });
+        expect(user).toMatch(/Bartin Medina \(family scion; stays out of the field/);
+    });
+});

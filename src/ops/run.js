@@ -12,6 +12,7 @@ import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
 import { getSettings } from '../settings.js';
 import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive } from './model.js';
+import { inPersonOf } from '../guidance/spoken.js';
 import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst, shapePlan } from './generate.js';
 
 export const OPS_EVENT = 'scenario_builder_ops_changed';
@@ -116,7 +117,12 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
         const people = found.faction ? characters.filter((c) => (memberships.get(c.id) ?? []).includes(found.faction.id) && c.id !== playerId)
             .map((c) => ({ c, place: placeIn(roster, c.id) }))
             .sort((a, b) => (a.place?.tier ?? 99) - (b.place?.tier ?? 99))
-            .map(({ c, place }) => ({ name: c.name, objectId: c.id, aliases: c.aliases ?? c.base?.aliases ?? [], rank: [place?.tierName, place?.title].filter(Boolean).join(', '), head: place?.tier === 0, description: c.description ?? c.base?.description ?? '' })) : [];
+            .map(({ c, place }) => ({ name: c.name, objectId: c.id, aliases: c.aliases ?? c.base?.aliases ?? [], rank: [place?.tierName, place?.title].filter(Boolean).join(', '), head: place?.tier === 0, away: inPersonOf(c), description: c.description ?? c.base?.description ?? '' })) : [];
+        // Kept off the job by their sheet ("In person": stays out of the
+        // field, or waits for their beat - Bartin, the family scion): only
+        // the request itself can put one of them on it.
+        const asked = tiedFirst(people, request).filter((p) => p.tied);
+        for (const p of people) if (p.away && asked.some((a) => a.name === p.name)) p.away = '';
         if (found.leader && !people.some((p) => p.name === found.leader.name)) people.unshift({ name: found.leader.name, rank: 'leads this', tied: true, description: found.leader.description ?? '' });
         // Whoever the request or the story ties to the job comes first: it
         // is their job - not the faction's head's (Serlos Medina was put in
