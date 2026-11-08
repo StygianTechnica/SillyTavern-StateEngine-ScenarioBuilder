@@ -12,7 +12,7 @@ import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
 import { getSettings } from '../settings.js';
 import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive } from './model.js';
-import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst } from './generate.js';
+import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst, shapePlan } from './generate.js';
 
 export const OPS_EVENT = 'scenario_builder_ops_changed';
 
@@ -116,7 +116,7 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
         const people = found.faction ? characters.filter((c) => (memberships.get(c.id) ?? []).includes(found.faction.id) && c.id !== playerId)
             .map((c) => ({ c, place: placeIn(roster, c.id) }))
             .sort((a, b) => (a.place?.tier ?? 99) - (b.place?.tier ?? 99))
-            .map(({ c, place }) => ({ name: c.name, aliases: c.aliases ?? c.base?.aliases ?? [], rank: [place?.tierName, place?.title].filter(Boolean).join(', '), head: place?.tier === 0, description: c.description ?? c.base?.description ?? '' })) : [];
+            .map(({ c, place }) => ({ name: c.name, objectId: c.id, aliases: c.aliases ?? c.base?.aliases ?? [], rank: [place?.tierName, place?.title].filter(Boolean).join(', '), head: place?.tier === 0, description: c.description ?? c.base?.description ?? '' })) : [];
         if (found.leader && !people.some((p) => p.name === found.leader.name)) people.unshift({ name: found.leader.name, rank: 'leads this', tied: true, description: found.leader.description ?? '' });
         // Whoever the request or the story ties to the job comes first: it
         // is their job - not the faction's head's (Serlos Medina was put in
@@ -141,9 +141,10 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
                 console.warn(LOG_PREFIX, 'could not roll names for the other side', err);
             }
         }
+        const sidePeople = tiedFirst(people, [request, side, story].join('\n'));
         const prompt = buildOpPrompt({
             side: { name: sideName, description: found.faction?.description ?? found.faction?.base?.description ?? '' },
-            people: tiedFirst(people, [request, side, story].join('\n')),
+            people: sidePeople,
             request,
             placeName: places.find((p) => p.id === at)?.name ?? '',
             places: places.filter((p) => parents[p.id] === at).map((p) => p.name),
@@ -156,9 +157,14 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
             pool: live?.pool ?? null,
         });
         const { askReliably } = await import('../generate/run.js');
+        let tries = 0;
         const result = await askReliably(prompt, (_p, text) => {
             const values = readOpPlan(text, sideName);
-            return values ? { values, dropped: [], error: null } : { values: {}, dropped: [], error: 'no AIM or STEP lines' };
+            tries += 1;
+            if (!values) return { values: {}, dropped: [], error: 'no AIM or STEP lines' };
+            // No CREW lines (the crew only named in its steps): asked once more.
+            if (!values.crew.length && tries === 1) return { values: {}, dropped: [], error: 'no CREW lines - one CREW line for each of the crew' };
+            return { values, dropped: [], error: null };
         }, 900);
         if (result.error) {
             console.warn(LOG_PREFIX, `could not plan ${sideName}'s operation: ${result.error}`);
@@ -172,6 +178,8 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
             const { takeFromPool } = await import('../naming/run.js');
             takeFromPool(settingId, live.key, swapped.used);
         }
+        // Held to what a small model skips (src/ops/generate.js shapePlan).
+        plan = shapePlan(plan, { people: sidePeople, against: [player?.name, ...against].filter(Boolean), aware });
         return {
             ...plan,
             sideId: found.faction?.id ?? '',
@@ -193,7 +201,7 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
 export async function startOpPlan(chatId, chatKey, settingId, plan, { turn = null } = {}) {
     let p = plan;
     try {
-        const newcomers = [p.leader, ...p.crew].filter((x) => x?.name && !x.objectId && isPersonName(x.name));
+        const newcomers = [p.leader, ...(p.boss?.name ? [p.boss] : []), ...p.crew].filter((x) => x?.name && !x.objectId && isPersonName(x.name));
         if (newcomers.length && settingId && getSettings().director.allowCreate) {
             const { createNeeded } = await import('../director/run.js');
             const items = newcomers.map((x) => ({
@@ -201,12 +209,13 @@ export async function startOpPlan(chatId, chatKey, settingId, plan, { turn = nul
                 name: x.name,
                 description: x === p.leader
                     ? `Runs ${p.side}'s operation at ${p.placeName || 'the scene'}: ${p.aim}`
+                    : x === p.boss ? `Of ${p.side}; ordered the operation at ${p.placeName || 'the scene'} and keeps well away from it.`
                     : `${x.skill ? `${x.skill.replace(/\.$/, '')}, ` : 'One '}of ${p.side}'s crew${x.post ? `, posted ${x.post.replace(/^(?:posted|stationed)\s+/i, '')}` : ''}.`,
                 here: false,
             }));
             const made = await createNeeded(chatId, chatKey, settingId, items, null);
             const idOf = (name) => made.find((m) => key(m.name) === key(name))?.id ?? '';
-            p = { ...p, leader: { ...p.leader, objectId: p.leader.objectId || idOf(p.leader.name) }, crew: p.crew.map((c) => ({ ...c, objectId: c.objectId || idOf(c.name) })) };
+            p = { ...p, leader: { ...p.leader, objectId: p.leader.objectId || idOf(p.leader.name) }, ...(p.boss?.name ? { boss: { ...p.boss, objectId: p.boss.objectId || idOf(p.boss.name) } } : {}), crew: p.crew.map((c) => ({ ...c, objectId: c.objectId || idOf(c.name) })) };
             // One of its side, as the plan says.
             if (p.sideId) {
                 const { addRelation } = await import('../library/relations-edit.js');

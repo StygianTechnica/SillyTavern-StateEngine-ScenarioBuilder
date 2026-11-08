@@ -126,6 +126,7 @@ function runningView(op, chatKey, show) {
     return h('div', {},
         head,
         h('div', { class: 'sb-gm-text' },
+            op.boss?.name ? h('div', {}, h('b', {}, 'Ordered by '), op.boss.name, op.boss.where ? ` - ${op.boss.where}` : '') : null,
             op.leader.name ? h('div', {}, h('b', {}, 'Led by '), op.leader.name, op.leader.where ? ` - ${op.leader.where}` : '') : null,
             h('div', {}, h('b', {}, 'After: '), op.aim),
             op.vehicle ? h('div', {}, h('b', {}, 'Came in: '), op.vehicle) : null,

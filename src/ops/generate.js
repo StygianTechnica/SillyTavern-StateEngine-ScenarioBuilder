@@ -69,8 +69,10 @@ export function buildOpPrompt(input) {
         '# Your task',
         `Plan ${clean(side.name)}'s operation as their leader would: a real plan with a crew, a way in and a way out, that runs whether or not anyone gets in its way.`,
         `- ${player}${against.length ? ` and ${against.join(' and ')}` : ''} ${against.length ? 'are' : 'is'} against them. ${input?.aware ? 'They know it.' : 'They do not know it: they plan for guards, locks, police and bad luck, not for them - no step is a trap or an ambush for them.'} Never plan what ${player} does.`,
-        '- Two to six crew, each with what they are good at and where they are posted; the leader may be on site or running it from nearby.',
-        people.some((p) => p.tied) ? `- The leader is ${people.filter((p) => p.tied).map((p) => clean(p.name)).join(' or ')}, named in the story with this job; the head of it all leads in person only if the story says so.` : '',
+        '- Who orders it and who runs it are often two people. Someone of standing - a boss, a power broker, the head of it all - orders it and keeps well away (at home, at a party, with an alibi), and a trusted lieutenant leads it on site. Someone of no great standing may lead their own job in person.',
+        people.some((p) => p.tied) ? `- ${people.filter((p) => p.tied).map((p) => clean(p.name)).join(' or ')} ${people.filter((p) => p.tied).length > 1 ? 'are' : 'is'} named in the story with this job: they ordered it or lead it, as their standing says.` : '',
+        '- The head of it all is never one of the crew, unless the story says so.',
+        '- Two to six crew, each on a CREW line of their own with what they are good at and where they are posted: everyone named in a step is on a CREW line (the one who ordered it is not).',
         '- Three to six steps in order, from getting in to getting away with it; the last step is the getaway. If the story so far has already played a step, end its line with "| done".',
         '- One to three conditions they pull out on, and how many crew down before they cut their losses.',
         clean(input?.story) ? '- Keep to what the story has shown: people already seen are part of the crew, and a way in the story showed is the way they came.' : '',
@@ -79,7 +81,8 @@ export function buildOpPrompt(input) {
             : '- Take the leader and crew from its people where they fit; otherwise invent them, each with a name that fits the setting.',
         input?.canonOnly || !poolLine(input?.pool) ? '' : `- ${poolLine(input.pool)}`,
         '# Reply\nExactly these lines:',
-        'LEADER: <name> | <where they are during it, e.g. in the van outside>',
+        'ORDERED BY: <who set it in motion> | <where they are while it happens, e.g. at home with an alibi - or "leads it in person">',
+        'LEADER: <who runs it on site> | <where they are during it, e.g. in the van outside>',
         'AIM: <what they are after, one sentence>',
         'VEHICLE: <what they came in, or none>',
         'ENTRY: <how they got in, one sentence>',
@@ -101,10 +104,13 @@ export function readOpPlan(text, side = '') {
     const pick = (re) => clean(lines.map((l) => l.match(re)?.[1]).find(Boolean) ?? '');
     const all = (re) => lines.map((l) => l.match(re)?.[1]).filter(Boolean).map(clean);
     const sep = /\s*\|\s*/;
-    const [leaderName = '', leaderWhere = ''] = pick(/^leader\s*[:\-–]\s*(.+)$/i).split(sep);
-    const aim = unquote(pick(/^(?:aim|target|goal)\s*[:\-–]\s*(.+)$/i));
-    const vehicle = unquote(pick(/^vehicle\s*[:\-–]\s*(.+)$/i));
-    const entry = unquote(pick(/^(?:entry|breach|way in)\s*[:\-–]\s*(.+)$/i));
+    // A field the model marked "| done" (ENTRY: ... | done) keeps its text.
+    const one = (re) => unquote(pick(re).split(sep).filter((x) => !/^done\.?$/i.test(clean(x))).join(' - '));
+    const [leaderName = '', leaderWhere = ''] = pick(/^(?:leader|on site|field leader)\s*[:\-–]\s*(.+)$/i).split(sep);
+    const [bossName = '', bossWhere = ''] = pick(/^(?:ordered(?:\s+by)?|boss|mastermind|behind it)\s*[:\-–]\s*(.+)$/i).split(sep);
+    const aim = one(/^(?:aim|target|goal)\s*[:\-–]\s*(.+)$/i);
+    const vehicle = one(/^vehicle\s*[:\-–]\s*(.+)$/i);
+    const entry = one(/^(?:entry|breach|way in)\s*[:\-–]\s*(.+)$/i);
     const crew = all(/^crew\s*\d*\s*[:\-–]\s*(.+)$/i).map((l) => {
         const [name, skill = '', post = ''] = l.split(sep).map(unquote);
         return { name: name.replace(/\s*\(.*?\)\s*$/, ''), skill, post };
@@ -117,9 +123,12 @@ export function readOpPlan(text, side = '') {
     const withdraw = all(/^(?:withdraw|pull out|retreat)\s*\d*\s*[:\-–]\s*(.+)$/i).map(unquote).filter((w) => w && !none(w));
     const brk = parseInt(pick(/^break(?:ing point)?\s*[:\-–]\s*(\d+)/i), 10);
     if (!aim || !steps.length) return null;
+    // The one who ordered it leading in person is just the leader.
+    const inPerson = !clean(bossName) || /\bin person\b|^(?:on site|here|leads? it)/i.test(clean(bossWhere)) || unquote(bossName).toLowerCase() === unquote(leaderName).toLowerCase();
     return {
         side: clean(side),
-        leader: { name: unquote(leaderName), where: unquote(leaderWhere), objectId: '' },
+        boss: inPerson ? { name: '', where: '', objectId: '' } : { name: unquote(bossName), where: unquote(bossWhere), objectId: '' },
+        leader: { name: unquote(leaderName) || (inPerson ? unquote(bossName) : ''), where: unquote(leaderWhere), objectId: '' },
         aim,
         vehicle: none(vehicle) ? '' : vehicle,
         entry: none(entry) ? '' : entry,
@@ -134,6 +143,7 @@ export function readOpPlan(text, side = '') {
 export function opPlanText(plan) {
     if (!plan) return '';
     return [
+        ...(plan.boss?.name ? [`ORDERED BY: ${plan.boss.name}${plan.boss.where ? ` | ${plan.boss.where}` : ''}`] : []),
         `LEADER: ${plan.leader?.name ?? ''}${plan.leader?.where ? ` | ${plan.leader.where}` : ''}`,
         `AIM: ${plan.aim ?? ''}`,
         `VEHICLE: ${plan.vehicle || 'none'}`,
@@ -159,6 +169,7 @@ export function matchPeople(plan, characters = []) {
     return {
         ...plan,
         leader: { ...plan.leader, objectId: plan.leader.objectId || find(plan.leader.name) },
+        ...(plan.boss?.name ? { boss: { ...plan.boss, objectId: plan.boss.objectId || find(plan.boss.name) } } : {}),
         crew: plan.crew.map((c) => ({ ...c, objectId: c.objectId || find(c.name) })),
     };
 }
@@ -174,7 +185,7 @@ export const isPersonName = (name) => {
 // (src/naming/live.js). opts: { allowedText, known }. -> { plan, used, swaps }
 export function swapOpNames(plan, pool, opts = {}) {
     if (!plan || !pool) return { plan, used: [], swaps: [] };
-    const people = [plan.leader, ...plan.crew].map((p) => ({ kind: 'character', name: p.objectId || !isPersonName(p.name) ? '' : p.name, description: '' }));
+    const people = [plan.leader, ...(plan.boss?.name ? [plan.boss] : []), ...plan.crew].map((p) => ({ kind: 'character', name: p.objectId || !isPersonName(p.name) ? '' : p.name, description: '' }));
     const out = swapInvented(people.filter((p) => p.name), pool, opts);
     if (!out.swaps.length) return { plan, used: out.used, swaps: [] };
     const fix = (text) => applySwaps(text, out.swaps);
@@ -182,6 +193,7 @@ export function swapOpNames(plan, pool, opts = {}) {
         plan: {
             ...plan,
             leader: { ...plan.leader, name: fix(plan.leader.name), where: fix(plan.leader.where) },
+            ...(plan.boss?.name ? { boss: { ...plan.boss, name: fix(plan.boss.name), where: fix(plan.boss.where) } } : {}),
             aim: fix(plan.aim),
             entry: fix(plan.entry),
             crew: plan.crew.map((c) => ({ ...c, name: fix(c.name), post: fix(c.post) })),
@@ -207,4 +219,59 @@ export function findSide(name, factions = [], characters = [], memberships = new
     if (!person) return { faction: null, leader: null };
     const theirs = (memberships.get(person.id) ?? [])[0];
     return { faction: factions.find((f) => f.id === theirs) ?? null, leader: person };
+}
+
+const GETAWAY = /\b(?:get(?:s|ting)?\s+away|getaway|escape|flee|leave|drive\s+(?:off|away)|exfil\w*|slip\s+(?:out|away)|make\s+off|pull\s+out|back\s+to\s+(?:the\s+)?(?:van|car|ship|base|hideout)|vanish)/i;
+const wordRe = (name) => new RegExp(`(^|[^\\p{L}\\p{N}])${clean(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'giu');
+
+// The plan held to what a small model skips (it wrote no CREW lines, put
+// the Patriarch on the job, ended at "grab the pieces" and pulled out "if
+// engaged by Cyril", whom they did not know was there). opts:
+//   people: [{ name, aliases, head, tied }] the side's own;
+//   against: [name] the player character and their side; aware.
+// -> the plan: crew named in its steps added; the head of it all off the
+//    crew (and from leading, unless the story ties them to it - then they
+//    ordered it); a getaway step at the end; the player's side not named
+//    while they are unknown to them; a breaking point of at least half the crew.
+export function shapePlan(plan, { people = [], against = [], aware = false } = {}) {
+    if (!plan) return plan;
+    let p = { ...plan, crew: [...(plan.crew ?? [])], steps: [...(plan.steps ?? [])], withdraw: [...(plan.withdraw ?? [])], boss: plan.boss ?? { name: '', where: '', objectId: '' } };
+    const same = (a, b) => clean(a).toLowerCase() === clean(b).toLowerCase();
+    const firstOf = (n) => clean(n).split(/[\s"']+/)[0];
+    const callNames = (person) => {
+        const first = firstOf(person.name);
+        const shared = people.filter((o) => firstOf(o.name) === first).length > 1;
+        return [person.name, ...(first.length >= 4 && !shared ? [first] : []), ...(person.aliases ?? [])].filter((n) => clean(n).length >= 3);
+    };
+    const isOf = (name, person) => callNames(person).some((n) => same(n, name) || same(firstOf(name), n));
+    const named = (text, person) => callNames(person).some((n) => wordRe(n).test(text));
+    // The head of it all: never on the crew; never leading unless the story ties them to the job.
+    for (const head of people.filter((x) => x.head)) {
+        p.crew = p.crew.filter((c) => !isOf(c.name, head));
+        if (isOf(p.leader.name, head) && !head.tied) {
+            if (!p.boss.name) p.boss = { name: p.leader.name, where: 'keeps well away while it happens', objectId: p.leader.objectId ?? '' };
+            p.leader = { name: p.crew[0]?.name ?? '', where: p.crew[0]?.post ?? '', objectId: p.crew[0]?.objectId ?? '' };
+        }
+    }
+    // Their own people the steps name are crew, when no CREW line has them.
+    const onCrew = (person) => p.crew.some((c) => isOf(c.name, person)) || isOf(p.leader.name, person) || (p.boss.name && isOf(p.boss.name, person));
+    const stepsText = p.steps.map((s) => s.text).join('\n');
+    for (const person of people) {
+        if (person.head || onCrew(person) || !named(stepsText, person)) continue;
+        p.crew.push({ name: person.name, skill: '', post: '', objectId: person.objectId ?? '' });
+    }
+    p.crew = p.crew.slice(0, 8);
+    // It ends in getting away.
+    const last = p.steps[p.steps.length - 1];
+    if (last && !GETAWAY.test(last.text) && p.steps.length < 8) p.steps.push({ text: 'Get away with it the way they came', status: 'pending' });
+    // Those they do not know are there are not in their plan.
+    if (!aware) {
+        const them = against.map(clean).filter((n) => n.length >= 3);
+        const blank = (text) => them.reduce((t, n) => t.replace(wordRe(n), (_m, pre) => `${pre}anyone unexpected`), String(text ?? ''));
+        p.withdraw = p.withdraw.map(blank);
+        p.steps = p.steps.map((s) => ({ ...s, text: blank(s.text) }));
+    }
+    p.breakAt = Math.min(Math.max(p.breakAt ?? 1, Math.ceil(p.crew.length / 2), 1), Math.max(1, p.crew.length));
+    if (!p.boss.name) delete p.boss;
+    return p;
 }

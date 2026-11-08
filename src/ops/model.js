@@ -82,7 +82,10 @@ export function normalizeOp(o) {
     const steps = (Array.isArray(o.steps) ? o.steps : []).filter((s) => isObject(s) && clean(s.text)).slice(0, MAX_STEPS)
         .map((s) => ({ text: str(s.text, 200), status: ['pending', 'current', 'done'].includes(s.status) ? s.status : 'pending' }));
     if (!steps.length) return null;
-    const leader = isObject(o.leader) ? { name: str(o.leader.name, 80), objectId: str(o.leader.objectId, 80), where: str(o.leader.where, 120) } : { name: '', objectId: '', where: '' };
+    const person = (x) => (isObject(x) ? { name: str(x.name, 80), objectId: str(x.objectId, 80), where: str(x.where, 120) } : { name: '', objectId: '', where: '' });
+    const leader = person(o.leader);
+    // Who ordered it, when not the one on site: away while it happens.
+    const boss = person(o.boss);
     const crew = (Array.isArray(o.crew) ? o.crew : []).map(normalizeCrew).filter(Boolean).slice(0, MAX_CREW);
     const current = Math.min(Math.max(int(o.current, steps.findIndex((s) => s.status !== 'done')), -1), steps.length - 1);
     return {
@@ -90,6 +93,7 @@ export function normalizeOp(o) {
         side: str(o.side, 100),
         sideId: str(o.sideId, 80),
         leader,
+        boss,
         aim: str(o.aim, 300),
         placeId: str(o.placeId, 80),
         placeName: str(o.placeName, 120),
@@ -216,6 +220,7 @@ export function reviseOp(op, plan, turn) {
     return normalizeOp(note({
         ...o,
         leader: { name: clean(plan.leader?.name), where: clean(plan.leader?.where), objectId: plan.leader?.objectId || (sameName(plan.leader?.name, o.leader.name) ? o.leader.objectId : '') },
+        boss: { name: clean(plan.boss?.name), where: clean(plan.boss?.where), objectId: plan.boss?.objectId || (sameName(plan.boss?.name, o.boss.name) ? o.boss.objectId : '') },
         aim: clean(plan.aim) || o.aim,
         vehicle: clean(plan.vehicle),
         entry: clean(plan.entry),
@@ -264,6 +269,7 @@ export function opFacts(op, { turn = null } = {}) {
     const lines = [];
     const lead = o.leader.name ? `led by ${o.leader.name}${o.leader.where ? ` (${o.leader.where})` : ''}` : '';
     lines.push(`${o.side}${lead ? `, ${lead}` : ''}, at ${o.placeName || 'the scene'}. They are after: ${o.aim}`);
+    if (o.boss.name) lines.push(`Ordered by ${o.boss.name}${o.boss.where ? ` (${o.boss.where})` : ''} - not here and never comes here: they keep their distance and hear how it goes only by word from the crew.`);
     if (o.vehicle || o.entry) lines.push([o.vehicle && `They came in ${o.vehicle.replace(/^(?:in|by)\s+/i, '')}.`, o.entry && `They got in ${o.entry.replace(/^(?:in\s+)?(?:by|through|via)\s+/i, (m) => m.toLowerCase())}.`].filter(Boolean).join(' '));
     if (o.crew.length) lines.push('The crew:', ...o.crew.map(crewLine));
     if (o.status === 'pulling out') {

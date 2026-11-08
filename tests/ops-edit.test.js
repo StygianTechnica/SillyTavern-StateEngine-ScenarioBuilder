@@ -47,7 +47,7 @@ describe('who leads it', () => {
         const { user } = buildOpPrompt({ side: { name: 'Medina Syndicate' }, people: out });
         expect(user).toMatch(/- Enrique Medina \(Power Brokers, Third in command; named in the story with this job\)/);
         expect(user).toMatch(/- Serlos Medina \(Patriarch; the head of it all - rarely on a job in person\)/);
-        expect(user).toMatch(/The leader is Enrique Medina, named in the story with this job/);
+        expect(user).toMatch(/Enrique Medina is named in the story with this job: they ordered it or lead it/);
     });
     it('a shared family name ties no one; a nickname does', () => {
         expect(tiedFirst(people, 'The Medina crew moves in.').some((p) => p.tied)).toBe(false);
@@ -57,6 +57,6 @@ describe('who leads it', () => {
         const guild = [{ name: 'Mother Ashe', rank: 'Guildmistress', head: true }, { name: 'Corvin Tull', rank: 'Second' }];
         expect(tiedFirst(guild, 'Corvin plans to rob the temple at moonrise.')[0].name).toBe('Corvin Tull');
         const { user } = buildOpPrompt({ side: { name: 'The Grey Hands' }, people: tiedFirst(guild, 'nothing') });
-        expect(user).not.toMatch(/The leader is/);
+        expect(user).not.toMatch(/named in the story with this job:/);
     });
 });
