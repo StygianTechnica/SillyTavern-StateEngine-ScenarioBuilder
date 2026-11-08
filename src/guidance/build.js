@@ -16,7 +16,7 @@ import { isPlaceholder } from '../director/prompt.js';
 import { creatureLabel } from '../library/creature-form.js';
 import { fightGuidance } from '../director/fight.js';
 import { eventGuidance } from '../events/model.js';
-import { opGuidance } from '../ops/model.js';
+import { opGuidance, opRadio } from '../ops/model.js';
 import { povRule } from '../director/perspective.js';
 import { intimacySection } from './intimacy.js';
 
@@ -478,7 +478,9 @@ export function buildNow(input) {
     // and the job as the plan gave it.
     const pushFair = clean(input.pushFair);
     const pushTeam = clean(input.pushTeam);
-    if (!notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
+    // Their radio talk, heard by the player character (src/ops/model.js).
+    const radio = opRadio(input.op, clean((input.cast ?? []).find((c) => c.player)?.name));
+    if (!radio && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (corrections) orders.push(corrections);
@@ -491,7 +493,8 @@ export function buildNow(input) {
     // The reply stays with the player character: the museum's narrator, told
     // Inji and Zane were elsewhere, still spent the reply on their sweep of
     // the galleries - the last reply again, nearly word for word.
-    if (elsewhere.length) orders.push(`Not in this scene: ${andList(elsewhere)} - ${elsewhere.length === 1 ? 'they are' : 'they are all'} elsewhere, and do not come in, speak or act in this reply. The reply stays with ${player?.name ? clean(player.name) : 'the player character'} and what is where they are - no cutting away to ${elsewhere.length === 1 ? 'them' : 'those elsewhere'}; word of ${elsewhere.length === 1 ? 'them' : 'them'} reaches ${player?.name ? clean(player.name) : 'the player character'} only by a call, a radio or a sound carrying. Begin the reply with what ${player?.name ? clean(player.name) : 'the player character'} meets where they are now.`);
+    if (elsewhere.length) orders.push(`Not in this scene: ${andList(elsewhere)} - ${elsewhere.length === 1 ? 'they are' : 'they are all'} elsewhere, and do not come in, speak or act in this reply. The reply stays with ${player?.name ? clean(player.name) : 'the player character'} and what is where they are - no cutting away to ${elsewhere.length === 1 ? 'them' : 'those elsewhere'}; word of ${elsewhere.length === 1 ? 'them' : 'them'} reaches ${player?.name ? clean(player.name) : 'the player character'} only by a call, a radio or a sound carrying. Begin the reply with what is around ${player?.name ? clean(player.name) : 'the player character'} where they are now - what can be seen, heard or found there - never with what ${player?.name ? clean(player.name) : 'the player character'} does.`);
+    if (radio) orders.push(radio);
     if (triggered.length) orders.push(`It happens now: ${triggered.join(' ')}`);
     if (dodging) orders.push(dodging);
     // The beat's people are who it is (Adam kept sending others on the job

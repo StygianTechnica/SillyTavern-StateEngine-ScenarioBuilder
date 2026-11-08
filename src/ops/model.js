@@ -168,7 +168,7 @@ export function startOp(plan, turn, id = 'op') {
     o.current = current;
     // Each starts at their post.
     o.crew = o.crew.map((c) => ({ ...c, where: c.where || c.post.replace(/^(?:posted|stationed)\s+/i, '') }));
-    return o;
+    return placeCrew(o);
 }
 
 const note = (op, turn, text) => ({ ...op, log: [...op.log, { turn, text }].slice(-LOG_KEPT) });
@@ -186,7 +186,12 @@ export function crewIndex(op, name) {
 // null), the fight as it stands (fighters: [{ name, condition }]) and the
 // deaths (DIES: [{ name }]) moved into the operation for reply `turn`. A
 // reply applied before (a swipe) starts again from the operation as it was.
-export function afterBriefing(op, { report = null, fighters = [], deaths = [], moves = [], lost = [] } = {}, turn = 0) {
+// Those still unplaced after it are placed by the plan (placeCrew).
+export function afterBriefing(op, said = {}, turn = 0) {
+    const o = briefed(op, said, turn);
+    return o && isLive(o) ? placeCrew(o) : o;
+}
+function briefed(op, { report = null, fighters = [], deaths = [], moves = [], lost = [] } = {}, turn = 0) {
     let o = normalizeOp(op);
     if (!o) return null;
     if (o.at?.turn === turn && o.at.before) o = normalizeOp(o.at.before) ?? o;
@@ -307,7 +312,7 @@ export function reviseOp(op, plan, turn) {
         return { ...c, objectId: c.objectId || was?.objectId || '', state: was?.state ?? 'active', where: was?.where || clean(c.post).replace(/^(?:posted|stationed)\s+/i, '') };
     });
     const moved = clean(steps[current].text) !== clean(currentStep(o)?.text);
-    return normalizeOp(note({
+    return placeCrew(note({
         ...o,
         leader: { name: clean(plan.leader?.name), where: clean(plan.leader?.where), objectId: plan.leader?.objectId || (sameName(plan.leader?.name, o.leader.name) ? o.leader.objectId : '') },
         boss: { name: clean(plan.boss?.name), where: clean(plan.boss?.where), objectId: plan.boss?.objectId || (sameName(plan.boss?.name, o.boss.name) ? o.boss.objectId : '') },
@@ -346,6 +351,52 @@ export function setCrewState(op, index, state) {
     return { ...o, crew: o.crew.map((c, i) => (i === index ? { ...c, state } : c)) };
 }
 
+// Where a step's words put someone: the place it goes to, is at or works
+// from - "reach the Darkened Alcove", "from the surveillance room", "into
+// the east tower", "across Hangar Bay Three". -> a place, or ''.
+const PLACE_NOUN = String.raw`(?:room|rooms|alcove|hall|halls|gallery|galleries|vault|wing|dock|docks|corridor|corridors|foyer|lobby|roof|rooftop|basement|office|entrance|exit|gate|door|doors|stairs|stairwell|tower|chamber|crypt|yard|bay|deck|hangar|garage|station|lab|laboratory|cellar|courtyard|street|alley|archive|archives|library|chapel|keep|bridge|tunnel|tunnels|sewer|sewers|vents?|shaft|platform|warehouse|lot|perimeter|checkpoint|camp|ridge|treeline|road|square|market|shop|store|bank|bar|club|wall|walls|window|balcony|attic|kitchen|cells?|armory|armoury|barracks|stables|grounds|garden|gardens)`;
+const PLACE_LEAD = String.raw`(?:to|at|in|into|inside|near|toward|towards|from|through|across|outside|beside|under|over|reach(?:es|ing)?|enter(?:s|ing)?|breach(?:es|ing)?|storm(?:s|ing)?|hold(?:s|ing)?|watch(?:es|ing)?|guard(?:s|ing)?|cover(?:s|ing)?)`;
+export function placeInStep(text, notPlaces = []) {
+    const t = clean(text);
+    const not = (p) => notPlaces.some((n) => sameName(n, p) || clean(n).split(' ').some((w) => w.length > 2 && sameName(w, p)));
+    const named = [...t.matchAll(new RegExp(String.raw`\b${PLACE_LEAD}\s+(?:the\s+)?((?:[A-Z][\w'’-]*)(?:\s+(?:of\s+(?:the\s+)?)?[A-Z][\w'’-]*){0,4})`, 'g'))].map((m) => m[1]).filter((p) => !not(p));
+    // ("through the hull into Cargo Bay Two" is not "hull into Cargo Bay".)
+    const plain = [...t.matchAll(new RegExp(String.raw`\b${PLACE_LEAD}\s+the\s+((?:(?!${PLACE_LEAD}\b|the\b)[\w'’-]+\s+){0,3}?${PLACE_NOUN})\b`, 'gi'))].map((m) => m[1]);
+    // The first it names: "into the bell tower to watch the road" is the tower.
+    const firstAt = (list, re) => list.map((p) => ({ p, at: t.search(new RegExp(re(p))) })).sort((a, b) => a.at - b.at)[0]?.p;
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return clean(firstAt([...named, ...plain], esc) ?? '');
+}
+
+// The crew no briefing has placed yet, placed by the plan: a step that names
+// them puts them where it goes (the latest one under way or done), a step
+// under way that names none of them ("One of the crew slips past...") takes
+// the first left over, the rest are with their leader. The museum: the game
+// master never wrote a CREW line, the radio had no one to report and Cyril
+// found no one anywhere. Pure; those placed already are kept.
+export function placeCrew(op) {
+    const o = normalizeOp(op);
+    if (!o || !o.crew.some((c) => !c.where && !OUT.has(c.state))) return o;
+    const people = [...o.crew.map((c) => c.name), o.leader.name, o.boss.name, o.side, o.against].filter(Boolean);
+    const upTo = o.steps.slice(0, o.current + 1);
+    const crew = o.crew.map((c) => ({ ...c }));
+    const namedIn = (text, c) => clean(c.name).split(' ').filter((w) => w.length > 2).some((w) => new RegExp(`(^|[^\\p{L}])${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\p{L})`, 'iu').test(text));
+    for (const c of crew) {
+        if (c.where || OUT.has(c.state)) continue;
+        const step = [...upTo].reverse().find((s) => namedIn(s.text, c) && placeInStep(s.text, people));
+        if (step) c.where = placeInStep(step.text, people);
+    }
+    const now = currentStep(o);
+    const nowPlace = now && !crew.some((c) => namedIn(now.text, c)) ? placeInStep(now.text, people) : '';
+    const free = crew.find((c) => !c.where && !OUT.has(c.state));
+    if (free && nowPlace) free.where = nowPlace;
+    // "leads it in person, in the museum" -> "in the museum".
+    const lead = o.leader.where ? (o.leader.where.match(/\b(?:at|in|inside|near|by|on)\s+[^,;]+$/i)?.[0] ?? o.leader.where) : '';
+    const fallback = lead ? `${lead}${o.leader.name ? `, with ${o.leader.name}` : ''}` : o.placeName ? `somewhere in ${o.placeName}` : '';
+    for (const c of crew) if (!c.where && !OUT.has(c.state) && fallback) c.where = fallback;
+    return { ...o, crew };
+}
+
 const crewLine = (c) => `- ${c.name}${c.skill ? ` - ${c.skill}` : ''}${c.post ? `; posted ${c.post.replace(/^(?:posted|stationed)\s+/i, '')}` : ''}${c.state !== 'active' ? ` (${c.state})` : ''}: ${OUT.has(c.state) ? 'out of it' : c.where ? `now at ${c.where}` : 'NOT PLACED YET - put them somewhere that fits their part, and report it'}`;
 
 // THE OTHER SIDE, for the director: the whole plan - it plays them. An
@@ -355,7 +406,9 @@ const crewLine = (c) => `- ${c.name}${c.skill ? ` - ${c.skill}` : ''}${c.post ? 
 // to the player to place ("rodents scurry... distant echoes of Enrique's
 // operatives" while Cyril searched the storage rooms).
 export function opFacts(op, { turn = null, here = '', player = '' } = {}) {
-    const o = normalizeOp(op);
+    // A plan saved before its crew were placed: placed now, as the next
+    // briefing would.
+    const o = placeCrew(op);
     if (!o) return '';
     if (!isLive(o)) {
         return Number.isInteger(turn) && o.endedTurn === turn - 1 ? `${o.endText} Their operation is over: do not carry it on, and do not bring them back in this scene unless the story does.` : '';
@@ -400,9 +453,18 @@ export function opGuidance(op) {
     if (!isLive(o)) return '';
     if (o.status === 'pulling out') return `${o.side}'s people are pulling out now - breaking off and getting away the way they came.`;
     const unaware = o.aware ? '' : ` They do not know ${o.against || 'anyone'} is here: they are not waiting for them - no trap, no ambush - and are caught off guard if found.`;
-    // Their radio in the player's side's hands: the narrator gives their
-    // talk - the game master's briefing alone was not enough for a small model.
+    return `${o.side}'s people are at work here and do not wait for anyone: ${currentStep(o).text}. Show only what the others could see or hear of it; their plan stays theirs. Where the player character goes, show what the game master's briefing says is there - their people, their traces, or nothing.${unaware}`;
+}
+
+// Their radio in the player's side's hands: the narrator writes their talk,
+// in the note just before the reply (the game master's briefing alone was
+// not enough for a small model, and with nothing else there it wrote Cyril
+// taking out three more of them). -> a sentence, or ''.
+export function opRadio(op, player = '') {
+    const o = placeCrew(op);
+    if (!isLive(o) || !o.tapped) return '';
+    const who = String(player ?? '').trim() || 'The player character';
     const where = o.crew.filter((c) => c.state === 'active' && c.where).map((c) => `${c.name} at ${c.where}`);
-    const tapped = o.tapped ? ` The player character holds one of their radios and hears their channel: in this reply, write one or two short lines of their radio talk, in their own clipped words - who is where, how the job goes${where.length ? ` (${where.join('; ')})` : ''}.` : '';
-    return `${o.side}'s people are at work here and do not wait for anyone: ${currentStep(o).text}. Show only what the others could see or hear of it; their plan stays theirs. Where the player character goes, show what the game master's briefing says is there - their people, their traces, or nothing.${unaware}${tapped}`;
+    const step = o.status === 'pulling out' ? 'they are pulling out' : `they are at "${currentStep(o).text}"`;
+    return `${who} hears ${o.side}'s channel on their own radio: put in this reply one or two short lines of their radio talk, in their clipped words - ${step}${where.length ? `; ${where.join('; ')}` : ''}${o.leader.name ? `; ${o.leader.name} gives the orders` : ''}. ${who} only hears it - it says nothing of ${who}, and ${who} does nothing in the reply.`;
 }

@@ -14,11 +14,11 @@ const plan = {
 
 describe('where they are', () => {
     const op = startOp(plan, 10);
-    it('starts each at their post, and asks for the rest', () => {
-        expect(op.crew.map((c) => c.where)).toEqual(['surveillance room', '']);
+    it('starts each at their post, the rest where the plan puts them', () => {
+        expect(op.crew.map((c) => c.where)).toEqual(['surveillance room', 'Darkened Alcove']);
         const facts = opFacts(op, { turn: 10, here: 'Storage Room Corridors', player: 'Cyril' });
         expect(facts).toMatch(/Tadam Chi - hacking; posted surveillance room: now at surveillance room/);
-        expect(facts).toMatch(/Nichiro Fukudo - muscle: NOT PLACED YET/);
+        expect(facts).toMatch(/Nichiro Fukudo - muscle: now at Darkened Alcove/);
         expect(facts).toMatch(/Cyril is at Storage Room Corridors\. By where each of them is, say plainly in the briefing what Cyril finds there/);
     });
     it('moves them by CREW lines, the leader too', () => {
@@ -100,11 +100,53 @@ describe('a CREW line bent by a small model', () => {
 });
 
 describe('the narrator hears their radio', () => {
-    it('when the channel is tapped, with where they are', async () => {
-        const { opGuidance } = await import('../src/ops/model.js');
+    it('in the note just before the reply, with where they are, and Cyril only listening', async () => {
+        const { opRadio, opGuidance } = await import('../src/ops/model.js');
+        const { buildNow } = await import('../src/guidance/build.js');
         const op = afterBriefing({ ...startOp(plan, 10), tapped: true }, { moves: [{ name: 'Nichiro', where: 'upper galleries' }] }, 10);
-        expect(opGuidance(op)).toContain('write one or two short lines of their radio talk');
-        expect(opGuidance(op)).toContain('Tadam Chi at surveillance room; Nichiro Fukudo at upper galleries');
-        expect(opGuidance(startOp(plan, 10))).not.toContain('radio talk');
+        const line = opRadio(op, 'Cyril');
+        expect(line).toContain("Cyril hears Medina Syndicate's channel on their own radio: put in this reply one or two short lines of their radio talk");
+        expect(line).toContain('Tadam Chi at surveillance room; Nichiro Fukudo at upper galleries; Delvin Timmers gives the orders');
+        expect(line).toContain('Cyril does nothing in the reply');
+        expect(buildNow({ op, cast: [{ name: 'Cyril', player: true }] })).toContain(line);
+        expect(opRadio(startOp(plan, 10), 'Cyril')).toBe('');
+        expect(opGuidance(op)).not.toContain('radio talk');
+    });
+});
+
+describe('the crew placed by the plan when no briefing has', () => {
+    it('the museum: a step that names them, the step under way, the leader', async () => {
+        const { placeCrew } = await import('../src/ops/model.js');
+        const op = startOp({
+            ...plan,
+            leader: { name: 'Delvin Timmers', where: 'leads it in person, in the museum' },
+            crew: [{ name: 'Tadam Chi', post: '' }, { name: 'Nichiro Fukudo', post: '' }, { name: 'Raf Osei', post: '' }],
+            steps: [
+                { text: "Tadam Chi hacks into the museum's access control system from the surveillance room to disable alarms and locks", status: 'done' },
+                { text: 'One of the crew slips past distracted guards to reach the Darkened Alcove, waiting for the signal' },
+                { text: 'Get away with it the way they came' },
+            ],
+        }, 10);
+        expect(op.crew.map((c) => c.where)).toEqual(['surveillance room', 'Darkened Alcove', 'in the museum, with Delvin Timmers']);
+        expect(opFacts(op, { turn: 10 })).not.toContain('NOT PLACED YET');
+        // A CREW line wins, and a briefing that places no one keeps them.
+        const moved = afterBriefing(op, { moves: [{ name: 'Nichiro', where: 'loading dock' }] }, 10);
+        expect(moved.crew[1].where).toBe('loading dock');
+        expect(placeCrew(moved).crew[0].where).toBe('surveillance room');
+    });
+    it('a fantasy raid and a boarding party', async () => {
+        const { placeCrew } = await import('../src/ops/model.js');
+        const raid = startOp({
+            side: 'The Ashen Hand', aim: 'the reliquary', placeName: 'Saint Veyra\'s Abbey', leader: { name: 'Mother Grael', where: '' },
+            crew: [{ name: 'Brother Aldo', post: '' }, { name: 'Kessa', post: '' }],
+            steps: [{ text: 'Kessa climbs into the bell tower to watch the road' }, { text: 'Brother Aldo opens the crypt for the others' }],
+        }, 1);
+        expect(raid.crew.map((c) => c.where)).toEqual(["somewhere in Saint Veyra's Abbey", 'bell tower']);
+        const boarding = placeCrew(startOp({
+            side: 'Red Tide pirates', aim: 'the fuel cells', placeName: 'the freighter Calloway', leader: { name: 'Captain Ysolde', where: 'on the bridge' },
+            crew: [{ name: 'Dex', post: '' }],
+            steps: [{ text: 'The boarders cut through the hull into Cargo Bay Two' }],
+        }, 1));
+        expect(boarding.crew[0].where).toBe('Cargo Bay Two');
     });
 });
