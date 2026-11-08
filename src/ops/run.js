@@ -44,13 +44,13 @@ const key = (s) => clean(s).toLowerCase().replace(/^the\s+/, '');
 
 // After a briefing (src/director/run.js): the step moved on, held or
 // done; the crew as the fight and deaths left them.
-export function opAfterBriefing(chatKey, { report = null, fight = null, deaths = [], moves = [], lost = [] } = {}) {
+export function opAfterBriefing(chatKey, { report = null, fight = null, deaths = [], moves = [], lost = [], met = [], metBy = '' } = {}) {
     try {
         const doc = getChatDoc(chatKey);
         if (!doc.op) return;
         const live = isLive(doc.op) || doc.op.at?.turn === doc.turn;
         if (!live) return;
-        const next = afterBriefing(doc.op, { report, fighters: fight?.fighters ?? [], deaths, moves, lost }, doc.turn);
+        const next = afterBriefing(doc.op, { report, fighters: fight?.fighters ?? [], deaths, moves, lost, met, metBy }, doc.turn);
         if (next && JSON.stringify(next) !== JSON.stringify(normalizeOp(doc.op))) {
             save(chatKey, next);
             const last = next.log[next.log.length - 1];

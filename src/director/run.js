@@ -35,7 +35,7 @@ import { nextFight, fightFacts, woundsOf, fightPaused } from './fight.js';
 import { combatOptions, stanceFor, protectionOf, powerRatingOf, mayDie, protectedText } from './combat.js';
 import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
-import { opFacts, isLive as opRunning } from '../ops/model.js';
+import { opFacts, crewMet, isLive as opRunning } from '../ops/model.js';
 import { opAfterBriefing, opFromDirector, setOpTapped } from '../ops/run.js';
 import { rivalAtWork } from '../ops/detect.js';
 import { whoCouldTurnUp, belongingHere, enemyGround, sharedScenes, lastSeen, firstMeetings, elsewhereEntering } from './whereabouts.js';
@@ -734,7 +734,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         eventFacts: eventFacts(event, { placeName: event?.placeId ? everything.find((e) => e.id === event.placeId)?.name ?? '' : '', turn: getChatDoc(chatKey).turn, ways }),
         // The other side's operation, which the director plays (src/ops/).
         // Where the player character is, so the briefing says what is there.
-        opFacts: opFacts(getChatDoc(chatKey).op, { turn: getChatDoc(chatKey).turn, here: nameOfId(getChatDoc(chatKey).canonical.locationId) || guidance.location?.name || '', player: (guidance.cast ?? []).find((c) => c.player)?.name ?? SillyTavern.getContext().name1 }),
+        opFacts: opFacts(getChatDoc(chatKey).op, { turn: getChatDoc(chatKey).turn, here: nameOfId(getChatDoc(chatKey).canonical.locationId) || guidance.location?.name || '', player: (guidance.cast ?? []).find((c) => c.player)?.name ?? SillyTavern.getContext().name1, post: lastPost?.text ?? '' }),
         opLive: opRunning(getChatDoc(chatKey).op),
         opAware: getChatDoc(chatKey).op?.aware === true,
         opposition: settings.director.opposition !== false && !!settingId,
@@ -1310,7 +1310,9 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         // A bout of a structured event is decided by the fight (src/events/).
         eventAfterFight(chatKey, fight);
         // The other side's step, and its crew as the fight left them (src/ops/).
-        opAfterBriefing(chatKey, { report: parsed.operation, fight, deaths: parsed.deaths ?? [], moves: parsed.crewMoves ?? [], lost: parsed.crewLost ?? [] });
+        // Those the player character is at or headed to hold their step up.
+        const met = crewMet(getChatDoc(chatKey).op, { here: nameOfId(getChatDoc(chatKey).canonical.locationId) || guidance.location?.name || '', post: latestUserText }).map((m) => m.name);
+        opAfterBriefing(chatKey, { report: parsed.operation, fight, deaths: parsed.deaths ?? [], moves: parsed.crewMoves ?? [], lost: parsed.crewLost ?? [], met, metBy: playerNames[0] ?? '' });
         // A rival group at work with no plan: one is written for the next
         // reply, in the background (one call, once per side and place).
         // Or one the recent chat shows - a rival faction's people on a job -

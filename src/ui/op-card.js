@@ -101,7 +101,7 @@ function editView(op, chatKey, people) {
         await after();
     };
     return h('div', {},
-        h('small', { class: 'sb-hint' }, 'One line each. LEADER: name | where they are. CREW: name | skill | post. STEP lines in order - "| done" on those already carried out; the first without it is the step under way. BREAK: crew down before they pull out.'),
+        h('small', { class: 'sb-hint' }, 'One line each. AIM: what they are after - change the steps that name it too. LEADER: name | where they are. CREW: name | skill | post. STEP lines in order - "| done" on those already carried out; the first without it is the step under way. BREAK: crew down before they pull out.'),
         h('textarea', { class: 'text_pole', rows: 14, value: ws.opEditText ?? '', oninput: (e) => { ws.opEditText = e.target.value; markDirty(); } }),
         h('div', { class: 'sb-actions sb-wrap' },
             button('Save', () => void save(), { iconName: 'fa-check', cls: 'sb-primary' }),
@@ -118,10 +118,13 @@ function runningView(op, chatKey, show) {
     const step = currentStep(op);
     const head = h('p', {}, h('b', {}, op.side), op.status === 'pulling out' ? ' - pulling out now' : ` - step ${op.current + 1} of ${op.steps.length}${peek ? `: ${step.text}` : ''}`,
         crewTotal(op) ? h('span', { class: 'sb-muted' }, ` (${crewOut(op)} of ${crewTotal(op)} out of it)`) : null);
+    // Editing it is offered hidden too: behind Peek, no one knew the target
+    // could be changed (they were stealing the eye Cyril wears).
+    const edit = button('Edit the plan', () => { ws.opEdit = op.id; ws.opEditText = opPlanText(op); rerender(); }, { iconName: 'fa-pen', title: 'Change what they are after (AIM), who is on it, or the steps - how far it has come is kept. Opening it shows the plan.' });
     if (!peek) {
         return h('div', {}, head,
-            h('small', { class: 'sb-hint' }, 'Their plan is hidden, like the day plan.'),
-            h('div', { class: 'sb-actions' }, button('Peek', () => { ws.opPeek = op.id; rerender(); }, { iconName: 'fa-eye' })));
+            h('small', { class: 'sb-hint' }, 'Their plan is hidden, like the day plan. Edit it to change what they are after, who is on it or their steps.'),
+            h('div', { class: 'sb-actions sb-wrap' }, button('Peek', () => { ws.opPeek = op.id; rerender(); }, { iconName: 'fa-eye' }), edit));
     }
     return h('div', {},
         head,
@@ -146,7 +149,7 @@ function runningView(op, chatKey, show) {
         h('div', { class: 'sb-actions sb-wrap' },
             op.status === 'running' ? button('Step done', mark('next'), { iconName: 'fa-forward', title: 'Their step is carried out - the next begins' }) : null,
             op.status === 'running' ? button('Pull them out', mark('pull out'), { iconName: 'fa-person-running', title: 'They break off and get away in the next reply' }) : null,
-            button('Edit the plan', () => { ws.opEdit = op.id; ws.opEditText = opPlanText(op); rerender(); }, { iconName: 'fa-pen', title: 'Change the leader, crew, steps or anything else - how far it has come is kept' }),
+            edit,
             button('End it', mark('end',`End ${op.side}'s operation now? The game master stops playing it.`), { iconName: 'fa-flag-checkered', cls: 'sb-danger' }),
             show ? null : button('Hide', () => { ws.opPeek = null; rerender(); }, { iconName: 'fa-eye-slash' })));
 }

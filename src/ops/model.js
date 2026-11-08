@@ -207,7 +207,7 @@ export function afterBriefing(op, said = {}, turn = 0) {
     const o = briefed(op, said, turn);
     return o && isLive(o) ? placeCrew(o) : o;
 }
-function briefed(op, { report = null, fighters = [], deaths = [], moves = [], lost = [] } = {}, turn = 0) {
+function briefed(op, { report = null, fighters = [], deaths = [], moves = [], lost = [], met = [], metBy = '' } = {}, turn = 0) {
     let o = normalizeOp(op);
     if (!o) return null;
     if (o.at?.turn === turn && o.at.before) o = normalizeOp(o.at.before) ?? o;
@@ -266,8 +266,15 @@ function briefed(op, { report = null, fighters = [], deaths = [], moves = [], lo
     if (!o.aware && !o.suspicious && lostNotes.length) o = { ...o, quiet: quiet.slice(-8), checkIn: o.checkIn ?? turn + 1 };
     const leaderOut = [...(fighters ?? []), ...(deaths ?? []).map((d) => ({ name: d.name, condition: 'down' }))]
         .some((f) => o.leader.name && sameName(o.leader.name, f.name) && ['down', 'failing', 'fled'].includes(clean(f.condition).toLowerCase()));
-    const how = clean(report?.how);
+    let how = clean(report?.how);
     let said = OP_REPORTS.includes(report?.status) ? report.status : '';
+    // The player character on them (crewMet): their step is held up, not
+    // done on time. The museum: the crew finished step after step while
+    // Cyril, never shown them, closed in.
+    if (!said && met.length) {
+        said = 'held';
+        how = `${clean(metBy) || 'someone'} is on ${met.join(' and ')}`;
+    }
     // A crew that does not know anyone is against them is not held by being
     // watched, shadowed or hidden from ("held: Zane's careful surveillance"
     // while they walked on to the access tunnel) - only by what they ran into.
@@ -421,7 +428,7 @@ const crewLine = (c) => `- ${c.name}${c.skill ? ` - ${c.skill}` : ''}${c.post ? 
 // so the briefing says plainly what they find there - the enemy was left
 // to the player to place ("rodents scurry... distant echoes of Enrique's
 // operatives" while Cyril searched the storage rooms).
-export function opFacts(op, { turn = null, here = '', player = '' } = {}) {
+export function opFacts(op, { turn = null, here = '', player = '', post = '' } = {}) {
     // A plan saved before its crew were placed: placed now, as the next
     // briefing would.
     const o = placeCrew(op);
@@ -448,6 +455,9 @@ export function opFacts(op, { turn = null, here = '', player = '' } = {}) {
     // What the player character finds where they are.
     const pc = clean(player) || 'The player character';
     if (clean(here) && o.status !== 'pulling out') lines.push(`${pc} is at ${clean(here)}. By where each of them is, say plainly in the briefing what ${pc} finds there: any of theirs here or within earshot - at work, not waiting for anyone - the traces they left if they passed through, or that it is empty of them. Never leave it for the player to say where they are.`);
+    // Those the player character is at or headed to: met, and in the way.
+    const met = crewMet(o, { here, post });
+    if (met.length) lines.push(`${pc} ${met.every((m) => !m.here) ? 'is headed to' : 'is at'} where ${met.map((m) => `${m.name} is (${m.where})`).join(' and ')}: ${pc} comes upon ${met.length === 1 ? 'them' : 'them'} in this reply - the briefing shows ${met.length === 1 ? 'them' : 'them'} there, in plain sight and at work. Their step does not get done past ${pc}: OPERATION | held | <what ${pc} puts in their way> - or spotted, if they see ${pc}.`);
     // A radio of theirs in other hands.
     if (o.tapped) lines.push(`${pc}'s side ${o.tappedWith ? `holds their ${o.tappedWith}` : 'can listen in on how they keep in touch'} and hears them: put in the briefing one or two short lines of what the crew says through it in this reply - their real positions and progress, in their own words and codes.`);
     // The check-in.
@@ -459,7 +469,7 @@ export function opFacts(op, { turn = null, here = '', player = '' } = {}) {
     lines.push(o.aware
         ? `They know ${o.against || 'someone'} is against them here, and act on it.`
         : `They do not know ${o.against || 'anyone'} is here against them, so nothing of theirs is set up for them - no trap, no ambush, no one lying in wait: they work to their plan, and are caught off guard if found. They learn otherwise only when the story shows them proof - one of the crew sees them, hears them, or finds clear signs of them. Something made to look like an accident or a malfunction is taken for one: they may check on it, curse it or work around it, but they do not know anyone did it.`);
-    lines.push('You play them: they do not wait for anyone. In this reply they carry their step forward - or deal with what is in their way - by their skills and posts; each knows only what they can see or are told by their own people. Whoever moves, or has no place yet, gets a CREW line saying where they are now.');
+    lines.push(`You play them: they do not wait for anyone. In this reply they carry their step forward - or deal with what is in their way - by their skills and posts; each knows only what they can see or are told by their own people. Whoever moves, or has no place yet, gets a CREW line saying where they are now. They move as people do: one place at a time, never there in a blink - on the way they can be seen, and if their talk is overheard it says so first. None turns up where ${pc} is without that.`);
     return lines.join('\n');
 }
 
@@ -472,6 +482,79 @@ export function opGuidance(op) {
     return `${o.side}'s people are at work here and do not wait for anyone: ${currentStep(o).text}. Show only what the others could see or hear of it; their plan stays theirs. Where the player character goes, show what the game master's briefing says is there - their people, their traces, or nothing.${unaware}`;
 }
 
+// The crew the player character is at, or on the way to, by where each is:
+// "circling back to the surveillance room" - Tadam Chi is there. A place
+// is known by its own words, not the common ones ("room", "corridors"); a
+// position only guessed for them ("somewhere in the museum", "with their
+// leader") is never met this way. -> [{ name, where, here: bool }].
+const COMMON = new Set(['the', 'of', 'and', 'in', 'at', 'on', 'by', 'near', 'with', 'inside', 'outside', 'into', 'from', 'front', 'back', 'side', 'area', 'part', 'end', 'room', 'rooms', 'corridor', 'corridors', 'hall', 'halls', 'hallway', 'level', 'levels', 'floor', 'upper', 'lower', 'main', 'east', 'west', 'north', 'south', 'their', 'his', 'her', 'its', 'waiting', 'posted', 'scouting', 'working']);
+const GOING = /\b(?:to|towards?|into|back|circl\w*|head\w*|go(?:es|ing)?|went|return\w*|(?:make|makes|made|making) (?:his|her|their|my|our) way|mov(?:e|es|ed|ing)|sneak\w*|snuck|creep\w*|crept|run(?:s|ning)?|ran|rush\w*|hurr\w*|slip\w*|enter\w*|check\w* (?:on|out))\b/i;
+function placeWords(where) {
+    const w = clean(where).toLowerCase().replace(/,\s*with\b.*$/, '');
+    if (!w || /^somewhere\b/.test(w)) return [];
+    const words = w.replace(/[’']s\b/g, '').split(/[^\p{L}\p{N}]+/u).filter((x) => x.length >= 3);
+    const own = words.filter((x) => !COMMON.has(x));
+    return own.length ? own : words.filter((x) => !['the', 'and', 'with', 'from', 'into'].includes(x));
+}
+// A long word a letter or two off still counts ("survaillance").
+function near(a, b) {
+    if (a === b) return true;
+    if (a.length < 6 || Math.abs(a.length - b.length) > 2) return false;
+    let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++) {
+        const row = [i];
+        for (let j = 1; j <= b.length; j++) row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        prev = row;
+    }
+    return prev[b.length] <= 2;
+}
+const saysAll = (text, words) => {
+    const said = clean(text).toLowerCase().replace(/[’']s\b/g, '').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    return !!words.length && words.every((x) => said.some((y) => near(x, y) || near(`${x}s`, y)));
+};
+export function crewMet(op, { here = '', post = '' } = {}) {
+    const o = placeCrew(op);
+    if (!isLive(o)) return [];
+    // Their own words count too: "I'm circling back to the surveillance room."
+    const going = (clean(post).match(/[^.!?…]+[.!?…]*/g) ?? []).filter((s) => GOING.test(s));
+    return o.crew.filter((c) => c.state === 'active' && c.where).map((c) => {
+        const words = placeWords(c.where);
+        if (saysAll(here, words)) return { name: c.name, where: c.where, here: true };
+        if (going.some((s) => saysAll(s, words))) return { name: c.name, where: c.where, here: false };
+        return null;
+    }).filter(Boolean);
+}
+
+// For the note just before the reply: those the player character comes
+// upon, in plain sight - the narrator was never told, and the briefing gave
+// dust and flickering lights. -> a sentence, or ''.
+export function opMeet(op, { here = '', post = '', player = '' } = {}) {
+    const o = normalizeOp(op);
+    const met = crewMet(op, { here, post });
+    if (!met.length) return '';
+    const who = String(player ?? '').trim() || 'the player character';
+    const at = [...new Set(met.map((m) => m.where))];
+    const names = met.map((m) => m.name);
+    const one = names.length === 1;
+    const lasts = names.map((n) => lastStepOf(o, n)).filter(Boolean);
+    const doing = lasts.length ? ` (${lasts.join('; ')})` : ', at their part of the job';
+    const going = met.every((m) => !m.here);
+    // The rest of their crew stay where they are: Nichiro, with the perfume
+    // bottles at the Darkened Alcove, burst into the surveillance room -
+    // unseen on the way, unheard on the communicator Cyril was listening to.
+    const others = o.crew.filter((c) => c.state === 'active' && c.where && !names.includes(c.name))
+        .map((c) => `${c.name} (at ${c.where}${lastStepOf(o, c.name) ? `; last: ${lastStepOf(o, c.name)}` : ''})`);
+    const rest = others.length ? ` The rest of them stay where they are in this reply - ${others.join('; ')} - and do not turn up there; if any comes later, ${who}'s side hears it ${o.tapped && o.tappedWith ? `on their ${o.tappedWith}` : 'or sees it'} on the way first.` : '';
+    return `${names.join(' and ')} of ${o.side} ${one ? 'is' : 'are'} at ${at.join(' and ')} right now${doing}${o.aware ? '' : `, not expecting anyone`}. ${going ? `${who} is headed there: when the reply brings ${who} there, ${who} comes upon ${one ? 'them' : 'them'}` : `${who} is there and comes upon ${one ? 'them' : 'them'} now`} - show ${one ? 'them' : 'them'} plainly, in sight and at it; not gone, hidden or somewhere else. What ${who} does about it is left to ${who}.${rest}`;
+}
+
+// The latest step under way or done that names this one of theirs.
+function lastStepOf(o, name) {
+    const words = clean(name).split(' ').filter((w) => w.length > 2).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    const s = [...o.steps.slice(0, o.current + 1)].reverse().find((x) => words.some((w) => new RegExp(`\\b${w}\\b`, 'i').test(x.text)));
+    return s ? s.text : '';
+}
+
 // Their radio in the player's side's hands: the narrator writes their talk,
 // in the note just before the reply (the game master's briefing alone was
 // not enough for a small model, and with nothing else there it wrote Cyril
@@ -481,6 +564,8 @@ export function opRadio(op, player = '') {
     if (!isLive(o) || !o.tapped) return '';
     const who = String(player ?? '').trim() || 'The player character';
     const where = o.crew.filter((c) => c.state === 'active' && c.where).map((c) => `${c.name} at ${c.where}`);
-    const step = o.status === 'pulling out' ? 'they are pulling out' : `they are at "${currentStep(o).text}"`;
+    // Still under way, never done: "they are at <step>" had Nichiro report
+    // the perfume display secured and the crew heading out, a step early.
+    const step = o.status === 'pulling out' ? 'they are pulling out' : `they are still in the middle of this, not done with it yet: "${currentStep(o).text}" - nothing after it has begun`;
     return `${who} overhears ${o.side} through their own ${o.tappedWith || 'way of keeping in touch'}: put in this reply one or two short lines of what comes through it from them, in their own words - ${step}${where.length ? `; ${where.join('; ')}` : ''}${o.leader.name ? `; ${o.leader.name} gives the orders` : ''}. ${who} only hears it - it says nothing of ${who}, and ${who} does nothing in the reply.`;
 }

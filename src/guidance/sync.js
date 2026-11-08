@@ -595,6 +595,8 @@ export async function gatherInputs(chatId, chatKey) {
             arrivingFor: settings.director.enabled ? (doc.director.arrivingFor ?? {}) : {},
             // Who the reply before the player's post, or those reasons, name
             // and who is not here: they stay where they are.
+            // The player's latest post: where they are headed (src/ops/model.js opMeet).
+            playerPost: latestPlayerPost(),
             // Those taken out by hand and those a split left elsewhere too:
             // the note just before the reply is what a small model keeps.
             elsewhere: [...new Set([...absent, ...splitAway, ...elsewhereNow(allCharacters, {
