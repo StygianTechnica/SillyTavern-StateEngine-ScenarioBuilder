@@ -40,7 +40,7 @@ export function buildOpPrompt(input) {
         clean(input?.request) ? `# What they are doing\n${cut(input.request, 400)}` : '',
         '# Your task',
         `Plan ${clean(side.name)}'s operation as their leader would: a real plan with a crew, a way in and a way out, that runs whether or not anyone gets in its way.`,
-        `- ${player}${against.length ? ` and ${against.join(' and ')}` : ''} ${against.length ? 'are' : 'is'} against them. ${input?.aware ? 'They know it.' : 'They do not know it: they plan for guards, locks, police and bad luck, not for them.'} Never plan what ${player} does.`,
+        `- ${player}${against.length ? ` and ${against.join(' and ')}` : ''} ${against.length ? 'are' : 'is'} against them. ${input?.aware ? 'They know it.' : 'They do not know it: they plan for guards, locks, police and bad luck, not for them - no step is a trap or an ambush for them.'} Never plan what ${player} does.`,
         '- Two to six crew, each with what they are good at and where they are posted; the leader may be on site or running it from nearby.',
         '- Three to six steps in order, from getting in to getting away with it; the last step is the getaway. If the story so far has already played a step, end its line with "| done".',
         '- One to three conditions they pull out on, and how many crew down before they cut their losses.',

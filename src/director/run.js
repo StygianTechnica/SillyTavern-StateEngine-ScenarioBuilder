@@ -37,6 +37,7 @@ import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
 import { opFacts, isLive as opRunning } from '../ops/model.js';
 import { opAfterBriefing, opFromDirector } from '../ops/run.js';
+import { rivalAtWork } from '../ops/detect.js';
 import { whoCouldTurnUp, belongingHere, enemyGround, sharedScenes, lastSeen, firstMeetings, elsewhereEntering } from './whereabouts.js';
 import { rankNearby } from './company.js';
 import { arrivals, addRipple } from '../world/model.js';
@@ -1242,7 +1243,26 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         opAfterBriefing(chatKey, { report: parsed.operation, fight, deaths: parsed.deaths ?? [] });
         // A rival group at work with no plan: one is written for the next
         // reply, in the background (one call, once per side and place).
-        if (parsed.opposed && !opRunning(getChatDoc(chatKey).op)) void opFromDirector(chatId, chatKey, settingId, parsed.opposed);
+        // Or one the recent chat shows - a rival faction's people on a job -
+        // when a small model wrote no OPPOSED line (src/ops/detect.js).
+        if (!opRunning(getChatDoc(chatKey).op) && settings.director.opposition !== false) {
+            let opposed = parsed.opposed;
+            if (!opposed) {
+                try {
+                    const factionList = await listEntries(chatId, settingId, 'faction').catch(() => []);
+                    const relations = getSettingDoc(settingId).relations ?? [];
+                    const byPerson = libraryMemberships(factionList, relations);
+                    const members = new Map();
+                    for (const [personId, ids] of byPerson) for (const id of ids) members.set(id, [...(members.get(id) ?? []), characters.find((c) => c.id === personId)].filter(Boolean));
+                    const playerId = playerIdOf(settingId, characters);
+                    opposed = rivalAtWork({ texts: messages.slice(-4).map((m) => m.text), factions: factionList, relations, mine: byPerson.get(playerId) ?? [], members });
+                    if (opposed) console.info(LOG_PREFIX, `the other side: the chat shows ${opposed.who} at work - "${opposed.what}"`);
+                } catch (err) {
+                    console.warn(LOG_PREFIX, 'could not look for a rival crew at work', err);
+                }
+            }
+            if (opposed) void opFromDirector(chatId, chatKey, settingId, opposed);
+        }
         // A kind of creature beaten or driven off in the fight is gone from
         // the scene (one being that goes down is only down, not dead).
         const beaten = (fight?.fighters ?? []).filter((f) => f.side === 'foe' && (f.condition === 'down' || f.condition === 'fled'))

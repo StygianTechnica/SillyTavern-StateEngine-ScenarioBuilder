@@ -244,7 +244,7 @@ export function opFacts(op, { turn = null } = {}) {
     if (o.crew.length) lines.push(`Out of it so far: ${crewOut(o)} of ${o.crew.length} (they break at ${o.breakAt}).`);
     lines.push(o.aware
         ? `They know ${o.against || 'someone'} is against them here, and act on it.`
-        : `They do not know ${o.against || 'anyone'} is here against them: they work to their plan, and learn otherwise only if the story shows them.`);
+        : `They do not know ${o.against || 'anyone'} is here against them, so nothing of theirs is set up for them - no trap, no ambush, no one lying in wait: they work to their plan, and are caught off guard if found. They learn otherwise only when the story shows them proof - one of the crew sees them, hears them, or finds clear signs of them. Something made to look like an accident or a malfunction is taken for one: they may check on it, curse it or work around it, but they do not know anyone did it.`);
     lines.push('You play them: they do not wait for anyone. In this reply they carry their step forward - or deal with what is in their way - by their skills and posts; each knows only what they can see or are told over their own channels.');
     return lines.join('\n');
 }
@@ -254,5 +254,6 @@ export function opGuidance(op) {
     const o = normalizeOp(op);
     if (!isLive(o)) return '';
     if (o.status === 'pulling out') return `${o.side}'s people are pulling out now - breaking off and getting away the way they came.`;
-    return `${o.side}'s people are at work here and do not wait for anyone: ${currentStep(o).text}. Show only what the others could see or hear of it; their plan stays theirs.`;
+    const unaware = o.aware ? '' : ` They do not know ${o.against || 'anyone'} is here: they are not waiting for them - no trap, no ambush - and are caught off guard if found.`;
+    return `${o.side}'s people are at work here and do not wait for anyone: ${currentStep(o).text}. Show only what the others could see or hear of it; their plan stays theirs.${unaware}`;
 }

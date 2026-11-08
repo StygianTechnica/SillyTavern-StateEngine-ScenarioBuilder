@@ -461,7 +461,7 @@ function opFormat(input) {
     if (input.opLive) {
         return [
             '',
-            'Under THE OTHER SIDE, a line saying how their step went in this reply: done (it is carried out), held (someone or something stopped it this time), spotted (they found out who is against them), or pulling out (they give up and go). They carry on without one.',
+            'Under THE OTHER SIDE, a line saying how their step went in this reply: done (it is carried out), held (someone or something stopped it this time), spotted (one of them saw, heard or found clear proof of who is against them - never for a trick staged to look like an accident or a malfunction), or pulling out (they give up and go). They carry on without one.',
             'OPERATION | <done, held, spotted or pulling out> | <how, a few words>',
         ];
     }
