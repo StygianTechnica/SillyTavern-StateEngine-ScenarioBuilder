@@ -46,3 +46,22 @@ describe('a crew that does not know who is there', () => {
         expect(opGuidance(spotted)).not.toMatch(/no trap/);
     });
 });
+
+describe('the museum heist as it really went', () => {
+    // No faction-level tie: only Enrique as Cyril's rival. The chat says
+    // "Enrique's operatives"; the heist is in the director's own briefing.
+    const people = new Map([['f_med', [{ id: 'enr', name: 'Enrique Medina' }, { id: 'dt', name: 'Delvin "Ice" Timmers' }]], ['f_wc', [{ id: 'inji', name: 'Inji Miyama' }]]]);
+    const ties = [{ from: 'enr', to: 'cyril', kind: 'rival' }];
+    const briefing = "Inji's mind is set on completing their objective: disrupting Enrique's art heist. He trusts his partner and leader.\n\nAs Cyril reports difficulties with counting the opposition, Inji presses on.";
+    const chat = ['Cyril shifted back. "I\'m having trouble getting a count."', '"I count five, maybe six," he whispered. "Looks like they\'re headed straight for the Vault. We need to be ready to engage before they breach it."'];
+    it('finds the Medina Syndicate from a personal rivalry and the briefing', () => {
+        expect(rivalAtWork({ texts: [briefing, ...chat], factions, relations: ties, mine: ['f_wc'], playerId: 'cyril', members: people }))
+            .toEqual({ who: 'Medina Syndicate', what: "Inji's mind is set on completing their objective: disrupting Enrique's art heist." });
+    });
+    it('not from a passage that names no one of theirs', () => {
+        expect(rivalAtWork({ texts: chat, factions, relations: ties, mine: ['f_wc'], playerId: 'cyril', members: people })).toBeNull();
+    });
+    it('a player with no faction still has rivals of their own', () => {
+        expect(rivalAtWork({ texts: [briefing], factions, relations: ties, mine: [], playerId: 'cyril', members: people })?.who).toBe('Medina Syndicate');
+    });
+});

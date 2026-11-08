@@ -12,7 +12,7 @@ const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Factions that do not work together (src/guidance/sides.js).
 const AT_ODDS = /distrust|mistrust|enem|rival|hostil|\bwar\b|oppos|hate|feud|against|suspic|wary|target(?:s|ed|ing)?\b|hunt\w*|competit/i;
-const JOB = /\b(?:heists?|raid(?:s|ing)?|break-?ins?|breaking in|robb(?:ery|eries|ing)|steal(?:s|ing)?|ambush(?:es|ing)?|kidnap(?:s|ping)?|hijack(?:s|ing)?|smuggl\w*|assault\w*|sabotag\w*)\b/i;
+const JOB = /\b(?:heists?|raid(?:s|ing)?|break-?ins?|breaking in|breach(?:es|ed|ing)?|theft|thie(?:f|ves)|burglar\w*|robb(?:ery|eries|ing)|steal(?:s|ing)?|ambush(?:es|ing)?|kidnap(?:s|ping)?|hijack(?:s|ing)?|smuggl\w*|assault\w*|sabotag\w*)\b/i;
 
 const wordIn = (name, text) => {
     const n = clean(name);
@@ -30,21 +30,34 @@ function namesOf(faction, people = []) {
     return [...new Set([...own, ...theirs])];
 }
 
-// texts: the recent chat, oldest first; factions: library faction entries;
-// relations: the setting's; mine: the player character's faction ids;
-// members: Map(factionId -> [character entries]).
-// -> { who (the faction's name), what (the sentence) } or null.
-export function rivalAtWork({ texts = [], factions = [], relations = [], mine = [], members = new Map() } = {}) {
-    if (!mine.length) return null;
+// texts: the recent chat, oldest first, with the director's last briefing
+// and the threads being followed (its own "disrupting Enrique's art heist"
+// counts, when the chat only says "Enrique's operatives"); factions:
+// library faction entries; relations: the setting's; mine: the player
+// character's faction ids; playerId; members: Map(factionId -> [character
+// entries]). A rival is a faction at odds with the player character's side
+// - the faction itself, or one of its people at odds with the player
+// character or one of theirs (Enrique Medina, Cyril's rival). A job and the
+// rival's name in the same passage.
+// -> { who (the faction's name), what (the passage, cut) } or null.
+export function rivalAtWork({ texts = [], factions = [], relations = [], mine = [], playerId = '', members = new Map() } = {}) {
     const ours = new Set(mine);
-    const rivals = factions.filter((f) => !ours.has(f.id) && relations.some((r) => AT_ODDS.test(clean(r?.kind))
-        && ((ours.has(r.from) && r.to === f.id) || (ours.has(r.to) && r.from === f.id))));
+    const usIds = new Set([...mine, ...(playerId ? [playerId] : []), ...mine.flatMap((id) => (members.get(id) ?? []).map((c) => c.id))]);
+    if (!usIds.size) return null;
+    const rivals = factions.filter((f) => {
+        if (ours.has(f.id)) return false;
+        const them = new Set([f.id, ...(members.get(f.id) ?? []).map((c) => c.id)].filter((id) => !usIds.has(id)));
+        return relations.some((r) => AT_ODDS.test(clean(r?.kind)) && ((usIds.has(r.from) && them.has(r.to)) || (usIds.has(r.to) && them.has(r.from))));
+    });
     if (!rivals.length) return null;
-    const sentences = texts.flatMap((t) => String(t ?? '').split(/(?<=[.!?…])\s+|\n+/)).map(clean).filter(Boolean).reverse();
-    for (const s of sentences) {
-        if (!JOB.test(s)) continue;
-        const f = rivals.find((x) => namesOf(x, members.get(x.id) ?? []).some((n) => wordIn(n, s)));
-        if (f) return { who: f.name, what: s.slice(0, 300) };
+    const passages = texts.flatMap((t) => String(t ?? '').split(/\n\s*\n/)).map(clean).filter(Boolean).reverse();
+    for (const p of passages) {
+        if (!JOB.test(p)) continue;
+        const f = rivals.find((x) => namesOf(x, members.get(x.id) ?? []).some((n) => wordIn(n, p)));
+        if (!f) continue;
+        // The sentence with the job in it, for the plan's request.
+        const sentence = p.split(/(?<=[.!?…])\s+/).find((x) => JOB.test(x)) ?? p;
+        return { who: f.name, what: clean(sentence).slice(0, 300) };
     }
     return null;
 }

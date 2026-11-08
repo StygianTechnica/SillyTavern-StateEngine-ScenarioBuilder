@@ -1270,7 +1270,16 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
                     const members = new Map();
                     for (const [personId, ids] of byPerson) for (const id of ids) members.set(id, [...(members.get(id) ?? []), characters.find((c) => c.id === personId)].filter(Boolean));
                     const playerId = playerIdOf(settingId, characters);
-                    opposed = rivalAtWork({ texts: messages.slice(-4).map((m) => m.text), factions: factionList, relations, mine: byPerson.get(playerId) ?? [], members });
+                    // The chat, the threads followed, and the briefings (the
+                    // last and this one) - "disrupting Enrique's art heist"
+                    // was only ever in the director's own words.
+                    const texts = [
+                        ...(guidance.quests ?? []).map((q) => [q.name, q.current].filter(Boolean).join('. ')),
+                        doc.director.note ?? '',
+                        ...messages.slice(-4).map((m) => m.text),
+                        parsed.note ?? '',
+                    ];
+                    opposed = rivalAtWork({ texts, factions: factionList, relations, mine: byPerson.get(playerId) ?? [], playerId, members });
                     if (opposed) console.info(LOG_PREFIX, `the other side: the chat shows ${opposed.who} at work - "${opposed.what}"`);
                 } catch (err) {
                     console.warn(LOG_PREFIX, 'could not look for a rival crew at work', err);
