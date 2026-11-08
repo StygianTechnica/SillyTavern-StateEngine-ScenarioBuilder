@@ -530,6 +530,11 @@
 .sb-multi { min-width: 12em; max-width: 100%; }
 .sb-badge-warn { border-color: #d08a3a; color: #e8a65a; }
 
+/* Sections under a row of tabs (src/ui/section-tabs.js). */
+.sb-section-tabs { min-width: 0; }
+.sb-section-tabbar { display: flex; flex-wrap: wrap; gap: 2px; margin-bottom: 8px; border-bottom: 1px solid var(--sb-line); }
+.sb-section-pane[hidden] { display: none; }
+
 /* GM Plan tab (src/ui/gm-plan.js). */
 .sb-gm-col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .sb-gm-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 0; border-top: 1px solid var(--sb-line); }

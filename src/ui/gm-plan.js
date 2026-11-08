@@ -25,6 +25,7 @@ import { downloadText, safeFileName } from '../store/files.js';
 import { eventCard } from './event-card.js';
 import { opCard } from './op-card.js';
 import { worldCard } from './world-card.js';
+import { sectionTabs } from './section-tabs.js';
 import { ws, rerender, markDirty } from './ws.js';
 import { h, icon, button, select, field, toast } from './dom.js';
 
@@ -892,6 +893,17 @@ export async function renderGmPlan() {
     const factions = await listEntries(ws.ctx.chatId, settingId, 'faction').catch(() => []);
     return h('div', { class: 'sb-gm-plan' },
         h('div', { class: 'sb-scene-cols' },
-            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), starterCard(), volumesCard(gm), ideasCard(gm), todayCard(gm, show), settledCard(gm), agendaCard(gm, show), eventCard(places, [...people, ...creatures]), opCard(factions, people, show), triggersCard(gm, show, places, people), queueCard(gm), inspirationCard(gm)),
+            h('div', { class: 'sb-gm-col' }, outlineCard(gm, show), starterCard(), volumesCard(gm),
+                sectionTabs([
+                    { id: 'ideas', label: 'Ideas', iconName: 'fa-lightbulb', badge: openIdeas(gm).length, body: ideasCard(gm) },
+                    { id: 'today', label: 'Today', iconName: 'fa-chess-knight', body: todayCard(gm, show) },
+                    { id: 'settled', label: 'Settled', iconName: 'fa-thumbtack', body: settledCard(gm) },
+                    { id: 'agenda', label: 'Agenda', iconName: 'fa-calendar-days', body: agendaCard(gm, show) },
+                    { id: 'event', label: 'Event', iconName: 'fa-trophy', body: eventCard(places, [...people, ...creatures]) },
+                    { id: 'other', label: 'The other side', iconName: 'fa-user-secret', body: opCard(factions, people, show) },
+                    { id: 'triggers', label: 'Triggers', iconName: 'fa-bolt', body: triggersCard(gm, show, places, people) },
+                    { id: 'requests', label: 'Your requests', iconName: 'fa-list-ol', body: queueCard(gm) },
+                    { id: 'inspiration', label: 'Inspiration', iconName: 'fa-feather-pointed', body: inspirationCard(gm) },
+                ], ws.gmSection, (id) => { ws.gmSection = id; })),
             h('div', { class: 'sb-gm-col' }, paceCard(gm), companyCard(people), worldCard(gm, show, [...people, ...factions]), settingsCard(gm))));
 }

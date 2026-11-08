@@ -27,6 +27,7 @@ import { activateForOpenChat } from './activate.js';
 import { getBoundSettingId } from '../library/library.js';
 import { registerNotificationCallback, notify, clearNotification } from '../api/notifications.js';
 import { openWorkspace } from './workspace.js';
+import { ws } from './ws.js';
 import { noticeText, ideasNoticeText } from './status-model.js';
 
 const REVIEW_ID = 'review';
@@ -71,7 +72,7 @@ async function update() {
 export async function startReviewNotice() {
     await registerNotificationCallback('openReview', () => openWorkspace({ tab: 'review' }));
     await registerNotificationCallback('activatePreset', () => activateForOpenChat());
-    await registerNotificationCallback('openIdeas', () => openWorkspace({ tab: 'plan' }));
+    await registerNotificationCallback('openIdeas', () => { ws.gmSection = 'ideas'; return openWorkspace({ tab: 'plan' }); });
     const { eventSource, eventTypes } = SillyTavern.getContext();
     let timer = null;
     const later = () => { clearTimeout(timer); timer = setTimeout(() => void update(), 800); };

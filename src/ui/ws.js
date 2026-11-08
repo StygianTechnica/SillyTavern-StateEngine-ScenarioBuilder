@@ -21,6 +21,8 @@ export const ws = {
     sheetTab: 'overview',
     editing: false,         // the sheet is in edit mode
     dirty: false,           // unsaved input - don't redraw under it
+
+    gmSection: '',          // the section open under the GM Plan's tabs
 };
 
 let redraw = () => {};
