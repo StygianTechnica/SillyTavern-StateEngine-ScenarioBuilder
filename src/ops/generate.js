@@ -23,7 +23,9 @@ const cut = (text, max) => {
 // ties them to this job or they head it all.
 const personLine = (p) => {
     const notes = [clean(p.rank), p.tied ? (p.away ? 'named in the story with this job - ordered it from afar' : 'named in the story with this job') : '', p.head && !p.tied ? 'the head of it all - rarely on a job in person' : '',
-        p.away ? `stays out of the field - never on a job's crew, never named in a step${p.tied ? '' : '; at most ordered it'}` : ''].filter(Boolean);
+        p.away ? `stays out of the field - never on a job's crew, never named in a step${p.tied ? '' : '; at most ordered it'}` : '',
+        p.wingName ? `${clean(p.wingRank) ? `${clean(p.wingRank)} of` : 'of'} ${clean(p.wingName)}` : '',
+        p.otherWing ? `another part of the side than whose job this is - along only as a specialist the job truly needs, guarded by the crew` : ''].filter(Boolean);
     return `- ${clean(p.name)}${notes.length ? ` (${notes.join('; ')})` : ''}${clean(p.description) ? `: ${cut(p.description, 100)}` : ''}`;
 };
 
@@ -81,6 +83,7 @@ export function buildOpPrompt(input) {
         '- Who orders it and who runs it are often two people. Someone of standing - a boss, a power broker, the head of it all - orders it and keeps well away (at home, at a party, with an alibi), and a trusted lieutenant leads it on site. Someone of no great standing may lead their own job in person.',
         people.some((p) => p.tied) ? `- ${people.filter((p) => p.tied).map((p) => clean(p.name)).join(' or ')} ${people.filter((p) => p.tied).length > 1 ? 'are' : 'is'} named in the story with this job: they ordered it or lead it, as their standing says - not the head of it all in their place.` : '',
         '- The head of it all is never one of the crew, unless the story says so. Nor is anyone marked as staying out of the field: belonging to the side does not make someone a crew hand.',
+        people.some((p) => p.otherWing) ? '- The side has parts of its own (departments, chapters, families, each with its own head). A job is crewed from the part whose job it is. Someone of another part comes only when the job needs what only they can do - a specialist - and then the crew keeps them safe; give them a CREW line saying what they are there for.' : '',
         '- Two to six crew, each on a CREW line of their own with what they are good at and where they are posted: everyone named in a step is on a CREW line (the one who ordered it is not).',
         '- Three to six steps in order, from getting in to getting away with it; the last step is the getaway. If the story so far has already played a step, end its line with "| done".',
         '- One to three conditions they pull out on, and how many crew down before they cut their losses.',
@@ -233,6 +236,9 @@ export function findSide(name, factions = [], characters = [], memberships = new
 // Whether text names any of `names` (the player character, their side).
 export const aboutThem = (text, names = []) => names.map(clean).filter((n) => n.length >= 3).some((n) => wordRe(n).test(String(text ?? '')));
 
+// Titles, never what someone is called by alone.
+const TITLES = new Set(['doctor', 'dr', 'sergeant', 'sgt', 'captain', 'capt', 'commander', 'colonel', 'major', 'lieutenant', 'general', 'admiral', 'agent', 'officer', 'detective', 'professor', 'prof', 'director', 'sister', 'brother', 'father', 'mother', 'lord', 'lady', 'dame', 'sir', 'master', 'mistress', 'king', 'queen', 'prince', 'princess', 'duke', 'baron', 'count', 'countess', 'elder', 'chief', 'boss', 'mister', 'miss', 'madam']);
+
 // Words that start a clause, never a name.
 const NOT_NAMES = new Set(['the', 'then', 'while', 'once', 'after', 'before', 'when', 'if', 'they', 'he', 'she', 'it', 'their', 'his', 'her', 'its', 'one', 'two', 'three', 'both', 'all', 'each', 'everyone', 'someone', 'meanwhile', 'finally', 'next', 'first', 'last', 'with', 'from', 'into', 'inside', 'outside', 'at', 'in', 'on', 'as', 'and', 'but', 'so', 'get', 'go', 'take', 'grab', 'drive', 'leave', 'use', 'make', 'set', 'cut', 'open', 'disable', 'enter', 'wait', 'meet', 'load', 'police', 'security', 'guards', 'guard', 'staff', 'crew', 'team', 'leader', 'boss', 'nobody', 'no']);
 
@@ -287,10 +293,13 @@ export function shapePlan(plan, { people = [], against = [], aware = false, plac
     let p = { ...plan, crew: [...(plan.crew ?? [])], steps: [...(plan.steps ?? [])], withdraw: [...(plan.withdraw ?? [])], boss: plan.boss ?? { name: '', where: '', objectId: '' } };
     const same = (a, b) => clean(a).toLowerCase() === clean(b).toLowerCase();
     const firstOf = (n) => clean(n).split(/[\s"']+/)[0];
+    // A person goes by their full name, aliases, and any word of their name
+    // no one else of theirs shares - "Okafor" for Sergeant Okafor, "Enrique"
+    // for Enrique Medina, never "Medina" (the whole family has it).
+    const tokens = (n) => clean(n).split(/[\s"']+/).filter((w) => w.length >= 4 && !TITLES.has(w.toLowerCase().replace(/\.$/, '')));
     const callNames = (person) => {
-        const first = firstOf(person.name);
-        const shared = people.filter((o) => firstOf(o.name) === first).length > 1;
-        return [person.name, ...(first.length >= 4 && !shared ? [first] : []), ...(person.aliases ?? [])].filter((n) => clean(n).length >= 3);
+        const own = tokens(person.name).filter((w) => !people.some((o) => o !== person && o.name !== person.name && tokens(o.name).some((x) => same(x, w))));
+        return [person.name, ...own, ...(person.aliases ?? [])].filter((n) => clean(n).length >= 3);
     };
     const isOf = (name, person) => callNames(person).some((n) => same(n, name) || same(firstOf(name), n));
     const named = (text, person) => callNames(person).some((n) => wordRe(n).test(text));
@@ -319,11 +328,33 @@ export function shapePlan(plan, { people = [], against = [], aware = false, plac
         const names = callNames(away);
         p.steps = p.steps.map((s) => ({ ...s, text: names.reduce((t, n) => t.replace(wordRe(n), (_m, pre) => `${pre}one of the crew`), s.text).replace(/^one of/, 'One of') }));
     }
+    // Another part of the side (a wing, a department - src/library/wings.js):
+    // never leading it; on the crew only as a specialist with a skill to
+    // bring (two at most), guarded; anyone else of theirs out, and out of
+    // the steps - the research department does not come on a raid to make up
+    // the numbers.
+    const specialists = [];
+    for (const other of people.filter((x) => x.otherWing && !x.away)) {
+        if (isOf(p.leader.name, other)) {
+            const own = p.crew.find((c) => !people.some((x) => x.otherWing && isOf(c.name, x)));
+            p.leader ={ name: own?.name ?? '', where: own?.post ?? '', objectId: own?.objectId ?? '' };
+        }
+        const at = p.crew.findIndex((c) => isOf(c.name, other));
+        if (at >= 0 && clean(p.crew[at].skill) && specialists.length < 2) {
+            const c = p.crew[at];
+            if (!/\b(?:guard|protect|escort|cover)/i.test(`${c.post} ${p.steps.map((s) => s.text).join(' ')}`)) p.crew[at] = { ...c, post: [clean(c.post), 'guarded by the crew'].filter(Boolean).join('; ') };
+            specialists.push(other);
+            continue;
+        }
+        p.crew = p.crew.filter((c) => !isOf(c.name, other));
+        const names = callNames(other);
+        p.steps = p.steps.map((s) => ({ ...s, text: names.reduce((t, n) => t.replace(wordRe(n), (_m, pre) => `${pre}one of the crew`), s.text).replace(/^one of/, 'One of') }));
+    }
     // Their own people the steps name are crew, when no CREW line has them.
     const onCrew = (person) => p.crew.some((c) => isOf(c.name, person)) || isOf(p.leader.name, person) || (p.boss.name && isOf(p.boss.name, person));
     const stepsText = p.steps.map((s) => s.text).join('\n');
     for (const person of people) {
-        if (person.head || person.away || onCrew(person) || !named(stepsText, person)) continue;
+        if (person.head || person.away || person.otherWing || onCrew(person) || !named(stepsText, person)) continue;
         p.crew.push({ name: person.name, skill: '', post: '', objectId: person.objectId ?? '' });
     }
     // ...and so are new hands the steps name doing something ("Tadam cracks
@@ -333,8 +364,9 @@ export function shapePlan(plan, { people = [], against = [], aware = false, plac
     p.steps = steps;
     const notThem = [p.leader.name, p.boss.name, plan.side, ...against].map(clean).filter(Boolean);
     for (const name of stepActors(p.steps.map((s) => s.text).join('\n'))) {
-        if (notThem.some((n) => same(n, name) || same(firstOf(n), name)) || p.crew.some((c) => same(c.name, name) || same(firstOf(c.name), name))) continue;
-        if (people.some((x) => (x.head || x.away) && isOf(name, x))) continue;
+        const partOf = (full) => same(full, name) || tokens(full).some((w) => same(w, name));
+        if (notThem.some(partOf) || p.crew.some((c) => partOf(c.name))) continue;
+        if (people.some((x) => (x.head || x.away || x.otherWing) && isOf(name, x))) continue;
         const known = people.find((x) => isOf(name, x));
         p.crew.push({ name: known?.name ?? name, skill: '', post: '', objectId: known?.objectId ?? '' });
     }

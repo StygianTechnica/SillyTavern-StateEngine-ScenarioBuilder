@@ -24,6 +24,7 @@ import { EXTENSION_ID } from '../constants.js';
 import { listEntries } from './library.js';
 import { getObjectFields, setObjectFields } from '../api/objects.js';
 import { rosterIds } from './roster.js';
+import { ancestorsOf } from './wings.js';
 
 export const FACTIONS_FIELD = 'factions';
 export const TIES_FIELD = 'faction_ties';
@@ -170,6 +171,8 @@ export function libraryMemberships(factions, relations) {
     for (const r of relations ?? []) {
         if (factionIds.has(r.to) && MEMBER_KINDS.has(String(r.kind).toLowerCase())) add(r.from, r.to);
     }
+    // A wing's people are of every faction it sits inside (src/library/wings.js).
+    for (const [charId, set] of out) for (const f of [...set]) for (const up of ancestorsOf(f, relations, factionIds)) add(charId, up);
     return new Map([...out].map(([k, v]) => [k, [...v]]));
 }
 

@@ -13,6 +13,7 @@ import { newLocalId } from '../store/schema.js';
 import { getSettings } from '../settings.js';
 import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive } from './model.js';
 import { inPersonOf } from '../guidance/spoken.js';
+import { allWingsOf, wingOfPerson, markOtherWings } from '../library/wings.js';
 import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst, shapePlan, aboutThem } from './generate.js';
 
 export const OPS_EVENT = 'scenario_builder_ops_changed';
@@ -114,10 +115,29 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
         const player = characters.find((c) => c.id === playerId);
         // Its people, ranked first (the leader is on the roster's top).
         const roster = found.faction ? rosterOf(found.faction) : null;
-        const people = found.faction ? characters.filter((c) => (memberships.get(c.id) ?? []).includes(found.faction.id) && c.id !== playerId)
-            .map((c) => ({ c, place: placeIn(roster, c.id) }))
+        // ...and its wings' people - departments, chapters, families inside
+        // it, any number and any depth (src/library/wings.js) - each with
+        // the wing they stand in and their rank there; a wing's head is a
+        // head too.
+        const factionIds = new Set(factions.map((f) => f.id));
+        const within = found.faction ? new Set([found.faction.id, ...allWingsOf(found.faction.id, relations, factionIds)]) : new Set();
+        const people = found.faction ? characters.filter((c) => (memberships.get(c.id) ?? []).some((id) => within.has(id)) && c.id !== playerId)
+            .map((c) => {
+                const wing = wingOfPerson(c.id, found.faction.id, memberships, relations, factionIds);
+                const wingFaction = wing ? factions.find((f) => f.id === wing) : null;
+                return { c, place: placeIn(roster, c.id), wingFaction, wingPlace: wingFaction ? placeIn(rosterOf(wingFaction), c.id) : null };
+            })
             .sort((a, b) => (a.place?.tier ?? 99) - (b.place?.tier ?? 99))
-            .map(({ c, place }) => ({ name: c.name, objectId: c.id, aliases: c.aliases ?? c.base?.aliases ?? [], rank: [place?.tierName, place?.title].filter(Boolean).join(', '), head: place?.tier === 0, away: inPersonOf(c), description: c.description ?? c.base?.description ?? '' })) : [];
+            .map(({ c, place, wingFaction, wingPlace }) => ({
+                name: c.name, objectId: c.id, aliases: c.aliases ?? c.base?.aliases ?? [],
+                rank: [place?.tierName, place?.title].filter(Boolean).join(', '),
+                head: place?.tier === 0 || wingPlace?.tier === 0,
+                // Heads their own wing only - may own its jobs (src/library/wings.js).
+                wingHead: wingPlace?.tier === 0 && place?.tier !== 0,
+                wing: wingFaction?.id ?? '', wingName: wingFaction?.name ?? '',
+                wingRank: [wingPlace?.tierName, wingPlace?.title].filter(Boolean).join(', '),
+                away: inPersonOf(c), description: c.description ?? c.base?.description ?? '',
+            })) : [];
         // Kept off the job by their sheet ("In person": stays out of the
         // field, or waits for their beat - Bartin, the family scion). The
         // request naming one of them ties them to it ("Enrique's heist"):
@@ -149,7 +169,9 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
                 console.warn(LOG_PREFIX, 'could not roll names for the other side', err);
             }
         }
-        const sidePeople = tiedFirst(people, [request, side, story].join('\n'));
+        // Crewed from the wing of whoever's job it is (src/library/wings.js).
+        const wings = markOtherWings(tiedFirst(people, [request, side, story].join('\n')), { relations, factionIds, sideName });
+        const sidePeople = wings.people;
         const prompt = buildOpPrompt({
             side: { name: sideName, description: found.faction?.description ?? found.faction?.base?.description ?? '' },
             people: sidePeople,
@@ -195,6 +217,7 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
         return {
             ...plan,
             sideId: found.faction?.id ?? '',
+            wingId: wings.ownerWing,
             placeId: at,
             placeName: places.find((p) => p.id === at)?.name ?? '',
             aware,
@@ -216,13 +239,19 @@ export async function startOpPlan(chatId, chatKey, settingId, plan, { turn = nul
         const newcomers = [p.leader, ...(p.boss?.name ? [p.boss] : []), ...p.crew].filter((x) => x?.name && !x.objectId && isPersonName(x.name));
         if (newcomers.length && settingId && getSettings().director.allowCreate) {
             const { createNeeded } = await import('../director/run.js');
+            // Whose job it is and whom they answer to, in the seed the
+            // enrichment builds on - Nichiro Fukudo, made as Enrique's crew,
+            // was written up as "the Moriarty branch, under Randrés Moriarty".
+            const at = p.placeName || 'the scene';
+            const whose = p.boss?.name ? `${p.boss.name}'s job` : 'the job';
             const items = newcomers.map((x) => ({
                 kind: 'character',
                 name: x.name,
                 description: x === p.leader
-                    ? `Runs ${p.side}'s operation at ${p.placeName || 'the scene'}: ${p.aim}`
-                    : x === p.boss ? `Of ${p.side}; ordered the operation at ${p.placeName || 'the scene'} and keeps well away from it.`
-                    : `${x.skill ? `${x.skill.replace(/\.$/, '')}, ` : 'One '}of ${p.side}'s crew${x.post ? `, posted ${x.post.replace(/^(?:posted|stationed)\s+/i, '')}` : ''}.`,
+                    ? `Of ${p.side}; runs ${whose} at ${at} on site: ${p.aim}${p.boss?.name ? `. A trusted lieutenant of ${p.boss.name}'s` : ''}`
+                    : x === p.boss ? `Of ${p.side}; ordered the operation at ${at} and keeps well away from it.`
+                    : `${x.skill ? `${x.skill.replace(/\.$/, '')}, ` : 'One '}of ${p.side}'s crew on ${whose} at ${at}${p.leader.name ? `, answering to ${p.leader.name}` : ''}${x.post ? `; posted ${x.post.replace(/^(?:posted|stationed)\s+/i, '')}` : ''}. ${p.boss?.name ? `One of ${p.boss.name}'s own people, not anyone else's in ${p.side}` : `Loyal to ${p.side}`}.`,
+                tiedIds: [p.sideId, ...(x === p.leader ? [] : [p.leader.objectId]), ...(x === p.boss ? [] : [p.boss?.objectId])].filter(Boolean),
                 here: false,
             }));
             const made = await createNeeded(chatId, chatKey, settingId, items, null);
@@ -232,6 +261,8 @@ export async function startOpPlan(chatId, chatKey, settingId, plan, { turn = nul
             if (p.sideId) {
                 const { addRelation } = await import('../library/relations-edit.js');
                 for (const m of made) addRelation(settingId, { from: m.id, to: p.sideId, kind: 'member of' });
+                // ...and of the wing whose job it is (src/library/wings.js).
+                if (p.wingId && p.wingId !== p.sideId) for (const m of made) addRelation(settingId, { from: m.id, to: p.wingId, kind: 'member of' });
             }
         }
     } catch (err) {

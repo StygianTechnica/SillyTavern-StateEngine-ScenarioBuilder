@@ -678,5 +678,6 @@
 .sb-roster-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
 .sb-faction-row .sb-roster-head { flex-wrap: wrap; }
 .sb-faction-row .sb-roster-tiername { cursor: pointer; }
+.sb-wings .sb-roster-head { flex-wrap: wrap; gap: 6px; }
 .sb-roster-style {display: flex; align-items: center; gap: 8px; margin: 4px 0; }
 .sb-roster-style input { flex: 1; min-width: 0; }

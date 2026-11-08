@@ -20,10 +20,10 @@ import { tierFor, placePerson } from './roster.js';
 export const RELATION_KINDS = Object.freeze([
     'ally', 'friend', 'rival', 'enemy', 'family', 'sibling', 'spouse / partner', 'lover',
     'parent of', 'child of', 'mentor of', 'student of', 'employer of', 'works for', 'serves', 'leads',
-    'member of', 'owes', 'protects', 'fears', 'distrusts', 'admires', 'hates', 'loves', 'knows',
+    'member of', 'part of', 'owes', 'protects', 'fears', 'distrusts', 'admires', 'hates', 'loves', 'knows',
 ]);
 export const MUTUAL_KINDS = Object.freeze(new Set(['ally', 'friend', 'rival', 'enemy', 'family', 'sibling', 'spouse / partner', 'lover', 'knows']));
-const INVERSE = Object.freeze({ 'parent of': 'child of', 'child of': 'parent of', 'mentor of': 'student of', 'student of': 'mentor of', 'employer of': 'works for', 'works for': 'employer of', leads: 'led by', serves: 'served by', 'member of': 'has member' });
+const INVERSE = Object.freeze({ 'parent of': 'child of', 'child of': 'parent of', 'mentor of': 'student of', 'student of': 'mentor of', 'employer of': 'works for', 'works for': 'employer of', leads: 'led by', serves: 'served by', 'member of': 'has member', 'part of': 'has wing' });
 
 // ---- links (reference fields)
 
@@ -61,7 +61,9 @@ export function listRelations(settingId) {
 // top tier, a capo the Capos. With no tier that fits, it is kept as a
 // relationship, and the roster shows them as Unplaced.
 export function addRelation(settingId, rel) {
-    const joining = rel?.from && rel?.to ? memberKindOf(rel.kind) : null;
+    // A wing "part of" a faction is not one of its people (src/library/wings.js).
+    const wing = String(rel?.kind ?? '').trim().toLowerCase() === 'part of';
+    const joining = rel?.from && rel?.to && !wing ? memberKindOf(rel.kind) : null;
     const roster = joining ? getSettingDoc(settingId).entries?.[rel.to]?.roster : null;
     const tier = roster ? tierFor(roster, { kind: joining, role: rel.role ?? '' }) : '';
     if (tier) {
