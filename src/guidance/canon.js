@@ -9,6 +9,8 @@
 // rewritten. Subtler contradictions are for a model check (ROADMAP,
 // "Continuity check by model"). Pure.
 
+import { FEMALE, MALE } from '../naming/classify.js';
+
 const clean = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
 const lower = (text) => clean(text).toLowerCase();
 const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -121,6 +123,30 @@ export function correctionText({ slips = [], dead = [] } = {}) {
 // -> [{ name, gender }]
 const HIS = /\b(?:he|him|his|himself)\b/i;
 const HERS = /\b(?:she|her|hers|herself)\b/i;
+const LEAD = /^[\s"“*_-]+/;
+const unquoted = (s) => String(s ?? '').replace(/["“][^"”]*["”]/g, ' ');
+// Someone unnamed of the pronoun's gender ("a woman", "the priestess").
+const nounsOf = (words) => new RegExp(String.raw`\b(?:${words.filter((w) => !/^(?:she|her|hers|he|him|his)$/.test(w)).join('|')})\b`, 'i');
+const WOMAN = nounsOf(FEMALE);
+const MAN = nounsOf(MALE);
+// A wrong he / she right after a sentence that names this person and no one
+// else, with nobody else it could be: "...where he instructed Inji to head.
+// Sure enough, she's visible" - Inji, not at the start of the sentence. One
+// who could be meant instead ("The guard saw Inji. She..."; "She eyed Inji.
+// She...") leaves it alone.
+function plainlyMeant(prev, s, gender, names, rest) {
+    const wrong = gender === 'f' ? HIS : HERS;
+    const noun = gender === 'f' ? MAN : WOMAN;
+    const before = unquoted(prev).replace(LEAD, '');
+    const now = unquoted(s).replace(LEAD, '');
+    const m = wrong.exec(now);
+    if (!m || !before) return false;
+    const at = firstAt(before, names);
+    const upTo = now.slice(0, m.index);
+    return at >= 0 && firstAt(before, rest) < 0 && firstAt(upTo, rest) < 0 && firstAt(upTo, names) < 0
+        && !wrong.test(before.slice(0, at)) && !/^(?:the|a|an|one|some|someone|another|two|three|four)\b/i.test(before)
+        && !noun.test(before) && !noun.test(upTo);
+}
 export function pronounSlips(people = [], text = '', { others = [] } = {}) {
     const out = [];
     const t = String(text ?? '').replace(/["“][^"”]*["”]/g, ' ');
@@ -130,7 +156,10 @@ export function pronounSlips(people = [], text = '', { others = [] } = {}) {
         // Everyone else, by first name too ("Inji" for Inji Miyama).
         const rest = [...new Set((others ?? []).flatMap((n) => [clean(n), clean(String(n ?? '').split(/[\s,]+/)[0])]).filter((n) => n.length >= 3 && !names.some((x) => lower(x) === lower(n))))];
         const wrong = p.gender === 'f' ? HIS : HERS;
-        const slip = sentences(t).some((s) => {
+        // The narrator's asterisks are not part of the sentence.
+        const list = sentences(t).map((s) => s.replace(LEAD, ''));
+        const slip = list.some((s, i) => {
+            if (i > 0 && plainlyMeant(list[i - 1], s, p.gender, names, rest)) return true;
             const at = firstAt(s, names);
             if (at !== 0) return false;
             // Up to the next person named: the pronouns there are theirs.
@@ -229,10 +258,32 @@ export function fixPronounsIn(text, person, others = []) {
     // Speech is left as it is: inside quotes, "he" may be anyone.
     const fixNarration = (s, fix) => s.split(/(["“][^"”]*["”])/).map((part, i) => (i % 2 ? part : fix(part))).join('');
     let theirs = false;
+    // The last sentence, and whether it was put right as plainly theirs.
+    let prev = '';
+    let carry = false;
+    const wrongWord = person.gender === 'f' ? HIS : HERS;
+    const unsafe = rest.filter((o) => o.gender !== person.gender).flatMap(namesOf);
+    const noun = person.gender === 'f' ? MAN : WOMAN;
     const out = String(text ?? '').split(/(?<=[.!?…]["”’']?)(\s+)/).map((s) => {
         if (!s.trim()) return s;
         const plain = s.replace(/^[\s"“*_-]+/, '');
         const lead = s.slice(0, s.length - plain.length);
+        const before = prev;
+        const carried = carry;
+        prev = plain;
+        carry = false;
+        if (firstAt(plain, names) !== 0 && plainlyMeant(before, plain, person.gender, names, restNames)) {
+            carry = true;
+            const next = firstAt(plain.slice(1), restNames);
+            const end = next < 0 ? plain.length : next + 1;
+            return lead + fixNarration(plain.slice(0, end), swap) + plain.slice(end);
+        }
+        // "...she's visible. Two men are closing in on her": still them,
+        // while no one else it could be is named.
+        if (carried && wrongWord.test(unquoted(plain)) && firstAt(plain, unsafe) < 0 && !noun.test(unquoted(plain))) {
+            carry = true;
+            return lead + fixNarration(plain, swap);
+        }
         if (firstAt(plain, names) === 0) {
             theirs = true;
             const next = firstAt(plain.slice(1), restNames);

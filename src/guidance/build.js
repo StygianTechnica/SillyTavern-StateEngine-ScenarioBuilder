@@ -16,7 +16,8 @@ import { isPlaceholder } from '../director/prompt.js';
 import { creatureLabel } from '../library/creature-form.js';
 import { fightGuidance } from '../director/fight.js';
 import { eventGuidance } from '../events/model.js';
-import { opGuidance, opRadio, opMeet } from '../ops/model.js';
+import { opGuidance, opRadio, opMeet, opPlaces } from '../ops/model.js';
+import { LOOKS, VIEWER } from './afar.js';
 import { povRule } from '../director/perspective.js';
 import { intimacySection } from './intimacy.js';
 
@@ -425,6 +426,25 @@ const ASKS_NEXT = /\b(?:what(?:'s|’s|\s+is)?\s+(?:next|now|the plan)|now what|
 const ASKS_PART = /\b(?:are you (?:sending|putting|taking|bringing) (?:me|us)|(?:send|put) me (?:in|on)|am i (?:going|in|on|part of|coming)|do i (?:go|get to go|come)|who(?:'s|’s|\s+is|\s+are|\s+goes|\s+will go|\s+do you send|\s+are you sending)\b[^?]{0,40}\b(?:going|in|on|ground|team|job|mission|sent|send|handl)|what(?:'s|’s|\s+is) my (?:part|role|job)|where do i (?:fit|come in))[^?]{0,80}\?/i;
 export const asksWhatNext = (text) => ASKS_NEXT.test(clean(text)) || ASKS_PART.test(clean(text));
 
+// The player's post ends on looking at something that shows them what is
+// elsewhere: a feed, a sensor, a scrying glass. -> the thing, or ''. Cyril
+// took over the museum's cameras; told nothing of what they showed, the
+// narrator carried on as Cyril - talking, deciding, setting off.
+export function looksThrough(post) {
+    const said = String(post ?? '').replace(/["“][^"”]*["”]/g, ' ').split(/(?<=[.!?…])\s+|\n+/).map(clean).filter(Boolean).slice(-2);
+    for (const s of said) if (LOOKS.test(s) && VIEWER.test(s)) return lower(s.match(VIEWER)[1]);
+    return '';
+}
+
+// He or she, in the note nearest the reply, for those the player's post
+// names: told only in the cast list far above, Inji - "he" for 700 messages -
+// was "she" once the briefing called him "they".
+function pronounsNamed(cast, post) {
+    const text = String(post ?? '');
+    return (cast ?? []).filter((c) => !c?.player && pronounText(c?.gender) && [clean(c.name), clean(c.name).split(/\s+/)[0]].some((n) => n.length >= 3 && new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text)))
+        .slice(0, 4).map((c) => `${clean(c.name)} is ${pronounText(c.gender)}`).join('; ');
+}
+
 export function buildNow(input) {
     // Those the player's posts say would not come in person (src/guidance/
     // spoken.js notInPerson): Enrique, third in the Syndicate, sends his flunkies to a
@@ -482,10 +502,13 @@ export function buildNow(input) {
     const radio = opRadio(input.op, clean((input.cast ?? []).find((c) => c.player)?.name));
     // Those of theirs the player character is at or headed to: met.
     const meet = opMeet(input.op, { here: clean((input.location?.path ?? []).at(-1)) || clean(input.location?.name), post: input.playerPost, player: clean((input.cast ?? []).find((c) => c.player)?.name) });
-    if (!radio && !meet && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
+    const pronouns = pronounsNamed(input.cast, input.playerPost);
+    const viewer = looksThrough(input.playerPost);
+    if (!pronouns && !viewer && !radio && !meet && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (corrections) orders.push(corrections);
+    if (pronouns) orders.push(`${pronouns}.`);
     if (arriving.length) orders.push(arriving.length === 1
         ? `${arriving[0]} comes in now - they arrive where everyone can see and speak or act, with their own reason for coming.`
         : `${andList(arriving)} come in now - each arrives where everyone can see and speaks or acts, with their own reason for coming.`);
@@ -498,6 +521,11 @@ export function buildNow(input) {
     if (elsewhere.length) orders.push(`Not in this scene: ${andList(elsewhere)} - ${elsewhere.length === 1 ? 'they are' : 'they are all'} elsewhere, and do not come in, speak or act in this reply. The reply stays with ${player?.name ? clean(player.name) : 'the player character'} and what is where they are - no cutting away to ${elsewhere.length === 1 ? 'them' : 'those elsewhere'}; word of ${elsewhere.length === 1 ? 'them' : 'them'} reaches ${player?.name ? clean(player.name) : 'the player character'} only by a call, a message or a sound carrying. Begin the reply with what is around ${player?.name ? clean(player.name) : 'the player character'} where they are now - what can be seen, heard or found there - never with what ${player?.name ? clean(player.name) : 'the player character'} does.`);
     if (meet) orders.push(meet);
     if (radio) orders.push(radio);
+    if (viewer) {
+        const who = player?.name ? clean(player.name) : 'The player character';
+        const places = opPlaces(input.op);
+        orders.push(`${who} is looking at the ${viewer}: the reply says what it shows${places.length ? ` (${places.join('; ')})` : ''} and stops there. ${who} only looks in this reply - no words, decisions or moves of ${who}'s; what to do about it is left to ${who}.`);
+    }
     if (triggered.length) orders.push(`It happens now: ${triggered.join(' ')}`);
     if (dodging) orders.push(dodging);
     // The beat's people are who it is (Adam kept sending others on the job

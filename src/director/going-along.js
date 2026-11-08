@@ -17,6 +17,31 @@ const NOT_ALONE = /\b(?:not|never|no longer|hardly)\s+(?:\w+\s+)?alone\b|n't\s+(
 // Words that take the whole company along: the party rushing down the stairs.
 const TOGETHER = /\b(?:they|we|us|the group|the party|the team|everyone|all of (?:us|them)|together|companions|the others (?:follow|went|came|go))\b/i;
 
+// A move between a place and one around or inside it: 'out' (to the place
+// around it), 'in' (to a part of it) or ''. parents: id -> parent id.
+export function sameGround(parents = {}, from = '', to = '') {
+    const inside = (a, b) => {
+        const seen = new Set();
+        for (let at = parents[a]; at && !seen.has(at); at = parents[at]) {
+            if (at === b) return true;
+            seen.add(at);
+        }
+        return false;
+    };
+    if (!from || !to || from === to) return '';
+    return inside(from, to) ? 'out' : inside(to, from) ? 'in' : '';
+}
+
+// Whether the player's post really goes somewhere: it leaves, or names where
+// the scene is said to be going. "He went to the console" crosses the room:
+// the game master's MOVE to the museum around it left Tadam, at gunpoint,
+// "behind" - and the one before had left Zane.
+const GOES_OFF = /\b(?:left|leav(?:e|es|ing)|exit(?:s|ed|ing)?|(?:walk|step|head|went|go|ran|run|rush|hurr|slip|duck|burst|dash)\w*\s+(?:out|outside|away|off|back|up|down|through|into)|outside|stairs|elevator|lift|climb\w*|descend\w*|set(?:s|ting)?\s+(?:out|off))\b/i;
+export function goesThere(text, placeNames = []) {
+    const said = sentencesOf(text);
+    return said.some((s) => GOES_OFF.test(s) || placeNames.map(clean).filter((n) => n.length >= 3).some((n) => new RegExp(`(^|[^\\p{L}])${escape(n)}(?!\\p{L})`, 'iu').test(s)));
+}
+
 // Whether the text has the player character moving off on their own
 // (outside speech): "arrived at the Armory alone", "left them behind".
 // playerNames: the sentence must name them or speak of them as he, she, I...

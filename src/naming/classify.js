@@ -65,8 +65,8 @@ const SHIP = ['ship', 'boat', 'vessel', 'galleon', 'sloop', 'frigate', 'brig', '
 const PIRATE = ['pirate', 'pirates', 'corsair', 'corsairs', 'buccaneer', 'buccaneers', 'raider', 'raiders', 'privateer', 'reaver', 'freebooter'];
 const NAVAL = ['navy', 'naval', 'warship', 'man-of-war', 'frigate', 'ship of the line', 'admiral', 'fleet', 'flagship'];
 
-const FEMALE = ['woman', 'women', 'girl', 'she', 'her', 'hers', 'lady', 'queen', 'princess', 'priestess', 'mother', 'daughter', 'sister', 'wife', 'widow', 'witch', 'matron', 'duchess', 'countess', 'empress', 'baroness', 'maiden', 'heroine', 'actress', 'waitress', 'goddess', 'matriarch', 'nun', 'abbess', 'aunt', 'grandmother', 'niece', 'female', 'sorceress', 'huntress', 'mistress', 'madam', 'crone', 'hag'];
-const MALE = ['man', 'men', 'boy', 'he', 'him', 'his', 'lord', 'king', 'prince', 'priest', 'father', 'son', 'brother', 'husband', 'widower', 'wizard', 'duke', 'count', 'emperor', 'baron', 'hero', 'actor', 'waiter', 'god', 'patriarch', 'monk', 'abbot', 'uncle', 'grandfather', 'nephew', 'male', 'sorcerer', 'huntsman', 'master', 'sir', 'squire', 'knight'];
+export const FEMALE = ['woman', 'women', 'girl', 'she', 'her', 'hers', 'lady', 'queen', 'princess', 'priestess', 'mother', 'daughter', 'sister', 'wife', 'widow', 'witch', 'matron', 'duchess', 'countess', 'empress', 'baroness', 'maiden', 'heroine', 'actress', 'waitress', 'goddess', 'matriarch', 'nun', 'abbess', 'aunt', 'grandmother', 'niece', 'female', 'sorceress', 'huntress', 'mistress', 'madam', 'crone', 'hag'];
+export const MALE = ['man', 'men', 'boy', 'he', 'him', 'his', 'lord', 'king', 'prince', 'priest', 'father', 'son', 'brother', 'husband', 'widower', 'wizard', 'duke', 'count', 'emperor', 'baron', 'hero', 'actor', 'waiter', 'god', 'patriarch', 'monk', 'abbot', 'uncle', 'grandfather', 'nephew', 'male', 'sorcerer', 'huntsman', 'master', 'sir', 'squire', 'knight'];
 
 // The part of a brief that says what a thing is, before what it says about
 // it: "a business district | where many corporations keep their

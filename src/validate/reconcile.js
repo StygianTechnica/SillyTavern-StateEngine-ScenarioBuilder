@@ -30,6 +30,7 @@ import { setCanonical } from '../state/canonical.js';
 import { beatsOf, undoBeatsFrom, unplantSeedsFrom } from '../planner/model.js';
 import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
 import { contextualPlace } from '../library/place-context.js';
+import { reachedAfar } from '../guidance/afar.js';
 import { noteMood } from '../director/company.js';
 import { catchUpWithStory, catchUpWithPost, catchUpWithTimeOfDay, holdStoryWeather, travelAlong } from '../calendar/clock.js';
 
@@ -293,6 +294,23 @@ async function reconcileOnce() {
             item.reason = `${name} is only mentioned (as someone's), not here`;
         }
     }
+    // Only reached by radio or seen on a feed (src/guidance/afar.js): not
+    // brought in, and not kept in. The next reading starts from the cast
+    // without them, or the old list would bring them straight back.
+    const playerName = characterEntries.find((c) => c.id === playerId)?.name ?? '';
+    const afar = (id) => id !== playerId && reachedAfar(namesOf(id), { post: latestPlayerText(), reply: latestReplyText(), player: playerName });
+    for (const item of items) {
+        if (item.field !== 'cast' || item.op !== 'add' || item.action !== 'accept' || !afar(item.objectId)) continue;
+        item.action = 'adjust';
+        item.classification = 'ambiguous';
+        item.reason = `${objects.get(item.objectId)?.name ?? 'someone'} was only reached from a distance, not here`;
+    }
+    if (newReply) {
+        const holding = (id) => doc.held.some((h) => h.until > doc.turn && h.field === 'cast' && h.op === 'add' && h.objectId === id);
+        for (const id of doc.canonical.castIds.filter((x) => afar(x) && !holding(x) && !items.some((i) => i.field === 'cast' && i.objectId === x))) {
+            items.push({ field: 'cast', op: 'remove', objectId: id, canonical: [...doc.canonical.castIds], observed: observed.cast.filter((x) => x !== id), classification: 'natural', action: decide('natural', settings.policies?.cast ?? DEFAULT_POLICIES.cast), reason: 'only reached from a distance', afar: true });
+        }
+    }
 
     // The story's deltatime is taken whenever State Engine writes it, as
     // its own deltatime is: its update lands seconds after the reply, after
@@ -358,6 +376,7 @@ async function reconcileOnce() {
                 canonical = applyAccepted(canonical, item);
                 accepted.push(record.text);
                 acceptedFields.add(item.field);
+                if (item.afar) restore.add('cast');
                 record.resolution = 'accepted';
                 break;
             case 'adjust': {

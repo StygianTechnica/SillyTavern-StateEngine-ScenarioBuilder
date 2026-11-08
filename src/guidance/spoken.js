@@ -83,7 +83,23 @@ export function spokenNowText(list = [], max = 2) {
 // put all of them at the gun range. Not those the player's post names
 // (Cyril may be going to them), nor anyone here, nor `skip`.
 // -> [name], at most `max`.
-export function elsewhereNow(characters, { lastReply = '', reasons = [], playerPost = '', here = [], skip = [], max = 6 } = {}) {
+// Nor anyone that reply had face to face with the player character (a
+// sentence opens with them and names the player, and no one leaves in it):
+// Tadam Chi, held at gunpoint by Cyril and Zane, was "not in this scene",
+// and with no one left to write the narrator wrote Cyril.
+const WENT = /\b(?:storm\w*|left|leav\w*|disappear\w*|depart\w*|vanish\w*|exit\w*|gone|walk\w*\s+(?:out|away|off))\b/i;
+function facingPlayer(reply, c, player) {
+    const first = clean(player).split(/\s+/)[0];
+    const names = callNames(c).filter((x) => x.length >= 2).map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    if (first.length < 2 || !names) return false;
+    const opens = new RegExp(String.raw`^(?:${names})\b`, 'i');
+    const them = new RegExp(String.raw`\b${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\b`, 'i');
+    return String(reply ?? '').replace(/["“][^"”]*["”]/g, ' ').split(/(?<=[.!?…])\s+|\n+/)
+        .map((s) => s.replace(/^[\s*_-]+/, ''))
+        .some((s) => opens.test(s) && them.test(s) && !WENT.test(s));
+}
+
+export function elsewhereNow(characters, { lastReply = '', reasons = [], playerPost = '', here = [], skip = [], player = '', max = 6 } = {}) {
     const away = new Set([...(here ?? []), ...(skip ?? [])]);
     // Named as someone the player character goes to, calls or meets - not
     // in passing: "rather than destroying the communicator as Inji had
@@ -100,7 +116,7 @@ export function elsewhereNow(characters, { lastReply = '', reasons = [], playerP
             || new RegExp(String.raw`(?:^|[.!?]\s+)(?:${n})\b[^.!?]{0,30}\b(?:arriv|walk(?:s|ed)? in|came|comes|join|show(?:s|ed)? up|turn(?:s|ed)? up)`, 'i').test(post));
     }).map((c) => c.id));
     const named = peopleNamedIn([lastReply, ...(reasons ?? [])].join('\n'), characters);
-    return named.filter((c) => !away.has(c.id) && !called.has(c.id)).map((c) => clean(c.name)).filter(Boolean).slice(0, max);
+    return named.filter((c) => !away.has(c.id) && !called.has(c.id) && !facingPlayer(lastReply, c, player)).map((c) => clean(c.name)).filter(Boolean).slice(0, max);
 }
 
 // Those the player's recent posts say will not turn up in person - a boss

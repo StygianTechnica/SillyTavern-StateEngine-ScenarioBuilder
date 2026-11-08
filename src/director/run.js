@@ -48,7 +48,7 @@ import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from
 import { namedAtAll } from '../validate/drift.js';
 import { circling } from './loops.js';
 import { shownLeaving, shownArriving } from './departures.js';
-import { goesAlone, goesTogether, namedGoing, leftOut, MOVING } from './going-along.js';
+import { goesAlone, goesTogether, namedGoing, leftOut, MOVING, sameGround, goesThere } from './going-along.js';
 import { timedHappenings } from '../planner/timed.js';
 
 // How many replies a broken-off fight's wounds are remembered.
@@ -355,7 +355,7 @@ function castAfter(characters, castIds, { enters, leaves }, made, playerId = '')
 
 // Moves the scene: finds (or makes) the place, takes the player character
 // and the named companions along. -> { from, castIds } or null.
-async function moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, latestText = '', known = [], canCreate, playerNames = [] }) {
+async function moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, latestText = '', known = [], canCreate, playerNames = [], headed = false }) {
     const doc = getChatDoc(chatKey);
     const from = doc.canonical.locationId || guidance.location?.id || '';
     const places = await listEntries(chatId, settingId, 'location');
@@ -418,6 +418,15 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
         console.info(LOG_PREFIX, `the director moved the scene to "${move.place}", which is not in the library`);
         return null;
     }
+    // The same ground at another scale, and the post goes nowhere: out to
+    // the place around it is no move at all; in to a part of it names the
+    // spot more closely. No one is left behind either way.
+    const ground = made || headed || !clean(latestText) ? '' : sameGround(parents, from, place.id);
+    const staying = !!ground && !goesThere(latestText, [place.name, move.place, ...(place.aliases ?? place.base?.aliases ?? [])]);
+    if (staying && ground === 'out') {
+        console.info(LOG_PREFIX, `MOVE to ${place.name} left alone: it is around where the scene already is, and the player's post goes nowhere`);
+        return null;
+    }
     const playerId = playerIdOf(settingId, characters);
     const byName = (name) => characters.find((c) => [c.name, ...(c.aliases ?? c.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === String(name).toLowerCase()))?.id
         ?? characters.find((c) => c.name.toLowerCase().includes(String(name).toLowerCase()))?.id ?? null;
@@ -445,7 +454,7 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
         : near ? (!clean(latestText) || goesTogether(latestText) ? peopleNamedIn(recentText, here).map((c) => c.id) : namedGoing(latestText, hereNames))
             : goesTogether(latestText) ? here.map((c) => c.id) : namedGoing(latestText, hereNames);
     if (alone) console.info(LOG_PREFIX, `${playerNames[0] || 'the player character'} goes alone - no one comes along`);
-    const next = [...new Set([...(playerId ? [playerId] : []), ...along, ...named])].filter((id) => id === playerId || !out.has(id));
+    const next = staying ? [...new Set([...(playerId ? [playerId] : []), ...castIds])] : [...new Set([...(playerId ? [playerId] : []), ...along, ...named])].filter((id) => id === playerId || !out.has(id));
     const left = castIds.filter((id) => !next.includes(id)).map((id) => characters.find((c) => c.id === id)?.name).filter(Boolean);
     const patch = { locationId: place.id, castIds: next, creatureIds: near ? [...doc.canonical.creatureIds] : [] };
     if (move.indoor !== null) patch.indoor = move.indoor;
@@ -984,7 +993,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         }
     }
     if (isNewTurn(type) && settingId && move) {
-        const moved = await moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, latestText: latestUserText, known, playerNames, canCreate:!headed && settings.director.allowCreate && !canonOnly });
+        const moved = await moveScene(chatId, chatKey, settingId, move, { guidance, characters, castIds, recentText, latestText: latestUserText, known, playerNames, headed, canCreate:!headed && settings.director.allowCreate && !canonOnly });
         if (moved) {
             movedFrom = moved.from;
             baseCast = moved.castIds;

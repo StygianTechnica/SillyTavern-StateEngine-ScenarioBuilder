@@ -604,6 +604,7 @@ export async function gatherInputs(chatId, chatKey) {
                 reasons: settings.director.enabled ? Object.values(doc.director.arrivingFor ?? {}) : [],
                 playerPost: latestPlayerPost(),
                 here: castIds,
+                player: cast.find((m) => m.player)?.name ?? '',
                 skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id)].filter(Boolean),
             })])],
             // Those the player's posts say would not come in person (a boss

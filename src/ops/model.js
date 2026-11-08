@@ -88,7 +88,7 @@ export const crewTotal = (op) => (op?.crew ?? []).length + Math.max(0, op?.hands
 // listened in on the communications" listens; "he smashed the radio" does not.
 // However this world talks at a distance - a radio or a phone, a sending
 // stone or a scrying glass, a mind-link - by the story's own word for it.
-const RADIO = /\b(?:comms?|communicators?|communications|radios?|earpieces?|headsets?|walkie[- ]talkies?|channels?|frequenc(?:y|ies)|transceivers?|comm[- ]?links?|commlinks?|(?:cell ?|mobile |burner |sat(?:ellite)? )?phones?|burners?|pagers?|intercoms?|(?:sending|speaking|whisper(?:ing)?|message|farspeaker|echo) (?:stones?|crystals?|shells?|shards?)|scrying (?:orbs?|mirrors?|glass(?:es)?|pools?|bowls?)|crystal balls?|speaking tubes?|mind[- ]?links?|telepathic (?:links?|channels?|bonds?|net(?:work)?s?)|psychic (?:links?|channels?|net(?:work)?s?)|psionic (?:links?|channels?|net(?:work)?s?)|hive[- ]?minds?|link-?stones?)\b/i;
+export const RADIO = /\b(?:comms?|communicators?|communications|radios?|earpieces?|headsets?|walkie[- ]talkies?|channels?|frequenc(?:y|ies)|transceivers?|comm[- ]?links?|commlinks?|(?:cell ?|mobile |burner |sat(?:ellite)? )?phones?|burners?|pagers?|intercoms?|(?:sending|speaking|whisper(?:ing)?|message|farspeaker|echo) (?:stones?|crystals?|shells?|shards?)|scrying (?:orbs?|mirrors?|glass(?:es)?|pools?|bowls?)|crystal balls?|speaking tubes?|mind[- ]?links?|telepathic (?:links?|channels?|bonds?|net(?:work)?s?)|psychic (?:links?|channels?|net(?:work)?s?)|psionic (?:links?|channels?|net(?:work)?s?)|hive[- ]?minds?|link-?stones?)\b/i;
 const LISTEN = /\b(?:listen\w*|monitor\w*|tap(?:s|ped|ping)?\s+(?:into|in)|tapped|eavesdrop\w*|tune[sd]?\s+in|kept|keeps?|pocket\w*|held on|holds? on|hang\w* on|attun\w*|reach\w* into|slip\w* into|ride[sd]? (?:along|the))\b/i;
 const RID = /\b(?:destroy\w*|smash\w*|crush\w*|shatter\w*|disabl\w*|br(?:eak|oke|oken)|switch\w* off|turn\w* off|toss\w*|threw|throws?|ditch\w*|wreck\w*|sever\w*|cut (?:off|the))\b/i;
 // -> { said: true (listening in), false (got rid of it), null (nothing of
@@ -553,6 +553,13 @@ function lastStepOf(o, name) {
     const words = clean(name).split(' ').filter((w) => w.length > 2).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     const s = [...o.steps.slice(0, o.current + 1)].reverse().find((x) => words.some((w) => new RegExp(`\\b${w}\\b`, 'i').test(x.text)));
     return s ? s.text : '';
+}
+
+// Where those of theirs still at it are, for what a camera or a scrying
+// glass shows: ["Nichiro Fukudo at the Darkened Alcove"].
+export function opPlaces(op) {
+    const o = placeCrew(op);
+    return isLive(o) ? o.crew.filter((c) => !OUT.has(c.state) && c.where).map((c) => `${c.name} at ${c.where}`) : [];
 }
 
 // Their radio in the player's side's hands: the narrator writes their talk,
