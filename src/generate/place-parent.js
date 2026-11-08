@@ -32,7 +32,8 @@ const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // of one word ("The Club") only as a name - capitalized: "a jazz club" is
 // not The Club.
 function names(text, name) {
-    const n = clean(name).replace(/^the\s+/i, '');
+    const n = clean(name).replace(/[‘’]/g, "'").replace(/^the\s+/i, '');
+    text = String(text ?? '').replace(/[‘’]/g, "'");
     if (n.length < 4) return false;
     const oneWord = !/\s/.test(n);
     const word = oneWord ? `${n[0].toUpperCase()}${escape(n.slice(1))}` : escape(n);
@@ -42,7 +43,7 @@ function names(text, name) {
 // How big a place is, smallest first. Only the order matters: a place goes
 // in the nearest bigger one, whatever the map calls its levels.
 const SIZES = [
-    [0, 'room|rooms|chamber|chambers|alcove|gallery|wing|hallway|corridor|passage|passageway|cell|vault|office|deck|cellar|basement|attic|loft|kitchen|bedroom|bedchamber|study|parlou?r|foyer|lobby|atrium|stairwell|staircase|balcony|closet|pantry|storeroom|crypt|nave|sanctum|armou?ry|quarters|suite|annex|landing|courtyard|cockpit|hangar|airlock|bay|bunk|vestibule|antechamber|undercroft|dungeon|garret'],
+    [0, 'room|rooms|chamber|chambers|alcove|gallery|galleries|wing|wings|hallway|hallways|corridor|corridors|passage|passages|passageway|passageways|vaults|cellars|cell|vault|office|deck|cellar|basement|attic|loft|kitchen|bedroom|bedchamber|study|parlou?r|foyer|lobby|atrium|stairwell|staircase|balcony|closet|pantry|storeroom|crypt|nave|sanctum|armou?ry|quarters|suite|annex|landing|courtyard|cockpit|hangar|airlock|bay|bunk|vestibule|antechamber|undercroft|dungeon|garret'],
     [1, 'house|home|cottage|hut|cabin|manor|mansion|villa|estate|museum|temple|church|chapel|cathedral|shrine|monastery|abbey|castle|fortress|fort|keep|citadel|palace|tower|inn|tavern|bar|club|pub|nightclub|hotel|motel|shop|store|boutique|warehouse|factory|mill|forge|smithy|ship|vessel|starship|shuttle|hospital|clinic|school|academy|university|library|prison|jail|arena|stadium|theat(?:er|re)|bank|apartment|apartments|tenement|mall|compound|bunker|outpost|mine|cave|cavern|ruin|ruins|tomb|mausoleum|lighthouse|farm|farmhouse|barn|lodge|embassy|headquarters|hq|precinct|station|restaurant|caf[eé]|diner|brothel|casino|laboratory|lab|garage|workshop|camp|den|hideout|safehouse|office block|skyscraper|arcology|spire'],
     [2, 'district|quarter|ward|neighbou?rhood|borough|street|avenue|road|lane|alley|alleyway|boulevard|square|plaza|block|market|marketplace|bazaar|docks|dockside|harbou?r|wharf|park|slums|heights|row|strip|mile|precincts|suburb|outskirts|downtown|uptown|ring|zone'],
     [3, 'city|town|village|hamlet|metropolis|megacity|megalopolis|colony|settlement|capital|port city|township|starbase|space station|orbital station|habitat'],

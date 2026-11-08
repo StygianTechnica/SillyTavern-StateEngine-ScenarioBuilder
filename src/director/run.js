@@ -14,7 +14,7 @@ import { LOG_PREFIX } from '../constants.js';
 import { getSettings } from '../settings.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
-import { chooseParent } from '../generate/place-parent.js';
+import { chooseParent, placeSize } from '../generate/place-parent.js';
 import { getObjectTypes, getObjectType, getBoundSettingId, createEntry, updateEntry, setEntryMeta, findSimilar, listUnconfirmed, setParent, isCanonOnly, mayAddGeneratedDetail, getOverview, getPlaceOverview, listEntries, getParents, playerIdOf, saveKnowledge, listKnowledge, allKnowledge } from '../library/library.js';
 import { bargainItem, sameBargain, fulfilledByReturn } from '../library/knowledge.js';
 import { stillWaiting, steppedAway, suspend, returnTo, returnsHere, restorePatch, waitingIds, withoutWaiting, suspendedText } from './suspended.js';
@@ -390,12 +390,27 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
         // A place the chat named that the library lacks (under any type):
         // beside this one.
         place = await createEntry(chatId, settingId, 'location', { name: move.place, description: '' }, { origin: 'director' });
-        if (place && parentId) setParent(settingId, place.id, parentId);
+        // Where it goes by its name and size, as any new place
+        // (src/generate/place-parent.js): a place it names ("Saint Aora's
+        // Museum Corridors" is in the museum), a part of where the scene
+        // is inside it, a building beside it. "Beside this one" alone put
+        // the museum's corridors under Arcadia City, next to the museum.
+        const chosen = place ? chooseParent({
+            brief: move.place,
+            locations: places.map((p) => ({ id: p.id, name: p.name, aliases: p.aliases ?? p.base?.aliases ?? [], description: p.description ?? p.base?.description ?? '' })),
+            parents,
+            sceneId: from || null,
+            // A move is a short hop: a part of the place goes in it, a
+            // building is nearby.
+            where: (placeSize({ name: move.place }) ?? 1) >= 1 ? 'nearby' : 'inside',
+        }) : null;
+        const under = chosen?.id && chosen.id !== place?.id ? chosen.id : parentId;
+        if (place && under) setParent(settingId, place.id, under);
         made = !!place;
         // Listed in Review like anything else the director adds, so a wrong
         // one is seen - and Reject takes the scene back where it was.
         if (place) {
-            const item = { id: newLocalId('a'), objectId: place.id, type: 'location', name: place.name, at: new Date().toISOString(), placedUnder: parentId, enrich: 'off', error: '' };
+            const item = { id: newLocalId('a'), objectId: place.id, type: 'location', name: place.name, at: new Date().toISOString(), placedUnder: under, enrich: 'off', error: '' };
             updateChatDoc(chatKey, (d) => { if (!d.adopted.some((a) => a.objectId === place.id)) d.adopted = [...d.adopted, item]; });
         }
     }
