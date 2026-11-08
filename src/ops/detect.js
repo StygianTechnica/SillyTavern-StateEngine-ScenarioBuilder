@@ -12,7 +12,7 @@ const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Factions that do not work together (src/guidance/sides.js).
 const AT_ODDS = /distrust|mistrust|enem|rival|hostil|\bwar\b|oppos|hate|feud|against|suspic|wary|target(?:s|ed|ing)?\b|hunt\w*|competit/i;
-const JOB = /\b(?:heists?|raid(?:s|ing)?|break-?ins?|breaking in|breach(?:es|ed|ing)?|theft|thie(?:f|ves)|burglar\w*|robb(?:ery|eries|ing)|steal(?:s|ing)?|ambush(?:es|ing)?|kidnap(?:s|ping)?|hijack(?:s|ing)?|smuggl\w*|assault\w*|sabotag\w*)\b/i;
+export const JOB = /\b(?:heists?|raid(?:s|ing)?|break-?ins?|breaking in|breach(?:es|ed|ing)?|theft|thie(?:f|ves)|burglar\w*|robb(?:ery|eries|ing)|steal(?:s|ing)?|ambush(?:es|ing)?|kidnap(?:s|ping)?|hijack(?:s|ing)?|smuggl\w*|assault\w*|sabotag\w*)\b/i;
 
 const wordIn = (name, text) => {
     const n = clean(name);

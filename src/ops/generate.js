@@ -11,6 +11,7 @@
 // are pure (and tested).
 
 import { poolLine, swapInvented, applySwaps } from '../naming/live.js';
+import { JOB } from './detect.js';
 
 const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
@@ -21,8 +22,8 @@ const cut = (text, max) => {
 // One of the side's people, for the prompt: rank, and whether the story
 // ties them to this job or they head it all.
 const personLine = (p) => {
-    const notes = [clean(p.rank), p.tied && !p.away ? 'named in the story with this job' : '', p.head && !p.tied ? 'the head of it all - rarely on a job in person' : '',
-        p.away ? 'stays out of the field - never on a job\'s crew, never named in a step; may only have ordered it' : ''].filter(Boolean);
+    const notes = [clean(p.rank), p.tied ? (p.away ? 'named in the story with this job - ordered it from afar' : 'named in the story with this job') : '', p.head && !p.tied ? 'the head of it all - rarely on a job in person' : '',
+        p.away ? `stays out of the field - never on a job's crew, never named in a step${p.tied ? '' : '; at most ordered it'}` : ''].filter(Boolean);
     return `- ${clean(p.name)}${notes.length ? ` (${notes.join('; ')})` : ''}${clean(p.description) ? `: ${cut(p.description, 100)}` : ''}`;
 };
 
@@ -34,15 +35,22 @@ const personLine = (p) => {
 export function tiedFirst(people = [], text = '') {
     const t = String(text ?? '');
     // A short nickname ("Ice") only as written, capital and all - never "ice".
-    const said = (n, min = 4) => {
+    const said = (n, min = 4, within = t) => {
         const name = clean(n);
-        return name.length >= min && new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, name.length < 5 ? 'u' : 'iu').test(t);
+        return name.length >= min && new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, name.length < 5 ? 'u' : 'iu').test(within);
     };
     const firstOf = (p) => clean(p.name).split(/[\s"']+/)[0];
+    // Someone kept off-site (the sheet's "In person") comes up in the story
+    // for all sorts - Bartin the family scion as much as Enrique, whose heist
+    // it is: they are tied only by a sentence naming them with the job
+    // ("Enrique's heist", "Enrique's men are heading for the vault").
+    const sentences = t.split(/(?<=[.!?…])\s+|\n+/);
+    const withJob = (n, min) => sentences.some((x) => (JOB.test(x) || new RegExp(`${clean(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'s\\s+(?:men|crew|team|operatives|people|thugs|job|operation|plan|lieutenants?|goons|hired)`, 'i').test(x)) && said(n, min, x));
     const marked = people.map((p) => {
         const first = firstOf(p);
         const firstOk = first.length >= 4 && people.filter((o) => firstOf(o) === first).length === 1;
-        return { ...p, tied: !!p.tied || said(p.name) || (firstOk && said(first)) || (p.aliases ?? []).some((a) => said(a, 3)) };
+        const by = p.away ? withJob : said;
+        return { ...p, tied: !!p.tied || by(p.name, 4) || (firstOk && by(first, 4)) || (p.aliases ?? []).some((a) => by(a, 3)) };
     });
     return [...marked.filter((p) => p.tied), ...marked.filter((p) => !p.tied)];
 }
@@ -69,9 +77,9 @@ export function buildOpPrompt(input) {
         clean(input?.request) ? `# What they are doing\n${cut(input.request, 400)}` : '',
         '# Your task',
         `Plan ${clean(side.name)}'s operation as their leader would: a real plan with a crew, a way in and a way out, that runs whether or not anyone gets in its way.`,
-        `- ${player}${against.length ? ` and ${against.join(' and ')}` : ''} ${against.length ? 'are' : 'is'} against them. ${input?.aware ? 'They know it.' : 'They do not know it: they plan for guards, locks, police and bad luck, not for them - no step is a trap or an ambush for them.'} Never plan what ${player} does.`,
+        `- ${player}${against.length ? ` and ${against.join(' and ')}` : ''} ${against.length ? 'are' : 'is'} against them. ${input?.aware ? 'They know it.' : 'They do not know it: they plan for guards, locks, police and bad luck, not for them - no step is a trap or an ambush for them.'} Never plan what ${player} does.${input?.aware ? '' : ` What they are after is at the place and has nothing to do with ${player}: not ${player}, nothing ${player} owns, carries or is made of - they do not know ${player} exists.`}`,
         '- Who orders it and who runs it are often two people. Someone of standing - a boss, a power broker, the head of it all - orders it and keeps well away (at home, at a party, with an alibi), and a trusted lieutenant leads it on site. Someone of no great standing may lead their own job in person.',
-        people.some((p) => p.tied && !p.away) ? `- ${people.filter((p) => p.tied && !p.away).map((p) => clean(p.name)).join(' or ')} ${people.filter((p) => p.tied && !p.away).length > 1 ? 'are' : 'is'} named in the story with this job: they ordered it or lead it, as their standing says.` : '',
+        people.some((p) => p.tied) ? `- ${people.filter((p) => p.tied).map((p) => clean(p.name)).join(' or ')} ${people.filter((p) => p.tied).length > 1 ? 'are' : 'is'} named in the story with this job: they ordered it or lead it, as their standing says - not the head of it all in their place.` : '',
         '- The head of it all is never one of the crew, unless the story says so. Nor is anyone marked as staying out of the field: belonging to the side does not make someone a crew hand.',
         '- Two to six crew, each on a CREW line of their own with what they are good at and where they are posted: everyone named in a step is on a CREW line (the one who ordered it is not).',
         '- Three to six steps in order, from getting in to getting away with it; the last step is the getaway. If the story so far has already played a step, end its line with "| done".',
@@ -222,6 +230,9 @@ export function findSide(name, factions = [], characters = [], memberships = new
     return { faction: factions.find((f) => f.id === theirs) ?? null, leader: person };
 }
 
+// Whether text names any of `names` (the player character, their side).
+export const aboutThem = (text, names = []) => names.map(clean).filter((n) => n.length >= 3).some((n) => wordRe(n).test(String(text ?? '')));
+
 // Words that start a clause, never a name.
 const NOT_NAMES = new Set(['the', 'then', 'while', 'once', 'after', 'before', 'when', 'if', 'they', 'he', 'she', 'it', 'their', 'his', 'her', 'its', 'one', 'two', 'three', 'both', 'all', 'each', 'everyone', 'someone', 'meanwhile', 'finally', 'next', 'first', 'last', 'with', 'from', 'into', 'inside', 'outside', 'at', 'in', 'on', 'as', 'and', 'but', 'so', 'get', 'go', 'take', 'grab', 'drive', 'leave', 'use', 'make', 'set', 'cut', 'open', 'disable', 'enter', 'wait', 'meet', 'load', 'police', 'security', 'guards', 'guard', 'staff', 'crew', 'team', 'leader', 'boss', 'nobody', 'no']);
 
@@ -271,7 +282,7 @@ const wordRe = (name) => new RegExp(`(^|[^\\p{L}\\p{N}])${clean(name).replace(/[
 //    crew (and from leading, unless the story ties them to it - then they
 //    ordered it); a getaway step at the end; the player's side not named
 //    while they are unknown to them; a breaking point of at least half the crew.
-export function shapePlan(plan, { people = [], against = [], aware = false } = {}) {
+export function shapePlan(plan, { people = [], against = [], aware = false, placeName = '', fallbackAim = '' } = {}) {
     if (!plan) return plan;
     let p = { ...plan, crew: [...(plan.crew ?? [])], steps: [...(plan.steps ?? [])], withdraw: [...(plan.withdraw ?? [])], boss: plan.boss ?? { name: '', where: '', objectId: '' } };
     const same = (a, b) => clean(a).toLowerCase() === clean(b).toLowerCase();
@@ -290,6 +301,10 @@ export function shapePlan(plan, { people = [], against = [], aware = false } = {
             if (!p.boss.name) p.boss = { name: p.leader.name, where: 'keeps well away while it happens', objectId: p.leader.objectId ?? '' };
             p.leader = { name: p.crew[0]?.name ?? '', where: p.crew[0]?.post ?? '', objectId: p.crew[0]?.objectId ?? '' };
         }
+        // Whose job the story says it is ordered it - not the head in
+        // their place (Serlos credited with Enrique's museum heist).
+        const owner = people.find((x) => x.tied && !x.head && !isOf(p.leader.name, x) && !p.crew.some((c) => isOf(c.name, x)));
+        if (owner && p.boss.name && isOf(p.boss.name, head) && !head.tied) p.boss = { ...p.boss, name: owner.name, objectId: owner.objectId ?? '' };
     }
     // Those their sheet keeps out of the field (a family scion, a boss who
     // sends their people): never crew, never leading on site, and their
@@ -330,9 +345,14 @@ export function shapePlan(plan, { people = [], against = [], aware = false } = {
     // Those they do not know are there are not in their plan.
     if (!aware) {
         const them = against.map(clean).filter((n) => n.length >= 3);
-        const blank = (text) => them.reduce((t, n) => t.replace(wordRe(n), (_m, pre) => `${pre}anyone unexpected`), String(text ?? ''));
+        // "Cyril's eye" is just "the eye"; "engaged by Cyril" is "engaged by anyone unexpected".
+        const possessive = (n) => new RegExp(`(^|[^\\p{L}\\p{N}])${clean(n).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['’]s?(?=\\s)`, 'giu');
+        const blank = (text) => them.reduce((t, n) => t.replace(possessive(n), (_m, pre) => `${pre}the`).replace(wordRe(n), (_m, pre) => `${pre}anyone unexpected`), String(text ?? ''));
         p.withdraw = p.withdraw.map(blank);
-        p.steps = p.steps.map((s) => ({ ...s, text: blank(s.text) }));
+        p.steps = p.steps.map((s) => ({ ...s, text: blank(s.text).replace(/^the\b/, 'The') }));
+        // What they came for is never the player character's - they do not
+        // know he exists (they set out to steal Cyril's prosthetic eye).
+        if (aboutThem(p.aim, against)) p.aim = clean(fallbackAim) || `Whatever is most worth taking at ${clean(placeName) || 'the place'}`;
     }
     p.breakAt = Math.min(Math.max(p.breakAt ?? 1, Math.ceil(p.crew.length / 2), 1), Math.max(1, p.crew.length));
     if (!p.boss.name) delete p.boss;

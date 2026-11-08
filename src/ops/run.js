@@ -13,7 +13,7 @@ import { newLocalId } from '../store/schema.js';
 import { getSettings } from '../settings.js';
 import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive } from './model.js';
 import { inPersonOf } from '../guidance/spoken.js';
-import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst, shapePlan } from './generate.js';
+import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst, shapePlan, aboutThem } from './generate.js';
 
 export const OPS_EVENT = 'scenario_builder_ops_changed';
 
@@ -119,10 +119,11 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
             .sort((a, b) => (a.place?.tier ?? 99) - (b.place?.tier ?? 99))
             .map(({ c, place }) => ({ name: c.name, objectId: c.id, aliases: c.aliases ?? c.base?.aliases ?? [], rank: [place?.tierName, place?.title].filter(Boolean).join(', '), head: place?.tier === 0, away: inPersonOf(c), description: c.description ?? c.base?.description ?? '' })) : [];
         // Kept off the job by their sheet ("In person": stays out of the
-        // field, or waits for their beat - Bartin, the family scion): only
-        // the request itself can put one of them on it.
-        const asked = tiedFirst(people, request).filter((p) => p.tied);
-        for (const p of people) if (p.away && asked.some((a) => a.name === p.name)) p.away = '';
+        // field, or waits for their beat - Bartin, the family scion). The
+        // request naming one of them ties them to it ("Enrique's heist"):
+        // they ordered it, still from afar - Edit the plan puts them on site.
+        const asked = tiedFirst(people.map((p) => ({ ...p, away: '' })), request).filter((p) => p.tied);
+        for (const p of people) if (p.away && asked.some((a) => a.name === p.name)) p.tied = true;
         if (found.leader && !people.some((p) => p.name === found.leader.name)) people.unshift({ name: found.leader.name, rank: 'leads this', tied: true, description: found.leader.description ?? '' });
         // Whoever the request or the story ties to the job comes first: it
         // is their job - not the faction's head's (Serlos Medina was put in
@@ -134,6 +135,7 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
             console.info(LOG_PREFIX, `the other side: ${found.faction.name} is the player character's own side - no plan`);
             return null;
         }
+        const them = [player?.name, ...against].filter(Boolean);
         const at = placeId || getChatDoc(chatKey).canonical.locationId || '';
         const parents = lib.getParents(settingId);
         const overview = lib.getOverview(settingId);
@@ -170,7 +172,9 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
             if (!values) return { values: {}, dropped: [], error: 'no AIM or STEP lines' };
             // No CREW lines (the crew only named in its steps): asked once more.
             // Likewise one or two STEP lines with the whole job crammed in.
-            const missing = [!values.crew.length ? 'no CREW lines - one CREW line for each of the crew' : '', values.steps.filter((s) => s.status !== 'done').length < 3 ? 'too few STEP lines - three to six, one action each' : ''].filter(Boolean);
+            const missing = [!values.crew.length ? 'no CREW lines - one CREW line for each of the crew' : '', values.steps.filter((s) => s.status !== 'done').length < 3 ? 'too few STEP lines - three to six, one action each' : '',
+                // Unaware of the player character, yet after him or his things.
+                !aware && aboutThem([values.aim, ...values.steps.map((s) => s.text)].join('\n'), them) ? `the AIM or a STEP is about ${them.join(' or ')}, whom they do not know is there - they come for something at the place` : ''].filter(Boolean);
             if (missing.length && tries === 1) return { values: {}, dropped: [], error: missing.join('; ') };
             return { values, dropped: [], error: null };
         }, 900);
@@ -187,7 +191,7 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
             takeFromPool(settingId, live.key, swapped.used);
         }
         // Held to what a small model skips (src/ops/generate.js shapePlan).
-        plan = shapePlan(plan, { people: sidePeople, against: [player?.name, ...against].filter(Boolean), aware });
+        plan = shapePlan(plan, { people: sidePeople, against: them, aware, placeName: places.find((p) => p.id === at)?.name ?? '', fallbackAim: aboutThem(request, them) ? '' : request });
         return {
             ...plan,
             sideId: found.faction?.id ?? '',

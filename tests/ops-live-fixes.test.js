@@ -61,3 +61,59 @@ describe('held, while they do not know anyone is there', () => {
         expect(afterBriefing({ ...op, aware: true }, { report: { status: 'held', how: 'Zane watching them' } }, 10).held).toBe(1);
     });
 });
+
+// The next live plan: Serlos credited with Enrique's heist, and a crew that
+// did not know Cyril was there set out to steal his prosthetic eye.
+import { tiedFirst, buildOpPrompt } from '../src/ops/generate.js';
+
+const medinas = [
+    { name: 'Serlos Medina', objectId: 'ser', head: true },
+    { name: 'Enrique Medina', objectId: 'enr', away: 'later' },
+    { name: 'Bartin Medina', objectId: 'bar', away: 'later', rank: 'family scion' },
+    { name: 'Tadam Chi', objectId: '' },
+];
+
+describe('whose job it is', () => {
+    const story = "Bartin was at the gala last week, bored as ever. Inji waited for any sign of Enrique's operatives. The heist would start at midnight.";
+    const tied = tiedFirst(medinas, story);
+    it('ties the off-site one the story names with the job, not the one merely mentioned', () => {
+        expect(tied.find((p) => p.name === 'Enrique Medina').tied).toBe(true);
+        expect(tied.find((p) => p.name === 'Bartin Medina').tied).toBe(false);
+    });
+    it('tells the model Enrique ordered it from afar', () => {
+        const { user } = buildOpPrompt({ side: { name: 'Medina Syndicate' }, people: tied });
+        expect(user).toMatch(/Enrique Medina \(named in the story with this job - ordered it from afar; stays out of the field/);
+    });
+    it('puts Enrique, not the head, as the one who ordered it', () => {
+        const plan = readOpPlan(`ORDERED BY: Serlos Medina | at his mansion with an alibi
+LEADER: Delvin Timmers | in the museum
+AIM: The relics
+CREW: Tadam Chi | hacking | surveillance room
+STEP: Tadam hacks the locks
+STEP: Grab the relics
+STEP: Get away on foot`, 'Medina Syndicate');
+        expect(shapePlan(plan, { people: tied }).boss.name).toBe('Enrique Medina');
+    });
+});
+
+describe('what an unaware crew comes for', () => {
+    const plan = readOpPlan(`LEADER: Delvin Timmers | in the museum
+AIM: Steal Cyril's experimental prosthetic eye from Saint Aora's Museum
+CREW: Tadam Chi | hacking | surveillance room
+STEP: Tadam hacks the access control
+STEP: Slip past the guards to the alcove where Cyril's eye is displayed
+STEP: Get away on foot`, 'Medina Syndicate');
+    const shaped = shapePlan(plan, { people: medinas, against: ['Cyril', 'White Cerberus'], placeName: "Saint Aora's Museum" });
+    it('is never the player character\'s', () => {
+        expect(shaped.aim).toBe("Whatever is most worth taking at Saint Aora's Museum");
+    });
+    it('reads "the eye", not "anyone unexpected\'s eye"', () => {
+        expect(shaped.steps[1].text).toBe('Slip past the guards to the alcove where the eye is displayed');
+    });
+    it('takes the request as the aim when there is one', () => {
+        expect(shapePlan(plan, { people: medinas, against: ['Cyril'], fallbackAim: 'the Ashen Codex' }).aim).toBe('the Ashen Codex');
+    });
+    it('the prompt says so', () => {
+        expect(buildOpPrompt({ side: { name: 'X' }, playerName: 'Cyril' }).user).toMatch(/nothing Cyril owns, carries or is made of/);
+    });
+});

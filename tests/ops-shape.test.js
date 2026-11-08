@@ -59,9 +59,9 @@ describe('who ordered it, and who runs it', () => {
         expect(p.boss.name).toBe('');
         expect(p.leader.name).toBe('Corvin Tull');
     });
-    it('the head of it all put in charge is moved to ordering it', () => {
+    it('the head of it all put in charge is moved off - whose job it is ordered it', () => {
         const p = shapePlan(readOpPlan('LEADER: Serlos Medina | the van\nAIM: the art\nCREW: Tiago Reyes | hacker | server room\nSTEP: crack it\nSTEP: drive off', 'Medina Syndicate'), { people });
-        expect(p.boss.name).toBe('Serlos Medina');
+        expect(p.boss.name).toBe('Enrique Medina');
         expect(p.leader.name).toBe('Tiago Reyes');
     });
     it('the prompt asks for both, and keeps the head off the crew', () => {
