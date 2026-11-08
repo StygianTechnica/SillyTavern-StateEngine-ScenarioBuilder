@@ -65,3 +65,31 @@ describe('the museum heist as it really went', () => {
         expect(rivalAtWork({ texts: [briefing], factions, relations: ties, mine: [], playerId: 'cyril', members: people })?.who).toBe('Medina Syndicate');
     });
 });
+
+describe('the same rules, other settings', () => {
+    it('fantasy: a thieves\' guild member is the hero\'s rival; the theft is only in a quest', () => {
+        const fs = [{ id: 'hands', name: 'The Grey Hands' }];
+        const people = new Map([['hands', [{ id: 'sela', name: 'Sela Vane' }]]]);
+        const found = rivalAtWork({
+            texts: ['Stop Sela Vane\'s theft of the sun-relic', 'Aldric waits in the temple nave. Candles gutter.'],
+            factions: fs, relations: [{ from: 'aldric', to: 'sela', kind: 'old enemy' }], mine: [], playerId: 'aldric', members: people,
+        });
+        expect(found).toEqual({ who: 'The Grey Hands', what: 'Stop Sela Vane\'s theft of the sun-relic' });
+    });
+    it('sci-fi: a raid named across a paragraph, two sentences apart', () => {
+        const fs = [{ id: 'navy', name: 'Concord Navy' }, { id: 'rc', name: 'Red Comet Corsairs' }];
+        const found = rivalAtWork({
+            texts: ['Sensors light up. The Red Comet Corsairs drop out of the jump lane. A raid on the fuel depot is under way.'],
+            factions: fs, relations: [{ from: 'rc', to: 'navy', kind: 'hunted by' }], mine: ['navy'], playerId: 'kade', members: new Map(),
+        });
+        expect(found).toEqual({ who: 'Red Comet Corsairs', what: 'A raid on the fuel depot is under way.' });
+    });
+    it('real world: a rival named in one paragraph and a job in another is not enough', () => {
+        const fs = [{ id: 'crew', name: 'The Docklands Crew' }];
+        const people = new Map([['crew', [{ id: 'ray', name: 'Ray Doyle' }]]]);
+        expect(rivalAtWork({
+            texts: ['Ray Doyle is at the pub.\n\nSomewhere across town, a robbery goes down.'],
+            factions: fs, relations: [{ from: 'ray', to: 'mick', kind: 'rival' }], mine: [], playerId: 'mick', members: people,
+        })).toBeNull();
+    });
+});

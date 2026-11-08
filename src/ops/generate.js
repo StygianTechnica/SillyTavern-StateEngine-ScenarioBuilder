@@ -18,7 +18,35 @@ const cut = (text, max) => {
     return t.length <= max ? t : `${t.slice(0, max - 1).replace(/\s+\S*$/, '')}…`;
 };
 
-const SYSTEM = 'You are a game master planning the opposition in a roleplay: a rival group\'s operation, from their side. You answer in exactly the lines asked for - no preamble, no commentary.';
+// One of the side's people, for the prompt: rank, and whether the story
+// ties them to this job or they head it all.
+const personLine = (p) => {
+    const notes = [clean(p.rank), p.tied ? 'named in the story with this job' : '', p.head && !p.tied ? 'the head of it all - rarely on a job in person' : ''].filter(Boolean);
+    return `- ${clean(p.name)}${notes.length ? ` (${notes.join('; ')})` : ''}${clean(p.description) ? `: ${cut(p.description, 100)}` : ''}`;
+};
+
+// Its people, those the request or the story names first (marked tied):
+// whoever the story ties to the job leads it, not the faction's head
+// (Serlos Medina was put in charge of Enrique's museum heist for being the
+// Patriarch). text: the request and the story. A first name of four
+// letters or more will do ("Enrique's heist"), unless two of them share it.
+export function tiedFirst(people = [], text = '') {
+    const t = String(text ?? '');
+    // A short nickname ("Ice") only as written, capital and all - never "ice".
+    const said = (n, min = 4) => {
+        const name = clean(n);
+        return name.length >= min && new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, name.length < 5 ? 'u' : 'iu').test(t);
+    };
+    const firstOf = (p) => clean(p.name).split(/[\s"']+/)[0];
+    const marked = people.map((p) => {
+        const first = firstOf(p);
+        const firstOk = first.length >= 4 && people.filter((o) => firstOf(o) === first).length === 1;
+        return { ...p, tied: !!p.tied || said(p.name) || (firstOk && said(first)) || (p.aliases ?? []).some((a) => said(a, 3)) };
+    });
+    return [...marked.filter((p) => p.tied), ...marked.filter((p) => !p.tied)];
+}
+
+const SYSTEM ='You are a game master planning the opposition in a roleplay: a rival group\'s operation, from their side. You answer in exactly the lines asked for - no preamble, no commentary.';
 
 // input: { side: { name, description }, people: [{ name, rank, description }]
 //   (the side's own), request, placeName, places: [name] (inside it),
@@ -34,7 +62,7 @@ export function buildOpPrompt(input) {
     const user = [
         clean(input?.overview) ? `# The setting\n${cut(input.overview, 500)}` : '',
         `# The side you plan for\n${clean(side.name)}${clean(side.description) ? `: ${cut(side.description, 400)}` : ''}`,
-        people.length ? `# Its people (take the leader and crew from these where they fit)\n${people.map((p) => `- ${clean(p.name)}${clean(p.rank) ? ` (${clean(p.rank)})` : ''}${clean(p.description) ? `: ${cut(p.description, 100)}` : ''}`).join('\n')}` : '',
+        people.length ? `# Its people (take the leader and crew from these where they fit)\n${people.map(personLine).join('\n')}` : '',
         clean(input?.placeName) ? `# Where it happens\n${clean(input.placeName)}${places.length ? ` - its parts: ${places.join(', ')}` : ''}` : '',
         clean(input?.story) ? `# The story so far (most recent last)\n${cut(input.story, 2400)}` : '',
         clean(input?.request) ? `# What they are doing\n${cut(input.request, 400)}` : '',
@@ -42,6 +70,7 @@ export function buildOpPrompt(input) {
         `Plan ${clean(side.name)}'s operation as their leader would: a real plan with a crew, a way in and a way out, that runs whether or not anyone gets in its way.`,
         `- ${player}${against.length ? ` and ${against.join(' and ')}` : ''} ${against.length ? 'are' : 'is'} against them. ${input?.aware ? 'They know it.' : 'They do not know it: they plan for guards, locks, police and bad luck, not for them - no step is a trap or an ambush for them.'} Never plan what ${player} does.`,
         '- Two to six crew, each with what they are good at and where they are posted; the leader may be on site or running it from nearby.',
+        people.some((p) => p.tied) ? `- The leader is ${people.filter((p) => p.tied).map((p) => clean(p.name)).join(' or ')}, named in the story with this job; the head of it all leads in person only if the story says so.` : '',
         '- Three to six steps in order, from getting in to getting away with it; the last step is the getaway. If the story so far has already played a step, end its line with "| done".',
         '- One to three conditions they pull out on, and how many crew down before they cut their losses.',
         clean(input?.story) ? '- Keep to what the story has shown: people already seen are part of the crew, and a way in the story showed is the way they came.' : '',

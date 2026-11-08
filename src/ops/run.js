@@ -11,8 +11,8 @@ import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
 import { getSettings } from '../settings.js';
-import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, isLive } from './model.js';
-import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide } from './generate.js';
+import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive } from './model.js';
+import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst } from './generate.js';
 
 export const OPS_EVENT = 'scenario_builder_ops_changed';
 
@@ -65,6 +65,15 @@ export function markOpAction(chatKey, action) {
     if (!doc.op) return null;
     return save(chatKey, markOp(doc.op, action, doc.turn));
 }
+// The plan's lines changed while it runs. -> the operation, or null when
+// the lines have no AIM or STEP.
+export function reviseOpPlan(chatKey, text, characters = []) {
+    const doc = getChatDoc(chatKey);
+    if (!doc.op) return null;
+    const read = readOpPlan(text, doc.op.side);
+    if (!read) return null;
+    return save(chatKey, reviseOp(doc.op, matchPeople(read, characters), doc.turn));
+}
 export function setOpCrew(chatKey, index, state) {
     const doc = getChatDoc(chatKey);
     if (!doc.op) return null;
@@ -107,8 +116,12 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
         const people = found.faction ? characters.filter((c) => (memberships.get(c.id) ?? []).includes(found.faction.id) && c.id !== playerId)
             .map((c) => ({ c, place: placeIn(roster, c.id) }))
             .sort((a, b) => (a.place?.tier ?? 99) - (b.place?.tier ?? 99))
-            .map(({ c, place }) => ({ name: c.name, rank: [place?.tierName, place?.title].filter(Boolean).join(', '), description: c.description ?? c.base?.description ?? '' })) : [];
-        if (found.leader && !people.some((p) => p.name === found.leader.name)) people.unshift({ name: found.leader.name, rank: 'leads this', description: found.leader.description ?? '' });
+            .map(({ c, place }) => ({ name: c.name, aliases: c.aliases ?? c.base?.aliases ?? [], rank: [place?.tierName, place?.title].filter(Boolean).join(', '), head: place?.tier === 0, description: c.description ?? c.base?.description ?? '' })) : [];
+        if (found.leader && !people.some((p) => p.name === found.leader.name)) people.unshift({ name: found.leader.name, rank: 'leads this', tied: true, description: found.leader.description ?? '' });
+        // Whoever the request or the story ties to the job comes first: it
+        // is their job - not the faction's head's (Serlos Medina was put in
+        // charge of Enrique's museum heist for being the Patriarch).
+        const story = storySoFar();
         const against = player ? (memberships.get(player.id) ?? []).map((id) => factions.find((f) => f.id === id)?.name).filter(Boolean) : [];
         // Never the player character's own side.
         if (found.faction && player && (memberships.get(player.id) ?? []).includes(found.faction.id)) {
@@ -128,10 +141,9 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
                 console.warn(LOG_PREFIX, 'could not roll names for the other side', err);
             }
         }
-        const story = storySoFar();
         const prompt = buildOpPrompt({
             side: { name: sideName, description: found.faction?.description ?? found.faction?.base?.description ?? '' },
-            people,
+            people: tiedFirst(people, [request, side, story].join('\n')),
             request,
             placeName: places.find((p) => p.id === at)?.name ?? '',
             places: places.filter((p) => parents[p.id] === at).map((p) => p.name),

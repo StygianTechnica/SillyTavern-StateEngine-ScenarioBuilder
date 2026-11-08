@@ -197,6 +197,39 @@ export function afterBriefing(op, { report = null, fighters = [], deaths = [] } 
     return { ...o, at: { turn, before } };
 }
 
+// The plan changed by the user while it runs (the GM Plan card): the new
+// leader, crew, steps and the rest; how far it has come is kept - each
+// crew member's state by name, a step marked done is done, the first that
+// is not is under way (begun now if that changed).
+export function reviseOp(op, plan, turn) {
+    const o = normalizeOp(op);
+    if (!o || !plan) return o;
+    const steps = (plan.steps ?? []).filter((s) => clean(s?.text));
+    if (!steps.length) return o;
+    let current = steps.findIndex((s) => s.status !== 'done');
+    if (current < 0) current = steps.length - 1;
+    const crew = (plan.crew ?? []).map((c) => {
+        const was = o.crew.find((x) => sameName(x.name, c.name));
+        return { ...c, objectId: c.objectId || was?.objectId || '', state: was?.state ?? 'active' };
+    });
+    const moved = clean(steps[current].text) !== clean(currentStep(o)?.text);
+    return normalizeOp(note({
+        ...o,
+        leader: { name: clean(plan.leader?.name), where: clean(plan.leader?.where), objectId: plan.leader?.objectId || (sameName(plan.leader?.name, o.leader.name) ? o.leader.objectId : '') },
+        aim: clean(plan.aim) || o.aim,
+        vehicle: clean(plan.vehicle),
+        entry: clean(plan.entry),
+        crew,
+        steps: steps.map((s, i) => ({ text: s.text, status: i < current ? 'done' : i === current ? 'current' : 'pending' })),
+        current,
+        withdraw: plan.withdraw ?? o.withdraw,
+        breakAt: plan.breakAt ?? o.breakAt,
+        stepTurn: moved ? turn : o.stepTurn,
+        held: moved ? 0 : o.held,
+        at: null,
+    }, turn, 'The user changed the plan.'));
+}
+
 // The user steps in: 'next' (the step is done), 'pull out', 'end'.
 export function markOp(op, action, turn) {
     const o = normalizeOp(op);

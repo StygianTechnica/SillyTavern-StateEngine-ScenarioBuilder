@@ -7,7 +7,7 @@
 
 import { getChatDoc } from '../store/chat-store.js';
 import { getSettings } from '../settings.js';
-import { planOp, startOpPlan, markOpAction, setOpCrew, clearOp } from '../ops/run.js';
+import { planOp, startOpPlan, markOpAction, setOpCrew, clearOp, reviseOpPlan } from '../ops/run.js';
 import { isLive, currentStep, crewOut, CREW_STATES } from '../ops/model.js';
 import { readOpPlan, opPlanText, matchPeople } from '../ops/generate.js';
 import { syncNow } from '../guidance/sync.js';
@@ -32,7 +32,7 @@ export function opCard(factions, people, show) {
         h('div', { class: 'sb-card-title' }, icon('fa-user-secret'), 'The other side'),
         h('small', { class: 'sb-hint' }, 'A rival crew at work where the story is - a heist, a raid, an ambush - with a plan of its own: a leader, a crew with skills and posts, what they are after, how they got in, their steps, and when they pull out. The game master plays them every reply; they do not wait for the player.'),
         directorOff ? h('div', { class: 'sb-callout sb-warn' }, icon('fa-triangle-exclamation'), h('span', {}, 'The game master is switched off: the other side needs its briefing to act.')) : null,
-        isLive(op) ? runningView(op, chatKey, show) : setupView(chatKey, factions, people, op));
+        isLive(op) ? (ws.opEdit === op.id ? editView(op, chatKey, people) : runningView(op, chatKey, show)) : setupView(chatKey, factions, people, op));
 }
 
 function setupView(chatKey, factions, people, last) {
@@ -89,6 +89,25 @@ function setupView(chatKey, factions, people, last) {
                 getSettings().director.opposition !== false ? h('small', { class: 'sb-hint' }, 'The game master also plans one by itself when the story shows a rival crew at work with no plan (Settings: Plan the other side).') : null));
 }
 
+// The running plan as its lines, changed and saved: crew states are kept
+// by name, a step marked "| done" is done, the first that is not is now.
+function editView(op, chatKey, people) {
+    const save = async () => {
+        const next = reviseOpPlan(chatKey, ws.opEditText ?? '', people);
+        if (!next) { toast('info', 'It needs an AIM line and at least one STEP line.'); return; }
+        ws.opEdit = null;
+        ws.opEditText = null;
+        toast('success', 'Plan changed - the game master plays it from the next reply.');
+        await after();
+    };
+    return h('div', {},
+        h('small', { class: 'sb-hint' }, 'One line each. LEADER: name | where they are. CREW: name | skill | post. STEP lines in order - "| done" on those already carried out; the first without it is the step under way. BREAK: crew down before they pull out.'),
+        h('textarea', { class: 'text_pole', rows: 14, value: ws.opEditText ?? '', oninput: (e) => { ws.opEditText = e.target.value; markDirty(); } }),
+        h('div', { class: 'sb-actions sb-wrap' },
+            button('Save', () => void save(), { iconName: 'fa-check', cls: 'sb-primary' }),
+            button('Cancel', () => { ws.opEdit = null; ws.opEditText = null; rerender(); }, { iconName: 'fa-xmark' })));
+}
+
 function runningView(op, chatKey, show) {
     const peek = show || ws.opPeek === op.id;
     const mark = (action, question) => async () => {
@@ -123,6 +142,7 @@ function runningView(op, chatKey, show) {
         h('div', { class: 'sb-actions sb-wrap' },
             op.status === 'running' ? button('Step done', mark('next'), { iconName: 'fa-forward', title: 'Their step is carried out - the next begins' }) : null,
             op.status === 'running' ? button('Pull them out', mark('pull out'), { iconName: 'fa-person-running', title: 'They break off and get away in the next reply' }) : null,
-            button('End it', mark('end', `End ${op.side}'s operation now? The game master stops playing it.`), { iconName: 'fa-flag-checkered', cls: 'sb-danger' }),
+            button('Edit the plan', () => { ws.opEdit = op.id; ws.opEditText = opPlanText(op); rerender(); }, { iconName: 'fa-pen', title: 'Change the leader, crew, steps or anything else - how far it has come is kept' }),
+            button('End it', mark('end',`End ${op.side}'s operation now? The game master stops playing it.`), { iconName: 'fa-flag-checkered', cls: 'sb-danger' }),
             show ? null : button('Hide', () => { ws.opPeek = null; rerender(); }, { iconName: 'fa-eye-slash' })));
 }
