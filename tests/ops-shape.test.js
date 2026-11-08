@@ -39,7 +39,7 @@ describe('the museum heist plan, as written', () => {
     });
     it('breaks at half the crew at least', () => {
         expect(shaped.breakAt).toBe(1);
-        const more = shapePlan({ ...read, crew: [1, 2, 3, 4].map((n) => ({ name: `Hand ${n}` })) }, { people: [] });
+        const more = shapePlan({ ...read, steps: [{ text: 'Grab it and get away', status: 'current' }], crew: [1, 2, 3, 4].map((n) => ({ name: `Hand ${n}` })) }, { people: [] });
         expect(more.breakAt).toBe(2);
     });
 });

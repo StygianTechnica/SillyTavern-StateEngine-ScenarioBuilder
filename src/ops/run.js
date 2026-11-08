@@ -169,7 +169,9 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
             tries += 1;
             if (!values) return { values: {}, dropped: [], error: 'no AIM or STEP lines' };
             // No CREW lines (the crew only named in its steps): asked once more.
-            if (!values.crew.length && tries === 1) return { values: {}, dropped: [], error: 'no CREW lines - one CREW line for each of the crew' };
+            // Likewise one or two STEP lines with the whole job crammed in.
+            const missing = [!values.crew.length ? 'no CREW lines - one CREW line for each of the crew' : '', values.steps.filter((s) => s.status !== 'done').length < 3 ? 'too few STEP lines - three to six, one action each' : ''].filter(Boolean);
+            if (missing.length && tries === 1) return { values: {}, dropped: [], error: missing.join('; ') };
             return { values, dropped: [], error: null };
         }, 900);
         if (result.error) {

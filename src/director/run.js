@@ -731,6 +731,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         // The other side's operation, which the director plays (src/ops/).
         opFacts: opFacts(getChatDoc(chatKey).op, { turn: getChatDoc(chatKey).turn }),
         opLive: opRunning(getChatDoc(chatKey).op),
+        opAware: getChatDoc(chatKey).op?.aware === true,
         opposition: settings.director.opposition !== false && !!settingId,
         // Only the dead the latest messages speak of.
         // The story going in circles, or the player asking whether it is over.

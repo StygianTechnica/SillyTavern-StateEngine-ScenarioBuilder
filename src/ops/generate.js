@@ -222,7 +222,44 @@ export function findSide(name, factions = [], characters = [], memberships = new
     return { faction: factions.find((f) => f.id === theirs) ?? null, leader: person };
 }
 
-const GETAWAY = /\b(?:get(?:s|ting)?\s+away|getaway|escape|flee|leave|drive\s+(?:off|away)|exfil\w*|slip\s+(?:out|away)|make\s+off|pull\s+out|back\s+to\s+(?:the\s+)?(?:van|car|ship|base|hideout)|vanish)/i;
+// Words that start a clause, never a name.
+const NOT_NAMES = new Set(['the', 'then', 'while', 'once', 'after', 'before', 'when', 'if', 'they', 'he', 'she', 'it', 'their', 'his', 'her', 'its', 'one', 'two', 'three', 'both', 'all', 'each', 'everyone', 'someone', 'meanwhile', 'finally', 'next', 'first', 'last', 'with', 'from', 'into', 'inside', 'outside', 'at', 'in', 'on', 'as', 'and', 'but', 'so', 'get', 'go', 'take', 'grab', 'drive', 'leave', 'use', 'make', 'set', 'cut', 'open', 'disable', 'enter', 'wait', 'meet', 'load', 'police', 'security', 'guards', 'guard', 'staff', 'crew', 'team', 'leader', 'boss', 'nobody', 'no']);
+
+// The people a plan's steps have doing something: a capitalized name as
+// the subject of a verb - "Tadam cracks", "Tiago remotely opens",
+// "Delvin and Raquelo begin". -> [name], in order.
+export function stepActors(text = '') {
+    const out = [];
+    const NAME = '\\p{Lu}[\\p{Ll}\'-]+(?:\\s\\p{Lu}[\\p{Ll}\'-]+)?';
+    const lead = '(?:^|[.;:,]\\s*|\\b(?:and|while|then|as|once|after|before|when)\\s+)';
+    // "Tadam cracks", "Tiago remotely opens"; "Delvin and Raquelo begin".
+    const one = new RegExp(`${lead}(${NAME})()()(?=\\s+(?:\\p{Ll}+ly\\s+)?\\p{Ll}+s\\b)`, 'gmu');
+    const many = new RegExp(`${lead}(${NAME})(?:\\s*,\\s*(${NAME}))?\\s*,?\\s+and\\s+(${NAME})(?=\\s+(?:\\p{Ll}+ly\\s+)?\\p{Ll}{2,}\\b)`, 'gmu');
+    const t = String(text ?? '');
+    for (const m of [...t.matchAll(many), ...t.matchAll(one)].sort((a, b) => a.index - b.index)) {
+        for (const name of [m[1], m[2], m[3]].filter(Boolean)) {
+            if (NOT_NAMES.has(name.split(/\s/)[0].toLowerCase())) continue;
+            if (!out.some((n) => n.toLowerCase() === name.toLowerCase())) out.push(name);
+        }
+    }
+    return out;
+}
+
+// A plan of fewer than three steps that crammed several into one line
+// ("Search the storerooms while Tadam cracks the locks. Denisia creates a
+// diversion") gets each sentence as a step of its own, so it has a pace.
+export function splitSteps(steps = []) {
+    if (steps.length >= 3) return steps;
+    const out = [];
+    for (const s of steps) {
+        const parts = s.status === 'done' ? [s.text] : String(s.text ?? '').split(/(?<=[.;!])\s+(?=\p{Lu})|;\s*/u).map(clean).map((t) => t.replace(/[.;]+$/, '')).filter((t) => t.length >= 8);
+        if (parts.length <= 1) { out.push(s); continue; }
+        parts.forEach((text, i) => out.push({ ...s, text, status: i === 0 ? s.status : s.status === 'current' ? 'pending' : s.status }));
+    }
+    return out.slice(0, 6);
+}
+
+const GETAWAY =/\b(?:get(?:s|ting)?\s+away|getaway|escape|flee|leave|drive\s+(?:off|away)|exfil\w*|slip\s+(?:out|away)|make\s+off|pull\s+out|back\s+to\s+(?:the\s+)?(?:van|car|ship|base|hideout)|vanish)/i;
 const wordRe = (name) => new RegExp(`(^|[^\\p{L}\\p{N}])${clean(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=$|[^\\p{L}\\p{N}])`, 'giu');
 
 // The plan held to what a small model skips (it wrote no CREW lines, put
@@ -273,6 +310,18 @@ export function shapePlan(plan, { people = [], against = [], aware = false } = {
     for (const person of people) {
         if (person.head || person.away || onCrew(person) || !named(stepsText, person)) continue;
         p.crew.push({ name: person.name, skill: '', post: '', objectId: person.objectId ?? '' });
+    }
+    // ...and so are new hands the steps name doing something ("Tadam cracks
+    // display case locks", "Delvin and Raquelo begin searching") - a plan
+    // with no CREW lines had none, and nobody to count down.
+    const steps = splitSteps(p.steps);
+    p.steps = steps;
+    const notThem = [p.leader.name, p.boss.name, plan.side, ...against].map(clean).filter(Boolean);
+    for (const name of stepActors(p.steps.map((s) => s.text).join('\n'))) {
+        if (notThem.some((n) => same(n, name) || same(firstOf(n), name)) || p.crew.some((c) => same(c.name, name) || same(firstOf(c.name), name))) continue;
+        if (people.some((x) => (x.head || x.away) && isOf(name, x))) continue;
+        const known = people.find((x) => isOf(name, x));
+        p.crew.push({ name: known?.name ?? name, skill: '', post: '', objectId: known?.objectId ?? '' });
     }
     p.crew = p.crew.slice(0, 8);
     // It ends in getting away.

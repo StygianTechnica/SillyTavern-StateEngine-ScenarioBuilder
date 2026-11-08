@@ -46,6 +46,10 @@
 export const OP_STATUSES = Object.freeze(['running', 'pulling out', 'got away', 'withdrew', 'stopped', 'ended']);
 export const CREW_STATES = Object.freeze(['active', 'hurt', 'down', 'caught', 'fled', 'dead']);
 const OUT = new Set(['down', 'caught', 'fled', 'dead']);
+// Being watched without knowing it: no reason a crew is held.
+const UNSEEN = /\b(?:surveil\w*|watch\w*|observ\w*|shadow(?:s|ed|ing)?|tail(?:s|ed|ing)?|follow\w*|track\w*|hid(?:e|es|den|ing)|lurk\w*|stealth\w*|unseen|unnoticed|undetected|stak\w* out|eavesdrop\w*|wait\w* in cover)\b/i;
+// ...unless it is what they ran into: a guard watching the hall holds them.
+const IN_THE_WAY = /\b(?:guards?|police|cops?|security|patrol\w*|locks?|locked|alarms?|cameras?|staff|janitor|night watch\w*|sensors?|dogs?)\b/i;
 export const OP_REPORTS = Object.freeze(['done', 'held', 'spotted', 'pulling out']);
 export const DEFAULT_PACE = 2;
 export const HELD_LIMIT = 3;
@@ -173,7 +177,11 @@ export function afterBriefing(op, { report = null, fighters = [], deaths = [] } 
     const leaderOut = [...(fighters ?? []), ...(deaths ?? []).map((d) => ({ name: d.name, condition: 'down' }))]
         .some((f) => o.leader.name && sameName(o.leader.name, f.name) && ['down', 'failing', 'fled'].includes(clean(f.condition).toLowerCase()));
     const how = clean(report?.how);
-    const said = OP_REPORTS.includes(report?.status) ? report.status : '';
+    let said = OP_REPORTS.includes(report?.status) ? report.status : '';
+    // A crew that does not know anyone is against them is not held by being
+    // watched, shadowed or hidden from ("held: Zane's careful surveillance"
+    // while they walked on to the access tunnel) - only by what they ran into.
+    if (said === 'held' && !o.aware && UNSEEN.test(how) && !IN_THE_WAY.test(how)) said = '';
     if (said === 'spotted' && !o.aware) o = note({ ...o, aware: true }, turn, `They know they are not alone${how ? `: ${how}` : ''}.`);
 
     // Pulling out took its reply: it is over.
