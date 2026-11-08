@@ -38,3 +38,22 @@ describe('who the last reply left elsewhere', () => {
         expect(buildNow({ elsewhere: [], cast: [{ name: 'Cyril', player: true }] })).toBe('');
     });
 });
+
+describe('named in passing is still elsewhere', () => {
+    it('the storage rooms: Inji in the galleries, though the post brings him up', () => {
+        const away = elsewhereNow(people, {
+            lastReply: 'Inji continued his sweep of the main galleries. Zane, meanwhile, pressed on with his search.',
+            playerPost: "Rather than foolishly destroying the communicator as Inji had previously, he listened in on the communications so that he could hear what Enrique's men were up to.",
+            here: ['cy'], skip: ['cy'],
+        });
+        expect(away).toEqual(['Zane', 'Inji Miyama']);
+        const note = buildNow({ elsewhere: away, cast: [{ name: 'Cyril', player: true }] });
+        expect(note).toContain('The reply stays with Cyril and what is where they are - no cutting away to those elsewhere');
+    });
+    it('but not those the post goes to, calls or joins', () => {
+        for (const playerPost of ['Cyril radioed Inji to warn him.', 'He headed back to Zane and Inji.', 'Cyril joined Doc and Galice Buckar at the bar.']) {
+            const away = elsewhereNow(people, { lastReply: 'Inji, Zane, Doc and Galice Buckar waited.', playerPost, here: ['cy'], skip: ['cy'] });
+            expect(away.length).toBeLessThan(4);
+        }
+    });
+});

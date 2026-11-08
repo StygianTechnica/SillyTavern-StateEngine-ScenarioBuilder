@@ -87,3 +87,24 @@ describe('the briefing lines', () => {
         expect(parsed.crewLost).toEqual([{ who: 'one of their hands', how: 'knocked out', where: 'storage room' }]);
     });
 });
+
+describe('a CREW line bent by a small model', () => {
+    it('reads several on one line, a colon for the bar', () => {
+        const parsed = parseBriefing('Cyril listens.\nCREW | Tadam Chi: in the museum foyer waiting to create a diversion, Nichiro Fukudo: scouting the upper gallery levels');
+        expect(parsed.crewMoves).toEqual([
+            { name: 'Tadam Chi', where: 'in the museum foyer waiting to create a diversion' },
+            { name: 'Nichiro Fukudo', where: 'scouting the upper gallery levels' },
+        ]);
+        expect(parseBriefing('CREW | Brother Aldo - at the chapel door, watching the road').crewMoves).toEqual([{ name: 'Brother Aldo', where: 'at the chapel door, watching the road' }]);
+    });
+});
+
+describe('the narrator hears their radio', () => {
+    it('when the channel is tapped, with where they are', async () => {
+        const { opGuidance } = await import('../src/ops/model.js');
+        const op = afterBriefing({ ...startOp(plan, 10), tapped: true }, { moves: [{ name: 'Nichiro', where: 'upper galleries' }] }, 10);
+        expect(opGuidance(op)).toContain('write one or two short lines of their radio talk');
+        expect(opGuidance(op)).toContain('Tadam Chi at surveillance room; Nichiro Fukudo at upper galleries');
+        expect(opGuidance(startOp(plan, 10))).not.toContain('radio talk');
+    });
+});

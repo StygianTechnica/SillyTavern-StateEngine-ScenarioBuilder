@@ -488,7 +488,10 @@ export function buildNow(input) {
     if (arriving.length) orders[orders.length - 1] += arrivalWhere(arriving, input);
     if (notInPerson.length) orders.push(`${andList(notInPerson)} ${notInPerson.length === 1 ? 'does' : 'do'} not come in person - as ${player?.name ? clean(player.name) : 'the player character'} said, ${notInPerson.length === 1 ? 'they keep their' : 'they keep their'} own hands off a job like this and send ${notInPerson.length === 1 ? 'their' : 'their'} people. Only those people are here; ${andList(notInPerson)} ${notInPerson.length === 1 ? 'is' : 'are'} not met, seen or heard in this scene.`);
     if (later.length) orders.push(`${andList(later)} ${later.length === 1 ? 'works' : 'work'} from the shadows: not met, seen or heard in person yet, and never in a fight with ${player?.name ? clean(player.name) : 'the player character'}. Their hand is felt through their underlings, their schemes and word of them - the story builds up to them.`);
-    if (elsewhere.length) orders.push(`Not in this scene: ${andList(elsewhere)} - ${elsewhere.length === 1 ? 'they are' : 'they are all'} elsewhere, and do not come in, speak or act in this reply.`);
+    // The reply stays with the player character: the museum's narrator, told
+    // Inji and Zane were elsewhere, still spent the reply on their sweep of
+    // the galleries - the last reply again, nearly word for word.
+    if (elsewhere.length) orders.push(`Not in this scene: ${andList(elsewhere)} - ${elsewhere.length === 1 ? 'they are' : 'they are all'} elsewhere, and do not come in, speak or act in this reply. The reply stays with ${player?.name ? clean(player.name) : 'the player character'} and what is where they are - no cutting away to ${elsewhere.length === 1 ? 'them' : 'those elsewhere'}; word of ${elsewhere.length === 1 ? 'them' : 'them'} reaches ${player?.name ? clean(player.name) : 'the player character'} only by a call, a radio or a sound carrying.`);
     if (triggered.length) orders.push(`It happens now: ${triggered.join(' ')}`);
     if (dodging) orders.push(dodging);
     // The beat's people are who it is (Adam kept sending others on the job

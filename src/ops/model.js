@@ -400,5 +400,9 @@ export function opGuidance(op) {
     if (!isLive(o)) return '';
     if (o.status === 'pulling out') return `${o.side}'s people are pulling out now - breaking off and getting away the way they came.`;
     const unaware = o.aware ? '' : ` They do not know ${o.against || 'anyone'} is here: they are not waiting for them - no trap, no ambush - and are caught off guard if found.`;
-    return `${o.side}'s people are at work here and do not wait for anyone: ${currentStep(o).text}. Show only what the others could see or hear of it; their plan stays theirs. Where the player character goes, show what the game master's briefing says is there - their people, their traces, or nothing.${unaware}`;
+    // Their radio in the player's side's hands: the narrator gives their
+    // talk - the game master's briefing alone was not enough for a small model.
+    const where = o.crew.filter((c) => c.state === 'active' && c.where).map((c) => `${c.name} at ${c.where}`);
+    const tapped = o.tapped ? ` The player character holds one of their radios and hears their channel: in this reply, write one or two short lines of their radio talk, in their own clipped words - who is where, how the job goes${where.length ? ` (${where.join('; ')})` : ''}.` : '';
+    return `${o.side}'s people are at work here and do not wait for anyone: ${currentStep(o).text}. Show only what the others could see or hear of it; their plan stays theirs. Where the player character goes, show what the game master's briefing says is there - their people, their traces, or nothing.${unaware}${tapped}`;
 }

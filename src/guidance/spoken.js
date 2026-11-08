@@ -85,7 +85,20 @@ export function spokenNowText(list = [], max = 2) {
 // -> [name], at most `max`.
 export function elsewhereNow(characters, { lastReply = '', reasons = [], playerPost = '', here = [], skip = [], max = 6 } = {}) {
     const away = new Set([...(here ?? []), ...(skip ?? [])]);
-    const called = new Set(peopleNamedIn(playerPost, characters).map((c) => c.id));
+    // Named as someone the player character goes to, calls or meets - not
+    // in passing: "rather than destroying the communicator as Inji had
+    // previously" kept Inji out of this list while he was in the galleries.
+    // The word for it comes just before the name ("headed to Inji", "called
+    // Zane over", "joined Doc and Galice"), or the name opens a sentence
+    // that has them come ("Zane walked in").
+    const TOWARD = String.raw`(?:to|towards?|join(?:s|ed|ing)?|call(?:s|ed|ing)?|radio(?:s|ed|ing)?|shout(?:s|ed|ing)?\s+(?:to|at|for)|signal(?:s|l?ed|ling)?|wave(?:s|d)?\s+(?:to|at)|ask(?:s|ed)?|tell(?:s)?|told|meet(?:s)?|met|find(?:s)?|found|with|beside|follow(?:s|ed|ing)?|for)`;
+    const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const post = String(playerPost ?? '').replace(/\s+/g, ' ');
+    const called = new Set(peopleNamedIn(post, characters).filter((c) => {
+        const n = callNames(c).filter((x) => x.length >= 2).map(esc).join('|');
+        return !!n && (new RegExp(String.raw`\b${TOWARD}\s+(?:(?:and|the|other|others|his|her|their)\s+|[\p{Lu}][\p{L}'-]*,?\s+(?:and\s+)?){0,4}(?:${n})\b`, 'iu').test(post)
+            || new RegExp(String.raw`(?:^|[.!?]\s+)(?:${n})\b[^.!?]{0,30}\b(?:arriv|walk(?:s|ed)? in|came|comes|join|show(?:s|ed)? up|turn(?:s|ed)? up)`, 'i').test(post));
+    }).map((c) => c.id));
     const named = peopleNamedIn([lastReply, ...(reasons ?? [])].join('\n'), characters);
     return named.filter((c) => !away.has(c.id) && !called.has(c.id)).map((c) => clean(c.name)).filter(Boolean).slice(0, max);
 }

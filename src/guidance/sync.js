@@ -27,6 +27,7 @@ import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.
 import { triggerLines } from '../triggers/model.js';
 import { deadText, placesTheAbsent } from '../state/death.js';
 import { circling } from '../director/loops.js';
+import { stillWaiting, waitingIds } from '../director/suspended.js';
 import { sidesApart, sidesText } from './sides.js';
 import { factionSlips, deadActing, correctionText, pronounSlips, commandSlips, pronounText, relationSlips, relationText } from './canon.js';
 import { asksWhatNext } from './build.js';
@@ -360,6 +361,13 @@ export async function gatherInputs(chatId, chatKey) {
         const name = (await getObject(chatId, h.objectId))?.name;
         if (name) absent.push(name);
     }
+    // Those a split left elsewhere (src/director/suspended.js): not here.
+    const splitAway = [];
+    for (const id of [...waitingIds(stillWaiting(doc.suspended, doc.turn), castIds)]) {
+        if (!(doc.suspended ?? []).some((s) => s.split && (s.castIds ?? []).includes(id))) continue;
+        const name = (await getObject(chatId, id))?.name;
+        if (name) splitAway.push(name);
+    }
 
     // Whether State Engine's own scene tracker has anyone here besides the
     // player character (and those taken out by hand): then the "no one
@@ -587,13 +595,15 @@ export async function gatherInputs(chatId, chatKey) {
             arrivingFor: settings.director.enabled ? (doc.director.arrivingFor ?? {}) : {},
             // Who the reply before the player's post, or those reasons, name
             // and who is not here: they stay where they are.
-            elsewhere: elsewhereNow(allCharacters, {
+            // Those taken out by hand and those a split left elsewhere too:
+            // the note just before the reply is what a small model keeps.
+            elsewhere: [...new Set([...absent, ...splitAway, ...elsewhereNow(allCharacters, {
                 lastReply: replyBeforePost(),
                 reasons: settings.director.enabled ? Object.values(doc.director.arrivingFor ?? {}) : [],
                 playerPost: latestPlayerPost(),
                 here: castIds,
                 skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id)].filter(Boolean),
-            }),
+            })])],
             // Those the player's posts say would not come in person (a boss
             // who sends his people): only their people turn up.
             // And those set on their sheet to stay out of the field, when the

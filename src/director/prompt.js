@@ -993,6 +993,17 @@ export function parseDirectorNote(raw) {
             if (!isPlaceholder(cw[1]) && !isPlaceholder(cw[2]) && crewMoves.length < 8) crewMoves.push({ name: clean(cw[1]).replace(/^["'*]+|["'*.]+$/g, '').slice(0, 80), where: clean(cw[2]).replace(/[.]+$/, '').slice(0, 120) });
             continue;
         }
+        // Bent by a small model: several on one line, a colon for the bar -
+        // "CREW | Tadam Chi: in the museum foyer, Nichiro Fukudo: scouting
+        // the upper gallery levels".
+        const cm = line.match(/^\s*(?:[-*]\s*)?\**CREW\**\s*:?\s*\|\s*([^|]+?)\s*$/i);
+        if (cm) {
+            for (const part of cm[1].split(/[,;]\s*(?=["']?[A-Z][\w'"-]*(?:\s+["']?[A-Z][\w'"-]*)*\s*(?::|\s[-–—]\s))/)) {
+                const m = part.match(/^\s*["'*]*([A-Z][^:]*?)["'*]*\s*(?::|\s[-–—]\s)\s*(.+?)\s*$/);
+                if (m && !isPlaceholder(m[1]) && !isPlaceholder(m[2]) && crewMoves.length < 8) crewMoves.push({ name: clean(m[1]).slice(0, 80), where: clean(m[2]).replace(/[.,;]+$/, '').slice(0, 120) });
+            }
+            continue;
+        }
         const ls = line.match(/^\s*(?:[-*]\s*)?\**LOST\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?(?:\|\s*(.*?)\s*)?$/i);
         if (ls) {
             if (!isPlaceholder(ls[1]) && crewLost.length < 6) crewLost.push({ who: clean(ls[1]).replace(/^["'*]+|["'*.]+$/g, '').slice(0, 80), how: ls[2] && !isPlaceholder(ls[2]) ? clean(ls[2]).slice(0, 160) : '', where: ls[3] && !isPlaceholder(ls[3]) ? clean(ls[3]).slice(0, 120) : '' });
