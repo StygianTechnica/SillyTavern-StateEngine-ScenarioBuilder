@@ -32,7 +32,8 @@
 //   crew: [{ name, objectId, skill, post, state, where }]   state: CREW_STATES;
 //                                where: the spot they are at now (from their post, then CREW lines)
 //   hands, handsOut,             unnamed hands the story showed, and how many of them are out of it
-//   tapped,                      the player's side holds one of their radios and hears them
+//   tapped, tappedWith,          the player's side hears them by one of their own links (a radio,
+//                                a sending stone, a mind-link: the story's word)
 //   quiet: [name], checkIn,      theirs gone quiet unbeknown to them, and the reply the leader calls them
 //   suspicious,                  they know something is wrong (not who)
 //   steps: [{ text, status }]    status: 'pending' | 'current' | 'done'
@@ -81,22 +82,34 @@ export const isLive = (op) => !!op && (op.status === 'running' || op.status === 
 export const crewOut = (op) => (op?.crew ?? []).filter((c) => OUT.has(c.state)).length + Math.max(0, op?.handsOut ?? 0);
 // The crew and the unnamed hands the story showed.
 export const crewTotal = (op) => (op?.crew ?? []).length + Math.max(0, op?.hands ?? 0);
-// Whether the player's post takes up one of their radios to listen in
+// Whether the player's post takes up one of their links to listen in
 // (true), gets rid of it (false), or says nothing of it (null). By the
 // sentence: "Rather than foolishly destroying the communicator ..., he
 // listened in on the communications" listens; "he smashed the radio" does not.
-const RADIO = /\b(?:comms?|communicators?|communications|radios?|earpieces?|headsets?|walkie[- ]talkies?|channels?|frequenc(?:y|ies)|transceivers?|comm[- ]?links?|commlinks?|sending stones?|speaking stones?)\b/i;
-const LISTEN = /\b(?:listen\w*|monitor\w*|tap(?:s|ped|ping)?\s+(?:into|in)|tapped|eavesdrop\w*|tune[sd]?\s+in|kept|keeps?|pocket\w*|held on|holds? on|hang\w* on)\b/i;
-const RID = /\b(?:destroy\w*|smash\w*|crush\w*|disabl\w*|br(?:eak|oke|oken)|switch\w* off|turn\w* off|toss\w*|threw|throws?|ditch\w*|wreck\w*)\b/i;
-export function radioTaken(text = '') {
+// However this world talks at a distance - a radio or a phone, a sending
+// stone or a scrying glass, a mind-link - by the story's own word for it.
+const RADIO = /\b(?:comms?|communicators?|communications|radios?|earpieces?|headsets?|walkie[- ]talkies?|channels?|frequenc(?:y|ies)|transceivers?|comm[- ]?links?|commlinks?|(?:cell ?|mobile |burner |sat(?:ellite)? )?phones?|burners?|pagers?|intercoms?|(?:sending|speaking|whisper(?:ing)?|message|farspeaker|echo) (?:stones?|crystals?|shells?|shards?)|scrying (?:orbs?|mirrors?|glass(?:es)?|pools?|bowls?)|crystal balls?|speaking tubes?|mind[- ]?links?|telepathic (?:links?|channels?|bonds?|net(?:work)?s?)|psychic (?:links?|channels?|net(?:work)?s?)|psionic (?:links?|channels?|net(?:work)?s?)|hive[- ]?minds?|link-?stones?)\b/i;
+const LISTEN = /\b(?:listen\w*|monitor\w*|tap(?:s|ped|ping)?\s+(?:into|in)|tapped|eavesdrop\w*|tune[sd]?\s+in|kept|keeps?|pocket\w*|held on|holds? on|hang\w* on|attun\w*|reach\w* into|slip\w* into|ride[sd]? (?:along|the))\b/i;
+const RID = /\b(?:destroy\w*|smash\w*|crush\w*|shatter\w*|disabl\w*|br(?:eak|oke|oken)|switch\w* off|turn\w* off|toss\w*|threw|throws?|ditch\w*|wreck\w*|sever\w*|cut (?:off|the))\b/i;
+// -> { said: true (listening in), false (got rid of it), null (nothing of
+// it), with: the story's word for it ("communicator", "sending stone") }.
+export function linkTaken(text = '') {
     let said = null;
+    let withWord = '';
     for (const s of String(text ?? '').split(/(?<=[.!?…])\s+|\n+/)) {
-        if (!RADIO.test(s)) continue;
-        if (LISTEN.test(s)) said = true;
-        else if (RID.test(s)) said = false;
+        const m = s.match(RADIO);
+        if (!m) continue;
+        if (LISTEN.test(s)) { said = true; withWord = m[0].toLowerCase(); } else if (RID.test(s)) { said = false; withWord = ''; }
     }
-    return said;
+    // "the communicator ... listened in on the communications": the thing,
+    // not the talk, when the sentence names both.
+    if (said && /^(?:communications|comms?|channels?|frequenc)/.test(withWord)) {
+        const thing = String(text ?? '').match(/\b(?:communicators?|radios?|earpieces?|headsets?|walkie[- ]talkies?|transceivers?|comm[- ]?links?|commlinks?|phones?)\b/i);
+        if (thing) withWord = thing[0].toLowerCase().replace(/s$/, '');
+    }
+    return { said, with: withWord };
 }
+export const radioTaken = (text = '') => linkTaken(text).said;
 
 // Out of it before they pull out: the plan's number, and never under half
 // of everyone - hands the story turned up included.
@@ -139,6 +152,9 @@ export function normalizeOp(o) {
         hands: Math.max(0, int(o.hands, 0)),
         handsOut: Math.min(Math.max(0, int(o.handsOut, 0)), Math.max(0, int(o.hands, 0))),
         tapped: o.tapped === true,
+        // The story's word for what they hear them by ("communicator",
+        // "sending stone"); '' when set by hand.
+        tappedWith: o.tapped === true ? str(o.tappedWith, 40) : '',
         quiet: (Array.isArray(o.quiet) ? o.quiet : []).map((q) => str(q, 80)).filter(Boolean).slice(0, 8),
         checkIn: Number.isInteger(o.checkIn) ? o.checkIn : null,
         suspicious: o.suspicious === true,
@@ -433,17 +449,17 @@ export function opFacts(op, { turn = null, here = '', player = '' } = {}) {
     const pc = clean(player) || 'The player character';
     if (clean(here) && o.status !== 'pulling out') lines.push(`${pc} is at ${clean(here)}. By where each of them is, say plainly in the briefing what ${pc} finds there: any of theirs here or within earshot - at work, not waiting for anyone - the traces they left if they passed through, or that it is empty of them. Never leave it for the player to say where they are.`);
     // A radio of theirs in other hands.
-    if (o.tapped) lines.push(`${pc}'s side holds one of their radios and hears their channel: put in the briefing one or two short lines of what the crew says on it in this reply - their real positions and progress, in their own words and codes.`);
+    if (o.tapped) lines.push(`${pc}'s side ${o.tappedWith ? `holds their ${o.tappedWith}` : 'can listen in on how they keep in touch'} and hears them: put in the briefing one or two short lines of what the crew says through it in this reply - their real positions and progress, in their own words and codes.`);
     // The check-in.
     if (!o.aware && o.checkIn !== null && Number.isInteger(turn) && turn >= o.checkIn) {
         const who = o.quiet.join(', ') || 'those gone quiet';
-        lines.push(`CHECK-IN in this reply: ${o.leader.name || 'their leader'} calls ${who} over their channel. ${o.tapped ? `${pc}'s side holds that radio and may answer: if no one answers, or the answer does not convince, say OPERATION | suspicious | <why>.` : 'No one answers: they know something is wrong.'}`);
+        lines.push(`CHECK-IN in this reply: ${o.leader.name || 'their leader'} reaches out to ${who} the way they keep in touch. ${o.tapped ? `${pc}'s side holds ${o.tappedWith ? `that ${o.tappedWith}` : 'what they keep in touch by'} and may answer: if no one answers, or the answer does not convince, say OPERATION | suspicious | <why>.` : 'No one answers: they know something is wrong.'}`);
     }
     if (!o.aware && o.suspicious) lines.push(`They know something is wrong - ${o.quiet.join(', ') || 'someone'} went quiet - but not who or what is behind it: they are wary, check on it, and may hurry the job or cut it short.`);
     lines.push(o.aware
         ? `They know ${o.against || 'someone'} is against them here, and act on it.`
         : `They do not know ${o.against || 'anyone'} is here against them, so nothing of theirs is set up for them - no trap, no ambush, no one lying in wait: they work to their plan, and are caught off guard if found. They learn otherwise only when the story shows them proof - one of the crew sees them, hears them, or finds clear signs of them. Something made to look like an accident or a malfunction is taken for one: they may check on it, curse it or work around it, but they do not know anyone did it.`);
-    lines.push('You play them: they do not wait for anyone. In this reply they carry their step forward - or deal with what is in their way - by their skills and posts; each knows only what they can see or are told over their own channels. Whoever moves, or has no place yet, gets a CREW line saying where they are now.');
+    lines.push('You play them: they do not wait for anyone. In this reply they carry their step forward - or deal with what is in their way - by their skills and posts; each knows only what they can see or are told by their own people. Whoever moves, or has no place yet, gets a CREW line saying where they are now.');
     return lines.join('\n');
 }
 
@@ -466,5 +482,5 @@ export function opRadio(op, player = '') {
     const who = String(player ?? '').trim() || 'The player character';
     const where = o.crew.filter((c) => c.state === 'active' && c.where).map((c) => `${c.name} at ${c.where}`);
     const step = o.status === 'pulling out' ? 'they are pulling out' : `they are at "${currentStep(o).text}"`;
-    return `${who} hears ${o.side}'s channel on their own radio: put in this reply one or two short lines of their radio talk, in their clipped words - ${step}${where.length ? `; ${where.join('; ')}` : ''}${o.leader.name ? `; ${o.leader.name} gives the orders` : ''}. ${who} only hears it - it says nothing of ${who}, and ${who} does nothing in the reply.`;
+    return `${who} overhears ${o.side} through their own ${o.tappedWith || 'way of keeping in touch'}: put in this reply one or two short lines of what comes through it from them, in their own words - ${step}${where.length ? `; ${where.join('; ')}` : ''}${o.leader.name ? `; ${o.leader.name} gives the orders` : ''}. ${who} only hears it - it says nothing of ${who}, and ${who} does nothing in the reply.`;
 }

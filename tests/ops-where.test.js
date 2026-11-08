@@ -1,7 +1,7 @@
 // Where the other side is, what the player character finds, their radio,
 // and the one Cyril took down in the storage room - from the museum chat,
 // where the enemy was left for the player to place.
-import { startOp, afterBriefing, opFacts, radioTaken, crewOut, crewTotal, breakPoint } from '../src/ops/model.js';
+import { startOp, afterBriefing, opFacts, radioTaken, linkTaken, crewOut, crewTotal, breakPoint } from '../src/ops/model.js';
 import { parseDirectorNote as parseBriefing } from '../src/director/prompt.js';
 
 const plan = {
@@ -38,7 +38,7 @@ describe('one of theirs taken down with no name', () => {
     });
     it('the leader checks in next reply - with no one to answer, they know something is wrong', () => {
         expect(next.checkIn).toBe(11);
-        expect(opFacts(next, { turn: 11 })).toMatch(/CHECK-IN in this reply: Delvin Timmers calls the one at storage room over their channel\. No one answers/);
+        expect(opFacts(next, { turn: 11 })).toContain('CHECK-IN in this reply: Delvin Timmers reaches out to the one at storage room the way they keep in touch. No one answers');
         const after = afterBriefing(next, {}, 11);
         expect(after.suspicious).toBe(true);
         expect(after.aware).toBe(false);
@@ -75,7 +75,22 @@ describe('their radio', () => {
         expect(radioTaken('Cyril headed for the storage rooms, gun at the ready.')).toBe(null);
     });
     it('the game master is told to give their chatter', () => {
-        expect(opFacts({ ...startOp(plan, 10), tapped: true }, { turn: 10, player: 'Cyril' })).toMatch(/Cyril's side holds one of their radios and hears their channel: put in the briefing one or two short lines/);
+        expect(opFacts({ ...startOp(plan, 10), tapped: true }, { turn: 10, player: 'Cyril' })).toContain("Cyril's side can listen in on how they keep in touch and hears them: put in the briefing one or two short lines");
+        expect(opFacts({ ...startOp(plan, 10), tapped: true, tappedWith: 'communicator' }, { turn: 10, player: 'Cyril' })).toContain("Cyril's side holds their communicator and hears them");
+    });
+});
+
+describe('however this world talks at a distance', () => {
+    it('keeps the story\'s word for it', () => {
+        expect(linkTaken('Rather than foolishly destroying the communicator as Inji had previously, he listened in on the communications so that he could hear them.')).toEqual({ said: true, with: 'communicator' });
+        expect(linkTaken('Kael keeps the sending stone close, listening for the cultists.')).toEqual({ said: true, with: 'sending stone' });
+        expect(linkTaken('Mira slipped into their mind-link, silent, and listened to the hive coordinate.')).toEqual({ said: true, with: 'mind-link' });
+        expect(linkTaken("She pocketed the dead man's burner phone and kept it on.")).toEqual({ said: true, with: 'burner phone' });
+        expect(linkTaken("Aldric peered into the scrying mirror, attuning to the warlock's circle.").with).toBe('scrying mirror');
+    });
+    it('gets rid of it', () => {
+        expect(linkTaken('Thorne shattered the whisper stone against the wall.').said).toBe(false);
+        expect(linkTaken('Vex severed the telepathic link with a thought.').said).toBe(false);
     });
 });
 
@@ -105,12 +120,13 @@ describe('the narrator hears their radio', () => {
         const { buildNow } = await import('../src/guidance/build.js');
         const op = afterBriefing({ ...startOp(plan, 10), tapped: true }, { moves: [{ name: 'Nichiro', where: 'upper galleries' }] }, 10);
         const line = opRadio(op, 'Cyril');
-        expect(line).toContain("Cyril hears Medina Syndicate's channel on their own radio: put in this reply one or two short lines of their radio talk");
+        expect(line).toContain('Cyril overhears Medina Syndicate through their own way of keeping in touch: put in this reply one or two short lines of what comes through it from them');
+        expect(opRadio({ ...op, tappedWith: 'sending stone' }, 'Kael')).toContain('Kael overhears Medina Syndicate through their own sending stone');
         expect(line).toContain('Tadam Chi at surveillance room; Nichiro Fukudo at upper galleries; Delvin Timmers gives the orders');
         expect(line).toContain('Cyril does nothing in the reply');
         expect(buildNow({ op, cast: [{ name: 'Cyril', player: true }] })).toContain(line);
         expect(opRadio(startOp(plan, 10), 'Cyril')).toBe('');
-        expect(opGuidance(op)).not.toContain('radio talk');
+        expect(opGuidance(op)).not.toContain('comes through it');
     });
 });
 

@@ -11,7 +11,7 @@ import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
 import { getSettings } from '../settings.js';
-import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive, radioTaken } from './model.js';
+import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive, linkTaken } from './model.js';
 import { inPersonOf } from '../guidance/spoken.js';
 import { allWingsOf, wingOfPerson, markOtherWings } from '../library/wings.js';
 import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst, shapePlan, aboutThem } from './generate.js';
@@ -61,15 +61,20 @@ export function opAfterBriefing(chatKey, { report = null, fight = null, deaths =
     }
 }
 
-// Whether the player's side holds one of their radios: from the player's
-// latest post (src/ops/model.js radioTaken), or set by hand (`on`).
+// Whether the player's side hears them by one of their own links - a radio,
+// a sending stone, a mind-link: from the player's latest post (src/ops/
+// model.js linkTaken, which keeps the story's word for it), or set by hand
+// (`on`).
 export function setOpTapped(chatKey, { text = null, on = null } = {}) {
     const doc = getChatDoc(chatKey);
     if (!isLive(doc.op)) return null;
-    const said = on !== null ? on : radioTaken(text);
-    if (said === null || said === doc.op.tapped) return null;
-    console.info(LOG_PREFIX, `the other side (${doc.op.side}): ${said ? 'their channel is heard' : 'their channel is no longer heard'}`);
-    return save(chatKey, { ...doc.op, tapped: said, log: [...doc.op.log, { turn: doc.turn, text: said ? 'Their radio is in other hands: their channel is heard.' : 'Their channel is no longer heard.' }] });
+    const read = on !== null ? { said: on, with: '' } : linkTaken(text);
+    const said = read.said;
+    if (said === null) return null;
+    // Already heard: only the story's word for it is new.
+    if (said === doc.op.tapped) return said && read.with && read.with !== doc.op.tappedWith ? save(chatKey, { ...doc.op, tappedWith: read.with }) : null;
+    console.info(LOG_PREFIX, `the other side (${doc.op.side}): ${said ? `heard through their ${read.with || 'link'}` : 'no longer heard'}`);
+    return save(chatKey, { ...doc.op, tapped: said, tappedWith: said ? read.with : '', log: [...doc.op.log, { turn: doc.turn, text: said ? `Their ${read.with || 'link'} is in other hands: they are overheard.` : 'They are no longer overheard.' }] });
 }
 
 // The user steps in (the GM Plan card).
