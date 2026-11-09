@@ -485,6 +485,8 @@ export function emptyChatDoc() {
         loreDismissed: [],
         factionsWritten: {},
         held: [],
+        // Taken out of the scene by hand, and where (src/director/whereabouts.js).
+        outByHand: [],
         corrections: [],
         history: [],
         turn: 0,
@@ -572,6 +574,7 @@ export function normalizeChatDoc(doc) {
         loreLinks: isObject(d.loreLinks) ? d.loreLinks : {},
         loreDismissed: strList(d.loreDismissed),
         held: Array.isArray(d.held) ? d.held.filter((h) => isObject(h) && str(h.field) && Number.isInteger(h.until)) : [],
+        outByHand: Array.isArray(d.outByHand) ? d.outByHand.filter((e) => isObject(e) && str(e.id) && str(e.place)) : [],
         factionsWritten: isObject(d.factionsWritten) ? Object.fromEntries(Object.entries(d.factionsWritten).map(([k, v]) => [k, strList(v)]).filter(([, v]) => v.length)) : {},
         corrections: Array.isArray(d.corrections) ? d.corrections.filter(isObject) : [],
         history: Array.isArray(d.history) ? d.history.filter(isObject).slice(-HISTORY_LIMIT) : [],

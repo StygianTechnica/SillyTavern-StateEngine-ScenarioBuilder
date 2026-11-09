@@ -39,7 +39,7 @@ import { opFacts, crewMet, isLive as opRunning } from '../ops/model.js';
 import { opAfterBriefing, opFromDirector, setOpTapped } from '../ops/run.js';
 import { alsoFacts, liveJobs, roomForJob } from '../ops/side-jobs.js';
 import { rivalAtWork } from '../ops/detect.js';
-import { whoCouldTurnUp, belongingHere, enemyGround, sharedScenes, lastSeen, firstMeetings, elsewhereEntering } from './whereabouts.js';
+import { whoCouldTurnUp, belongingHere, enemyGround, sharedScenes, lastSeen, firstMeetings, elsewhereEntering, privateMoment, takenOutHere } from './whereabouts.js';
 import { rankNearby } from './company.js';
 import { arrivals, addRipple } from '../world/model.js';
 import { isWorldOn, takeHeard, worldHereFor, noteHeartRipple, detainPerson } from '../world/run.js';
@@ -1160,6 +1160,15 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         if (sheetSaysNo.length) {
             console.info(LOG_PREFIX, `${sheetSaysNo.join(', ')} kept out: their sheet has them stay away from the scene`);
             parsed.enters = parsed.enters.filter((n) => !sheetSaysNo.includes(n));
+        }
+        // No one walks in on a private moment, or back into a place the user
+        // took them out of, unless the player's own narration brings them.
+        const outHere = new Set(takenOutHere(doc.outByHand, doc.canonical.locationId).map((e) => e.id));
+        const closed = privateMoment({ people: baseCast.length, recent: messages.map((m) => m.text) });
+        const notWalkingIn = elsewhereEntering(parsed.enters, { characters, elsewhere: characters.filter((c) => closed || outHere.has(c.id)), castIds: baseCast, userPost: narrationOf(userPost), namedIn: peopleNamedIn, namesOf: callNames });
+        if (notWalkingIn.length) {
+            console.info(LOG_PREFIX, `${notWalkingIn.join(', ')} kept out: ${closed ? 'a private moment' : 'taken out of this place by hand'}`);
+            parsed.enters = parsed.enters.filter((n) => !notWalkingIn.includes(n));
         }
         // Taken out by hand: the game master's own ENTERS line does not undo
         // that. Adam Miller was back 29 seconds after the user removed him.

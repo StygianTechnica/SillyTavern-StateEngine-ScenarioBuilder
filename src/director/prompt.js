@@ -1001,7 +1001,7 @@ export function parseDirectorNote(raw) {
             const kind = jl[1].toUpperCase();
             if (kind === 'JEALOUS' && cells[0] && cells[1] && jealous.length < 4) jealous.push({ who: cells[0], over: cells[1], rival: cells[2] ?? '', what: cells[3] ?? '', how: cells[4] ?? '' });
             else if (kind === 'ROMANCE' && cells[0] && cells[1] && romance.length < 3) romance.push({ one: cells[0], other: cells[1], what: cells[2] ?? '' });
-            else if (kind === 'SOOTHED' && cells[0] && soothed.length < 3) soothed.push({ who: cells[0], how: cells[1] ?? '' });
+            else if (kind === 'SOOTHED' && cells[0] && soothed.length < 3) soothed.push(cells.length >= 3 ? { who: cells[0], with: cells[1], how: cells[2] } : { who: cells[0], how: cells[1] ?? '' });
             continue;
         }
         // OPERATION | <done, held, spotted or pulling out> | <how> and

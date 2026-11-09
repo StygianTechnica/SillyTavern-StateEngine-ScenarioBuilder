@@ -31,6 +31,7 @@ import { beatsOf, undoBeatsFrom, unplantSeedsFrom, activeBeat } from '../planner
 import { heldBySheet } from '../guidance/spoken.js';
 import { cameToThem } from '../guidance/alone.js';
 import { shownComing, narrationOf } from '../director/departures.js';
+import { noteOutByHand } from '../director/whereabouts.js';
 import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
 import { detainedIds, withoutDetained, detainedFrom, undoDetainedFrom } from '../state/detained.js';
 import { contextualPlace } from '../library/place-context.js';
@@ -752,10 +753,12 @@ export async function holdUserScene(chatId, chatKey, before) {
         const path = settingId ? (await getLocationPathNames(chatId, settingId, after.locationId)).join(' > ') : await nameOf(after.locationId);
         lines.push(`The scene is now at ${path || await nameOf(after.locationId)}.`);
     }
+    const out = [];
     for (const id of before.castIds.filter((x) => !after.castIds.includes(x))) {
         holds.push({ field: 'cast', op: 'remove', objectId: id, until });
         const name = await nameOf(id);
         if (name) lines.push(`${name} is not in this scene any more.`);
+        if (name) out.push({ id, name });
     }
     for (const id of after.castIds.filter((x) => !before.castIds.includes(x))) {
         holds.push({ field: 'cast', op: 'add', objectId: id, until });
@@ -771,6 +774,7 @@ export async function holdUserScene(chatId, chatKey, before) {
     const fields = new Set(holds.map((h) => h.field));
     updateChatDoc(chatKey, (d) => {
         d.held = [...d.held.filter((h) => !fields.has(h.field) || h.until <= d.turn), ...holds];
+        d.outByHand = noteOutByHand(d.outByHand, { out, back: after.castIds.filter((x) => !before.castIds.includes(x)), place: after.locationId });
         d.corrections = [...d.corrections, ...lines.map((text) => ({ id: newLocalId('c'), text, turnsLeft: settings.correctionTurns + 1, source: 'user' }))];
         // The briefing described the old scene.
         d.director = { ...d.director, note: '', summary: '', direction: '', key: '' };

@@ -58,6 +58,11 @@ const DESIRE = /\b(?:attract(?:ed|ion)|desires?|desired|wants? (?:him|her|them)|
 export const isDesire = (text) => DESIRE.test(str(text)) && !FAMILY.test(str(text));
 export const isRomantic = (text) => (ROMANTIC.test(str(text)) || DESIRE.test(str(text))) && !FAMILY.test(str(text));
 export const isVowOfLove = (text) => VOW.test(str(text));
+// A tie that is opposition whatever its note says. Zane and Inji's "rival -
+// compete lewdly over sexual conquests" read as desire, and the director was
+// told each was in love with the other - so they got on like best chums, and
+// Zane's jealousy over Cyril was filed as jealousy over Inji.
+const FOE_KIND = /\b(?:rivals?|rivalry|enem(?:y|ies)|nemesis|foes?|adversar\w+|hates?|hatred|nemeses)\b/i;
 
 export const jealousyOf = (entry) => (JEALOUSY_MODES.includes(entry?.meta?.jealousy) ? entry.meta.jealousy : '');
 
@@ -84,7 +89,20 @@ function normalizeGrievance(g) {
         day: Number.isInteger(g.day) ? g.day : null,
         turn: Number.isInteger(g.turn) ? g.turn : 0,
         soothed: g.soothed === true,
+        // Made up with the rival too: making up with the one they love does
+        // not end it with the one who came between them.
+        rivalEased: g.rivalEased === true,
     };
+}
+
+const bondedTo = (bonds, who, to) => !!to && (bonds ?? []).some((b) => b.who === who && b.to === to);
+
+// The director fills the columns loosely ("Zane | Inji | Cyril" for Zane
+// seeing Inji with Cyril, whom Zane wants). -> the grievance with the one
+// they are bound to as `over` and the other as the rival.
+export function squareUp(g, bonds = []) {
+    if (!g || bondedTo(bonds, g.who, g.over) || !bondedTo(bonds, g.who, g.rival)) return g;
+    return { ...g, over: g.rival, overName: g.rivalName, rival: g.over, rivalName: g.overName };
 }
 
 export function normalizeHearts(v) {
@@ -114,14 +132,14 @@ export function bondsOf({ authored = [], story = [], oaths = [], nameOf = () => 
     };
     for (const r of authored ?? []) {
         const text = `${str(r.kind)} ${str(r.note)}`;
-        if (!isRomantic(text)) continue;
+        if (FOE_KIND.test(str(r.kind)) || !isRomantic(text)) continue;
         add(r.from, r.to, 3, true, clean(r.kind) || 'lover');
         if (r.mutual) add(r.to, r.from, 3, true, clean(r.kind) || 'lover');
     }
     for (const r of story ?? []) {
         const text = `${str(r.type)} ${str(r.text)}`;
         const polarity = Number(r.polarity) || 0;
-        if (FAMILY.test(text)) continue;
+        if (FAMILY.test(text) || FOE_KIND.test(str(r.type))) continue;
         if (isRomantic(text) && polarity >= 1) add(r.fromId, r.toId, Math.min(3, Math.max(2, polarity)), true, clean(r.type) || 'in love');
         else if (polarity >= 3) add(r.fromId, r.toId, 2, false, 'devoted');
     }
@@ -182,10 +200,15 @@ export function noteBrokenVows(hearts, oaths, { day = null, turn = 0, playerId =
 }
 
 // The director's SOOTHED line: what was between them is talked out, or
-// made up for. -> how many were let go.
+// made up for. overId: the one they made it up with - with the one who came
+// between them, that ends it with the rival. -> how many were let go.
 export function soothe(hearts, whoId, { overId = '' } = {}) {
     let n = 0;
-    for (const g of hearts.grievances) if (!g.soothed && g.who === whoId && (!overId || g.over === overId)) { g.soothed = true; n += 1; }
+    for (const g of hearts.grievances) {
+        if (g.who !== whoId) continue;
+        if (overId && g.rival === overId) g.rivalEased = true;
+        if (!g.soothed && (!overId || g.over === overId)) { g.soothed = true; n += 1; }
+    }
     return n;
 }
 
@@ -243,7 +266,8 @@ export function heartsSection({ present = [], bonds = [], grievances = [], modeO
         word = true;
     }
     // Still smarting: what was seen, a vow broken, word that may have reached them.
-    const live = grievances.filter((g) => here.has(g.who) && may(g.who) && isLive(g, day, { prone: modeOf(g.who) === 'jealous' }));
+    const squared = grievances.map((g) => squareUp(g, bonds));
+    const live = squared.filter((g) => here.has(g.who) && may(g.who) && isLive(g, day, { prone: modeOf(g.who) === 'jealous' }));
     for (const g of live.slice(-4)) {
         const who = nameOfId(g.who) || g.whoName;
         const over = playerIds.has(g.over) ? userName : nameOfId(g.over) || g.overName;
@@ -263,9 +287,75 @@ export function heartsSection({ present = [], bonds = [], grievances = [], modeO
         lines.push(`- ${who} is still ${STRENGTH_WORDS[g.strength]} (${when}): ${unstop(g.what)}.${toward ? ` It colours how ${who} treats them - ${toward}.` : ''} It eases only when it is talked out, apologised for or made up for - not on its own between one reply and the next.`);
         watch = true;
     }
+    // Made up with the one they love, and still no love lost for the rival.
+    const grudged = new Set();
+    for (const g of squared) {
+        if (!g.soothed || g.rivalEased || g.kind === 'word' || !g.rival || !bondedTo(bonds, g.who, g.over) || !here.has(g.who) || !here.has(g.rival) || playerIds.has(g.rival) || !may(g.who) || grudged.has(`${g.who}|${g.rival}`)) continue;
+        if (!isLive({ ...g, soothed: false }, day, { prone: modeOf(g.who) === 'jealous' })) continue;
+        grudged.add(`${g.who}|${g.rival}`);
+        lines.push(`- ${nameOfId(g.who)} has made peace with ${playerIds.has(g.over) ? userName : nameOfId(g.over) || g.overName} but not with ${nameOfId(g.rival)}: still cold, cutting, competitive toward ${nameOfId(g.rival)}.`);
+        watch = true;
+    }
     if (!lines.length) return { text: '', report: { jealous: false, romance: false, soothed: false } };
-    const head = `HEARTS (private - who is bound to whom, so jealousy is played true. It shows as each would show it: one ${SIGNS.slice(0, 4).join(', one ')}, one ${SIGNS.slice(4).join(', one ')}. A little flirting stings; a kiss, a night together or a broken promise wounds. It costs the relationship until it is mended. Never decide what ${userName} feels or does about it - only how the others take it)`;
+    const head = `HEARTS (private - who is bound to whom, so jealousy is played true. It shows as each would show it: one ${SIGNS.slice(0, 4).join(', one ')}, one ${SIGNS.slice(4).join(', one ')}. Whichever way, it is about the heart and reads as that - never passed off as a complaint about work or anything else. A little flirting stings; a kiss, a night together or a broken promise wounds. It costs the relationship until it is mended. Never decide what ${userName} feels or does about it - only how the others take it)`;
     return { text: [head, ...lines.slice(0, max)].join('\n'), report: { jealous: watch, romance: word, soothed: live.length > 0 } };
+}
+
+const SPOKEN = /"([^"]+)"|“([^”]+)”/g;
+const SAID_IT = /\b(?:jealous\w*|flirt\w*|kiss\w*|slept with|sleeping with|in bed with)\b/i;
+const firstName = (name) => clean(name).split(/\s+/)[0] ?? '';
+// Whether it has been said out loud in the latest replies.
+function saidAloud(replies, rivalName) {
+    const speech = (replies ?? []).slice(-4).flatMap((r) => [...String(r ?? '').matchAll(SPOKEN)].map((m) => m[1] ?? m[2] ?? ''));
+    const rival = firstName(rivalName);
+    return speech.some((s) => SAID_IT.test(s) || (rival.length >= 3 && new RegExp(`\\b${rival.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(s)));
+}
+
+const MAX_NOW = 3;
+// The lines for the note nearest the reply: all of the above went only to the
+// director, whose briefing sits too far back for a small model to follow. So
+// Inji's hurt came out as nagging about the mission and Zane's not at all.
+//   - someone sore at one who is here says what it is, once, as what it is;
+//   - two who want the same one, where it has been seen or one of them is
+//     jealous by nature, do not get on.
+// busy: a fight, a job under way or an argument being closed - it still
+// reads true, but no one stops to have it out. replies: oldest first.
+export function heartsNow({ present = [], bonds = [], grievances = [], modeOf = () => '', globalOn = true, day = null, replies = [], busy = false } = {}) {
+    const here = new Map((present ?? []).filter((p) => p?.id && clean(p.name)).map((p) => [p.id, p]));
+    const nameOfId = (id) => clean(here.get(id)?.name);
+    const playerIds = new Set((present ?? []).filter((p) => p?.player).map((p) => p.id));
+    const may = (id) => here.has(id) && !playerIds.has(id) && canBeJealous(modeOf(id), globalOn);
+    const prone = (id) => modeOf(id) === 'jealous';
+    const seen = (grievances ?? []).map((g) => squareUp(g, bonds)).filter((g) => g.kind !== 'word' && may(g.who) && (g.kind === 'vow' || bondedTo(bonds, g.who, g.over)));
+    const lines = [];
+
+    const pairs = new Map();
+    for (const g of seen) if (!g.soothed && here.has(g.over) && isLive(g, day, { prone: prone(g.who) })) pairs.set(`${g.who}|${g.over}`, g);
+    for (const g of [...pairs.values()].sort((a, b) => b.strength - a.strength || b.turn - a.turn)) {
+        const who = nameOfId(g.who);
+        const over = nameOfId(g.over);
+        const what = unstop(g.what);
+        const said = saidAloud(replies, g.rivalName);
+        if (g.strength >= 2 && !said && !busy) lines.push(`${who} is sore at ${over} - ${what} - and it comes out in this reply, plainly and in ${who}'s own way: ${who} says what stung or asks ${over} about it, and does not pass it off as a complaint about work or anything else.`);
+        else if (said) lines.push(`${who} is still sore at ${over} (${what}). It has been said: ${who} waits for an answer and does not say it again.`);
+        else lines.push(`${who} is still sore at ${over} (${what}): if it shows, it shows as that, never as a complaint about work or anything else.`);
+    }
+
+    const byTarget = new Map();
+    for (const b of (bonds ?? []).filter((x) => x.romantic && may(x.who))) byTarget.set(b.to, [...(byTarget.get(b.to) ?? []), b.who]);
+    for (const [to, whos] of byTarget) {
+        const targetName = nameOfId(to) || clean(seen.find((g) => g.over === to)?.overName);
+        if (whos.length < 2 || !targetName) continue;
+        for (let i = 0; i < whos.length; i += 1) for (let j = i + 1; j < whos.length; j += 1) {
+            const [a, b] = [whos[i], whos[j]];
+            const holds = (x, y) => prone(x) || seen.some((g) => g.who === x && g.rival === y && !g.rivalEased && isLive({ ...g, soothed: false }, day, { prone: prone(x) }));
+            const [ha, hb] = [holds(a, b), holds(b, a)];
+            if (!ha && !hb) continue;
+            const open = ha && hb ? `${nameOfId(a)} and ${nameOfId(b)} both want ${targetName} and dislike each other for it` : `${nameOfId(ha ? a : b)} wants ${targetName} and resents ${nameOfId(ha ? b : a)} for it`;
+            lines.push(`${open}: it shows in every exchange between them - digs and score-keeping, no easy agreement, nothing chummy.`);
+        }
+    }
+    return lines.slice(0, MAX_NOW).join(' ');
 }
 
 // The report lines the director is asked for (src/director/prompt.js).
@@ -281,8 +371,8 @@ export function heartsFormat(report, userName = 'the player') {
         'ROMANCE | <one> | <the other> | <what happened, a few words>',
     );
     if (report.soothed) out.push(
-        'If the latest chat shows someone still smarting under HEARTS truly reconciled - it is talked out, apologised for or made up for - a line:',
-        'SOOTHED | <who> | <how, a few words>',
+        'If the latest chat shows someone still smarting under HEARTS truly reconciled with someone - it is talked out, apologised for or made up for - a line. Making up with the one they love does not end it with a rival:',
+        'SOOTHED | <who> | <the one they made it up with> | <how, a few words>',
     );
     return out;
 }
@@ -300,10 +390,12 @@ export function takeHearts(hearts, { jealous = [], romance = [], soothed = [] } 
     const added = [];
     const word = [];
     const may = (id) => id && id !== playerId && canBeJealous(modeOf(id), globalOn);
+    // Saved the wrong way round before squareUp: put right where they lie.
+    hearts.grievances = hearts.grievances.map((g) => squareUp(g, bonds));
     for (const j of jealous ?? []) {
         const who = resolve(j.who);
-        const over = resolve(j.over);
-        const rival = resolve(j.rival);
+        const named = { who, over: resolve(j.over), rival: resolve(j.rival) };
+        const { over, rival } = squareUp(named, bonds);
         if (!may(who) || !over || who === over || !here.has(who)) continue;
         const bond = bonds.find((b) => b.who === who && b.to === over);
         const strength = strengthOf(j.how, bond?.romantic ? 2 : 1);
@@ -327,7 +419,7 @@ export function takeHearts(hearts, { jealous = [], romance = [], soothed = [] } 
     }
     for (const s of soothed ?? []) {
         const who = resolve(s.who);
-        if (who) soothe(hearts, who);
+        if (who) soothe(hearts, who, { overId: s.with ? resolve(s.with) ?? '' : '' });
     }
     return { added, word };
 }

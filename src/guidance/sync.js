@@ -39,6 +39,8 @@ import { notYet, notYetLine } from '../planner/timed.js';
 import { closesOut, nextThingLine } from './wrapped.js';
 import { needsPresence, notePresent, rememberPeople, shownOf, takingPart, isKnownPerson } from '../planner/presence.js';
 import { pushBack, windDown, pileOn } from './pushback.js';
+import { bondsOf, heartsNow, jealousyOf } from '../director/jealousy.js';
+import { isLive as isOpLive } from '../ops/model.js';
 import { opposedJobs, jobsLine, jobsTouched, jobsOver, jobsOverLine, intentNow, planTexts } from '../planner/aims.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { giftsText } from '../library/powers.js';
@@ -336,6 +338,7 @@ export async function gatherInputs(chatId, chatKey) {
     // How the characters present relate to each other: the relationships
     // the user authored first, then the story's (Archivist) for pairs the
     // user has not written.
+    const storyTies = [];
     if (cast.length > 1) {
         const present = new Set(castIds);
         const nameById = new Map(cast.map((m) => [m.id, m.name]));
@@ -348,6 +351,7 @@ export async function gatherInputs(chatId, chatKey) {
                     .filter((r) => r.direction === 'out' && present.has(r.otherId) && !pairCovered(member.id, r.otherId, authored));
                 // With the story's reason: "antagonistic" alone was played as banter.
                 lines.push(...rels.map((r) => `toward ${r.otherName}: ${[r.type, r.polarityLabel, r.trend].filter(Boolean).join(', ')}${r.text ? ` - ${r.text}` : ''}`));
+                storyTies.push(...rels.map((r) => ({ fromId: member.id, toId: r.otherId, type: r.type, polarity: r.polarity, text: r.text })));
             }
             member.relations = lines.sort();
             if (lines.length) member.why = 'canonically present; relationships';
@@ -683,7 +687,19 @@ export async function gatherInputs(chatId, chatKey) {
                 const posts = chat.filter((m) => m.is_user).map((m) => String(m.mes ?? ''));
                 const replies = chat.filter((m) => !m.is_user).map((m) => String(m.mes ?? ''));
                 const ending = windDown({ posts, replies, player });
-                return { pushFair: p.fair, pushTeam: p.team, windDown: ending, pileOn: pileOn({ posts, replies, player, cast, ending: !!ending }) };
+                const ganged = pileOn({ posts, replies, player, cast, ending: !!ending });
+                // Jealousy as it stands between those here (src/director/jealousy.js).
+                const hearts = settingId ? heartsNow({
+                    present: cast,
+                    bonds: bondsOf({ authored: library.relations ?? [], story: storyTies }),
+                    grievances: doc.hearts?.grievances ?? [],
+                    modeOf: (id) => jealousyOf({ meta: library.entries?.[id] ?? {} }),
+                    globalOn: settings.director.jealousy !== false,
+                    day: doc.canonical.day,
+                    replies,
+                    busy: !!ending || !!ganged || (!!doc.fight && !doc.fight.ended) || isOpLive(doc.op),
+                }) : '';
+                return { pushFair: p.fair, pushTeam: p.team, windDown: ending, pileOn: ganged, heartsNow: hearts };
             })(settings.planner?.enabled === true ? activeBeat(doc.gm.outline) : null),
             // Who has died in this story (src/state/death.js).
             // Only the dead the latest messages speak of.

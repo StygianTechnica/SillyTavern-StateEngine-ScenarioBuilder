@@ -22,6 +22,7 @@ import { sidelinedText } from '../state/standing-model.js';
 import { heldBackText } from '../guidance/spoken.js';
 import { LOG_PREFIX } from '../constants.js';
 import { opposedJobs, jobsLine, planTexts, overJobsIn, beatsSpent } from './aims.js';
+import { privateMoment, takenOutHere, tieTakenOut } from '../director/whereabouts.js';
 import { timedHappenings, notYet } from './timed.js';
 import { closesOut, nextThingLine } from '../guidance/wrapped.js';
 import { presenceFrom, takingPart, absentSince, isKnownPerson } from './presence.js';
@@ -131,11 +132,16 @@ function beatMeetsPlayer(text, player) {
 function beatNewcomers(gm, doc = null) {
     const beat = activeBeat(gm.outline);
     if (!beat?.ties?.length || !beatMeetsPlayer(beat.text, userName())) return [];
+    if (doc && inPrivate(doc)) return [];
     const unnamed = unseenTies(beat.ties, beatTexts(gm)(beat), userName());
     if (!doc) return unnamed;
     const away = absentSince(takingPart(beat.text, beat.ties, { isPerson: isKnownPerson, player: userName() }), presentNow(doc), beatFrom(gm, beat));
-    return [...new Set([...unnamed, ...away])];
+    const out = takenOutHere(doc.outByHand, doc.canonical.locationId);
+    return [...new Set([...unnamed, ...away])].filter((tie) => !tieTakenOut(tie, out));
 }
+
+// A private moment: the beat waits until it is over (src/director/whereabouts.js).
+const inPrivate = (doc) => privateMoment({ people: doc.canonical.castIds.length, recent: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).map((m) => String(m.mes ?? '')) });
 
 // Who has been in the scene, and when: the record, and the company samples
 // from before it was kept.
@@ -841,8 +847,10 @@ function plannedSection(chatKey, messages, { here = null, notInPerson = [], late
         updateChatDoc(chatKey, (d) => {
             stampBeats(d.gm, stampIndex());
             waited = newcomerWait(d.gm, newcomers.length ? activeBeat(d.gm.outline)?.id : '', d.turn, { beatNow: activeBeat(d.gm.outline)?.id ?? '' });
+            // The wait starts over once the moment is past, not mid-way through it.
+            if (inPrivate(d)) d.gm.newcomer = null;
         });
-        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3), newcomers, returning: beatReturning(gm, newcomers), waited, here, notInPerson, later, today: getChatDoc(chatKey).canonical.day, nowPart: getChatDoc(chatKey).canonical.dayPart, quiet: tense || pace.aim === 'linger' });
+        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3), newcomers, returning: beatReturning(gm, newcomers), waited, privateNow: inPrivate(getChatDoc(chatKey)), here, notInPerson, later, today: getChatDoc(chatKey).canonical.day, nowPart: getChatDoc(chatKey).canonical.dayPart, quiet: tense || pace.aim === 'linger' });
         // The world meanwhile: nothing while the scene is tense or lingering;
         // the lead into what comes next while it moves on or builds.
         const meanwhile = meanwhileFor(chatKey, getChatDoc(chatKey).settingId, { aim: story.aim?.word ?? '', quiet: tense || pace.aim === 'linger', lead: pace.aim === 'move on' || story.aim?.word === 'build', userIndex: latestUserIndex() });

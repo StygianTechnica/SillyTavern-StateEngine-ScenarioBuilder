@@ -257,6 +257,29 @@ export function elsewhereEntering(enters, { characters = [], elsewhere = [], cas
     });
 }
 
+// Two people having a private moment. A locked beat wanted Zane, and after
+// three replies of waiting he was walked in on Cyril and Inji in Inji's
+// quarters. It takes two people here and two of the latest messages reading
+// close: one kiss on the way past is not a closed door. recent: texts.
+const CLOSE = /\b(?:kiss\w*|embrac\w*|caress\w*|cuddl\w*|nuzzl\w*|lips|undress\w*|naked|in bed|into bed|affection\w*|intimate\w*|suggestive\w*|moan\w*|in (?:his|her|their|your|my|each other's) arms)\b/i;
+export function privateMoment({ people = 0, recent = [] } = {}) {
+    return people === 2 && (recent ?? []).slice(-4).filter((t) => CLOSE.test(String(t ?? ''))).length >= 2;
+}
+
+// Taken out of the scene by hand: not brought back to this place by a beat
+// or the game master, however long the beat has waited. list: [{ id, name,
+// place }]. -> the list after someone went out and someone came back.
+export function noteOutByHand(list = [], { out = [], back = [], place = '' } = {}) {
+    const gone = new Set([...out.map((o) => o.id), ...back]);
+    return [...(list ?? []).filter((e) => !gone.has(e.id)), ...out.map((o) => ({ id: o.id, name: o.name, place }))].slice(-12);
+}
+export const takenOutHere = (list = [], place = '') => (list ?? []).filter((e) => e?.id && place && e.place === place);
+// Whether a beat's tie ("Zane") is one of them.
+export const tieTakenOut = (tie, out = []) => (out ?? []).some((e) => {
+    const [t, n] = [String(tie ?? '').trim().toLowerCase(), String(e.name ?? '').trim().toLowerCase()];
+    return !!t && !!n && (t === n || n.startsWith(`${t} `) || t.startsWith(`${n} `));
+});
+
 // Those here meeting the player character for the first time: no tie to
 // them in the setting, and the chat names them first only in its last few
 // messages (or not at all). Told so, they claim no shared past - Adam
