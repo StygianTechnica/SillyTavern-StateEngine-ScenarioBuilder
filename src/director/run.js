@@ -1159,6 +1159,9 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             console.info(LOG_PREFIX, `${sheetSaysNo.join(', ')} kept out: their sheet has them stay away from the scene`);
             parsed.enters = parsed.enters.filter((n) => !sheetSaysNo.includes(n));
         }
+        // Taken out by hand: the game master's own ENTERS line does not undo
+        // that. Adam Miller was back 29 seconds after the user removed him.
+        parsed.enters = withoutWaiting(parsed.enters, characters, heldOut);
         const keptBack = parsed.enters.length - withoutWaiting(parsed.enters, characters, detourNow).length;
         if (keptBack) {
             console.info(LOG_PREFIX, `${keptBack} named to enter wait where the story left off - kept out of the detour`);

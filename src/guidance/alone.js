@@ -27,6 +27,28 @@ export function sentAfter(replies = [], { player = '', people = [] } = {}) {
     return null;
 }
 
+// Who a reply has come to the player character while they were alone: a
+// paragraph with a sentence opening on them (not "Enrique's voice") and the
+// player character in it. The reading of the reply can miss it: Inji stepped
+// off his hoverbike and crouched beside Cyril, and the cast stayed Cyril alone.
+// people: [{ id, names }]. -> [id]
+const FAR = /\b(?:meanwhile|elsewhere|back at|over (?:the|his|her|their) (?:comms?|radio|phone|link)|in a nearby)\b/i;
+export function cameToThem(reply, people = [], player = '') {
+    const first = clean(player).split(/\s+/)[0];
+    if (first.length < 2) return [];
+    const named = (n, t) => new RegExp(`(^|[^\\p{L}])${escape(n)}(?!\\p{L})`, 'iu').test(t);
+    const out = [];
+    for (const para of String(reply ?? '').split(/\n+/).map(clean).filter(Boolean)) {
+        if (!named(first, para) || FAR.test(para)) continue;
+        const sentences = para.replace(/^[\s"“*_-]+/, '').split(/(?<=[.!?…]["”*]?)\s+/).map((s) => s.replace(/^[\s"“*_-]+/, ''));
+        for (const p of people ?? []) {
+            const opens = (p.names ?? []).map(clean).filter((n) => n.length >= 3).some((n) => sentences.some((s) => new RegExp(`^${escape(n)}(?![\\p{L}'’])`, 'iu').test(s)));
+            if (opens && !out.includes(p.id)) out.push(p.id);
+        }
+    }
+    return out;
+}
+
 // The order for the note nearest the reply, or ''.
 export function aloneOrder({ player = '', sent = null } = {}) {
     const who = clean(player);

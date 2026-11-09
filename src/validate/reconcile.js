@@ -29,6 +29,7 @@ import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteE
 import { setCanonical } from '../state/canonical.js';
 import { beatsOf, undoBeatsFrom, unplantSeedsFrom, activeBeat } from '../planner/model.js';
 import { heldBySheet } from '../guidance/spoken.js';
+import { cameToThem } from '../guidance/alone.js';
 import { shownComing, narrationOf } from '../director/departures.js';
 import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
 import { detainedIds, withoutDetained, detainedFrom, undoDetainedFrom } from '../state/detained.js';
@@ -317,6 +318,15 @@ async function reconcileOnce() {
         item.action = 'adjust';
         item.classification = 'ambiguous';
         item.reason = `${objects.get(item.objectId)?.name ?? 'someone'} is kept out of the scene by their sheet`;
+    }
+    // Alone, and the reply has someone come to them, though the reading has
+    // no one joining (src/guidance/alone.js).
+    if (newReply && doc.canonical.castIds.every((id) => id === playerId)) {
+        const barred = new Set(doc.held.filter((h) => h.until > doc.turn && h.field === 'cast' && h.op === 'remove').map((h) => h.objectId));
+        const people = characterEntries.filter((c) => c.id !== playerId && !sheetKeeps.has(c.id) && !barred.has(c.id) && !powerIds.has(c.id) && !afar(c.id) && !items.some((i) => i.field === 'cast' && i.objectId === c.id) && !doc.dead.some((d) => d.id === c.id) && !(doc.detained ?? []).some((d) => d.id === c.id)).map((c) => ({ id: c.id, names: [c.name, String(c.name).split(/\s+/)[0], ...(c.aliases ?? [])] }));
+        for (const id of cameToThem(latestReplyText(), people, playerName)) {
+            items.push({ field: 'cast', op: 'add', objectId: id, canonical: [...doc.canonical.castIds], observed: [...observed.cast, id], classification: 'natural', action: 'accept', reason: `came to ${playerName || 'the player character'}` });
+        }
     }
     if (newReply) {
         const holding = (id) => doc.held.some((h) => h.until > doc.turn && h.field === 'cast' && h.op === 'add' && h.objectId === id);

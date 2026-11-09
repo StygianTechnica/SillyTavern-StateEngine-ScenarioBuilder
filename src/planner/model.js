@@ -1484,7 +1484,13 @@ export function lateWords(late) {
 // { id, text, source: 'user' | 'director', at } - the newest last.
 export const SETTLED_LIMIT = 12;
 const normalizeSettled = (x) => (isObject(x) && clean(x.id) && clean(x.text)
-    ? { id: clean(x.id), text: clean(x.text).slice(0, 300), source: x.source === 'director' ? 'director' : 'user', at: str(x.at), touched: Number.isInteger(x.touched) ? x.touched : null } : null);
+    ? { id: clean(x.id), text: clean(x.text).slice(0, 300), source: x.source === 'director' ? 'director' : 'user', at: str(x.at), touched: Number.isInteger(x.touched) ? x.touched : null, present: strList(x.present) } : null);
+
+// A line the game master settled, shown only with everyone here having been
+// there when it happened: "Enrique's assault on Cyril..." went to the narrator
+// as plain fact, and Adam, who was across town, brought it up by name. The
+// user's lines, and older ones with no one recorded, are for everyone.
+const sharedWith = (s, here) => s.source !== 'director' || !s.present?.length || !Array.isArray(here) || here.every((id) => s.present.includes(id));
 
 // How many replies a line the director settled lasts without the story
 // touching it again; the user's own never go.
@@ -1525,8 +1531,8 @@ export function keptSettled(list = []) {
 // -> the new entry, or null (empty, one already says it, or - from the
 // director - not settled at all: unsettledReason()). The user's own are
 // kept over the director's when the list is full.
-export function addSettled(gm, { id, text, source = 'user', at = new Date().toISOString(), turn = null }) {
-    const x = normalizeSettled({ id, text, source, at, touched: turn });
+export function addSettled(gm, { id, text, source = 'user', at = new Date().toISOString(), turn = null, present = [] }) {
+    const x = normalizeSettled({ id, text, source, at, touched: turn, present });
     if (!x || gm.settled.some((s) => sameBeat(s.text, x.text))) return null;
     if (x.source === 'director' && unsettledReason(x.text)) return null;
     let list = [...gm.settled, x];
@@ -1545,8 +1551,8 @@ export function removeSettled(gm, id) {
 }
 
 // The director's SETTLED IN THE STORY section. '' when there is nothing.
-export function settledSection(gm) {
-    const list = keptSettled(gm.settled);
+export function settledSection(gm, { here = null } = {}) {
+    const list = keptSettled(gm.settled).filter((s) => sharedWith(s, here));
     if (!list.length) return '';
     return ['SETTLED IN THE STORY (private - what the story has made true or agreed; keep to it. It is done with: no one acts as if it were otherwise, and no one argues it, asks for it or brings it up again unless someone else does or the story itself gives them a new reason):', ...list.map((s) => `- ${s.text}`)].join('\n');
 }
@@ -1559,9 +1565,9 @@ export function settledSection(gm) {
 // line among them - kept Novakorp on Adam's mind.
 // list: gm.settled; recentText: the latest messages; skipWords: the
 // player's names.
-export function settledNow(list = [], { recentText = '', skipWords = [], max = 6 } = {}) {
+export function settledNow(list = [], { recentText = '', skipWords = [], max = 6, here = null } = {}) {
     const touched = new Set(touchedSettled(list, { recentText, skipWords, all: true }));
-    const kept = keptSettled(list).filter((s) => touched.has(s.id));
+    const kept = keptSettled(list).filter((s) => touched.has(s.id) && sharedWith(s, here));
     const users = kept.filter((s) => s.source !== 'director');
     const director = kept.filter((s) => s.source === 'director').reverse();
     return [...users, ...director].slice(0, max).map((s) => s.text);

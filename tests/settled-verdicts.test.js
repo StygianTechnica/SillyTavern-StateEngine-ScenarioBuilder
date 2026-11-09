@@ -1,6 +1,29 @@
 // "Cyril's actions during the mission were unauthorized and compromised the
 // operation" went out as settled fact while Cyril was disputing it.
-import { unsettledReason, addSettled, keptSettled, emptyGm } from '../src/planner/model.js';
+import { unsettledReason, addSettled, keptSettled, emptyGm, settledNow, settledSection } from '../src/planner/model.js';
+
+describe('what only some were there for', () => {
+    const line = { id: 'a', text: "Enrique's assault on Cyril left him gasping on the wet pavement.", source: 'director', present: ['cyril', 'enrique'] };
+    const opts = { recentText: "Enrique's assault left Cyril on the pavement", skipWords: ['Cyril'] };
+    it('goes out while only those who were there are here', () => {
+        expect(settledNow([line], { ...opts, here: ['cyril'] })).toHaveLength(1);
+        expect(settledNow([line], { ...opts, here: ['cyril', 'enrique'] })).toHaveLength(1);
+    });
+    it('not with someone here who was not', () => {
+        expect(settledNow([line], { ...opts, here: ['cyril', 'adam'] })).toEqual([]);
+        const gm = { ...emptyGm(), settled: [line] };
+        expect(settledSection(gm, { here: ['cyril', 'adam'] })).toBe('');
+        expect(settledSection(gm, { here: ['cyril'] })).toContain('assault');
+    });
+    it('the user\'s own lines and older ones are for everyone', () => {
+        expect(settledNow([{ ...line, source: 'user' }], { ...opts, here: ['adam'] })).toHaveLength(1);
+        expect(settledNow([{ ...line, present: [] }], { ...opts, here: ['adam'] })).toHaveLength(1);
+    });
+    it('remembers who was there', () => {
+        const gm = emptyGm();
+        expect(addSettled(gm, { id: 's', text: 'The vault door was sealed from inside.', source: 'director', present: ['kiri', 'maelis'] }).present).toEqual(['kiri', 'maelis']);
+    });
+});
 
 describe('a verdict is not a settled fact', () => {
     it('the real line', () => {

@@ -632,7 +632,7 @@ export async function gatherInputs(chatId, chatKey) {
             savedForLater: heldOut.later,
             // What the story has settled (src/planner/model.js settledSection).
             // Only what the latest messages touch, the user's own always.
-            settled: settledNow(getChatDoc(chatKey).gm.settled ?? [], settledOpts),
+            settled: settledNow(getChatDoc(chatKey).gm.settled ?? [], { ...settledOpts, here: castIds }),
             // What the story set for later today, when the latest messages
             // speak of it: it does not start early (src/planner/timed.js).
             notYet: notYetLine(notYet(dueToday(doc.gm, doc.canonical.day), { today: doc.canonical.day, nowPart: c.dayPart }), (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-3).map((m) => String(m.mes ?? '')).join('\n')),

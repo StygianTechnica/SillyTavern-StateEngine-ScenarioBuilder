@@ -119,9 +119,18 @@ const beatTexts = (gm) => (beat) => textsFrom(beatFrom(gm, beat));
 // Named is not there: someone the beat has taking part who has not been in
 // the scene since it began (Zane, only talked of in Adam's plan) is still to
 // come too. doc: the chat document (its presence record).
+// A beat among others only - "Adam arranges a meeting with Bartin Medina" -
+// is no reason to bring them to the player character: it walked both of them
+// into the alley where Cyril sat crying. It has to involve the player.
+function beatMeetsPlayer(text, player) {
+    const first = String(player ?? '').trim().split(/\s+/)[0];
+    if (!first) return true;
+    return new RegExp(`\\b(?:${first.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}|the team|the group|the party|the crew|they|them)\\b`, 'i').test(String(text ?? ''));
+}
+
 function beatNewcomers(gm, doc = null) {
     const beat = activeBeat(gm.outline);
-    if (!beat?.ties?.length) return [];
+    if (!beat?.ties?.length || !beatMeetsPlayer(beat.text, userName())) return [];
     const unnamed = unseenTies(beat.ties, beatTexts(gm)(beat), userName());
     if (!doc) return unnamed;
     const away = absentSince(takingPart(beat.text, beat.ties, { isPerson: isKnownPerson, player: userName() }), presentNow(doc), beatFrom(gm, beat));
@@ -760,7 +769,7 @@ export function directorPlan(chatKey, messages, people = {}) {
     // What the story has settled: planner on or off.
     let settled = '';
     try {
-        settled = settledSection(getChatDoc(chatKey).gm);
+        settled = settledSection(getChatDoc(chatKey).gm, { here: getChatDoc(chatKey).canonical.castIds });
     } catch (err) {
         console.warn(LOG_PREFIX, 'nothing settled for the director', err);
     }
@@ -890,7 +899,7 @@ export function takeSettled(chatKey, lines) {
     try {
         updateChatDoc(chatKey, (d) => {
             for (const text of lines) {
-                const made = addSettled(d.gm, { id: newLocalId('st'), text, source: 'director', turn: d.turn });
+                const made = addSettled(d.gm, { id: newLocalId('st'), text, source: 'director', turn: d.turn, present: d.canonical.castIds });
                 if (made) console.info(LOG_PREFIX, `settled in the story: ${made.text}`);
             }
         });
