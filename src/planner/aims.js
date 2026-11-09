@@ -81,6 +81,61 @@ export function jobsTouched(jobs = [], text = '') {
     return (jobs ?? []).filter((j) => new RegExp(`\\b${j.noun.replace(/[-\s]/g, '[-\\s]')}s?\\b`).test(t) || (j.owner && t.includes(j.owner.toLowerCase())));
 }
 
+// The plan goes on saying "stop Enrique's heist" long after the heist has
+// been and gone, and Inji was still rallying the team for it the night after.
+// A rival job's own record says when it is over: the story ended it, and
+// nothing of theirs that fits is still running. A job the user ended by hand
+// says nothing - that is usually one they did not want at all.
+const FINISHED = new Set(['got away', 'withdrew', 'stopped']);
+const THEFT_NOUNS = new Set(['heist', 'robbery', 'theft', 'burglary', 'break-in', 'raid', 'smuggling run']);
+const TAKING = /\b(?:steal\w*|stole\w*|rob|robs|robbed|robbing|acquire\w*|snatch\w*|loot\w*|plunder\w*|pilfer\w*|burgl\w*|swip(?:e|es|ed|ing)|tak(?:e|es|ing)|make off with)\b/i;
+const ANY_JOB = new Set(['operation', 'plot', 'scheme', 'plan', 'job']);
+
+const hasWord = (text, word) => new RegExp(`(?:^|[^\\p{L}\\p{N}])${word.replace(/[.*+?^${}()|[\]\\-]/g, '\\$&').replace(/\s+/g, '\\s+')}(?:$|[^\\p{L}\\p{N}])`, 'iu').test(text);
+
+function isTheirs(job, op) {
+    if (!job.owner) return true;
+    const owner = job.owner.replace(/^the\s+/i, '');
+    return [op?.boss?.name, op?.leader?.name, op?.side].some((who) => hasWord(String(who ?? ''), owner));
+}
+
+function fitsNoun(job, op) {
+    const aim = String(op?.aim ?? '');
+    return ANY_JOB.has(job.noun) || hasWord(aim, job.noun) || (THEFT_NOUNS.has(job.noun) && TAKING.test(aim));
+}
+
+// jobs: opposedJobs(); ops: the chat's rival jobs, running and finished.
+// -> the jobs that are over.
+export function jobsOver(jobs = [], ops = []) {
+    const known = (ops ?? []).filter(Boolean);
+    return (jobs ?? []).filter((j) => {
+        const theirs = known.filter((o) => isTheirs(j, o) && fitsNoun(j, o));
+        return theirs.some((o) => FINISHED.has(o.status)) && !theirs.some((o) => o.status === 'running' || o.status === 'pulling out');
+    });
+}
+
+// "Enrique's art heist is over and done: ..." It does not say who won: the
+// story has shown that, and the job's record may not know.
+export function jobsOverLine(jobs = []) {
+    if (!jobs?.length) return '';
+    const names = jobs.map((j) => {
+        const what = `${j.mod ? `${j.mod} ` : ''}${j.noun}`;
+        return j.owner ? `${j.owner}'s ${what}` : `The ${what}`;
+    });
+    const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+    return `${list} ${names.length > 1 ? 'are' : 'is'} over and done: no one is still preparing for ${names.length > 1 ? 'them' : 'it'} or out to stop ${names.length > 1 ? 'them' : 'it'}.`;
+}
+
+// What someone means to do, unless that is getting ready for or stopping a
+// job that is over: a stale aim here reads as what they want right now.
+export function intentNow(intent, over = []) {
+    const text = clean(intent);
+    if (!text || !over?.length) return intent ?? '';
+    const stopping = opposedJobs([text]).some((j) => over.some((o) => o.noun === j.noun));
+    const preparing = over.some((o) => new RegExp(`\\b(?:prepar\\w*|get(?:ting)? ready|plan(?:s|ning)? for|readying)\\b[^.]*\\b${o.noun.replace(/[-\s]/g, '[-\\s]')}\\b`, 'i').test(text));
+    return stopping || preparing ? '' : intent;
+}
+
 // The plan's own lines: what the user wants of the story, the outline's
 // beats, what is settled, the day plan, the triggers.
 export function planTexts(gm) {

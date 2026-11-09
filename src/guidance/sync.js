@@ -39,7 +39,7 @@ import { notYet, notYetLine } from '../planner/timed.js';
 import { closesOut, nextThingLine } from './wrapped.js';
 import { needsPresence, notePresent, rememberPeople, shownOf, takingPart, isKnownPerson } from '../planner/presence.js';
 import { pushBack, windDown } from './pushback.js';
-import { opposedJobs, jobsLine, jobsTouched, planTexts } from '../planner/aims.js';
+import { opposedJobs, jobsLine, jobsTouched, jobsOver, jobsOverLine, intentNow, planTexts } from '../planner/aims.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { giftsText } from '../library/powers.js';
 import { latestUserIndex } from '../triggers/run.js';
@@ -127,6 +127,11 @@ export async function gatherInputs(chatId, chatKey) {
     const library = settingId ? getSettingDoc(settingId) : { overview: {}, entries: {} };
     const parents = Object.fromEntries(Object.entries(library.entries).filter(([, m]) => m.parentId).map(([id, m]) => [id, m.parentId]));
     const c = doc.canonical;
+    // What the plan has the player's side out to stop, parted into still on
+    // and over by the rival jobs' own records (src/planner/aims.js).
+    const jobsPlanned = opposedJobs(planTexts(doc.gm), { player: [SillyTavern.getContext().name1 ?? ''] });
+    const overJobs = jobsOver(jobsPlanned, [doc.op, ...(doc.opsAlso ?? []), ...(doc.opsDone ?? [])]);
+    const lastThree = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-3).map((m) => String(m.mes ?? '')).join('\n');
 
     const names = new Map();
     const nameOf = async (id) => {
@@ -290,7 +295,7 @@ export async function gatherInputs(chatId, chatKey) {
             // Gifts and patron (src/library/powers.js).
             gifts: settingId ? giftsText({ meta: library.entries?.[id] ?? {} }, (pid) => nameById0.get(pid) ?? '') : '',
             mood: await readField(chatId, id, 'se__character.mood', 'mood'),
-            intent: await readField(chatId, id, 'se__character.intent', 'intent'),
+            intent: intentNow(await readField(chatId, id, 'se__character.intent', 'intent'), overJobs),
             thought: await readField(chatId, id, 'se__character.thought', 'thought'),
             relations: [],
             id,
@@ -650,7 +655,7 @@ export async function gatherInputs(chatId, chatKey) {
             nextThing: closesOut(latestPlayerPost()) ? nextThingLine({ player: SillyTavern.getContext().name1 ?? '', lead: notYet(dueToday(doc.gm, doc.canonical.day), { today: doc.canonical.day, nowPart: c.dayPart })[0]?.text ?? dueToday(doc.gm, doc.canonical.day)[0]?.text ?? '' }) : '',
             // Whose job is whose (src/planner/aims.js), when the latest
             // messages speak of it.
-            jobs: jobsLine(jobsTouched(opposedJobs(planTexts(doc.gm), { player: [SillyTavern.getContext().name1 ?? ''] }), (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-3).map((m) => String(m.mes ?? '')).join('\n')), SillyTavern.getContext().name1 ?? ''),
+            jobs: [jobsLine(jobsTouched(jobsPlanned.filter((j) => !overJobs.includes(j)), lastThree), SillyTavern.getContext().name1 ?? ''), jobsOverLine(jobsTouched(overJobs, lastThree))].filter(Boolean).join(' '),
             // Whose side each is on, where the sides here are at odds
             // (src/guidance/sides.js).
             sides: sidesText(sidesApart(cast, library.relations ?? [], (fid) => factionNames.get(fid) ?? '').filter((s) => !corrected.has(s.name))),

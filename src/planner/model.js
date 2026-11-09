@@ -1511,7 +1511,7 @@ const OPEN = /\b(?:unclear|uncertain|unknown|undecided|unresolved|to be seen|to 
 const VERDICT = /\b(?:should(?:n't| not)? have|reckless\w*|careless\w*|irresponsible|impulsive\w*|incompetent|incompetence|insubordinat\w*|unauthori[sz]ed|foolish\w*|at fault|to blame|(?:nearly |almost )?(?:compromised|jeopardi[sz]ed|endangered) (?:the|our|their|its)\b)/i;
 // True only for the moment it was written: "his heist plans are still set
 // for tonight", still going out the night after, with the museum job over.
-const FOR_NOW = /\b(?:tonight|today|tomorrow|this (?:morning|afternoon|evening)|right now|at the moment|for now|still set|still planned|still on)\b/i;
+const FOR_NOW = /\b(?:tonight|today|tomorrow|this (?:morning|afternoon|evening)|right now|at the moment|for now|still set|still planned|still on|(?:must|has to|have to|needs? to) (?:stop|prevent|foil|thwart|disrupt))\b/i;
 export function unsettledReason(text) {
     const t = clean(text);
     if (POINTS.test(t)) return 'points at something in the scene ("this ...")';
