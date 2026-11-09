@@ -27,7 +27,9 @@ import { withStateEngineCast, SE_CAST, withStateEngineCreatures, SE_CREATURES } 
 import { getPresetStatus } from '../preset/scenario-preset.js';
 import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteEntry, playerIdOf, listEntries } from '../library/library.js';
 import { setCanonical } from '../state/canonical.js';
-import { beatsOf, undoBeatsFrom, unplantSeedsFrom } from '../planner/model.js';
+import { beatsOf, undoBeatsFrom, unplantSeedsFrom, activeBeat } from '../planner/model.js';
+import { heldBySheet } from '../guidance/spoken.js';
+import { shownComing } from '../director/departures.js';
 import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
 import { detainedIds, withoutDetained, detainedFrom, undoDetainedFrom } from '../state/detained.js';
 import { contextualPlace } from '../library/place-context.js';
@@ -305,6 +307,16 @@ async function reconcileOnce() {
         item.action = 'adjust';
         item.classification = 'ambiguous';
         item.reason = `${objects.get(item.objectId)?.name ?? 'someone'} was only reached from a distance, not here`;
+    }
+    // Their sheet keeps them out (src/guidance/spoken.js): a reply that writes
+    // them in anyway does not put them in the scene, unless the player's post
+    // shows them coming.
+    const sheetKeeps = new Set(heldBySheet(characterEntries, { here: doc.canonical.castIds, beatTies: settings.planner?.enabled === true ? activeBeat(doc.gm.outline)?.ties ?? [] : [] }).map((c) => c.id));
+    for (const item of items) {
+        if (item.field !== 'cast' || item.op !== 'add' || item.action !== 'accept' || !sheetKeeps.has(item.objectId) || shownComing(namesOf(item.objectId), latestPlayerText())) continue;
+        item.action = 'adjust';
+        item.classification = 'ambiguous';
+        item.reason = `${objects.get(item.objectId)?.name ?? 'someone'} is kept out of the scene by their sheet`;
     }
     if (newReply) {
         const holding = (id) => doc.held.some((h) => h.until > doc.turn && h.field === 'cast' && h.op === 'add' && h.objectId === id);

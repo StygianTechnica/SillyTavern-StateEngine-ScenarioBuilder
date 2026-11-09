@@ -37,6 +37,7 @@ import { eventFacts } from '../events/model.js';
 import { eventForBriefing, eventAfterFight, eventAfterMove, eventWays } from '../events/run.js';
 import { opFacts, crewMet, isLive as opRunning } from '../ops/model.js';
 import { opAfterBriefing, opFromDirector, setOpTapped } from '../ops/run.js';
+import { alsoFacts, liveJobs, roomForJob } from '../ops/side-jobs.js';
 import { rivalAtWork } from '../ops/detect.js';
 import { whoCouldTurnUp, belongingHere, enemyGround, sharedScenes, lastSeen, firstMeetings, elsewhereEntering } from './whereabouts.js';
 import { rankNearby } from './company.js';
@@ -56,6 +57,8 @@ const WOUNDS_KEPT = 30;
 import { markDead, deadText, deadByName, bringBack } from '../state/death.js';
 import { isDetained, detainedText, detainedByName, soundsHeld, heldByOwnSide, release } from '../state/detained.js';
 import { captivesLine } from '../guidance/captives.js';
+import { heldBySheet } from '../guidance/spoken.js';
+import { activeBeat } from '../planner/model.js';
 import { contextualPlace } from '../library/place-context.js';
 import { personGender } from '../naming/classify.js';
 import { creatureFormOf, readCount, addCount, takeCount, creatureLabel } from '../library/creature-form.js';
@@ -754,8 +757,9 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         eventFacts: eventFacts(event, { placeName: event?.placeId ? everything.find((e) => e.id === event.placeId)?.name ?? '' : '', turn: getChatDoc(chatKey).turn, ways }),
         // The other side's operation, which the director plays (src/ops/).
         // Where the player character is, so the briefing says what is there.
-        opFacts: opFacts(getChatDoc(chatKey).op, { turn: getChatDoc(chatKey).turn, here: nameOfId(getChatDoc(chatKey).canonical.locationId) || guidance.location?.name || '', player: (guidance.cast ?? []).find((c) => c.player)?.name ?? SillyTavern.getContext().name1, post: lastPost?.text ?? '' }),
+        opFacts: [opFacts(getChatDoc(chatKey).op, { turn: getChatDoc(chatKey).turn, here: nameOfId(getChatDoc(chatKey).canonical.locationId) || guidance.location?.name || '', player: (guidance.cast ?? []).find((c) => c.player)?.name ?? SillyTavern.getContext().name1, post: lastPost?.text ?? '' }), alsoFacts(getChatDoc(chatKey).opsAlso)].filter(Boolean).join('\n'),
         opLive: opRunning(getChatDoc(chatKey).op),
+        opRoom: roomForJob(getChatDoc(chatKey)),
         opAware: getChatDoc(chatKey).op?.aware === true,
         opposition: settings.director.opposition !== false && !!settingId,
         // Only the dead the latest messages speak of.
@@ -1144,6 +1148,16 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
                 });
             }
         }
+        // Their sheet keeps them out (src/guidance/spoken.js): the note before
+        // the reply only says so once someone has named them, so the game
+        // master walked Enrique out of an alley with no one having said a word
+        // of him. Only a post that shows them coming, or the beat, brings them.
+        const beatTies = settings.planner?.enabled === true ? activeBeat(doc.gm.outline)?.ties ?? [] : [];
+        const sheetSaysNo = elsewhereEntering(parsed.enters, { characters, elsewhere: heldBySheet(characters, { here: baseCast, beatTies }), castIds: baseCast, userPost, namedIn: peopleNamedIn, namesOf: callNames });
+        if (sheetSaysNo.length) {
+            console.info(LOG_PREFIX, `${sheetSaysNo.join(', ')} kept out: their sheet has them stay away from the scene`);
+            parsed.enters = parsed.enters.filter((n) => !sheetSaysNo.includes(n));
+        }
         const keptBack = parsed.enters.length - withoutWaiting(parsed.enters, characters, detourNow).length;
         if (keptBack) {
             console.info(LOG_PREFIX, `${keptBack} named to enter wait where the story left off - kept out of the detour`);
@@ -1384,7 +1398,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         // reply, in the background (one call, once per side and place).
         // Or one the recent chat shows - a rival faction's people on a job -
         // when a small model wrote no OPPOSED line (src/ops/detect.js).
-        if (!opRunning(getChatDoc(chatKey).op) && settings.director.opposition !== false) {
+        if (roomForJob(getChatDoc(chatKey)) && settings.director.opposition !== false) {
             let opposed = parsed.opposed;
             if (!opposed) {
                 try {
@@ -1403,7 +1417,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
                         ...messages.slice(-4).map((m) => m.text),
                         parsed.note ?? '',
                     ];
-                    opposed = rivalAtWork({ texts, factions: factionList, relations, mine: byPerson.get(playerId) ?? [], playerId, members });
+                    opposed = rivalAtWork({ texts, factions: factionList, relations, mine: byPerson.get(playerId) ?? [], playerId, members, skip: liveJobs(getChatDoc(chatKey)).map((o) => o.sideId).filter(Boolean) });
                     if (opposed) console.info(LOG_PREFIX, `the other side: the chat shows ${opposed.who} at work - "${opposed.what}"`);
                 } catch (err) {
                     console.warn(LOG_PREFIX, 'could not look for a rival crew at work', err);

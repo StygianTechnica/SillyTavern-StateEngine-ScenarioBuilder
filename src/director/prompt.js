@@ -476,6 +476,10 @@ function opFormat(input) {
             'CREW | <their name> | <where they are now>',
             'A line for each of theirs taken out of it with no FIGHT line - knocked out, tied up, killed, caught - named, or "one of their hands" for one the plan has no name for:',
             'LOST | <their name, or one of their hands> | <how> | <where>',
+            ...(input.opRoom && input.opposition !== false ? [
+                'Only if the latest chat shows another group, not under THE OTHER SIDE, at work on a plan of its own:',
+                'OPPOSED | <the group> | <what they are doing, one sentence>',
+            ] : []),
         ];
     }
     if (input.opposition === false) return [];

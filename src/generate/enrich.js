@@ -13,9 +13,10 @@
 //     cleared at once.
 
 import { LOG_PREFIX } from '../constants.js';
+import { getSettings } from '../settings.js';
 import { getObject } from '../api/objects.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
-import { crewJobOf } from '../ops/model.js';
+import { crewJobOf, isJobNote } from '../ops/model.js';
 import { getEntryMeta, getSettingDoc } from '../store/setting-store.js';
 import { addRelation, relationsFor } from '../library/relations-edit.js';
 import { getObjectType, getObjectTypes, listEntries, updateEntry, setEntryMeta, mayAddGeneratedDetail, getParents, setParent } from '../library/library.js';
@@ -96,6 +97,19 @@ async function drain() {
     }
 }
 
+// Those made for a job and still described only by the job's line: written
+// up properly, once, when their chat is opened. Never throws.
+export async function enrichJobNotes(chatId, chatKey, settingId) {
+    try {
+        if (!settingId || getSettings().generation?.autoEnrich !== true) return;
+        for (const c of await listEntries(chatId, settingId, 'character')) {
+            if (isJobNote(c.description ?? c.base?.description) && mayAddGeneratedDetail(settingId, c.id)) enqueueEnrichment({ settingId, chatId, chatKey, objectId: c.id, name: c.name });
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not look for people described only by their job', err);
+    }
+}
+
 // A description that is only a line: one sentence, short.
 export function thinDescription(text) {
     const t = String(text ?? '').trim();
@@ -138,7 +152,7 @@ async function enrichOne(job) {
         // director's "A heavily guarded storage facility for their illegal
         // operations") is a seed, not a description: written out from it,
         // with what an old Region field says (src/library/fields.js).
-        const seed = job.adoptedId && thinDescription(base.description) ? String(base.description).trim() : '';
+        const seed = (job.adoptedId && thinDescription(base.description)) || (type.id === 'character' && isJobNote(base.description)) ? String(base.description).trim() : '';
         const oldRegion = type.id === 'location' ? String(base.region ?? '').trim() : '';
         // For a person the description is looks only: what the line says of
         // them is their role, background and ties.
@@ -147,7 +161,7 @@ async function enrichOne(job) {
             : type.id === 'character' ? `What the story says of them: ${what} - their role, background, ties and goals keep to that.`
                 : `It is: ${what} - keep that, and write the description out from it.`;
         // On a rival crew's job: that is who they are, whatever the scene around them.
-        const crewJob = type.id === 'character' && job.chatKey ? crewJobOf([...(getChatDoc(job.chatKey).opsDone ?? []), getChatDoc(job.chatKey).op], obj.name) : null;
+        const crewJob = type.id === 'character' && job.chatKey ? crewJobOf([...(getChatDoc(job.chatKey).opsDone ?? []), getChatDoc(job.chatKey).op, ...(getChatDoc(job.chatKey).opsAlso ?? [])], obj.name) : null;
         const brief = [seedBrief, crewJob?.brief].filter(Boolean).join(' ');
         const draft = { name: obj.name, aliases: base.aliases ?? [], description: seed ? '' : base.description ?? '', fields: Object.fromEntries(fields.map((f) => [f.name, base[f.name] ?? null])) };
         const { values } = await generateEntry({ task: 'fill', type, ctx: { chatId, chatKey: job.chatKey, settingId }, fields, entry: obj, draft, all, brief, story: job.story ?? '', fromStory: !!job.adoptedId });

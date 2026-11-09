@@ -14,6 +14,11 @@ describe('a prisoner in hand', () => {
     it('the real posts, with what is planned', () => {
         expect(captivesFrom([post727, post737, post741, post749], [tadam, delvin])).toEqual([{ name: 'Tadam Chi', plan: 'We can hand him to the police.' }]);
     });
+    it('the latest word on where they go stands, however much later', () => {
+        const post757 = '"If he\'s being kept by our crew then wouldn\'t we take him back to headquarters? they probably have a cell there, right?"';
+        const got = captivesFrom([post727, post737, post741, ...Array(9).fill('He sat down.'), post757], [tadam]);
+        expect(got[0].plan).toContain('headquarters');
+    });
     it('holds however long ago, while no one lets them go', () => {
         expect(captivesFrom([post737, ...Array(30).fill('He sat down.')], [tadam])).toHaveLength(1);
     });
@@ -60,7 +65,8 @@ describe('what the narrator hears', () => {
     const captives = [{ name: 'Tadam Chi', plan: 'We can hand him to the police.' }];
     it('in the note nearest the reply', () => {
         const note = buildNow({ cast, captives, playerPost: 'He sat down.' });
-        expect(note).toContain("Tadam Chi is a prisoner of Cyril's side, not one of them (what is planned: We can hand him to the police)");
+        expect(note).toContain("Tadam Chi is a prisoner of Cyril's side, not one of them (the latest said of what happens to them: We can hand him to the police)");
+        expect(note).toContain("never in someone's home");
         expect(note).toContain('no part of their plans or celebrating');
         expect(note).toContain('nobody treats Tadam Chi as one of the team');
     });

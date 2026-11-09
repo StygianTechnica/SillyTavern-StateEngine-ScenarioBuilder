@@ -15,6 +15,8 @@ import { confirmAction } from './confirm.js';
 import { ws, rerender, markDirty, stopEditing } from './ws.js';
 import { h, icon, button, select, toast } from './dom.js';
 
+import { roomForJob } from '../ops/side-jobs.js';
+
 const after = async () => {
     stopEditing();
     await syncNow();
@@ -32,7 +34,12 @@ export function opCard(factions, people, show) {
         h('div', { class: 'sb-card-title' }, icon('fa-user-secret'), 'The other side'),
         h('small', { class: 'sb-hint' }, 'A rival crew at work where the story is - a heist, a raid, an ambush - with a plan of its own: a leader, a crew with skills and posts, what they are after, how they got in, their steps, and when they pull out. The game master plays them every reply; they do not wait for the player.'),
         directorOff ? h('div', { class: 'sb-callout sb-warn' }, icon('fa-triangle-exclamation'), h('span', {}, 'The game master is switched off: the other side needs its briefing to act.')) : null,
-        isLive(op) ? (ws.opEdit === op.id ? editView(op, chatKey, people) : runningView(op, chatKey, show)) : setupView(chatKey, factions, people, op));
+        isLive(op) ? (ws.opEdit === op.id ? editView(op, chatKey, people) : runningView(op, chatKey, show)) : setupView(chatKey, factions, people, op),
+        // The job going on beside it, and room to start one.
+        ...(isLive(op) ? (doc.opsAlso ?? []).filter(isLive).map((o) => h('div', { class: 'sb-gm-row' }, h('div', { class: 'sb-gm-text' }, ws.opEdit === o.id ? editView(o, chatKey, people) : runningView(o, chatKey, show)))) : []),
+        isLive(op) && roomForJob(doc) ? h('details', { class: 'sb-gm-join' },
+            h('summary', {}, icon('fa-plus'), ' Start another side\'s operation at the same time'),
+            setupView(chatKey, factions, people, null)) : null);
 }
 
 function setupView(chatKey, factions, people, last) {
@@ -96,7 +103,7 @@ function setupView(chatKey, factions, people, last) {
 // by name, a step marked "| done" is done, the first that is not is now.
 function editView(op, chatKey, people) {
     const save = async () => {
-        const next = reviseOpPlan(chatKey, ws.opEditText ?? '', people);
+        const next = reviseOpPlan(chatKey, ws.opEditText ?? '', people, op.id);
         if (!next) { toast('info', 'It needs an AIM line and at least one STEP line.'); return; }
         ws.opEdit = null;
         ws.opEditText = null;
@@ -115,7 +122,7 @@ function runningView(op, chatKey, show) {
     const peek = show || ws.opPeek === op.id;
     const mark = (action, question) => async () => {
         if (question && !await confirmAction(question)) return;
-        markOpAction(chatKey, action);
+        markOpAction(chatKey, action, op.id);
         await after();
     };
     const step = currentStep(op);
@@ -144,7 +151,7 @@ function runningView(op, chatKey, show) {
                 h('input', { type: 'checkbox', checked: op.tapped, onchange: async (e) => { setOpTapped(chatKey, { on: e.target.checked }); await after(); } }), h('span', {}, `We are listening in on them${op.tappedWith ? ` (their ${op.tappedWith})` : ''}`))),
         op.crew.length ? h('div', {}, op.crew.map((c, i) => h('div', { class: 'sb-gm-row' },
             h('div', { class: 'sb-gm-text' }, h('b', {}, c.name), [c.skill, c.post].filter(Boolean).length ? ` - ${[c.skill, c.post].filter(Boolean).join('; ')}` : '', h('div', { class: 'sb-muted' }, c.where ? `now at ${c.where}` : 'not placed yet')),
-            select(CREW_STATES.map((s) => ({ value: s, label: s })), c.state, { onchange: async (e) => { setOpCrew(chatKey, i, e.target.value); await after(); } })))) : null,
+            select(CREW_STATES.map((s) => ({ value: s, label: s })), c.state, { onchange: async (e) => { setOpCrew(chatKey, i, e.target.value, op.id); await after(); } })))) : null,
         h('div', {}, op.steps.map((s, i) => h('div', { class: `sb-gm-row${s.status === 'done' ? ' sb-gm-past' : ''}` },
             h('div', { class: 'sb-gm-text' }, `${i + 1}. ${s.text}`),
             h('div', { class: 'sb-chips' }, h('span', { class: `sb-chip${s.status === 'current' ? ' sb-chip-on' : ''}` }, s.status === 'current' ? 'now' : s.status === 'done' ? 'done' : 'to come'))))),

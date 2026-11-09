@@ -160,15 +160,20 @@ export const IN_PERSON_LABELS = Object.freeze({
 });
 export const inPersonOf = (c) => (IN_PERSON_MODES.includes(c?.meta?.inPerson) ? c.meta.inPerson : '');
 
+// Those their sheet keeps out of the scene, not there now. -> [entry]
+export function heldBySheet(characters, { here = [], beatTies = [] } = {}) {
+    const at = new Set(here ?? []);
+    const ties = (beatTies ?? []).map((n) => String(n ?? '').trim().toLowerCase()).filter(Boolean);
+    const tied = (c) => ties.some((t) => t === clean(c.name).toLowerCase() || t.split(/\s+/)[0] === clean(c.name).toLowerCase().split(/\s+/)[0]);
+    return (characters ?? []).filter((c) => !at.has(c.id) && (inPersonOf(c) === 'remote' || (inPersonOf(c) === 'later' && !tied(c))));
+}
+
 // Those held out of the scene by their sheet whom `texts` (the latest
 // messages, the day's agendas) bring up, and who are not here: only they
 // need the line. A 'later' one the beat now names (beatTies) is free.
 // -> { remote: [name], later: [name] }
 export function heldOutNamed(characters, texts, { here = [], beatTies = [] } = {}) {
-    const at = new Set(here ?? []);
-    const ties = (beatTies ?? []).map((n) => String(n ?? '').trim().toLowerCase()).filter(Boolean);
-    const tied = (c) => ties.some((t) => t === clean(c.name).toLowerCase() || t.split(/\s+/)[0] === clean(c.name).toLowerCase().split(/\s+/)[0]);
-    const held = (characters ?? []).filter((c) => !at.has(c.id) && (inPersonOf(c) === 'remote' || (inPersonOf(c) === 'later' && !tied(c))));
+    const held = heldBySheet(characters, { here, beatTies });
     if (!held.length) return { remote: [], later: [] };
     const named = texts === null ? held : peopleNamedIn((texts ?? []).join('\n'), held);
     return {

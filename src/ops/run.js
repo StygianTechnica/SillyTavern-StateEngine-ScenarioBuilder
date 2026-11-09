@@ -11,11 +11,12 @@ import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
 import { getSettings } from '../settings.js';
-import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive, linkTaken, stillInStory, reopenOp, reopenable } from './model.js';
+import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive, linkTaken, stillInStory, reopenOp, reopenable, crewIndex } from './model.js';
+import { liveJobs, roomForJob, sidesOppose, settled, focused, MAX_ALSO } from './side-jobs.js';
 import { inPersonOf } from '../guidance/spoken.js';
 import { allWingsOf, wingOfPerson, markOtherWings } from '../library/wings.js';
 import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst, shapePlan, aboutThem, sideInStory } from './generate.js';
-import { encounterOpen } from './detect.js';
+import { encounterOpen, repeatJob, shownAtWork, namesOf } from './detect.js';
 
 // How far back the chat must have named a group for a crew of theirs to start.
 const RECENT_FOR_SIDE = 12;
@@ -36,11 +37,38 @@ export const getOp = (chatKey) => getChatDoc(chatKey).op;
 // another takes its place.
 function save(chatKey, op) {
     updateChatDoc(chatKey, (d) => {
+        // The job beside the main one keeps its place.
+        const beside = (d.opsAlso ?? []).findIndex((x) => x.id === op?.id);
+        if (beside >= 0) { d.opsAlso[beside] = op; return; }
         if (d.op && d.op.id !== op?.id) d.opsDone = [...(d.opsDone ?? []), d.op].slice(-6);
         d.op = op;
     });
     emit(chatKey);
-    return getChatDoc(chatKey).op;
+    return op;
+}
+
+// The job with this id, or the main one.
+const jobOf = (doc, id) => (id ? [doc.op, ...(doc.opsAlso ?? [])].find((o) => o?.id === id) ?? null : doc.op);
+
+// A new job: the main one if that is free, else beside it.
+function placeJob(chatKey, op) {
+    const doc = getChatDoc(chatKey);
+    if (!isLive(doc.op)) return save(chatKey, op);
+    updateChatDoc(chatKey, (d) => { d.opsAlso = [...(d.opsAlso ?? []), op].slice(-MAX_ALSO); });
+    emit(chatKey);
+    return op;
+}
+
+// Those over move to the record, the other takes the main place, and the job
+// with people in the scene comes first.
+function arrangeJobs(chatKey) {
+    updateChatDoc(chatKey, (d) => {
+        const { op, also, done } = settled(d.op, d.opsAlso ?? [], d.turn);
+        const [main, ...rest] = focused(op, also, { castIds: d.canonical.castIds });
+        d.opsDone = [...(d.opsDone ?? []), ...done].slice(-6);
+        d.op = main ?? null;
+        d.opsAlso = rest.filter(Boolean);
+    });
 }
 
 const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
@@ -71,18 +99,23 @@ export function putBackOp(chatKey) {
 // done; the crew as the fight and deaths left them.
 export function opAfterBriefing(chatKey, { report = null, fight = null, deaths = [], moves = [], lost = [], met = [], metBy = '' } = {}) {
     try {
+        arrangeJobs(chatKey);
         const doc = getChatDoc(chatKey);
-        if (!doc.op) return;
-        const live = isLive(doc.op) || doc.op.at?.turn === doc.turn;
-        if (!live) return;
         const recent = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-2).map((m) => String(m.mes ?? '')).join('\n');
-        const inStory = stillInStory(doc.op, { castIds: doc.canonical.castIds, recent });
-        const next = afterBriefing(doc.op, { report, fighters: fight?.fighters ?? [], deaths, moves, lost, met, metBy, inStory }, doc.turn);
-        if (next && JSON.stringify(next) !== JSON.stringify(normalizeOp(doc.op))) {
-            save(chatKey, next);
-            const last = next.log[next.log.length - 1];
-            if (last?.turn === doc.turn) console.info(LOG_PREFIX, `the other side (${next.side}): ${last.text}`);
-        }
+        const moveOn = (job, said) => {
+            if (!(isLive(job) || job.at?.turn === doc.turn)) return;
+            const inStory = stillInStory(job, { castIds: doc.canonical.castIds, recent });
+            const next = afterBriefing(job, { ...said, fighters: fight?.fighters ?? [], deaths, moves, inStory }, doc.turn);
+            if (next && JSON.stringify(next) !== JSON.stringify(normalizeOp(job))) {
+                save(chatKey, next);
+                const last = next.log[next.log.length - 1];
+                if (last?.turn === doc.turn) console.info(LOG_PREFIX, `the other side (${next.side}): ${last.text}`);
+            }
+        };
+        if (doc.op) moveOn(doc.op, { report, lost, met, metBy });
+        // The job beside it carries on by itself: the OPERATION line is the
+        // main one's, and only its own people count as lost.
+        for (const job of doc.opsAlso ?? []) moveOn(job, { lost: lost.filter((l) => crewIndex(job, l?.who) >= 0) });
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not move the other side on', err);
     }
@@ -105,24 +138,29 @@ export function setOpTapped(chatKey, { text = null, on = null } = {}) {
 }
 
 // The user steps in (the GM Plan card).
-export function markOpAction(chatKey, action) {
+export function markOpAction(chatKey, action, id = '') {
     const doc = getChatDoc(chatKey);
-    if (!doc.op) return null;
-    return save(chatKey, markOp(doc.op, action, doc.turn));
+    const job = jobOf(doc, id);
+    if (!job) return null;
+    const done = save(chatKey, markOp(job, action, doc.turn));
+    arrangeJobs(chatKey);
+    return done;
 }
 // The plan's lines changed while it runs. -> the operation, or null when
 // the lines have no AIM or STEP.
-export function reviseOpPlan(chatKey, text, characters = []) {
+export function reviseOpPlan(chatKey, text, characters = [], id = '') {
     const doc = getChatDoc(chatKey);
-    if (!doc.op) return null;
-    const read = readOpPlan(text, doc.op.side);
+    const job = jobOf(doc, id);
+    if (!job) return null;
+    const read = readOpPlan(text, job.side);
     if (!read) return null;
-    return save(chatKey, reviseOp(doc.op, matchPeople(read, characters), doc.turn));
+    return save(chatKey, reviseOp(job, matchPeople(read, characters), doc.turn));
 }
-export function setOpCrew(chatKey, index, state) {
+export function setOpCrew(chatKey, index, state, id = '') {
     const doc = getChatDoc(chatKey);
-    if (!doc.op) return null;
-    return save(chatKey, setCrewState(doc.op, index, state));
+    const job = jobOf(doc, id);
+    if (!job) return null;
+    return save(chatKey, setCrewState(job, index, state));
 }
 export function clearOp(chatKey) {
     updateChatDoc(chatKey, (d) => {
@@ -311,9 +349,18 @@ export async function startOpPlan(chatId, chatKey, settingId, plan, { turn = nul
     } catch (err) {
         console.warn(LOG_PREFIX, 'could not add the other side\'s people', err);
     }
-    const op = startOp(p, Number.isInteger(turn) ? turn : getChatDoc(chatKey).turn, newLocalId('op'));
+    let op = startOp(p, Number.isInteger(turn) ? turn : getChatDoc(chatKey).turn, newLocalId('op'));
     if (!op) throw new Error('That plan has nothing to carry out.');
-    return save(chatKey, op);
+    // Up against a job already running: each is told of the other.
+    const beside = liveJobs(getChatDoc(chatKey))[0];
+    if (beside) {
+        const { getSettingDoc } = await import('../store/setting-store.js');
+        if (sidesOppose(op, beside, settingId ? getSettingDoc(settingId).relations ?? [] : [])) {
+            op = { ...op, opposes: beside.side };
+            save(chatKey, { ...beside, opposes: op.side });
+        }
+    }
+    return placeJob(chatKey, op);
 }
 
 // The director saw a rival group at work in the scene with no plan
@@ -323,13 +370,8 @@ export async function opFromDirector(chatId, chatKey, settingId, opposed) {
     try {
         if (!opposed?.who || !settingId || getSettings().director.opposition === false) return null;
         const doc = getChatDoc(chatKey);
-        if (isLive(doc.op)) return null;
-        // One encounter at a time; a new crew waits for this one to be over.
+        if (!roomForJob(doc)) return null;
         const lastOp = doc.op ?? (doc.opsDone ?? []).at(-1) ?? null;
-        if (encounterOpen({ fight: doc.fight, lastOp, castIds: doc.canonical.castIds })) {
-            console.info(LOG_PREFIX, `the other side: ${opposed.who} left alone - the encounter under way is not over`);
-            return null;
-        }
         const lib = await import('../library/library.js');
         const { libraryMemberships } = await import('../library/faction-sync.js');
         const { getSettingDoc } = await import('../store/setting-store.js');
@@ -342,6 +384,27 @@ export async function opFromDirector(chatId, chatKey, settingId, opposed) {
             console.info(LOG_PREFIX, `the other side: ${opposed.who} left alone - the recent chat does not have them in the story`);
             return null;
         }
+        // The same side, or a branch of it, does not simply try again.
+        const relations = getSettingDoc(settingId).relations ?? [];
+        const factionIds = new Set(factions.map((f) => f.id));
+        const found = findSide(who, factions, characters, memberships);
+        const start = found.faction?.id ?? '';
+        const sideIds = new Set(start ? [start, ...allWingsOf(start, relations, factionIds), ...factions.filter((f) => allWingsOf(f.id, relations, factionIds).includes(start)).map((f) => f.id)] : []);
+        const memberIds = new Set([...characters.filter((c) => (memberships.get(c.id) ?? []).some((id) => sideIds.has(id))).map((c) => c.id), ...(found.leader ? [found.leader.id] : [])]);
+        if (repeatJob([...(doc.opsDone ?? []), doc.op, ...(doc.opsAlso ?? [])], doc.turn, { side: who, sideIds, memberIds })) {
+            console.info(LOG_PREFIX, `the other side: ${who} left alone - they are on a job, or their last has only just ended`);
+            return null;
+        }
+        // In the middle of an encounter, only a group the latest chat shows
+        // on a job of its own comes in: a faction war, not a surprise crew.
+        if (encounterOpen({ fight: doc.fight, lastOp, castIds: doc.canonical.castIds })) {
+            const names = found.faction ? namesOf(found.faction, characters.filter((c) => memberIds.has(c.id))) : [who];
+            const latest = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-4).map((m) => String(m.mes ?? '')).join('\n');
+            if (!shownAtWork(names, latest)) {
+                console.info(LOG_PREFIX, `the other side: ${who} left alone - the encounter under way is not over`);
+                return null;
+            }
+        }
         const tried = `${key(who)}@${doc.canonical.locationId || ''}`;
         if ((doc.opsTried ?? []).includes(tried)) return null;
         updateChatDoc(chatKey, (d) => { d.opsTried = [...(d.opsTried ?? []), tried].slice(-20); });
@@ -349,7 +412,7 @@ export async function opFromDirector(chatId, chatKey, settingId, opposed) {
         const plan = await planOp(chatId, chatKey, settingId, { side: who, request: opposed.what, aware: false });
         if (!plan) return null;
         // The chat may have planned one meanwhile (the user).
-        if (isLive(getChatDoc(chatKey).op)) return null;
+        if (!roomForJob(getChatDoc(chatKey))) return null;
         // This reply's briefing is written: it runs from the next.
         return await startOpPlan(chatId, chatKey, settingId, plan, { turn: doc.turn + 1 });
     } catch (err) {

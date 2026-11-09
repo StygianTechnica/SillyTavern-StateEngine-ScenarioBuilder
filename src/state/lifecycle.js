@@ -33,6 +33,7 @@ import { followMissions } from '../quests/missions.js';
 import { scanStoryChanges } from './changes.js';
 import { scanStanding } from './standing.js';
 import { ensureCharacterFields } from '../library/character-fields.js';
+import { enrichJobNotes } from '../generate/enrich.js';
 import { checkTriggers, checkTriggersOnMessage, markTriggersShown, latestUserIndex } from '../triggers/run.js';
 import { reconcileOpenChat, pushCanonicalToObserved, revertFromMessage } from '../validate/reconcile.js';
 import { syncNow } from '../guidance/sync.js';
@@ -220,6 +221,8 @@ async function onChatChanged() {
     if (active) await healMissing(ref.chatId, chatKeyFor(ref));
     // Background and Voice & mannerisms on the setting's characters, once.
     if (active) await ensureCharacterFields(await getBoundSettingId(ref.chatId));
+    // Those made for a job and described only by it get written up (one call each, once).
+    if (active) void enrichJobNotes(ref.chatId, chatKeyFor(ref), await getBoundSettingId(ref.chatId));
     await syncNow();
     // Displays bound to familiar roles show the canonical state here.
     if (active) await fillRoles(ref.chatId);

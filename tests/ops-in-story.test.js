@@ -2,7 +2,7 @@
 // OPPOSED line of "Omicron Innovations/Enrique's team" started an Omicron crew
 // at the museum, four new people - Omicron unnamed for seventy messages.
 import { sideInStory } from '../src/ops/generate.js';
-import { encounterOpen } from '../src/ops/detect.js';
+import { encounterOpen, repeatJob, JOB_GAP } from '../src/ops/detect.js';
 
 const medina = { id: 'f1', name: 'Medina Syndicate' };
 const omicron = { id: 'f2', name: 'Omicron Innovations' };
@@ -34,6 +34,31 @@ describe('a group the story has in it', () => {
         expect(sideInStory('the Pale Choir', { recent: 'The market was quiet.' })).toBe('');
         expect(sideInStory('Ceres Salvagers', { recent: 'Ceres Salvagers hailed the ship.' })).toBe('Ceres Salvagers');
         expect(sideInStory('', { recent: 'Anything.' })).toBe('');
+    });
+});
+
+describe('the same job again', () => {
+    const job = { side: 'Medina Syndicate', sideId: 'f1', endedTurn: 829, leader: { objectId: 'delvin' }, boss: { objectId: 'enrique' }, crew: [{ objectId: 'nichiro' }] };
+    const ops = [job, null, { side: 'Old', endedTurn: null }];
+    it('the same side, soon after', () => {
+        expect(repeatJob(ops, 834, { side: 'Medina Syndicate', sideIds: new Set(['f1']) })).toBe(true);
+        expect(repeatJob(ops, 829 + JOB_GAP - 1, { side: 'Medina Syndicate' })).toBe(true);
+    });
+    it('a branch of it, under another name', () => {
+        expect(repeatJob(ops, 834, { side: "Enrique's Posse", sideIds: new Set(['f9', 'f1']) })).toBe(true);
+    });
+    it('by the people, when no faction ties them', () => {
+        expect(repeatJob(ops, 834, { side: "Enrique's Posse", memberIds: new Set(['nichiro']) })).toBe(true);
+    });
+    it('another side is free to start', () => {
+        expect(repeatJob(ops, 834, { side: 'Omicron Innovations', sideIds: new Set(['f2']), memberIds: new Set(['tole']) })).toBe(false);
+        expect(repeatJob([{ side: 'The Pale Choir', sideId: 'c1', endedTurn: 10 }], 12, { side: 'The Iron Oath', sideIds: new Set(['c2']) })).toBe(false);
+    });
+    it('and they may try again in time', () => {
+        expect(repeatJob(ops, 829 + JOB_GAP, { side: 'Medina Syndicate', sideIds: new Set(['f1']) })).toBe(false);
+    });
+    it('nothing has ended: nothing to repeat', () => {
+        expect(repeatJob([], 900, { side: 'Medina Syndicate' })).toBe(false);
     });
 });
 

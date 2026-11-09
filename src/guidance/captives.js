@@ -16,7 +16,7 @@ const TOOK = String.raw`(?:snagged|nabbed|captured|caught|arrested|cuffed|handcu
 const NOT_REALLY = /\b(?:if|could|should|would|might|almost|nearly|never|not|didn'?t|hadn'?t|wish)\b/i;
 const STILL_FREE = /^(?:['’]s|\s+(?:off|by|in|at|on|up|with|looking|red|sight|out)\b)/i;
 const LET_GO = String.raw`(?:let|lets|letting|released?|freed?|freeing|cut|untied?)`;
-const PLAN = /\b(?:police|cops?|authorit\w+|the law|the watch|magistrate|sheriff|constable|turn(?:ing)?\s+(?:him|her|them|\S+)\s+(?:in|over)|hand(?:ing)?\s+(?:him|her|them|\S+)\s+(?:to|over)|face the music|ransom|interrogat\w*)\b/i;
+const PLAN = /\b(?:police|cops?|authorit\w+|the law|the watch|magistrate|sheriff|constable|turn(?:ing)?\s+(?:him|her|them|\S+)\s+(?:in|over)|hand(?:ing)?\s+(?:him|her|them|\S+)\s+(?:to|over)|face the music|ransom|interrogat\w*|headquarters|hq|a cell|the cells?|the brig|dungeons?|lock-?up|stockade)\b/i;
 const OBJECT = /\b(?:him|her|them)\b/i;
 const NEARBY_POSTS = 6;
 
@@ -43,7 +43,8 @@ export function captivesFrom(posts = [], people = []) {
             else if (said.some((s) => taken(s, p))) at = i;
         });
         if (at < 0) continue;
-        const near = list.map((said, i) => ({ said, i })).filter(({ i }) => Math.abs(i - at) <= NEARBY_POSTS);
+        // From just before they were taken up to now: the latest word stands.
+        const near = list.map((said, i) => ({ said, i })).filter(({ i }) => i >= at - NEARBY_POSTS);
         const all = near.flatMap(({ said }) => said).filter((s) => PLAN.test(s));
         const plan = all.filter((s) => named(s, p)).at(-1) ?? all.filter((s) => OBJECT.test(s)).at(-1) ?? '';
         out.push({ name: clean(p.name), plan: clean(plan).replace(/^"|"$/g, '').slice(0, 160) });
@@ -54,5 +55,5 @@ export function captivesFrom(posts = [], people = []) {
 // The words for the note. side: whose prisoner ("Cyril's side").
 export function captivesLine(captives = [], { side = '' } = {}) {
     const whose = clean(side) || 'the player character\'s side';
-    return (captives ?? []).map((c) => `${c.name} is a prisoner of ${whose}, not one of them${c.plan ? ` (what is planned: ${c.plan.replace(/[.!?]+$/, '')})` : ''}: disarmed and watched, not free to go, no friend or helper to those holding them, and no part of their plans or celebrating - nobody treats ${c.name} as one of the team.`).join(' ');
+    return (captives ?? []).map((c) => `${c.name} is a prisoner of ${whose}, not one of them${c.plan ? ` (the latest said of what happens to them: ${c.plan.replace(/[.!?]+$/, '')})` : ''}: disarmed and watched, kept somewhere their captors' side controls and never in someone's home, not free to go, no friend or helper to those holding them, and no part of their plans or celebrating - nobody treats ${c.name} as one of the team.`).join(' ');
 }

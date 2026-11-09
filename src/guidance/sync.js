@@ -600,7 +600,7 @@ export async function gatherInputs(chatId, chatKey) {
             // The player's latest post: where they are headed (src/ops/model.js opMeet).
             playerPost: latestPlayerPost(),
             // Those the player's side holds prisoner, in the scene (src/guidance/captives.js).
-            captives: captivesHere(castFor, [doc.op, ...(doc.opsDone ?? [])]),
+            captives: captivesHere(castFor, [doc.op, ...(doc.opsAlso ?? []), ...(doc.opsDone ?? [])]),
             // Those taken out by hand and those a split left elsewhere too:
             // the note just before the reply is what a small model keeps.
             elsewhere: [...new Set([...absent, ...splitAway, ...elsewhereNow(allCharacters, {

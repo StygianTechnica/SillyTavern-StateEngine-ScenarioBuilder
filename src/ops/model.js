@@ -159,6 +159,8 @@ export function normalizeOp(o) {
         checkIn: Number.isInteger(o.checkIn) ? o.checkIn : null,
         suspicious: o.suspicious === true,
         against: str(o.against, 120),
+        // The other side at work at once that this one is up against.
+        opposes: str(o.opposes, 120),
         status: OP_STATUSES.includes(o.status) ? o.status : 'running',
         pace: Math.min(Math.max(int(o.pace, DEFAULT_PACE), 1), 6),
         stepTurn: int(o.stepTurn, 0),
@@ -192,6 +194,13 @@ const note = (op, turn, text) => ({ ...op, log: [...op.log, { turn, text }].slic
 function end(op, turn, status, text) {
     return note({ ...op, status, endedTurn: turn, endText: text, steps: op.steps.map((s) => (s.status === 'current' && status === 'got away' ? { ...s, status: 'done' } : s)) }, turn, text);
 }
+
+// The line a job's newcomers are made with (src/ops/run.js startOpPlan): what
+// they are doing there, not what they look like. Being two sentences it did
+// not count as thin, so it stayed as the description: Yiranza's sheet was
+// "One of Enrique's Posse's crew on Amparna Tiangguan's job".
+const JOB_NOTE = /^(?:Of [^;]{1,80}; (?:runs|ordered)\b|(?:One of|[^.]{1,100}, of) [^.]{1,80}['’]s crew on [^.]{0,100}\bjob\b)/;
+export const isJobNote = (text) => JOB_NOTE.test(clean(text));
 
 // The job a person the story has just named is on, newest first, and the
 // words that hold their sheet to it. Assassins Inc: Tadam Chi, on Enrique's

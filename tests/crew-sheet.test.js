@@ -1,5 +1,20 @@
 // Tadam Chi, on Enrique's crew, came out of the fill loyal to White Cerberus.
-import { crewJobOf } from '../src/ops/model.js';
+import { crewJobOf, isJobNote } from '../src/ops/model.js';
+
+describe('a description that is only the job', () => {
+    it('the lines a job makes its people with', () => {
+        expect(isJobNote("One of Enrique's Posse's crew on Amparna Tiangguan's job at Museum corridors, answering to Jiang Ead. One of Amparna Tiangguan's own people, not anyone else's in Enrique's Posse.")).toBe(true);
+        expect(isJobNote('Of Omicron Innovations; runs Raquelo Arnett\'s job at Museum corridors on site: Steal the prototype. A trusted lieutenant of Raquelo Arnett\'s')).toBe(true);
+        expect(isJobNote('Of Omicron Innovations; ordered the operation at the museum and keeps well away from it.')).toBe(true);
+        expect(isJobNote("Safecracker, of The Pale Choir's crew on the job at the crypt.")).toBe(true);
+    });
+    it('not a real description', () => {
+        expect(isJobNote('Yiranza is a wiry woman in her thirties with a shaved head and a burn along one arm.')).toBe(false);
+        expect(isJobNote("Born of the Pale Choir's crew on the northern ships, she never learned to swim.")).toBe(false);
+        expect(isJobNote('')).toBe(false);
+        expect(isJobNote(undefined)).toBe(false);
+    });
+});
 
 const job = {
     side: 'Medina Syndicate', sideId: 'f1', placeName: "Saint Aora's Museum", against: 'Cyril and White Cerberus',

@@ -106,6 +106,7 @@ import { normalizePresent } from '../planner/presence.js';
 import { normalizeEvent, normalizeEventsDone, normalizeEventsComing } from '../events/model.js';
 import { normalizeTemplates } from '../events/setup.js';
 import { normalizeOp, normalizeOpsDone } from '../ops/model.js';
+import { normalizeOpsAlso } from '../ops/side-jobs.js';
 import { emptyChanges, normalizeChanges } from '../state/changes-model.js';
 import { emptyStanding, normalizeStanding } from '../state/standing-model.js';
 import { normalizeAliasInfo } from '../library/alias-kinds.js';
@@ -498,6 +499,7 @@ export function emptyChatDoc() {
         // null; finished ones; sides already planned from the director's
         // OPPOSED line ("<side>@<placeId>"), never planned twice.
         op: null,
+        opsAlso: [],
         opsDone: [],
         opsTried: [],
         // What the player told whom (src/director/perspective.js toldInChat):
@@ -579,6 +581,7 @@ export function normalizeChatDoc(doc) {
         eventsDone: normalizeEventsDone(d.eventsDone),
         eventsComing: normalizeEventsComing(d.eventsComing),
         op: normalizeOp(d.op),
+        opsAlso: normalizeOpsAlso(d.opsAlso),
         opsDone: normalizeOpsDone(d.opsDone),
         opsTried: Array.isArray(d.opsTried) ? d.opsTried.filter((x) => typeof x === 'string').slice(-20) : [],
         dead: normalizeDead(d.dead),

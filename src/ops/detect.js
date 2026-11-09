@@ -24,6 +24,28 @@ export function encounterOpen({ fight = null, lastOp = null, castIds = [] } = {}
     return theirs.some((id) => (castIds ?? []).includes(id));
 }
 
+// The same job again: a side, or its people, trying once more soon after
+// their last try ended. Assassins Inc: Enrique's job at the museum failed and
+// two more started within twenty turns as "Enrique's Posse" - a name and a
+// place the record of what had been tried had not seen. Another side, with
+// business of its own, is free to start. ops: every operation; turn: now;
+// side: the group's name; sideIds: its faction and those it belongs with;
+// memberIds: their people.
+export const JOB_GAP = 60;
+const sideKey = (s) => clean(s).toLowerCase().replace(/^the\s+/, '');
+export function repeatJob(ops = [], turn = 0, { side = '', sideIds = new Set(), memberIds = new Set(), gap = JOB_GAP } = {}) {
+    // A job of theirs still running counts too.
+    const running = (o) => o?.status === 'running' || o?.status === 'pulling out';
+    return (ops ?? []).filter((o) => running(o) || (Number.isInteger(o?.endedTurn) && turn - o.endedTurn < gap)).some((o) => {
+        const theirs = [o.leader?.objectId, o.boss?.objectId, ...(o.crew ?? []).map((c) => c?.objectId)].filter(Boolean);
+        return sideIds.has(o.sideId) || (clean(side) && sideKey(o.side) === sideKey(side)) || theirs.some((id) => memberIds.has(id));
+    });
+}
+
+// Whether the latest chat shows them on a job, in one sentence: what lets a
+// second group start in the middle of an encounter, instead of out of nowhere.
+export const shownAtWork = (names = [], recent = '') => String(recent ?? '').split(/(?<=[.!?…])\s+|\n+/).some((s) => JOB.test(s) && names.some((n) => wordIn(n, s)));
+
 export const wordIn = (name, text) => {
     const n = clean(name);
     return n.length >= 4 && new RegExp(`(^|[^\\p{L}\\p{N}])${escape(n)}(?=$|[^\\p{L}\\p{N}])`, 'iu').test(text);
@@ -50,8 +72,9 @@ export function namesOf(faction, people = []) {
 // character or one of theirs (Enrique Medina, Cyril's rival). A job and the
 // rival's name in the same passage.
 // -> { who (the faction's name), what (the passage, cut) } or null.
-export function rivalAtWork({ texts = [], factions = [], relations = [], mine = [], playerId = '', members = new Map() } = {}) {
-    const ours = new Set(mine);
+export function rivalAtWork({ texts = [], factions = [], relations = [], mine = [], playerId = '', members = new Map(), skip = [] } = {}) {
+    // skip: sides already on a job.
+    const ours = new Set([...mine, ...skip]);
     const usIds = new Set([...mine, ...(playerId ? [playerId] : []), ...mine.flatMap((id) => (members.get(id) ?? []).map((c) => c.id))]);
     if (!usIds.size) return null;
     const rivals = factions.filter((f) => {
