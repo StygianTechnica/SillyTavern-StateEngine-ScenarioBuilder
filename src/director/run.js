@@ -58,6 +58,7 @@ import { markDead, deadText, deadByName, bringBack } from '../state/death.js';
 import { isDetained, detainedText, detainedByName, soundsHeld, heldByOwnSide, release } from '../state/detained.js';
 import { captivesLine } from '../guidance/captives.js';
 import { heldBySheet } from '../guidance/spoken.js';
+import { narrationOf } from './departures.js';
 import { activeBeat } from '../planner/model.js';
 import { contextualPlace } from '../library/place-context.js';
 import { personGender } from '../naming/classify.js';
@@ -1153,7 +1154,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         // master walked Enrique out of an alley with no one having said a word
         // of him. Only a post that shows them coming, or the beat, brings them.
         const beatTies = settings.planner?.enabled === true ? activeBeat(doc.gm.outline)?.ties ?? [] : [];
-        const sheetSaysNo = elsewhereEntering(parsed.enters, { characters, elsewhere: heldBySheet(characters, { here: baseCast, beatTies }), castIds: baseCast, userPost, namedIn: peopleNamedIn, namesOf: callNames });
+        const sheetSaysNo = elsewhereEntering(parsed.enters, { characters, elsewhere: heldBySheet(characters, { here: baseCast, beatTies }), castIds: baseCast, userPost: narrationOf(userPost), namedIn: peopleNamedIn, namesOf: callNames });
         if (sheetSaysNo.length) {
             console.info(LOG_PREFIX, `${sheetSaysNo.join(', ')} kept out: their sheet has them stay away from the scene`);
             parsed.enters = parsed.enters.filter((n) => !sheetSaysNo.includes(n));

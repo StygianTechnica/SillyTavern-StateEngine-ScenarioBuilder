@@ -194,7 +194,20 @@ function arrivalWhere(list, input) {
     const player = clean((input.cast ?? []).find((c) => c.player)?.name) || 'the player character';
     const why = list.map((n) => [n, clean(input.arrivingFor?.[n])]).filter(([, w]) => w);
     const reasons = why.map(([n, w]) => ` ${n} comes for this: ${w.replace(/[.!]+$/, '')}.`).join('');
-    return ` They come to ${player} where ${player} is${place ? ` - ${place}` : ''}; the scene does not move, and no one is already waiting somewhere else.${reasons}`;
+    return ` They come to ${player} where ${player} is${place ? ` - ${place}` : ''}; the scene does not move, and no one is already waiting somewhere else.${reasons}${arrivalPast(list, input, player)}`;
+}
+
+// Someone coming in who has a past with the player character says so in the
+// note nearest the reply: told it only in the cast list far above, Enrique -
+// who shot Cyril dead - greeted him with "if it isn't the infamous Cyril".
+function arrivalPast(list, input, player) {
+    const first = player.split(/\s+/)[0];
+    const about = (text) => new RegExp(`\\b${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(String(text ?? ''));
+    return list.map((n) => {
+        const c = (input.cast ?? []).find((x) => clean(x?.name) === clean(n));
+        const past = [...(c?.relations ?? []).filter((r) => about(r)).map((r) => clean(r).replace(/^toward\s+[^:]+:\s*/i, '')), ...(c?.knows ?? []).filter((k) => about(k)).slice(0, 2).map((k) => truncate(clean(k), 120))].map(unstop).filter(Boolean);
+        return past.length ? ` ${n} and ${player} have a past (${past.join('; ')}): ${n} knows ${player} and speaks as someone who does - never by reputation, and never as if meeting for the first time. It colours how ${n} talks and looks at ${player}; what is secret stays unsaid in front of anyone who does not know it.` : '';
+    }).join('');
 }
 
 function aloneSection(input) {

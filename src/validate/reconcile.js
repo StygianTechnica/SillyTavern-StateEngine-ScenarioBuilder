@@ -29,7 +29,7 @@ import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteE
 import { setCanonical } from '../state/canonical.js';
 import { beatsOf, undoBeatsFrom, unplantSeedsFrom, activeBeat } from '../planner/model.js';
 import { heldBySheet } from '../guidance/spoken.js';
-import { shownComing } from '../director/departures.js';
+import { shownComing, narrationOf } from '../director/departures.js';
 import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
 import { detainedIds, withoutDetained, detainedFrom, undoDetainedFrom } from '../state/detained.js';
 import { contextualPlace } from '../library/place-context.js';
@@ -313,7 +313,7 @@ async function reconcileOnce() {
     // shows them coming.
     const sheetKeeps = new Set(heldBySheet(characterEntries, { here: doc.canonical.castIds, beatTies: settings.planner?.enabled === true ? activeBeat(doc.gm.outline)?.ties ?? [] : [] }).map((c) => c.id));
     for (const item of items) {
-        if (item.field !== 'cast' || item.op !== 'add' || item.action !== 'accept' || !sheetKeeps.has(item.objectId) || shownComing(namesOf(item.objectId), latestPlayerText())) continue;
+        if (item.field !== 'cast' || item.op !== 'add' || item.action !== 'accept' || !sheetKeeps.has(item.objectId) || shownComing(namesOf(item.objectId), narrationOf(latestPlayerText()))) continue;
         item.action = 'adjust';
         item.classification = 'ambiguous';
         item.reason = `${objects.get(item.objectId)?.name ?? 'someone'} is kept out of the scene by their sheet`;
