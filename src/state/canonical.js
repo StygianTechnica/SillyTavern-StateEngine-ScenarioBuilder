@@ -15,6 +15,7 @@ import { normalizeCanonical, newLocalId, HISTORY_LIMIT } from '../store/schema.j
 import { markObjectPresent, markObjectAbsent, getObject } from '../api/objects.js';
 import { missingPatch, idsToCheck } from './missing.js';
 import { deadIds, withoutDead } from './death.js';
+import { detainedIds, withoutDetained, freeInDoc } from './detained.js';
 
 const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
@@ -52,6 +53,17 @@ export function setCanonical(chatKey, patch, info = {}) {
                 if (back.length) doc.dead = doc.dead.filter((d) => !back.includes(d.id));
             } else {
                 patch = { ...patch, [key]: withoutDead(patch[key], dead) };
+            }
+        }
+        // The detained stay held (src/state/detained.js), the same way - a
+        // reply taken back puts its own detained back through 'revert'.
+        const held = detainedIds(doc);
+        if (Array.isArray(patch.castIds) && held.size) {
+            if (info.source === 'user') {
+                const back = patch.castIds.filter((id) => held.has(id) && !doc.canonical.castIds.includes(id));
+                if (back.length) freeInDoc(doc, back);
+            } else {
+                patch = { ...patch, castIds: withoutDetained(patch.castIds, held) };
             }
         }
         const next = normalizeCanonical({ ...doc.canonical, ...patch });

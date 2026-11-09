@@ -93,6 +93,7 @@ import { emptyQuestMeta, normalizeQuestMeta } from '../quests/model.js';
 import { normalizeKnowledgeItem, normalizeBeliefsSeen } from '../library/knowledge.js';
 import { emptyGiver, normalizeGiver } from '../quests/missions.js';
 import { normalizeDead } from '../state/death.js';
+import { normalizeDetained } from '../state/detained.js';
 import { normalizeEnrichments } from '../generate/revert.js';
 import { normalizeCounts } from '../library/creature-form.js';
 import { normalizePowerMeta, fitText, GIFTS_MAX } from '../library/powers.js';
@@ -512,6 +513,8 @@ export function emptyChatDoc() {
         standing: emptyStanding(),
         // Who has died in this story (src/state/death.js).
         dead: [],
+        // Who is jailed or held for a time (src/state/detained.js).
+        detained: [],
         // Who may die in this chat ('' = the default in the settings):
         // src/director/combat.js STANCES.
         combatStance: '',
@@ -579,6 +582,7 @@ export function normalizeChatDoc(doc) {
         opsDone: normalizeOpsDone(d.opsDone),
         opsTried: Array.isArray(d.opsTried) ? d.opsTried.filter((x) => typeof x === 'string').slice(-20) : [],
         dead: normalizeDead(d.dead),
+        detained: normalizeDetained(d.detained),
         combatStance: STANCES.includes(d.combatStance) ? d.combatStance : '',
         changes: normalizeChanges(d.changes),
         standing: normalizeStanding(d.standing),

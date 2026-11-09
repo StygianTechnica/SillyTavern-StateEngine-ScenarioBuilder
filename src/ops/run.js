@@ -11,10 +11,14 @@ import { LOG_PREFIX } from '../constants.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { newLocalId } from '../store/schema.js';
 import { getSettings } from '../settings.js';
-import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive, linkTaken } from './model.js';
+import { normalizeOp, startOp, afterBriefing, markOp, setCrewState, reviseOp, isLive, linkTaken, stillInStory, reopenOp, reopenable } from './model.js';
 import { inPersonOf } from '../guidance/spoken.js';
 import { allWingsOf, wingOfPerson, markOtherWings } from '../library/wings.js';
-import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst, shapePlan, aboutThem } from './generate.js';
+import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst, shapePlan, aboutThem, sideInStory } from './generate.js';
+import { encounterOpen } from './detect.js';
+
+// How far back the chat must have named a group for a crew of theirs to start.
+const RECENT_FOR_SIDE = 12;
 
 export const OPS_EVENT = 'scenario_builder_ops_changed';
 
@@ -42,6 +46,27 @@ function save(chatKey, op) {
 const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const key = (s) => clean(s).toLowerCase().replace(/^the\s+/, '');
 
+// A job wrongly marked "got away", the one to offer putting back. -> or null.
+export function gotAwayOp(chatKey) {
+    const doc = getChatDoc(chatKey);
+    return isLive(doc.op) ? null : reopenable([...(doc.opsDone ?? []), ...(doc.op ? [doc.op] : [])], doc.turn);
+}
+
+// Puts that job back: it runs again, on its last step. -> the operation or null.
+export function putBackOp(chatKey) {
+    const was = gotAwayOp(chatKey);
+    if (!was) return null;
+    const back = reopenOp(was, getChatDoc(chatKey).turn);
+    if (!back) return null;
+    updateChatDoc(chatKey, (d) => {
+        const others = [...(d.opsDone ?? []), ...(d.op ? [d.op] : [])].filter((x) => x.id !== was.id);
+        d.opsDone = others.slice(-6);
+        d.op = back;
+    });
+    emit(chatKey);
+    return back;
+}
+
 // After a briefing (src/director/run.js): the step moved on, held or
 // done; the crew as the fight and deaths left them.
 export function opAfterBriefing(chatKey, { report = null, fight = null, deaths = [], moves = [], lost = [], met = [], metBy = '' } = {}) {
@@ -50,7 +75,9 @@ export function opAfterBriefing(chatKey, { report = null, fight = null, deaths =
         if (!doc.op) return;
         const live = isLive(doc.op) || doc.op.at?.turn === doc.turn;
         if (!live) return;
-        const next = afterBriefing(doc.op, { report, fighters: fight?.fighters ?? [], deaths, moves, lost, met, metBy }, doc.turn);
+        const recent = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-2).map((m) => String(m.mes ?? '')).join('\n');
+        const inStory = stillInStory(doc.op, { castIds: doc.canonical.castIds, recent });
+        const next = afterBriefing(doc.op, { report, fighters: fight?.fighters ?? [], deaths, moves, lost, met, metBy, inStory }, doc.turn);
         if (next && JSON.stringify(next) !== JSON.stringify(normalizeOp(doc.op))) {
             save(chatKey, next);
             const last = next.log[next.log.length - 1];
@@ -297,11 +324,29 @@ export async function opFromDirector(chatId, chatKey, settingId, opposed) {
         if (!opposed?.who || !settingId || getSettings().director.opposition === false) return null;
         const doc = getChatDoc(chatKey);
         if (isLive(doc.op)) return null;
-        const tried = `${key(opposed.who)}@${doc.canonical.locationId || ''}`;
+        // One encounter at a time; a new crew waits for this one to be over.
+        const lastOp = doc.op ?? (doc.opsDone ?? []).at(-1) ?? null;
+        if (encounterOpen({ fight: doc.fight, lastOp, castIds: doc.canonical.castIds })) {
+            console.info(LOG_PREFIX, `the other side: ${opposed.who} left alone - the encounter under way is not over`);
+            return null;
+        }
+        const lib = await import('../library/library.js');
+        const { libraryMemberships } = await import('../library/faction-sync.js');
+        const { getSettingDoc } = await import('../store/setting-store.js');
+        const characters = await lib.listEntries(chatId, settingId, 'character').catch(() => []);
+        const factions = await lib.listEntries(chatId, settingId, 'faction').catch(() => []);
+        const memberships = libraryMemberships(factions, getSettingDoc(settingId).relations ?? []);
+        const recent = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-RECENT_FOR_SIDE).map((m) => String(m.mes ?? '')).join('\n');
+        const who = sideInStory(opposed.who, { recent, factions, characters, memberships });
+        if (!who) {
+            console.info(LOG_PREFIX, `the other side: ${opposed.who} left alone - the recent chat does not have them in the story`);
+            return null;
+        }
+        const tried = `${key(who)}@${doc.canonical.locationId || ''}`;
         if ((doc.opsTried ?? []).includes(tried)) return null;
         updateChatDoc(chatKey, (d) => { d.opsTried = [...(d.opsTried ?? []), tried].slice(-20); });
-        console.info(LOG_PREFIX, `the other side: planning ${opposed.who}'s operation - ${opposed.what}`);
-        const plan = await planOp(chatId, chatKey, settingId, { side: opposed.who, request: opposed.what, aware: false });
+        console.info(LOG_PREFIX, `the other side: planning ${who}'s operation - ${opposed.what}`);
+        const plan = await planOp(chatId, chatKey, settingId, { side: who, request: opposed.what, aware: false });
         if (!plan) return null;
         // The chat may have planned one meanwhile (the user).
         if (isLive(getChatDoc(chatKey).op)) return null;

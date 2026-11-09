@@ -29,6 +29,7 @@ import { getBoundSettingId, getParents, setParent, getLocationPathNames, deleteE
 import { setCanonical } from '../state/canonical.js';
 import { beatsOf, undoBeatsFrom, unplantSeedsFrom } from '../planner/model.js';
 import { deadIds, withoutDead, deathsFrom, undoDeathsFrom } from '../state/death.js';
+import { detainedIds, withoutDetained, detainedFrom, undoDetainedFrom } from '../state/detained.js';
 import { contextualPlace } from '../library/place-context.js';
 import { reachedAfar } from '../guidance/afar.js';
 import { noteMood } from '../director/company.js';
@@ -244,7 +245,7 @@ async function reconcileOnce() {
     const powerIds = new Set(characterEntries.filter((c) => c.meta?.power?.on === true).map((c) => c.id));
     const read = followPlayer(withStateEngineCreatures(withStateEngineCast(readObserved(raw), await stateEngineCast(chatId)), await stateEngineCreatures(chatId, settingId)), doc.canonical, playerId);
     // The dead never come back by the story's reading (src/state/death.js).
-    const observed = { ...read, cast: withoutDead(read.cast, deadIds(doc)).filter((id) => !powerIds.has(id)) };
+    const observed = { ...read, cast: withoutDetained(withoutDead(read.cast, deadIds(doc)), detainedIds(doc)).filter((id) => !powerIds.has(id)) };
     // "The ruins" is the ruins the story is at, not the ones it is heading
     // for (src/library/place-context.js).
     if (settingId && observed.location && doc.canonical.locationId && observed.location !== doc.canonical.locationId) {
@@ -665,11 +666,13 @@ export async function revertFromMessage(fromIndex) {
     // Deaths those replies brought about go with them (src/state/death.js) -
     // after the scene is put back, so whoever died is in it again.
     const deaths = deathsFrom(doc.dead, fromIndex);
-    if (!touched && !deaths.length) return;
+    const heldThen = detainedFrom(doc.detained, fromIndex);
+    if (!touched && !deaths.length && !heldThen.length) return;
     // The story before that message: a death it already shows stands.
     const before = deaths.length ? (SillyTavern.getContext().chat ?? []).slice(Math.max(0, fromIndex - 40), fromIndex).filter((m) => m && !m.is_system).map((m) => String(m.mes ?? '')).join('\n') : '';
     if (!touched) {
-        await undoDeathsFrom(chatKey, fromIndex, ref.chatId, { before });
+        if (deaths.length) await undoDeathsFrom(chatKey, fromIndex, ref.chatId, { before });
+        if (heldThen.length) await undoDetainedFrom(chatKey, fromIndex, ref.chatId);
         await pushCanonicalToObserved(ref.chatId, chatKey);
         announce(chatKey);
         return;
@@ -703,6 +706,7 @@ export async function revertFromMessage(fromIndex) {
         },
     });
     if (deaths.length) await undoDeathsFrom(chatKey, fromIndex, ref.chatId, { before });
+    if (heldThen.length) await undoDetainedFrom(chatKey, fromIndex, ref.chatId);
     await pushCanonicalToObserved(ref.chatId, chatKey);
     announce(chatKey);
 }

@@ -138,8 +138,28 @@ function normalizeScheme(s) {
         // The user paused it: the world leaves it be until they let it go on.
         held: s.held === true,
         heard: s.heard === true,
+        // The person it is to get out of custody (src/state/detained.js).
+        ...(clean(s.frees) ? { frees: clean(s.frees) } : {}),
         at: str(s.at),
     };
+}
+
+// A faction sets out to get one of its own out of custody: an ordinary
+// scheme the world moves on, which frees them when done. One per person.
+// -> the scheme.
+export function startRescue(world, { factionId, factionName = '', personId, person = '', how = '', day = null, at = '', newId }) {
+    const open = world.schemes.find((s) => s.frees === personId && (s.status === 'under way' || s.status === 'stalled'));
+    if (open) return open;
+    const scheme = normalizeScheme({
+        id: newId('s'), who: [factionId], names: [factionName].filter(Boolean),
+        aim: `Get ${person} out of custody`,
+        motive: `${person} is one of theirs.`,
+        from: how,
+        steps: [`Find out where ${person} is held, and on what terms.`, 'Lean on whoever can open the door - money, favours or threats.', `${person} walks free.`],
+        done: 0, nextDay: Number.isInteger(day) ? day + 2 : null, aboutPlayer: 'none', visibility: 'rumoured', status: 'under way', startedDay: day, frees: personId, at,
+    });
+    if (scheme) world.schemes = [...world.schemes, scheme];
+    return scheme;
 }
 
 function normalizeSurfaced(x) {

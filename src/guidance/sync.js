@@ -26,6 +26,7 @@ import { PRESET_NAME } from '../preset/blueprint.js';
 import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.js';
 import { triggerLines } from '../triggers/model.js';
 import { deadText, placesTheAbsent } from '../state/death.js';
+import { detainedIds, detainedText } from '../state/detained.js';
 import { circling } from '../director/loops.js';
 import { stillWaiting, waitingIds } from '../director/suspended.js';
 import { sidesApart, sidesText } from './sides.js';
@@ -245,7 +246,7 @@ export async function gatherInputs(chatId, chatKey) {
         const patrons = (library.entries?.[id]?.patrons ?? []).map((p) => nameById0.get(p)).filter(Boolean);
         return [String(ch?.base?.role ?? ch?.role ?? '').trim(), patrons.length ? `champion of ${patrons.join(' and ')}` : ''].filter(Boolean).join(', ');
     };
-    const absentNames = allCharacters.filter((ch) => powerIds.has(ch.id) || doc.dead.some((d) => d.id === ch.id))
+    const absentNames = allCharacters.filter((ch) => powerIds.has(ch.id) || doc.dead.some((d) => d.id === ch.id) || detainedIds(doc).has(ch.id))
         .flatMap((ch) => [ch.name, String(ch.name).split(',')[0], ...(ch.aliases ?? [])]);
     for (const id of castIds) {
         if (powerIds.has(id)) continue;
@@ -605,7 +606,7 @@ export async function gatherInputs(chatId, chatKey) {
                 playerPost: latestPlayerPost(),
                 here: castIds,
                 player: cast.find((m) => m.player)?.name ?? '',
-                skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id)].filter(Boolean),
+                skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id), ...detainedIds(doc)].filter(Boolean),
             })])],
             // Those the player's posts say would not come in person (a boss
             // who sends his people): only their people turn up.
@@ -657,6 +658,7 @@ export async function gatherInputs(chatId, chatKey) {
             // Who has died in this story (src/state/death.js).
             // Only the dead the latest messages speak of.
             dead: deadText(doc, { about: whoTheyWere, recentText: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-6).map((m) => String(m.mes ?? '')).join('\n') }),
+            detained: detainedText(doc, { about: whoTheyWere, recentText: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-6).map((m) => String(m.mes ?? '')).join('\n') }),
             // Who here cannot be killed - a fate on their sheet, or the
             // chat's stance (src/director/combat.js) - so an execution or a
             // fall outside a fight spares them too.
@@ -686,7 +688,7 @@ export async function gatherInputs(chatId, chatKey) {
             spoken: spokenOf(allCharacters, {
                 recentText: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-6).map((m) => String(m.mes ?? '')).join('\n'),
                 here: castIds,
-                skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id)].filter(Boolean),
+                skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id), ...detainedIds(doc)].filter(Boolean),
                 memberships,
                 factionName: (id) => factionNames.get(id) ?? '',
                 relations: library.relations ?? [],
@@ -697,7 +699,7 @@ export async function gatherInputs(chatId, chatKey) {
             spokenNow: spokenNowText(spokenOf(allCharacters, {
                 recentText: latestPlayerPost(),
                 here: castIds,
-                skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id)].filter(Boolean),
+                skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id), ...detainedIds(doc)].filter(Boolean),
                 memberships,
                 factionName: (id) => factionNames.get(id) ?? '',
                 relations: library.relations ?? [],

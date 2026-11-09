@@ -32,6 +32,7 @@ import { questBoard } from '../quests/sync.js';
 import { normalizeGiver, givesText } from '../quests/missions.js';
 import { getSettingDoc } from '../store/setting-store.js';
 import { deadIds, isDead, markDead } from '../state/death.js';
+import { detainedIds, markDetained, rescuerOf } from '../state/detained.js';
 import { mayDie, stanceFor } from '../director/combat.js';
 import { addHappening } from '../planner/model.js';
 import {
@@ -202,7 +203,7 @@ export async function worldMoves(chatId, chatKey, settingId, { aim = null, userN
         };
         const found = stakeholders(ripples, {
             entries: cast.entries, tiesOf: cast.tiesOf, memberships: cast.memberships, knowledge,
-            present: doc.canonical.castIds, playerId, skip: [...deadIds(doc), ...world.leftAlone], stakes, schemers, limit: limits.stakeholders,
+            present: doc.canonical.castIds, playerId, skip: [...deadIds(doc), ...detainedIds(doc), ...world.leftAlone], stakes, schemers, limit: limits.stakeholders,
         }).map((s) => {
             const base = cast.byId.get(s.id)?.base ?? {};
             const facts = castFacts(s.id, { byId: cast.byId, tiesOf: cast.tiesOf, memberships: cast.memberships, knowledge, playerId, conditions: world.conditions, people: world.overlays.people });
@@ -315,6 +316,22 @@ export async function worldHereFor(chatId, chatKey, settingId, { userText = '' }
         console.warn(LOG_PREFIX, 'no WORLD HERE NOW for the director', err);
         return '';
     }
+}
+
+// Someone jailed or held (src/state/detained.js), with the faction that will
+// work to get them out - its scheme only while the world is moving; the date
+// stands either way. -> true when they were marked now.
+export async function detainPerson(chatId, chatKey, settingId, { id, name, how = '', source = 'director', reply = null }) {
+    let faction = null;
+    try {
+        if (settingId) {
+            const cast = await worldCast(chatId, settingId);
+            faction = rescuerOf((cast.memberships.get(id) ?? []).map((f) => cast.byId.get(f)).filter(Boolean), how);
+        }
+    } catch (err) {
+        console.warn(LOG_PREFIX, 'could not tell who would work to free them', err);
+    }
+    return markDetained(chatKey, { id, name, how, source, chatId, reply, faction: faction ? { id: faction.id, name: faction.name } : null, scheme: isWorldOn() });
 }
 
 // A death off scene (§2), allowed by the user or their setting: the dead

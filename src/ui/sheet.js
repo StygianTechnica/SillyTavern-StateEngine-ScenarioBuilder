@@ -28,6 +28,8 @@ import { placeSurroundings, imageSourceFor } from '../images/prompt.js';
 import { renderQuestTab } from './quest-board.js';
 import { renderMissionsTab, GIVER_TYPES } from './missions-tab.js';
 import { isDead, markDead, bringBack, setDeathHow } from '../state/death.js';
+import { isDetained, release, setDetainedHow } from '../state/detained.js';
+import { detainPerson } from '../world/run.js';
 import { suggestParents } from '../library/place-context.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { bloodlinesOf, choicesOf, lineageOf, lineageVisual, visualFor } from '../library/bloodlines.js';
@@ -343,6 +345,12 @@ export async function renderSheet(type, all) {
                 quick.push(dead
                     ? button('Bring back', () => void bringBack(ws.ctx.chatKey, entry.id).then(() => { toast('info', `${entry.name} is no longer dead in this story.`); rerender(); }), { iconName: 'fa-heart-pulse', title: 'Raised, resurrected, or never really dead: they can come back into the story' })
                     : button('Mark dead', () => void markDead(ws.ctx.chatKey, { id: entry.id, name: entry.name, source: 'user', chatId: ws.ctx.chatId }).then(() => { toast('info', `${entry.name} is dead in this story: out of the scene, and never brought back unless you do.`); rerender(); }), { iconName: 'fa-skull', title: 'They died in this story: taken out of the scene, and the director and the story never bring them back' }));
+                // Jailed or held for a time (src/state/detained.js).
+                if (!dead) {
+                    quick.push(isDetained(doc, entry.id)
+                        ? button('Release', () => void release(ws.ctx.chatKey, entry.id, { chatId: ws.ctx.chatId }).then(() => { toast('info', `${entry.name} is free again.`); void syncNow(); rerender(); }), { iconName: 'fa-lock-open', title: 'Out of custody: the story can bring them in again' })
+                        : button('Mark detained', () => void detainPerson(ws.ctx.chatId, ws.ctx.chatKey, settingId, { id: entry.id, name: entry.name, source: 'user' }).then(() => { toast('info', `${entry.name} is detained in this story: out of the scene until freed.`); void syncNow(); rerender(); }), { iconName: 'fa-handcuffs', title: 'Jailed or held for a time, not dead: out of the scene until the story or you free them. If they have a faction, it works to get them out.' }));
+                }
             }
         }
         if (type.id === 'creature') {
@@ -395,11 +403,16 @@ export async function renderSheet(type, all) {
                 status !== 'unused' ? h('span', { class: `sb-badge sb-badge-${status}` }, STATUS_LABELS[status]) : null,
                 tagEditor({ tags: draft?.meta.tags ?? entry.meta?.tags ?? [], known: tagsOf(allEntries), onChange: (tags) => setTags(entry, tags) }),
                 entry.confirmed === false ? h('span', { class: 'sb-badge' }, 'not in the setting yet') : null,
-                !isNew && isDead(doc, entry.id) ? h('span', { class: 'sb-badge sb-danger', title: (doc.dead.find((d) => d.id === entry.id)?.how) || 'Died in this story' }, icon('fa-skull'), ' Dead in this story') : null),
+                !isNew && isDead(doc, entry.id) ? h('span', { class: 'sb-badge sb-danger', title: (doc.dead.find((d) => d.id === entry.id)?.how) || 'Died in this story' }, icon('fa-skull'), ' Dead in this story') : null,
+                !isNew && isDetained(doc, entry.id) ? h('span', { class: 'sb-badge sb-badge-warn', title: (() => { const d = doc.detained.find((x) => x.id === entry.id); return [d?.how, d?.freedBy && (d.freeDay !== null ? `${d.freedBy} is working to get them out` : '')].filter(Boolean).join(' - ') || 'Held in this story'; })() }, icon('fa-handcuffs'), ' Detained') : null),
             // How they died - the director's guess can be wrong; yours stands.
             !isNew && !ws.editing && isDead(doc, entry.id) ? h('label', { class: 'sb-field sb-death-how', title: 'Told to the game master and the narrator with their name. Saving it makes the death yours: undoing the reply it was reported in no longer undoes it.' },
                 h('span', { class: 'sb-field-label' }, 'How they died'),
                 h('input', { class: 'text_pole', placeholder: 'e.g. cut down by the Eternal Champion in the crypt', value: doc.dead.find((d) => d.id === entry.id)?.how ?? '', onchange: (e) => void setDeathHow(ws.ctx.chatKey, entry.id, e.target.value).then(() => { toast('success', 'Saved.'); void syncNow(); }) })) : null,
+            // Who holds them - told to the game master and the narrator.
+            !isNew && !ws.editing && isDetained(doc, entry.id) ? h('label', { class: 'sb-field sb-death-how', title: 'Told to the game master and the narrator with their name. Saving it makes the detention yours: undoing the reply it was reported in no longer undoes it.' },
+                h('span', { class: 'sb-field-label' }, 'Held by'),
+                h('input', { class: 'text_pole', placeholder: 'e.g. the city police, for the museum job', value: doc.detained.find((x) => x.id === entry.id)?.how ?? '', onchange: (e) => void setDetainedHow(ws.ctx.chatKey, entry.id, e.target.value).then(() => { toast('success', 'Saved.'); void syncNow(); }) })) : null,
             quick.length ? h('div', { class: 'sb-actions' }, quick) : null));
 
     // ---- tabs

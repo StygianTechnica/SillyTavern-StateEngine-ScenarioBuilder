@@ -11,7 +11,7 @@
 // are pure (and tested).
 
 import { poolLine, swapInvented, applySwaps } from '../naming/live.js';
-import { JOB } from './detect.js';
+import { JOB, namesOf, wordIn } from './detect.js';
 
 const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim();
 const cut = (text, max) => {
@@ -231,6 +231,30 @@ export function findSide(name, factions = [], characters = [], memberships = new
     if (!person) return { faction: null, leader: null };
     const theirs = (memberships.get(person.id) ?? [])[0];
     return { faction: factions.find((f) => f.id === theirs) ?? null, leader: person };
+}
+
+// The group the game master named, if the recent chat has it in the story:
+// the faction, or one of its people, named there. Assassins Inc: an OPPOSED
+// line of "Omicron Innovations/Enrique's team", in the middle of a standoff
+// with Enrique's men, started an Omicron crew at the museum - no one had
+// said Omicron in seventy messages. Of several, the first the chat shows.
+// -> its name, or ''.
+export function sideInStory(who, { recent = '', factions = [], characters = [], memberships = new Map() } = {}) {
+    for (const part of clean(who).split(/\s*(?:\/|&|\+|,|\band\b)\s*/i).map(clean).filter(Boolean)) {
+        const owner = part.replace(/['’]s\s+[\p{L}-]+(?:\s+[\p{L}-]+)?$/u, '');
+        // "Enrique's team" is Enrique Medina's.
+        const byFirst = characters.find((c) => key(clean(c.name).split(/\s+/)[0]) === key(owner))?.name;
+        const found = [part, owner, byFirst].filter(Boolean).map((n) => findSide(n, factions, characters, memberships)).find((f) => f.faction || f.leader);
+        if (found?.faction) {
+            const people = characters.filter((c) => (memberships.get(c.id) ?? []).includes(found.faction.id));
+            if (namesOf(found.faction, people).some((n) => wordIn(n, recent))) return found.faction.name;
+        } else if (found?.leader) {
+            if (namesOf(found.leader, []).some((n) => wordIn(n, recent))) return found.leader.name;
+        } else if (wordIn(part.replace(/^the\s+/i, ''), recent) || wordIn(owner.replace(/^the\s+/i, ''), recent)) {
+            return part;
+        }
+    }
+    return '';
 }
 
 // Whether text names any of `names` (the player character, their side).

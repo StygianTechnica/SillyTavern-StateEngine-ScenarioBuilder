@@ -7,7 +7,7 @@
 
 import { getChatDoc } from '../store/chat-store.js';
 import { getSettings } from '../settings.js';
-import { planOp, startOpPlan, markOpAction, setOpCrew, clearOp, reviseOpPlan, setOpTapped } from '../ops/run.js';
+import { planOp, startOpPlan, markOpAction, setOpCrew, clearOp, reviseOpPlan, setOpTapped, gotAwayOp, putBackOp } from '../ops/run.js';
 import { isLive, currentStep, crewOut, crewTotal, breakPoint, CREW_STATES } from '../ops/model.js';
 import { readOpPlan, opPlanText, matchPeople } from '../ops/generate.js';
 import { syncNow } from '../guidance/sync.js';
@@ -70,7 +70,10 @@ function setupView(chatKey, factions, people, last) {
         }
     };
     const options = [{ value: '', label: 'Whose operation...' }, ...factions.map((f) => ({ value: f.id, label: f.name }))];
+    const away = gotAwayOp(chatKey);
+    const putBack = () => { const back = putBackOp(chatKey); if (back) toast('success', `${back.side}'s operation is running again, on its last step.`); rerender(); };
     return h('div', {},
+        away ? h('p', { class: 'sb-muted' }, `${away.side} is marked as having got away. `, h('a', { class: 'sb-link', title: 'It is not over: they run again from their last step, and it can be edited from there', onclick: putBack }, 'Not over - put it back')) : null,
         last && !isLive(last) && last.endText ? h('p', { class: 'sb-muted' }, `Last: ${last.endText}`, ' ', h('a', { class: 'sb-link', onclick: () => { clearOp(chatKey); rerender(); } }, 'clear')) : null,
         draft ? h('div', {},
             h('small', { class: 'sb-hint' }, 'One line each - change anything. CREW: name | skill | post. STEP lines in order (add "| done" for one the story already played). BREAK: crew down before they pull out.'),

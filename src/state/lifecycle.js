@@ -40,6 +40,7 @@ import { directBeforeReply, addNamedPeople, thinkAfterReply } from '../director/
 import { ensureClock, advanceBy, setTime, perTurnDefault } from '../calendar/clock.js';
 import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
 import { healMissing } from './canonical.js';
+import { settleDetained } from './detained.js';
 import { fillRoles } from '../preset/role-fill.js';
 import { setReplying } from '../generate/llm.js';
 import { syncFactions } from '../library/faction-sync.js';
@@ -154,6 +155,8 @@ async function prepareReply(ref, type) {
         if ((!type || type === 'normal') && storyNotBegun(SillyTavern.getContext().chat ?? [])) await maybeSaveOriginal();
         await reconcileOpenChat();
         await healMissing(ref.chatId, chatKeyFor(ref));
+        // Those whose faction has got them out of custody (src/state/detained.js).
+        await settleDetained(chatKeyFor(ref));
         await pushCanonicalToObserved(ref.chatId, chatKeyFor(ref));
         const chatKey = chatKeyFor(ref);
         const settingId = await getBoundSettingId(ref.chatId);

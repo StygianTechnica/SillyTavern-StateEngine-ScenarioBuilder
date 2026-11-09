@@ -41,7 +41,7 @@ import { rivalAtWork } from '../ops/detect.js';
 import { whoCouldTurnUp, belongingHere, enemyGround, sharedScenes, lastSeen, firstMeetings, elsewhereEntering } from './whereabouts.js';
 import { rankNearby } from './company.js';
 import { arrivals, addRipple } from '../world/model.js';
-import { isWorldOn, takeHeard, worldHereFor, noteHeartRipple } from '../world/run.js';
+import { isWorldOn, takeHeard, worldHereFor, noteHeartRipple, detainPerson } from '../world/run.js';
 import { bondsOf, heartsSection, noteBrokenVows, takeHearts, jealousyOf } from './jealousy.js';
 import { hasArchivist, storyRelationships, relationshipLine } from '../library/story-relations.js';
 import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from '../library/powers.js';
@@ -54,6 +54,7 @@ import { timedHappenings } from '../planner/timed.js';
 // How many replies a broken-off fight's wounds are remembered.
 const WOUNDS_KEPT = 30;
 import { markDead, deadText, deadByName, bringBack } from '../state/death.js';
+import { isDetained, detainedText, detainedByName, soundsHeld, release } from '../state/detained.js';
 import { contextualPlace } from '../library/place-context.js';
 import { personGender } from '../naming/classify.js';
 import { creatureFormOf, readCount, addCount, takeCount, creatureLabel } from '../library/creature-form.js';
@@ -484,7 +485,7 @@ export async function sceneContext(chatId, chatKey, settingId, guidance) {
     const relations = settingId ? listRelations(settingId) : [];
     const parents = settingId ? getParents(settingId) : {};
     const locationId = doc.canonical.locationId || guidance.location?.id || '';
-    const people = characters.filter((c) => !isPower(c) && !doc.dead.some((d) => d.id === c.id));
+    const people = characters.filter((c) => !isPower(c) && !doc.dead.some((d) => d.id === c.id) && !isDetained(doc, c.id));
     const factionList = settingId ? await listEntries(chatId, settingId, 'faction').catch(() => []) : [];
     const placeName = new Map((settingId ? await listEntries(chatId, settingId, 'location').catch(() => []) : []).map((p) => [p.id, p.name]));
     // Those at home here - the head of the crew whose headquarters this is -
@@ -764,6 +765,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             const patrons = patronsOf(ch).map((p) => characters.find((x) => x.id === p)?.name).filter(Boolean);
             return [ch?.base?.role ?? ch?.role ?? '', patrons.length ? `champion of ${patrons.join(' and ')}` : ''].filter((x) => String(x).trim()).join(', ');
         } }),
+        detainedText: detainedText(doc, { recentText: messages.slice(-6).map((m) => m.text).join('\n') }),
         powersText: powersText(atWork),
         suspendedText: suspendedText(waiting, nameOfId),
         splitText: splitText(waiting, nameOfId),
@@ -1293,6 +1295,27 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             if (who && !playerNames.some((p) => p.toLowerCase() === who.name.toLowerCase()) && !spared(who) && await markDead(chatKey, { id: who.id, name: who.name, how: d.how, source: 'director', chatId, reply: replyIndex })) {
                 console.info(LOG_PREFIX, `${who.name} died: ${d.how || 'in the story'}`);
             }
+        }
+        // Jailed or held for a time (src/state/detained.js): out of the scene
+        // until freed. Never the player character, and only someone the
+        // recent chat has in it, on words that say custody.
+        const namedHere = (c) => namedAtAll([c.name, String(c.name).split(/[\s,]+/)[0], ...(c.aliases ?? c.base?.aliases ?? [])], storyText);
+        const whoIs = (name) => {
+            const key = String(name).toLowerCase();
+            return characters.find((c) => [c.name, ...(c.aliases ?? c.base?.aliases ?? [])].some((n) => String(n).toLowerCase() === key))
+                ?? characters.find((c) => String(c.name).toLowerCase().includes(key)) ?? null;
+        };
+        for (const d of parsed.detentions ?? []) {
+            const who = whoIs(d.name);
+            if (!who || playerNames.some((p) => p.toLowerCase() === who.name.toLowerCase()) || !namedHere(who) || !soundsHeld(d.how)) continue;
+            if (await detainPerson(chatId, chatKey, settingId, { id: who.id, name: who.name, how: d.how, source: 'director', reply: replyIndex })) console.info(LOG_PREFIX, `${who.name} detained: ${d.how}`);
+        }
+        for (const r of parsed.releases ?? []) {
+            const held = getChatDoc(chatKey).detained;
+            const who = whoIs(r.name);
+            const record = (who ? held.find((x) => x.id === who.id) : null) ?? detainedByName(held, r.name);
+            if (!record || !namedAtAll([record.name, record.name.split(/[\s,]+/)[0]], storyText)) continue;
+            if (await release(chatKey, record.id, { chatId })) console.info(LOG_PREFIX, `${record.name} released: ${r.how || 'in the story'}`);
         }
         // Back from the dead, when the story itself brings them back (RISES):
         // only someone on the dead list whom the recent chat names.

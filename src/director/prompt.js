@@ -396,6 +396,8 @@ export function dossierText(input) {
     }
     // Who has died in this story (src/state/death.js).
     if (clean(input.deadText)) { section('THE DEAD (gone for good - they can be mourned, remembered or spoken of, never shown alive, speaking or acting - unless the latest chat itself brings one back: RISES)'); lines.push(clean(input.deadText)); }
+    // Who is jailed or held for a time (src/state/detained.js).
+    if (clean(input.detainedText)) { section('THE HELD (jailed or held for now - they can be spoken of, or visited where they are held, but they do not come into the scene or act on their own unless the latest chat frees them: RELEASED)'); lines.push(clean(input.detainedText)); }
     // Who cannot be killed here (src/director/combat.js).
     if (clean(input.protectedText)) { section('NEVER KILLED IN THIS STORY'); lines.push(clean(input.protectedText)); }
     // The fight as Scenario Builder keeps it (src/director/fight.js).
@@ -602,6 +604,14 @@ export function buildDirectorPrompt(input) {
             '',
             `Only if the latest chat itself brings back someone under THE DEAD - resurrected, raised as undead, revived, or shown never to have died - or a power under POWERS AT WORK brings them back in this reply in its own way (with its POWER line, and the price it demands - bringing back the dead is never free), a line for each. Never on your own, and never because it would suit the story:`,
             'RISES | <name> | <how, a few words>',
+        ] : []),
+        '',
+        `If someone other than ${userName} is arrested, jailed or taken captive and led away in this reply, out of the story for a while, a line for each - not someone only held at gunpoint, tied up for the moment or still in the scene:`,
+        'DETAINED | <name> | <who holds them and why, a few words>',
+        ...(clean(input.detainedText) ? [
+            '',
+            'Only if the latest chat itself frees someone under THE HELD - let go, bailed out, broken out - a line for each:',
+            'RELEASED | <name> | <how, a few words>',
         ] : []),
         ...(clean(input.powersText) ? [
             '',
@@ -837,7 +847,7 @@ export function isPlaceholder(value) {
 
 // A format line, whether or not it could be read - never left in the prose.
 // The format lines' keys, in capitals as the prompt writes them.
-const FORMAT_KEYS = 'TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAMES|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED|OPERATION|OPPOSED|CREW|LOST';
+const FORMAT_KEYS = 'TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|DETAINED|RELEASED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAMES|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED|OPERATION|OPPOSED|CREW|LOST';
 const KEY_COLON = new RegExp(`^(\\s*(?:[-*]\\s*)?\\**)(${FORMAT_KEYS})(\\**)\\s*:\\s*(?!\\|)(.*)$`);
 // (A bare "BACK" is a line of its own, not a heading.)
 const KEY_HEADING = new RegExp(`^\\s*(?:[-*#]\\s*)*\\**(?:[A-Za-z]+\\s+(?:${FORMAT_KEYS})(?:\\s+lines?)?\\**\\s*:?|(?:${FORMAT_KEYS})\\s+lines?\\**\\s*:?)\\s*$`);
@@ -860,7 +870,7 @@ export function formatLineAsMeant(raw) {
 // A line opening with a heading in capitals, two words or more, then a bar
 // or a colon: "DUE TODAY |", "SET FOR LATER:", "WHO IS HERE -".
 export const HEADER_ECHO = /^\s*(?:[-*]\s*)?\**[A-Z][A-Z']+(?:\s+[A-Z][A-Z']+)+\**\s*(?:\(|\||:|\s-\s)/;
-const FORMAT_LINE =/^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAMES|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
+const FORMAT_LINE =/^\s*(?:[-*]\s*)?\**(?:TIME|SCENE|SITUATION|WEATHER|NOW|MOVE|ENTERS|ENTERED|ENTERING|ENTER|ARRIVES|ARRIVED|LEAVES|LEFT|LEAVING|LEAVE|EXITS|EXITED|DETAINED|RELEASED|FIGHT|DIES|DIED|RISES|ROSE|REVIVED|REVIVES|POWER|BARGAIN|SET|SETTLED|AWAY|BACK|NEW|RENAMES|RENAME|BEAT|HEARD|JEALOUS|ROMANCE|SOOTHED)\b\**\s*:?\s*(?:[a-z]+\s*)?\|/i;
 
 // The model's reply -> { note, summary, direction, created: [{ kind, name, description, here }],
 //   time: { text, why } | null, enters: [name], leaves: [name] }.
@@ -887,6 +897,8 @@ export function parseDirectorNote(raw) {
     const soothed = [];
     const fights = [];
     const deaths = [];
+    const detentions = [];
+    const releases = [];
     const risings = [];
     const powers = [];
     const bargains = [];
@@ -956,6 +968,15 @@ export function parseDirectorNote(raw) {
         if (dd) {
             const name = clean(dd[1]).replace(/^["'*]+|["'*.]+$/g, '');
             if (name && !isPlaceholder(name) && !/^(none|no one|nobody|-)$/i.test(name) && deaths.length < 6) deaths.push({ name, how: isPlaceholder(dd[2]) ? '' : clean(dd[2]) });
+            continue;
+        }
+        // DETAINED | <name> | <who holds them> / RELEASED | <name> | <how>
+        // (src/state/detained.js)
+        const hl = line.match(/^\s*(?:[-*]\s*)?\**(DETAINED|RELEASED)\**\s*:?\s*\|\s*([^|]+?)\s*(?:\|\s*([^|]*?)\s*)?$/i);
+        if (hl) {
+            const name = clean(hl[2]).replace(/^["'*]+|["'*.]+$/g, '');
+            const list = /^d/i.test(hl[1]) ? detentions : releases;
+            if (name && !isPlaceholder(name) && !/^(none|no one|nobody|-)$/i.test(name) && list.length < 4) list.push({ name, how: isPlaceholder(hl[3]) ? '' : clean(hl[3]) });
             continue;
         }
         // FIGHT | <name> | <condition> | <foe or ally> (src/director/fight.js)
@@ -1118,7 +1139,7 @@ export function parseDirectorNote(raw) {
     // A briefing cut off or told as story lost its "Next:" end; any other
     // paragraph is not direction.
     const parts = tidy.flaws.length && !MARKER.test(text) ? { summary: text, direction: '' } : splitNote(text);
-    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, jealous, romance, soothed, fights, deaths, risings, powers, bargains, sets, settled, operation, opposed, crewMoves, crewLost, away, back };
+    return { note: text, ...parts, flaws: tidy.flaws, created, time, weather, scene, situation, move, now, enters: [...new Set(enters)], leaves: [...new Set(leaves)], renames, beats, heard, jealous, romance, soothed, fights, deaths, detentions, releases, risings, powers, bargains, sets, settled, operation, opposed, crewMoves, crewLost, away, back };
 }
 
 // The first library entry `text` names that nothing the scene stands on

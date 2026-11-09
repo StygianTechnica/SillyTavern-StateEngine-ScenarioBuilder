@@ -198,6 +198,22 @@ export function crewIndex(op, name) {
     return (op?.crew ?? []).findIndex((c) => sameName(c.name, name));
 }
 
+// Whether the story still has the crew in it, so the job cannot be over:
+// one of those not out of it is in the scene, or the latest messages name
+// them other than getting away. castIds: the scene's; recent: the text.
+const GOT_OFF = /\b(?:escap(?:e|es|ed|ing)|got away|gets? away|getting away|slipp(?:ed|ing) away|fled|flees|vanish(?:ed|es)|drove off|sped off|long gone|made off)\b/i;
+export function stillInStory(op, { castIds = [], recent = '' } = {}) {
+    const people = [...(op?.leader?.name ? [op.leader] : []), ...(op?.crew ?? []).filter((c) => !OUT.has(c.state))];
+    if (people.some((p) => p.objectId && castIds.includes(p.objectId))) return true;
+    const sentences = String(recent ?? '').split(/(?<=[.!?…]["”*]?)\s+|\n+/);
+    return people.some((p) => {
+        const first = clean(p.name).split(/[\s"']+/)[0] ?? '';
+        if (first.length < 3) return false;
+        const named = new RegExp(`(^|[^\\p{L}])${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?!\\p{L})`, 'iu');
+        return sentences.some((s) => named.test(s) && !GOT_OFF.test(s));
+    });
+}
+
 // After a briefing: the director's OPERATION report ({ status, how } or
 // null), the fight as it stands (fighters: [{ name, condition }]) and the
 // deaths (DIES: [{ name }]) moved into the operation for reply `turn`. A
@@ -207,7 +223,7 @@ export function afterBriefing(op, said = {}, turn = 0) {
     const o = briefed(op, said, turn);
     return o && isLive(o) ? placeCrew(o) : o;
 }
-function briefed(op, { report = null, fighters = [], deaths = [], moves = [], lost = [], met = [], metBy = '' } = {}, turn = 0) {
+function briefed(op, { report = null, fighters = [], deaths = [], moves = [], lost = [], met = [], metBy = '', inStory = false } = {}, turn = 0) {
     let o = normalizeOp(op);
     if (!o) return null;
     if (o.at?.turn === turn && o.at.before) o = normalizeOp(o.at.before) ?? o;
@@ -311,6 +327,10 @@ function briefed(op, { report = null, fighters = [], deaths = [], moves = [], lo
         return { ...note({ ...o, held }, turn, `Held at "${step.text}"${how ? `: ${how}` : ''}.`), at: { turn, before } };
     }
     if (said === 'done' || overdue) {
+        // The last step waits while the story still has them: Enrique's job
+        // "got away" with Delvin on Cyril's cameras, and the empty slot went
+        // to a crew no one had heard of.
+        if (o.current + 1 >= o.steps.length && inStory) return { ...o, at: { turn, before } };
         o = note(o, turn, `Done: ${step.text}${how ? ` - ${how}` : ''}.`);
         const next = o.current + 1;
         if (next >= o.steps.length) return { ...end(o, turn, 'got away', `${o.side} got what they came for: ${o.aim}`), at: { turn, before } };
@@ -365,6 +385,23 @@ export function markOp(op, action, turn) {
         return note({ ...o, current: next, stepTurn: turn, held: 0, at: null, steps: o.steps.map((s, i) => ({ ...s, status: i < next ? 'done' : i === next ? 'current' : 'pending' })) }, turn, 'The user moved them on a step.');
     }
     return o;
+}
+
+// The user says a job marked "got away" is not over: running again, on its
+// last step. -> the operation, or null when it did not get away.
+export function reopenOp(op, turn) {
+    const o = normalizeOp(op);
+    if (!o || o.status !== 'got away' || !o.steps.length) return null;
+    const last = o.steps.length - 1;
+    return note({ ...o, status: 'running', endedTurn: null, endText: '', current: last, stepTurn: turn + 1, held: 0, at: null, steps: o.steps.map((s, i) => ({ ...s, status: i < last ? 'done' : 'current' })) }, turn, 'The user put it back: it is not over.');
+}
+
+// The newest job that "got away" not long ago, the one to offer putting
+// back. list: the operations, oldest first. -> the operation or null.
+const REOPEN_WITHIN = 40;
+export function reopenable(list, turn) {
+    const o = (list ?? []).filter((x) => x?.status === 'got away').at(-1) ?? null;
+    return o && Number.isInteger(o.endedTurn) && turn - o.endedTurn <= REOPEN_WITHIN ? o : null;
 }
 
 // One crew member's state set by hand (the GM Plan card).

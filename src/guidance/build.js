@@ -645,8 +645,15 @@ const BUILDERS = {
     summary: (input) => directorPart(input.director, 'summary'),
     absent: (input) => absentSection(input.absent),
     triggered: (input) => triggeredSection(input.triggered),
-    // Who has died in this story (src/state/death.js).
-    dead: (input) => (clean(input.dead) ? { full: `Dead and gone in this story - they can be mourned, remembered or spoken of, but never written alive, speaking or acting: ${clean(input.dead)}`, compact: '' } : null),
+    // Who has died in this story (src/state/death.js), and who is jailed or
+    // held for now (src/state/detained.js).
+    dead: (input) => {
+        const parts = [
+            clean(input.dead) ? `Dead and gone in this story - they can be mourned, remembered or spoken of, but never written alive, speaking or acting: ${clean(input.dead)}` : '',
+            clean(input.detained) ? `Held and not free to act - they can be spoken of or visited where they are held, but they do not come into this scene or act on their own: ${clean(input.detained)}` : '',
+        ].filter(Boolean);
+        return parts.length ? { full: parts.join('\n'), compact: '' } : null;
+    },
     // Who here cannot be killed (src/director/combat.js).
     protected: (input) => (clean(input.protected) ? { full: `Never killed in this story: ${clean(input.protected)}`, compact: '' } : null),
     // Each fighter's condition, kept from reply to reply (src/director/fight.js).

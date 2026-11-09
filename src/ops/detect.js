@@ -14,14 +14,24 @@ const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const AT_ODDS = /distrust|mistrust|enem|rival|hostil|\bwar\b|oppos|hate|feud|against|suspic|wary|target(?:s|ed|ing)?\b|hunt\w*|competit/i;
 export const JOB = /\b(?:heists?|raid(?:s|ing)?|break-?ins?|breaking in|breach(?:es|ed|ing)?|theft|thie(?:f|ves)|burglar\w*|robb(?:ery|eries|ing)|steal(?:s|ing)?|ambush(?:es|ing)?|kidnap(?:s|ping)?|hijack(?:s|ing)?|smuggl\w*|assault\w*|sabotag\w*)\b/i;
 
-const wordIn = (name, text) => {
+// Whether the last encounter is still being played out: a fight under way,
+// or the people of the job just ended still in the scene. Assassins Inc:
+// with Delvin held at gunpoint, a second crew was started at the museum.
+// fight: doc.fight; lastOp: the newest operation over; castIds: the scene's.
+export function encounterOpen({ fight = null, lastOp = null, castIds = [] } = {}) {
+    if (fight && !fight.ended && (fight.fighters ?? []).length) return true;
+    const theirs = [lastOp?.leader?.objectId, ...(lastOp?.crew ?? []).map((c) => c?.objectId)].filter(Boolean);
+    return theirs.some((id) => (castIds ?? []).includes(id));
+}
+
+export const wordIn = (name, text) => {
     const n = clean(name);
     return n.length >= 4 && new RegExp(`(^|[^\\p{L}\\p{N}])${escape(n)}(?=$|[^\\p{L}\\p{N}])`, 'iu').test(text);
 };
 
 // The names a faction goes by in the chat: its own, and its people's (a
 // first name of four letters or more will do: "Enrique's heist").
-function namesOf(faction, people = []) {
+export function namesOf(faction, people = []) {
     const own = [faction.name, ...(faction.aliases ?? faction.base?.aliases ?? [])].map(clean).filter(Boolean);
     const theirs = people.flatMap((p) => {
         const full = clean(p.name);
