@@ -48,7 +48,7 @@ import { isPower, patronsOf, powersAtWork, powersText, powersNarratorText } from
 import { namedAtAll } from '../validate/drift.js';
 import { circling } from './loops.js';
 import { shownLeaving, shownArriving } from './departures.js';
-import { goesAlone, goesTogether, namedGoing, leftOut, MOVING, sameGround, goesThere } from './going-along.js';
+import { goesAlone, goesTogether, namedGoing, leftOut, MOVING, sameGround, goesThere, namesPlace, leavesHere, leftBehind } from './going-along.js';
 import { timedHappenings } from '../planner/timed.js';
 
 // How many replies a broken-off fight's wounds are remembered.
@@ -422,7 +422,16 @@ async function moveScene(chatId, chatKey, settingId, move, { guidance, character
     // the place around it is no move at all; in to a part of it names the
     // spot more closely. No one is left behind either way.
     const ground = made || headed || !clean(latestText) ? '' : sameGround(parents, from, place.id);
-    const staying = !!ground && !goesThere(latestText, [place.name, move.place, ...(place.aliases ?? place.base?.aliases ?? [])]);
+    const placeNames = [place.name, move.place, ...(place.aliases ?? place.base?.aliases ?? [])];
+    const staying = !!ground && !goesThere(latestText, placeNames);
+    // Further in, while the post runs out and does not say to there: Cyril
+    // sprinted out of the surveillance room as the MOVE took the scene into
+    // it, and Tadam, waiting there, was "met again".
+    const runningOff = leavesHere(latestText, { playerNames, people: characters.filter((c) => castIds.includes(c.id)).map((c) => ({ id: c.id, names: callNames(c) })) });
+    if (ground === 'in' && runningOff && !namesPlace(latestText, placeNames)) {
+        console.info(LOG_PREFIX, `MOVE to ${place.name} left alone: the player's post runs out, and not to there`);
+        return null;
+    }
     if (staying && ground === 'out') {
         console.info(LOG_PREFIX, `MOVE to ${place.name} left alone: it is around where the scene already is, and the player's post goes nowhere`);
         return null;
@@ -1011,11 +1020,27 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         const behind = movedFrom ? castIds.filter((id) => !baseCast.includes(id) && !dead.has(id) && id !== playerIdOf(settingId, characters)) : [];
         const away = steppedAway({ away: parsed.away, moved: !!movedFrom, newPlace: !!to && !doc.inPlay.includes(to), latestText: lately });
         const otherworld = steppedAway({ moved: true, newPlace: true, latestText: lately });
-        if (away && !(behind.length && !otherworld && splitsUp(messages.slice(-3).map((m) => m.text).join('\n')))) {
+        const hereNow = characters.filter((c) => castIds.includes(c.id) && c.id !== playerIdOf(settingId, characters)).map((c) => ({ id: c.id, names: callNames(c) }));
+        const ranOff = leavesHere(latestUserText, { playerNames, people: hereNow });
+        const parting = ranOff || splitsUp(messages.slice(-3).map((m) => m.text).join('\n'));
+        // Ran out with no move to go with it: those not going along are left
+        // where they are, not carried off in the cast. Someone the user put
+        // in the scene by hand stays with it.
+        if (ranOff && !movedFrom && !away) {
+            const kept = new Set(doc.held.filter((h) => h.field === 'cast' && h.op === 'add' && h.until > doc.turn).map((h) => h.objectId));
+            const stay = leftBehind(latestUserText, { playerNames, people: hereNow }).filter((id) => baseCast.includes(id) && !kept.has(id) && !dead.has(id));
+            if (stay.length) {
+                baseCast = baseCast.filter((id) => !stay.includes(id));
+                const names = stay.map((id) => nameOfId(id)).filter(Boolean);
+                setCanonical(chatKey, { castIds: baseCast }, { chatId, source: 'director', note: `${names.join(', ')} stay${names.length === 1 ? 's' : ''} behind as ${playerNames[0] || 'the player character'} leaves` });
+                updateChatDoc(chatKey, (d) => { d.suspended = suspend(stillWaiting(d.suspended, d.turn), { ...doc.canonical, castIds: stay }, { hanging: doc.canonical.sceneSummary, turn: d.turn, at: new Date().toISOString(), split: true }); });
+            }
+        }
+        if (away && !(behind.length && !otherworld && parting)) {
             const hanging = parsed.away || doc.canonical.sceneSummary;
             updateChatDoc(chatKey, (d) => { d.suspended = suspend(stillWaiting(d.suspended, d.turn), doc.canonical, { hanging, turn: d.turn, at: new Date().toISOString(), otherworld }); });
             console.info(LOG_PREFIX, `the story steps away from "${doc.canonical.sceneTitle || nameOfId(doc.canonical.locationId)}"; it waits: ${hanging}`);
-        } else if (behind.length && !otherworld && splitsUp(messages.slice(-3).map((m) => m.text).join('\n'))) {
+        } else if (behind.length && !otherworld && parting) {
             // The group split up: those who stayed carry on where they were,
             // kept out of the player character's scene until it goes back
             // there or the story brings them.
