@@ -6,7 +6,7 @@
 //     one reply's slip, and every prompt after read it back as fact);
 //   - one of the dead speaking or acting.
 // A hit is a correction in the next in-chat note - the reply is never
-// rewritten. Subtler contradictions are for a model check (ROADMAP,
+// rewritten, pronouns apart (repairReply). Subtler contradictions are for a model check (ROADMAP,
 // "Continuity check by model"). Pure.
 
 import { FEMALE, MALE } from '../naming/classify.js';
@@ -147,6 +147,25 @@ function plainlyMeant(prev, s, gender, names, rest) {
         && !wrong.test(before.slice(0, at)) && !/^(?:the|a|an|one|some|someone|another|two|three|four)\b/i.test(before)
         && !noun.test(before) && !noun.test(upTo);
 }
+// A wrong pronoun further on in a sentence that names this person partway
+// through: "signaling Inji's confirmation of her position", "he spots Inji
+// crouched by a cabinet, her rifle trained on the thief". Only where it can
+// only describe them (", her rifle", "of her position", "as she turned") -
+// "Inji's hand found her shoulder" may well be someone else's - with no one
+// else named, and no one unnamed of that gender, in between. -> its place in
+// `s`, or -1.
+const MID_RIGHT = { m: ['she', 'her', 'herself'], f: ['he', 'his', 'himself'] };
+function wrongAfterName(s, gender, names, rest) {
+    const plain = String(s ?? '').replace(/["“][^"”]*["”]/g, (q) => ' '.repeat(q.length));
+    const at = firstAt(plain, names);
+    if (at < 0) return -1;
+    const [subject, owner, self] = MID_RIGHT[gender];
+    const m = new RegExp(String.raw`(?:,|\bof)\s+${owner}\s+\p{L}|(?:,|\b(?:as|while|when|and|but|before|after|until))\s+${subject}\b|\b${self}\b`, 'iu').exec(plain.slice(at));
+    if (!m || m.index > 120) return -1;
+    const between = plain.slice(at, at + m.index);
+    return firstAt(between, rest) >= 0 || (gender === 'f' ? MAN : WOMAN).test(between) ? -1 : at + m.index;
+}
+
 export function pronounSlips(people = [], text = '', { others = [] } = {}) {
     const out = [];
     const t = String(text ?? '').replace(/["“][^"”]*["”]/g, ' ');
@@ -158,9 +177,12 @@ export function pronounSlips(people = [], text = '', { others = [] } = {}) {
         const wrong = p.gender === 'f' ? HIS : HERS;
         // The narrator's asterisks are not part of the sentence.
         const list = sentences(t).map((s) => s.replace(LEAD, ''));
+        // Those here the wrong pronoun would be right for.
+        const could = (people ?? []).filter((q) => q !== p && q.gender && q.gender !== p.gender).flatMap(namesOf);
         const slip = list.some((s, i) => {
             if (i > 0 && plainlyMeant(list[i - 1], s, p.gender, names, rest)) return true;
             const at = firstAt(s, names);
+            if (at > 0 && firstAt(`${list[i - 1] ?? ''} ${s}`, could) < 0 && wrongAfterName(s, p.gender, names, rest) >= 0) return true;
             if (at !== 0) return false;
             // Up to the next person named: the pronouns there are theirs.
             const next = firstAt(s.slice(1), rest);
@@ -264,7 +286,14 @@ export function fixPronounsIn(text, person, others = []) {
     const wrongWord = person.gender === 'f' ? HIS : HERS;
     const unsafe = rest.filter((o) => o.gender !== person.gender).flatMap(namesOf);
     const noun = person.gender === 'f' ? MAN : WOMAN;
-    const out = String(text ?? '').split(/(?<=[.!?…]["”’']?)(\s+)/).map((s) => {
+    // Speech set aside whole, its closing mark kept for where a sentence
+    // ends: split as text, "Her? She left," had its second half changed.
+    const spoken = [];
+    const masked = String(text ?? '').replace(/["“][^"”]*["”]/g, (q) => {
+        spoken.push(q);
+        return `"${spoken.length - 1}${/[.!?…](?=["”]$)/.exec(q)?.[0] ?? ''}"`;
+    });
+    const out = masked.split(/(?<=[.!?…]["”’']?)(\s+)/).map((s) => {
         if (!s.trim()) return s;
         const plain = s.replace(/^[\s"“*_-]+/, '');
         const lead = s.slice(0, s.length - plain.length);
@@ -290,6 +319,13 @@ export function fixPronounsIn(text, person, others = []) {
             const end = next < 0 ? plain.length : next + 1;
             return lead + fixNarration(plain.slice(0, end), swap) + plain.slice(end);
         }
+        // Named partway through, then plainly described.
+        const from = firstAt(plain, names) > 0 && firstAt(`${before} ${plain}`, unsafe) < 0 ? wrongAfterName(plain, person.gender, names, restNames) : -1;
+        if (from >= 0) {
+            const next = firstAt(plain.slice(from + 1), restNames);
+            const end = next < 0 ? plain.length : from + 1 + next;
+            return lead + plain.slice(0, from) + fixNarration(plain.slice(from, end), swap) + plain.slice(end);
+        }
         const opens = /^(he|she|his|her|him)\b/i.exec(plain);
         const wrongOpen = opens && (person.gender === 'f' ? /^(?:he|his|him)$/i : /^(?:she|her)$/i).test(opens[1]);
         if (theirs && wrongOpen) {
@@ -300,8 +336,34 @@ export function fixPronounsIn(text, person, others = []) {
         // Someone else named: the next he / she may be theirs.
         theirs = theirs && firstAt(plain, restNames) < 0;
         return s;
-    }).join('');
+    }).join('').replace(/"(\d+)[.!?…]?"/g, (_, i) => spoken[Number(i)]);
     return { text: out, count };
+}
+
+// A new reply with its pronouns put right, for everyone it names whose sheet
+// says he or she (the player character's are the user's own). Unless the
+// chat itself says otherwise: someone most earlier replies would also need
+// changing for is someone the sheet has wrong, and the chat is kept.
+// people: [{ name, aliases, gender, player }]; earlier: the replies before
+// it. -> { text, fixed: [{ name, count }] }
+export function repairReply(text, people = [], earlier = []) {
+    let out = String(text ?? '');
+    const said = (t, p) => firstAt(t, namesOf(p)) >= 0;
+    const past = (earlier ?? []).map((t) => String(t ?? ''));
+    const pool = (people ?? []).filter((p) => said(out, p) || past.some((t) => said(t, p)));
+    const fixed = [];
+    for (const p of pool) {
+        if (p.player || !['f', 'm'].includes(p.gender) || !said(out, p)) continue;
+        const others = pool.filter((q) => q !== p);
+        const theirs = past.filter((t) => said(t, p));
+        const wrong = theirs.filter((t) => fixPronounsIn(t, p, others).count > 0).length;
+        if (theirs.length >= 3 && wrong * 2 > theirs.length) continue;
+        const r = fixPronounsIn(out, p, others);
+        if (!r.count) continue;
+        out = r.text;
+        fixed.push({ name: clean(p.name), count: r.count });
+    }
+    return { text: out, fixed };
 }
 
 // Archivist's notes calling a pair close when the user wrote them as

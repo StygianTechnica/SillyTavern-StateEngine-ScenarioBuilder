@@ -74,7 +74,7 @@ describe('the agenda', () => {
     it('a CHECK that plays out a happening\'s moment marks it done', () => {
         const gm = emptyGm();
         addHappening(gm, { id: 'a1', text: 'A duel at dawn', day: 2 });
-        setDayPlan(gm, { moments: [{ text: 'The challenger arrives', happening: 'a1' }] }, { day: 2, turn: 0 });
+        setDayPlan(gm, { moments: [{ text: 'The duel begins as the challenger arrives', happening: 'a1' }] }, { day: 2, turn: 0 });
         applyCheck(gm, { done: [{ id: 'm1', how: 'swords drawn' }] });
         expect(gm.agenda[0].status).toBe('done');
     });

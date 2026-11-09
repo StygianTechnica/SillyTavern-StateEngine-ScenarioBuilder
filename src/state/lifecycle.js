@@ -47,6 +47,7 @@ import { LIBRARY_CHANGED_EVENT } from '../store/setting-store.js';
 import { afterReply } from '../planner/run.js';
 import { followChatChange, maybeSaveOriginal, followDeletedChat } from '../worlds/run.js';
 import { storyNotBegun } from '../worlds/model.js';
+import { repairNewReply } from '../ui/pronoun-fix.js';
 
 const VALIDATE_DEBOUNCE_MS = 1000;
 let timer = null;
@@ -254,6 +255,8 @@ export function startLifecycle() {
     eventSource.on(VARIABLES_CHANGED_EVENT, (chatId) => { if (isActive()) scheduleValidation(chatId); });
     if (eventTypes.GENERATION_STARTED) eventSource.on(eventTypes.GENERATION_STARTED, beforeGeneration);
     if (eventTypes.USER_MESSAGE_RENDERED) eventSource.on(eventTypes.USER_MESSAGE_RENDERED, onUserMessageRendered);
+    // A new reply's pronouns are put right as it lands (src/ui/pronoun-fix.js).
+    if (eventTypes.CHARACTER_MESSAGE_RENDERED) eventSource.on(eventTypes.CHARACTER_MESSAGE_RENDERED, (index) => void repairNewReply(index));
     // A membership edited in the library reaches the open chat's characters.
     let factionTimer = null;
     eventSource.on(LIBRARY_CHANGED_EVENT, () => {

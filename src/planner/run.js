@@ -826,7 +826,7 @@ function plannedSection(chatKey, messages, { here = null, notInPerson = [], late
             stampBeats(d.gm, stampIndex());
             waited = newcomerWait(d.gm, newcomers.length ? activeBeat(d.gm.outline)?.id : '', d.turn, { beatNow: activeBeat(d.gm.outline)?.id ?? '' });
         });
-        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3), newcomers, returning: beatReturning(gm, newcomers), waited, here, notInPerson, later });
+        const plan = planSection(gm, { pace, aim: story.aim, story: { shape: story.shape?.label ?? '', act: story.act?.title ?? '', next: story.next?.text ?? '' }, motifs: motifsOf(gm, 3), newcomers, returning: beatReturning(gm, newcomers), waited, here, notInPerson, later, today: getChatDoc(chatKey).canonical.day, nowPart: getChatDoc(chatKey).canonical.dayPart, quiet: tense || pace.aim === 'linger' });
         // The world meanwhile: nothing while the scene is tense or lingering;
         // the lead into what comes next while it moves on or builds.
         const meanwhile = meanwhileFor(chatKey, getChatDoc(chatKey).settingId, { aim: story.aim?.word ?? '', quiet: tense || pace.aim === 'linger', lead: pace.aim === 'move on' || story.aim?.word === 'build', userIndex: latestUserIndex() });

@@ -105,6 +105,7 @@ function renderSettings() {
     byId('sb_token_budget').value = settings.tokenBudget;
     byId('sb_state_block').checked = settings.stateBlockEnabled === true;
     byId('sb_now_note').checked = settings.nowNote === true;
+    byId('sb_auto_pronouns').checked = settings.autoPronouns !== false;
     byId('sb_correction_turns').value = settings.correctionTurns;
     byId('sb_director').checked = settings.director.enabled === true;
     byId('sb_director_create').checked = settings.director.allowCreate === true;
@@ -165,6 +166,7 @@ export async function addSettingsDrawer() {
     byId('sb_paused').addEventListener('change', (e) => { settings.paused = e.target.checked; changed(); });
     byId('sb_state_block').addEventListener('change', (e) => { settings.stateBlockEnabled = e.target.checked; changed(); });
     byId('sb_now_note').addEventListener('change', (e) => { settings.nowNote = e.target.checked; changed(); });
+    byId('sb_auto_pronouns').addEventListener('change', (e) => { settings.autoPronouns = e.target.checked; changed(); });
     byId('sb_token_budget').addEventListener('change', (e) => {
         const value = Math.round(Number(e.target.value));
         settings.tokenBudget = Number.isFinite(value) ? Math.min(8000, Math.max(50, value)) : 2000;

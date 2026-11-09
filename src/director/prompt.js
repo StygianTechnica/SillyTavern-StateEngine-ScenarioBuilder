@@ -615,10 +615,10 @@ export function buildDirectorPrompt(input) {
     if (/\[(?:m\d+|s\d+|ag_[a-z0-9]+)\]/i.test(plan)) {
         parts.push(
             '',
-            'For a coming moment or a thing to plant from the GM PLAN, or a happening under DUE TODAY, that this reply plays out, or that can no longer happen where the story has gone, a line each (its id as given, e.g. m2):',
+            'For a coming moment, a thing to plant or something waiting to reach them from the GM PLAN, or a happening under DUE TODAY, that this reply plays out, or that can no longer happen where the story has gone, a line each (its id as given, e.g. m2):',
             'BEAT | <its id> | done | <how it plays out, a few words>',
             'BEAT | <its id> | skipped | <why it can never happen now, a few words>',
-            'Something DUE TODAY that is only delayed is neither: leave it, and it stays due.',
+            'Something DUE TODAY or waiting to reach them that is only delayed, or has just not fit this scene, is neither: leave it, and it stays.',
         );
     }
     // The world meanwhile (src/world/model.js): its lines carry their

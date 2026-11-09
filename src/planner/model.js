@@ -369,7 +369,8 @@ export function settleRequests(gm) {
 // Takes a DAY pass's answer in as the day's plan. Requests it planned for
 // are marked; ids are the planner's own (m1, m2...).
 export function setDayPlan(gm, plan, { day, turn, index = -1, at = new Date().toISOString() }) {
-    const moments = (plan.moments ?? []).map((m, i) => normalizeMoment({ ...m, id: `m${i + 1}`, status: 'pending', source: m.happening && gm.agenda.some((x) => x.id === m.happening) ? `agenda:${m.happening}` : m.source }, i)).filter(Boolean).slice(0, MOMENT_LIMIT);
+    const playsOut = (m) => gm.agenda.some((x) => x.id === m.happening && aboutHappening(m.text, x));
+    const moments = (plan.moments ?? []).map((m, i) => normalizeMoment({ ...m, id: `m${i + 1}`, status: 'pending', source: m.happening && playsOut(m) ? `agenda:${m.happening}` : m.source }, i)).filter(Boolean).slice(0, MOMENT_LIMIT);
     gm.day = normalizeDay({ day, madeAt: at, madeTurn: turn, madeIndex: index, beatId: activeBeat(gm.outline)?.id ?? '', moments, agendas: plan.agendas, offscreen: plan.offscreen });
     // Requests planned for an earlier day that never happened wait again.
     for (const r of gm.queue) if (r.status === 'planned') { r.status = 'waiting'; r.plannedAs = []; }
@@ -613,7 +614,7 @@ function personIn(who, names) {
     });
 }
 
-export function planSection(gm, { pace = null, aim = null, story = null, motifs = [], newcomers = [], returning = [], waited = 0, here = null, notInPerson = [], later = [] } = {}) {
+export function planSection(gm, { pace = null, aim = null, story = null, motifs = [], newcomers = [], returning = [], waited = 0, here = null, notInPerson = [], later = [], today = null, nowPart = '', quiet = false } = {}) {
     const lines = [];
     const beat = activeBeat(gm.outline);
     if (beat) lines.push(`- Story: ${story?.shape ? `${story.shape}, ` : ''}${story?.act ? `in "${story.act}" - ` : ''}the beat now: ${beat.text}${story?.next ? ` (then: ${story.next})` : ''}. When the scene opens a way to it - the player character asks what comes next, a talk winds down - the beat is the answer.`);
@@ -657,6 +658,10 @@ export function planSection(gm, { pace = null, aim = null, story = null, motifs 
     if (agendas.length) lines.push(`- Agendas: ${agendas.map((a) => `${a.who}${whereNote(a.who)} wants ${a.wants}${a.will ? `, and will ${a.will}` : ''}${a.hidden ? ` (hidden: ${a.hidden})` : ''}`).join('; ')}.`);
     const off = (gm.day?.offscreen ?? []).slice(0, 2);
     if (off.length) lines.push(`- Off-screen: ${off.join('; ')}.`);
+    // The calendar's next thing no moment is carrying (quiet: not while the
+    // scene is tense or held).
+    const waiting = quiet ? null : waitingHappening(gm, today, nowPart);
+    if (waiting) lines.push(`- Waiting to reach them [${waiting.id}]: ${waiting.text.replace(/[.!]+$/, '')}. When the scene has room, let the player character hear of it: word, a rumour, a find, or someone who comes with it. It stays where it is happening - never moved to this scene - and it waits through a fight or a job.`);
     const soon = gm.queue.filter((r) => r.status === 'waiting' && r.urgency === 'soon').slice(0, 2);
     for (const r of soon) lines.push(`- The user would like: ${r.text} - work it in where it is natural.`);
     const seed = openSeeds(gm)[0];
@@ -751,6 +756,19 @@ export function sameBeat(a, b) {
     const shared = [...wa].filter((w) => wb.has(w)).length;
     const small = Math.min(wa.size, wb.size);
     return shared / small >= 0.7 && (2 * shared) / (wa.size + wb.size) >= 0.5;
+}
+
+// Whether a moment the day plan gave a calendar id really plays that
+// happening out: the plan tied "enforcers go to Bearville" to "Enrique sends
+// a team to the museum", and when that moment fell away so did the enforcers.
+// Sharing only the names it ties in is not enough ("the Syndicate raids...").
+export function aboutHappening(text, happening) {
+    const named = beatWords(strList(happening?.ties).join(' '));
+    const own = (t) => [...beatWords(t)].filter((w) => !named.has(w));
+    const moment = new Set(own(text));
+    const words = own(happening?.text);
+    const shared = words.filter((w) => moment.has(w)).length;
+    return shared >= 2 || (shared > 0 && shared / Math.min(moment.size, words.length) >= 0.5);
 }
 
 // Takes an OUTLINE pass's answer in. parsed: { premise, themes, acts:
@@ -1414,7 +1432,7 @@ export function settleAgenda(gm, today = null) {
             if (!carries(x) || late > MAX_LATE) x.status = 'passed';
             else Object.assign(x, { day: today, late, status: mine.some((m) => m.status === 'pending') ? 'planned' : 'coming' });
         } else if (mine.some((m) => m.status === 'pending')) x.status = 'planned';
-        else if (x.status === 'planned' && !mine.length) x.status = 'coming';
+        else if (x.status === 'planned') x.status = 'coming';
     }
     gm.agenda = trimAgenda(gm.agenda);
 }
@@ -1432,6 +1450,19 @@ export function dueToday(gm, today) {
     if (!Number.isInteger(today)) return [];
     return gm.agenda.map((x) => ({ ...x, late: lateOn(x, today) }))
         .filter((x) => isOpen(x) && x.day <= today && pressing(x) && (!carries(x) ? x.day === today : x.late <= MAX_LATE));
+}
+
+// The next happening whose day has come that nothing is carrying: not
+// pressing (those are DUE TODAY), not a dated event's opening, not set for a
+// later part of today, and with no moment of the day still to come for it.
+// Assassins Inc: the Syndicate's enforcers sat on the agenda for 300 messages
+// because their only way into a reply was a moment that had been dropped.
+export function waitingHappening(gm, today, nowPart = '') {
+    if (!Number.isInteger(today)) return null;
+    const live = planBehindBeat(gm) ? [] : (gm.day?.moments ?? []).filter((m) => m.status === 'pending');
+    return gm.agenda.find((x) => isOpen(x) && x.day <= today && !pressing(x) && carries(x)
+        && !(x.day === today && notYetWords(x, nowPart))
+        && !live.some((m) => m.source === `agenda:${x.id}`)) ?? null;
 }
 
 // How firmly a happening put off `late` days is said: firmer each day.

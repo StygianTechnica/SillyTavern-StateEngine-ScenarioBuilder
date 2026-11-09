@@ -36,6 +36,7 @@ const DEFAULTS = {
     // messages from the end (1: just before the player's latest message).
     nowNote: true,
     nowNoteDepth: 1,
+    autoPronouns: true,     // new replies' he / she put right as they land
     // Resolution policy per validated field: 'canonical' | 'observed' |
     // 'ask' (spec SB-222; defaults are OPEN-2 and documented in
     // src/validate/drift.js).

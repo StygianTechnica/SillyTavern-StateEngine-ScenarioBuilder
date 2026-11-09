@@ -34,6 +34,46 @@ describe('a he or she with no one else it could be', () => {
     });
 });
 
+describe('a wrong pronoun after the name, partway through a sentence', () => {
+    const delvin = 'Delvin';
+    const people = [inji, { name: 'Cyril', gender: 'm', player: true }, { name: delvin, gender: 'm' }];
+    const names = [...others, delvin];
+    const everyone = [...rest, { name: delvin, gender: 'm' }];
+    const first = "*Suddenly, a soft chime rings out from Cyril's implant, signaling Inji's confirmation of her position near Delvin.";
+    const second = 'Cyril adjusts his course, weaving through a maze of display cases until he spots Inji crouched beside a large wooden cabinet, her rifle trained on the thief.*';
+    it('is seen in the real post', () => {
+        for (const t of [first, second]) expect(pronounSlips(people, t, { others: names })).toEqual([{ name: 'Inji Miyama', gender: 'm' }]);
+    });
+    it('is put right, and nothing else in the sentence', () => {
+        expect(fixPronounsIn(`${first} ${second}`, inji, everyone).text).toBe("*Suddenly, a soft chime rings out from Cyril's implant, signaling Inji's confirmation of his position near Delvin. Cyril adjusts his course, weaving through a maze of display cases until he spots Inji crouched beside a large wooden cabinet, his rifle trained on the thief.*");
+    });
+    it('is left alone when it could be someone else', () => {
+        const withVex = [...people, { name: 'Vex', gender: 'f' }];
+        const fellows = [...everyone, { name: 'Vex', gender: 'f' }];
+        const allNames = [...names, 'Vex'];
+        for (const t of [
+            "Cyril watched Inji's hand find her shoulder.",
+            'Cyril saw Inji hold Vex close, her eyes wet.',
+            'Vex scowled. Cyril saw Inji turn away, her jaw tight.',
+            'Cyril saw Inji help a woman up, her coat torn.',
+            'Cyril heard Inji say "of her own free will, she left".',
+        ]) {
+            expect(pronounSlips(withVex, t, { others: allNames })).toEqual([]);
+            expect(fixPronounsIn(t, inji, fellows).count).toBe(0);
+        }
+    });
+    it('works the other way, in other genres', () => {
+        const maelis = { name: 'Maelis', gender: 'f' };
+        const t = 'The captain found Maelis on the rampart, his sword drawn.';
+        expect(pronounSlips([maelis], t, { others: ['Maelis'] })).toHaveLength(1);
+        expect(fixPronounsIn(t, maelis, []).text).toBe('The captain found Maelis on the rampart, her sword drawn.');
+        const reyes = { name: 'Reyes', gender: 'f' };
+        expect(fixPronounsIn('The alarm woke Reyes as he reached engineering.', reyes, []).text).toBe('The alarm woke Reyes as she reached engineering.');
+        const dana = { name: 'Dana', gender: 'm' };
+        expect(fixPronounsIn('He phoned Dana, who locked the diner by herself.', dana, []).text).toBe('He phoned Dana, who locked the diner by himself.');
+    });
+});
+
 describe('the note nearest the reply', () => {
     const cast = [{ name: 'Cyril', player: true, gender: 'm' }, { name: 'Inji Miyama', gender: 'm' }, { name: 'Doc', gender: 'f' }];
     it('says he or she for those the post names, only them', () => {
