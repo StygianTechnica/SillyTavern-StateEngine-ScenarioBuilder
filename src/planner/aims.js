@@ -136,6 +136,27 @@ export function intentNow(intent, over = []) {
     return stopping || preparing ? '' : intent;
 }
 
+// The jobs in this chat's plan that are over. doc: the chat's document.
+export function overJobsIn(doc, player = []) {
+    return jobsOver(opposedJobs(planTexts(doc?.gm), { player }), [doc?.op, ...(doc?.opsAlso ?? []), ...(doc?.opsDone ?? [])]);
+}
+
+// For the game master's briefing, which otherwise had "news arrive" of a
+// fresh art heist from a beat about the one already over.
+export function overBriefing(over = []) {
+    const line = jobsOverLine(over);
+    return line ? `${line} No word of it comes in and nothing like it starts, unless the latest chat brings it.` : '';
+}
+
+// Beats still to come that are spent because the job they aim at is over.
+// Not the user's locked ones: those are theirs to change. -> ids.
+export function beatsSpent(outline, over = []) {
+    if (!over?.length) return [];
+    return (outline?.acts ?? []).flatMap((a) => a.beats ?? [])
+        .filter((b) => (b.status === 'active' || b.status === 'pending') && !b.locked && clean(b.text) && !intentNow(b.text, over))
+        .map((b) => b.id);
+}
+
 // The plan's own lines: what the user wants of the story, the outline's
 // beats, what is settled, the day plan, the triggers.
 export function planTexts(gm) {

@@ -407,6 +407,7 @@ export function dossierText(input) {
     if (clean(input.eventFacts)) { section('THE EVENT (a fixed programme - this stage only)'); lines.push(clean(input.eventFacts)); }
     // The other side's operation - the GM plays them (src/ops/model.js).
     if (clean(input.opFacts)) { section('THE OTHER SIDE (you play them; their plan is kept from the player character\'s side)'); lines.push(String(input.opFacts).trim()); }
+    if (clean(input.jobsOver)) { section('OVER AND DONE'); lines.push(clean(input.jobsOver)); }
     if (input.secrets?.length) {
         section('SECRETS AND OATHS (people act only on what they know)');
         for (const r of input.secrets.slice(0, 8)) lines.push(`- ${r}`);

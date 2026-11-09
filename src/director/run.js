@@ -60,6 +60,7 @@ import { captivesLine } from '../guidance/captives.js';
 import { heldBySheet } from '../guidance/spoken.js';
 import { narrationOf } from './departures.js';
 import { activeBeat } from '../planner/model.js';
+import { overJobsIn, overBriefing } from '../planner/aims.js';
 import { contextualPlace } from '../library/place-context.js';
 import { personGender } from '../naming/classify.js';
 import { creatureFormOf, readCount, addCount, takeCount, creatureLabel } from '../library/creature-form.js';
@@ -759,6 +760,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         // The other side's operation, which the director plays (src/ops/).
         // Where the player character is, so the briefing says what is there.
         opFacts: [opFacts(getChatDoc(chatKey).op, { turn: getChatDoc(chatKey).turn, here: nameOfId(getChatDoc(chatKey).canonical.locationId) || guidance.location?.name || '', player: (guidance.cast ?? []).find((c) => c.player)?.name ?? SillyTavern.getContext().name1, post: lastPost?.text ?? '' }), alsoFacts(getChatDoc(chatKey).opsAlso)].filter(Boolean).join('\n'),
+        jobsOver: overBriefing(overJobsIn(getChatDoc(chatKey), [SillyTavern.getContext().name1 ?? ''])),
         opLive: opRunning(getChatDoc(chatKey).op),
         opRoom: roomForJob(getChatDoc(chatKey)),
         opAware: getChatDoc(chatKey).op?.aware === true,

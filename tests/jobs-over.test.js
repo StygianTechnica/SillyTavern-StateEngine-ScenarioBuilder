@@ -1,7 +1,8 @@
 // Assassins Inc: the museum job was over, and the note still said "Cyril's
 // side is out to stop it" - so Inji told a wounded Cyril that the mission to
 // stop Enrique's heist hinged on the team pulling together.
-import { opposedJobs, jobsOver, jobsOverLine, jobsLine, intentNow } from '../src/planner/aims.js';
+import { opposedJobs, jobsOver, jobsOverLine, jobsLine, intentNow, overJobsIn, overBriefing, beatsSpent } from '../src/planner/aims.js';
+import { dossierText } from '../src/director/prompt.js';
 import { unsettledReason } from '../src/planner/model.js';
 
 const heist = { noun: 'heist', mod: 'art', owner: 'Enrique' };
@@ -66,6 +67,44 @@ describe('what someone means to do', () => {
     });
     it('reads the real one as a stop', () => {
         expect(opposedJobs(["stopping Enrique's heist"])[0].noun).toBe('heist');
+    });
+});
+
+describe('the plan after a job is over', () => {
+    const over = [heist];
+    const outline = { acts: [{ beats: [
+        { id: 'b42', status: 'active', text: "Cyril, Inji, and Zane receive orders from Adam to stop Enrique's art heist operation." },
+        { id: 'b41', status: 'pending', text: 'Adam arranges a meeting with Bartin Medina.' },
+        { id: 'b19', status: 'pending', locked: true, text: "They will stop Enrique's heist in the end." },
+        { id: 'b1', status: 'done', text: "Adam says to stop Enrique's heist." },
+    ] }] };
+    it('a beat aimed at it is spent', () => {
+        expect(beatsSpent(outline, over)).toEqual(['b42']);
+    });
+    it('not while the job is on', () => {
+        expect(beatsSpent(outline, [])).toEqual([]);
+    });
+    it('the chat is read whole', () => {
+        const doc = { gm: { outline }, op: job({}), opsDone: [] };
+        expect(overJobsIn(doc, ['Cyril'])[0].noun).toBe('heist');
+        expect(overJobsIn({ gm: { outline } }, ['Cyril'])).toEqual([]);
+    });
+    it('the briefing is told', () => {
+        expect(overBriefing(over)).toContain('nothing like it starts, unless the latest chat brings it');
+        expect(overBriefing([])).toBe('');
+        expect(dossierText({ userName: 'Cyril', jobsOver: overBriefing(over) })).toContain('OVER AND DONE');
+    });
+    it('across genres', () => {
+        const ritual = { noun: 'ritual', mod: '', owner: 'the cult' };
+        const acts = { acts: [{ beats: [{ id: 'a', status: 'active', text: "Kiri must foil the cult's ritual at the stones." }, { id: 'b', status: 'pending', text: 'Kiri rides north.' }] }] };
+        expect(beatsSpent(acts, [ritual])).toEqual(['a']);
+    });
+});
+
+describe('what someone only believes is not a settled fact', () => {
+    it('the real lines', () => {
+        expect(unsettledReason('Inji believes his expectations were reasonable, and that their unity should not be questioned.')).toContain('judgement');
+        expect(unsettledReason("Inji's harsh words to Cyril were not meant as hate, but a reprimand for endangering the team.")).toContain('judgement');
     });
 });
 

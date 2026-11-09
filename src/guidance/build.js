@@ -532,13 +532,15 @@ export function buildNow(input) {
     const viewer = looksThrough(input.playerPost);
     const prisoners = captivesLine(input.captives, { side: (input.cast ?? []).find((c) => c.player) ? `${clean((input.cast ?? []).find((c) => c.player).name)}'s side` : '' });
     const argumentEnds = clean(input.windDown);
+    const ganging = clean(input.pileOn);
     const sawDead = backFromDead(input.cast);
     const aloneNow = clean(input.aloneNow);
     const notHere = [...new Set((input.notHere ?? []).map(clean).filter(Boolean))].filter((n) => !(input.elsewhere ?? []).map(clean).includes(n) && !(input.arriving ?? []).map(clean).includes(n));
-    if (!notHere.length && !aloneNow && !sawDead && !argumentEnds && !prisoners && !pronouns && !viewer && !radio && !meet && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
+    if (!notHere.length && !aloneNow && !sawDead && !argumentEnds && !ganging && !prisoners && !pronouns && !viewer && !radio && !meet && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (argumentEnds) orders.push(argumentEnds);
+    if (ganging) orders.push(ganging);
     if (aloneNow) orders.push(aloneNow);
     if (corrections) orders.push(corrections);
     if (pronouns) orders.push(`${pronouns}.`);

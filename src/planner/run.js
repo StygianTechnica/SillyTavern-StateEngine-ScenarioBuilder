@@ -21,7 +21,7 @@
 import { sidelinedText } from '../state/standing-model.js';
 import { heldBackText } from '../guidance/spoken.js';
 import { LOG_PREFIX } from '../constants.js';
-import { opposedJobs, jobsLine, planTexts } from './aims.js';
+import { opposedJobs, jobsLine, planTexts, overJobsIn, beatsSpent } from './aims.js';
 import { timedHappenings, notYet } from './timed.js';
 import { closesOut, nextThingLine } from '../guidance/wrapped.js';
 import { presenceFrom, takingPart, absentSince, isKnownPerson } from './presence.js';
@@ -824,6 +824,10 @@ function plannedSection(chatKey, messages, { here = null, notInPerson = [], late
     try {
         const p = plannerSettings();
         if (p.enabled !== true) return '';
+        // A beat aimed at a job that is over is passed, so the story moves
+        // on to the next one (src/planner/aims.js). Restore Beat undoes it.
+        const spent = beatsSpent(getChatDoc(chatKey).gm.outline, overJobsIn(getChatDoc(chatKey), [SillyTavern.getContext().name1 ?? '']));
+        if (spent.length) updateChatDoc(chatKey, (d) => { for (const id of spent) finishBeat(d.gm, id); });
         const gm = getChatDoc(chatKey).gm;
         const recentUser = (messages ?? []).filter((m) => m.isUser).slice(-3).map((m) => m.text);
         const pending = (gm.day?.moments ?? []).filter((m) => m.status === 'pending');
