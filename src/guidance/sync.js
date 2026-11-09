@@ -65,7 +65,7 @@ import { eventValues } from '../events/model.js';
 import { knownAsText, keptNames } from '../library/alias-kinds.js';
 import { libraryMemberships } from '../library/faction-sync.js';
 import { rosterOf, placeIn, rosterLeaders, standingWords } from '../library/roster.js';
-import { spokenOf, spokenNowText, elsewhereNow, notInPerson, heldOutNamed } from './spoken.js';
+import { spokenOf, spokenNowText, elsewhereNow, notInPerson, heldOutNamed, heldBySheet } from './spoken.js';
 import { livePoolFor, byType } from '../naming/run.js';
 import { narratorPoolLine } from '../naming/live.js';
 import { personGender } from '../naming/classify.js';
@@ -620,6 +620,15 @@ export async function gatherInputs(chatId, chatKey) {
                 player: cast.find((m) => m.player)?.name ?? '',
                 skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id), ...detainedIds(doc)].filter(Boolean),
             })])],
+            // Named in the briefing or the settled lines, and not here: told
+            // nothing, the narrator wrote them into the room.
+            notHere: elsewhereNow(allCharacters, {
+                lastReply: [settings.director.enabled ? doc.director.note : '', ...settledNow(getChatDoc(chatKey).gm.settled ?? [], { ...settledOpts, here: castIds })].join('\n'),
+                playerPost: latestPlayerPost(),
+                here: castIds,
+                player: cast.find((m) => m.player)?.name ?? '',
+                skip: [playerId, ...powerIds, ...doc.dead.map((d) => d.id), ...detainedIds(doc), ...heldBySheet(allCharacters, { here: castIds, beatTies: beatNow?.ties ?? [] }).map((c) => c.id)].filter(Boolean),
+            }),
             // Those the player's posts say would not come in person (a boss
             // who sends his people): only their people turn up.
             // And those set on their sheet to stay out of the field, when the

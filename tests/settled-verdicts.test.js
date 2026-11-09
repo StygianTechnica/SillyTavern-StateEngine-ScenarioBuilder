@@ -30,7 +30,7 @@ describe('a verdict is not a settled fact', () => {
         expect(unsettledReason("Cyril's actions during the mission were unauthorized and compromised the operation")).toContain('judgement');
     });
     it('across genres', () => {
-        for (const t of ['Kiri was reckless at the ford.', 'Captain Vance is to blame for the hull breach.', 'Dana was careless with the keys.', 'The squire nearly endangered the whole party.']) {
+        for (const t of ['Cyril should have fought back when choked.', 'Kiri was reckless at the ford.', 'Captain Vance is to blame for the hull breach.', 'Dana was careless with the keys.', 'The squire nearly endangered the whole party.']) {
             expect(unsettledReason(t)).toContain('judgement');
         }
     });

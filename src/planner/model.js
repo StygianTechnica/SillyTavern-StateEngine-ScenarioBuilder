@@ -1508,7 +1508,7 @@ const OPEN = /\b(?:unclear|uncertain|unknown|undecided|unresolved|to be seen|to 
 // story: "Cyril's actions during the mission were unauthorized and
 // compromised the operation", taken from the narrator's own accusation, went
 // out as settled - no one to argue it - while Cyril was arguing it.
-const VERDICT = /\b(?:reckless\w*|careless\w*|irresponsible|impulsive\w*|incompetent|incompetence|insubordinat\w*|unauthori[sz]ed|foolish\w*|at fault|to blame|(?:nearly |almost )?(?:compromised|jeopardi[sz]ed|endangered) (?:the|our|their|its)\b)/i;
+const VERDICT = /\b(?:should(?:n't| not)? have|reckless\w*|careless\w*|irresponsible|impulsive\w*|incompetent|incompetence|insubordinat\w*|unauthori[sz]ed|foolish\w*|at fault|to blame|(?:nearly |almost )?(?:compromised|jeopardi[sz]ed|endangered) (?:the|our|their|its)\b)/i;
 // True only for the moment it was written: "his heist plans are still set
 // for tonight", still going out the night after, with the museum job over.
 const FOR_NOW = /\b(?:tonight|today|tomorrow|this (?:morning|afternoon|evening)|right now|at the moment|for now|still set|still planned|still on)\b/i;

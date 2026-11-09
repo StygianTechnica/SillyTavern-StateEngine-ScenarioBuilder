@@ -13,6 +13,18 @@ const names = (c) => [c.name, c.name.split(/\s+/)[0]];
 const namedIn = (text, list) => list.filter((c) => names(c).some((n) => text.includes(n)));
 const entering = (enters, { here = [], beatTies = [], userPost = '' } = {}) => elsewhereEntering(enters, { characters: people, elsewhere: heldBySheet(people, { here, beatTies }), castIds: here, userPost, namedIn, namesOf: names });
 
+describe('named in the notes and not here', () => {
+    const cast = [{ name: 'Cyril', player: true }, { name: 'Inji' }];
+    it('is told they do not appear', () => {
+        expect(buildNow({ cast, notHere: ['Zane', 'Tadam Chi'] })).toContain('Zane and Tadam Chi are not here: they do not appear, speak or act in this reply.');
+    });
+    it('not twice, and not someone coming in now', () => {
+        const note = buildNow({ cast, notHere: ['Zane', 'Doc'], elsewhere: ['Zane'], arriving: ['Doc'] });
+        expect(note).not.toContain('are not here');
+        expect(note).not.toContain('is not here');
+    });
+});
+
 describe('someone who saw the player character dead', () => {
     const belief = 'Not so, though they believed it: Cyril is Dead. They have seen it for themselves.';
     it('is told it is no rumour, every reply they are here', () => {

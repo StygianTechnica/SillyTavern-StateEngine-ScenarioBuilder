@@ -534,7 +534,8 @@ export function buildNow(input) {
     const argumentEnds = clean(input.windDown);
     const sawDead = backFromDead(input.cast);
     const aloneNow = clean(input.aloneNow);
-    if (!aloneNow && !sawDead && !argumentEnds && !prisoners && !pronouns && !viewer && !radio && !meet && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
+    const notHere = [...new Set((input.notHere ?? []).map(clean).filter(Boolean))].filter((n) => !(input.elsewhere ?? []).map(clean).includes(n) && !(input.arriving ?? []).map(clean).includes(n));
+    if (!notHere.length && !aloneNow && !sawDead && !argumentEnds && !prisoners && !pronouns && !viewer && !radio && !meet && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (argumentEnds) orders.push(argumentEnds);
@@ -553,6 +554,7 @@ export function buildNow(input) {
     // Inji and Zane were elsewhere, still spent the reply on their sweep of
     // the galleries - the last reply again, nearly word for word.
     if (elsewhere.length) orders.push(`Not in this scene: ${andList(elsewhere)} - ${elsewhere.length === 1 ? 'they are' : 'they are all'} elsewhere, and do not come in, speak or act in this reply. The reply stays with ${player?.name ? clean(player.name) : 'the player character'} and what is where they are - no cutting away to ${elsewhere.length === 1 ? 'them' : 'those elsewhere'}; word of ${elsewhere.length === 1 ? 'them' : 'them'} reaches ${player?.name ? clean(player.name) : 'the player character'} only by a call, a message or a sound carrying. Begin the reply with what is around ${player?.name ? clean(player.name) : 'the player character'} where they are now - what can be seen, heard or found there - never with what ${player?.name ? clean(player.name) : 'the player character'} does.`);
+    if (notHere.length) orders.push(`${andList(notHere)} ${notHere.length === 1 ? 'is' : 'are'} not here: they do not appear, speak or act in this reply.`);
     if (meet) orders.push(meet);
     if (radio) orders.push(radio);
     if (viewer) {
