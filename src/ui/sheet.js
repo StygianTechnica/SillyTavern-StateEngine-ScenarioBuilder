@@ -51,6 +51,7 @@ import { removeLink, addLink, listRelations, addRelation, removeRelation, relati
 import { sparkButton, fieldWithTools, diceButton, tagEditor } from './controls.js';
 import { standingCard } from './standing-card.js';
 import { rosterCard } from './roster-card.js';
+import { kindredCard } from './kindred-card.js';
 import { factionsCard } from './factions-card.js';
 import { wingsCard } from './wings-card.js';
 import { pronounFixRow } from './pronoun-fix.js';
@@ -687,6 +688,7 @@ function overviewTab({ type, entry, isNew, defs, doc, all, names, parents, allEn
         isNew ? null : giftsCard(type, entry, all, defs),
         isNew ? null : wingsCard(type, entry, all),
         isNew ? null : rosterCard(type, entry, all),
+        isNew ? null : kindredCard(type, entry),
         isNew ? null : factionsCard(type, entry, all),
         isNew ? null : standingCard(type, entry, all),
         isNew ? null : combatCard(type, entry, all),

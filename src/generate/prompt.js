@@ -222,6 +222,8 @@ ${input.populationLine} Let what you write fit this mix.`);
             ? `# Its side (through ${through.join(' and ')}, whom it is tied to: someone close to them - a protégé, a friend, a partner - stands with their side and works where they work, sharing its friends and enemies, unless what is written or the user's direction says otherwise, as for a spy or a rival)\n${lines.join('\n')}`
             : `# Its side (it is one of these - their friends are its friends, their rivals and enemies are its rivals and enemies, unless the user's direction says otherwise, as for a spy or a traitor)\n${lines.join('\n')}`);
     }
+    // What the people of its faction share (src/generate/kindred.js).
+    if (input.kindred) parts.push(`# What ${input.kindredOf ?? 'its faction'}'s people have in common (write them as one of these, and still their own person)\n${input.kindred}`);
     if (type?.id === 'quest' && input.questSide) {
         const { player, with: allies = [] } = input.questSide;
         const who = player ? `${player} (the player character)${allies.length ? `, with ${allies.join(', ')}` : ''}` : (allies.length ? allies.join(', ') : 'the player character and their allies');
@@ -253,6 +255,7 @@ ${input.populationLine} Let what you write fit this mix.`);
             isEmpty(current)
                 ? 'It is empty now: write it from scratch, consistent with everything above.'
                 : `It currently says:\n"""\n${cut(show(current, f, nameOf), 1500)}\n"""\nRewrite it: keep every fact it already contains, and add new, specific detail that fits everything above.`,
+            f.name === 'description' && input.overused ? input.overused : '',
             f.name === 'name'
                 ? `Reply with just the name.${input.nameFrom?.candidates?.length ? ` Name it from ${input.nameFrom.tie}, which it belongs to (for example ${input.nameFrom.candidates.map((c) => `"${c}"`).join(', ')}), or in plain words - not a new made-up word.` : ''}${input.similarNames?.length ? ` Do not reuse any of these existing names: ${input.similarNames.slice(0, 40).join(', ')}.` : ''}`
                 : (isText(f) ? `Length: ${length}.` : form.prose),
@@ -306,6 +309,7 @@ ${input.populationLine} Let what you write fit this mix.`);
     } else if (input.person) {
         job += `\n${shownName || 'This character'} is a man or a woman - whichever their name and what is written of them suggest: write he / him or she / her and keep to it - never "they" or "them" for this one person.`;
     }
+    if (input.overused && targets.some((f) => f.name === 'description')) job += `\n${input.overused}`;
     job += `\nEach text field: ${length}.`;
 
     const template = [...(askName ? [['name', '"..."']] : []), ...targets.map((f) => [f.name, formOf(f, refNames).json])];

@@ -94,6 +94,7 @@ import { normalizeKnowledgeItem, normalizeBeliefsSeen } from '../library/knowled
 import { emptyGiver, normalizeGiver } from '../quests/missions.js';
 import { normalizeDead } from '../state/death.js';
 import { normalizeDetained } from '../state/detained.js';
+import { normalizeKindred } from '../generate/kindred.js';
 import { normalizeEnrichments } from '../generate/revert.js';
 import { normalizeCounts } from '../library/creature-form.js';
 import { normalizePowerMeta, fitText, GIFTS_MAX } from '../library/powers.js';
@@ -196,6 +197,8 @@ export function normalizeEntryMeta(meta) {
         // Creatures: one being ('individual') or a sort that comes in numbers
         // ('kind'); '' - guessed from the name (src/library/creature-form.js).
         creatureForm: ['individual', 'kind'].includes(m.creatureForm) ? m.creatureForm : '',
+        // What a faction's people share (src/generate/kindred.js).
+        kindred: normalizeKindred(m.kindred),
         // A power - a god, spirit or force with no body (src/library/powers.js).
         power: normalizePowerMeta(m.power),
         // The powers a character is a champion or devotee of.

@@ -15,6 +15,8 @@ import { getObjectTypes, getParents, getOverview, getPlaceOverview, isCanonOnly,
 import { getEntryMeta } from '../store/setting-store.js';
 import { pathOf, childrenOf } from '../library/hierarchy.js';
 import { relationsOf } from '../library/relations.js';
+import { setEntryMeta } from '../library/library.js';
+import { normalizeKindred, hasKindred, buildKindredPrompt, readKindred, kindredLine, overusedPhrases, overusedRule } from './kindred.js';
 import { buildGenerationPrompt, parseGenerationResponse, buildOverviewPrompt, parseOverviewResponse, groundRefs, buildAliasPrompt, readAlias } from './prompt.js';
 import { genderFrom, personGender } from '../naming/classify.js';
 import { callModel } from './llm.js';
@@ -336,6 +338,32 @@ function chatPassagesFor(entry, draft) {
 // story: the chat an event or scene came from (src/director/run.js) - what
 // is written is what happened there, with no one made up. fromStory: the
 // entry was taken in from the story - the chat's passages about it lead.
+// What a faction's people share: kept on the faction, written once the first
+// time someone of it is written. Never in a canon-only setting; a failed call
+// is tried again next time, and is never in the way of the person being made.
+const kindredAsked = new Map();
+async function kindredFor(settingId, side, all, overview) {
+    try {
+        const saved = normalizeKindred(getEntryMeta(settingId, side.id).kindred);
+        if (saved.at || hasKindred(saved) || !mayAddGeneratedDetail(settingId, side.id)) return saved;
+        if (!kindredAsked.has(side.id)) {
+            const members = (side.members ?? []).map((id) => (all.character ?? []).find((c) => c.id === id)).filter(Boolean).map((c) => ({ name: c.name, description: c.description ?? c.base?.description ?? '' }));
+            kindredAsked.set(side.id, askReliably(buildKindredPrompt({ faction: side, members, world: [overview?.premise, overview?.tone].filter(Boolean).join(' ') }), readKindred, 220)
+                .then((r) => {
+                    if (r.error) return saved;
+                    const made = normalizeKindred({ ...r.values, at: new Date().toISOString() });
+                    setEntryMeta(settingId, side.id, { kindred: made });
+                    return made;
+                })
+                .finally(() => kindredAsked.delete(side.id)));
+        }
+        return await kindredAsked.get(side.id);
+    } catch (err) {
+        console.warn(LOG_PREFIX, `could not work out what ${side.name}'s people share`, err);
+        return null;
+    }
+}
+
 export async function generateEntry({ task, type, ctx, fields, entry = null, draft = null, all, targetField = null, brief = '', parentId = null, naming = {}, story = '', fromStory = false }) {
     const gate = canGenerateFor(ctx.settingId, entry?.id);
     if (!gate.ok) throw new Error(gate.reason);
@@ -466,8 +494,16 @@ export async function generateEntry({ task, type, ctx, fields, entry = null, dra
     const others = allEntries.filter((e) => e.id !== entry?.id && (!player || player.tied || e.id !== player.id));
     // Nothing in a story's own event needs a new name: no pool, so none is offered.
     const namePool = story ? null : namePoolFor(ctx.settingId, all, { cultureId: naming.cultureId, placeId: parentForPrompt, factionIds });
+    // A person: what their faction's people share, and what the world's
+    // descriptions have used too often.
+    const ownSide = type.id === 'character' ? sides.find((s) => !s.through) ?? null : null;
+    const kindredOfSide = ownSide ? await kindredFor(ctx.settingId, ownSide, all, overview) : null;
+    const descriptions = type.id === 'character' ? (all.character ?? []).filter((c) => c.id !== entry?.id).map((c) => c.description ?? c.base?.description ?? '') : [];
     const base = {
         fixedName, nameMeaning, nameFrom, nameApart, namePool, avoidNames: PROMPT_CLICHES, story, loreStory,
+        kindred: kindredOfSide ? kindredLine(kindredOfSide) : '',
+        kindredOf: ownSide?.name ?? '',
+        overused: overusedRule(overusedPhrases(descriptions)),
         type, fields, brief,
         // The world as it holds where the entry is: a place's own realm, or
         // the place an entry lies in (a planet at TL12, a dead-magic zone).
