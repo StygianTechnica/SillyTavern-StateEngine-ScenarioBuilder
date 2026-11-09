@@ -13,6 +13,25 @@ const names = (c) => [c.name, c.name.split(/\s+/)[0]];
 const namedIn = (text, list) => list.filter((c) => names(c).some((n) => text.includes(n)));
 const entering = (enters, { here = [], beatTies = [], userPost = '' } = {}) => elsewhereEntering(enters, { characters: people, elsewhere: heldBySheet(people, { here, beatTies }), castIds: here, userPost, namedIn, namesOf: names });
 
+describe('someone who saw the player character dead', () => {
+    const belief = 'Not so, though they believed it: Cyril is Dead. They have seen it for themselves.';
+    it('is told it is no rumour, every reply they are here', () => {
+        const note = buildNow({ cast: [{ name: 'Cyril', player: true }, { name: 'Enrique Medina', knows: [belief] }] });
+        expect(note).toContain('Enrique Medina saw Cyril dead with their own eyes');
+        expect(note).toContain('no rumour');
+    });
+    it('no one else is', () => {
+        expect(buildNow({ cast: [{ name: 'Cyril', player: true }, { name: 'Zane', knows: ['Cyril is an elf.'] }] })).toBe('');
+    });
+    it('only about the player character', () => {
+        expect(buildNow({ cast: [{ name: 'Cyril', player: true }, { name: 'Zane', knows: ['Not so, though they believed it: Bartin is Dead.'] }] })).toBe('');
+    });
+    it('across genres', () => {
+        const note = buildNow({ cast: [{ name: 'Kiri', player: true }, { name: 'Maelis', knows: ['Not so, though they believed it: Kiri was slain at the ford.'] }] });
+        expect(note).toContain('Maelis saw Kiri dead');
+    });
+});
+
 describe('someone arriving with a past', () => {
     const cast = [{ name: 'Cyril', player: true }, { name: 'Enrique Medina', relations: ['Toward Cyril: rival.', 'Toward Inji: distrust.'], knows: ['Enrique was the one who shot Cyril dead.', 'The vault code is 4471.'] }, { name: 'Lena' }];
     it('is told so, with what it is', () => {

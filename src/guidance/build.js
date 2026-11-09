@@ -200,6 +200,18 @@ function arrivalWhere(list, input) {
 // Someone coming in who has a past with the player character says so in the
 // note nearest the reply: told it only in the cast list far above, Enrique -
 // who shot Cyril dead - greeted him with "if it isn't the infamous Cyril".
+// Someone here who saw the player character dead with their own eyes: it is
+// no rumour to them. Told "only heard rumors" in the settled lines, Enrique -
+// who shot him - said "I'm well aware of the rumors about your supposed demise".
+function backFromDead(cast) {
+    const player = clean((cast ?? []).find((c) => c.player)?.name);
+    const first = player.split(/\s+/)[0];
+    if (first.length < 2) return '';
+    const dead = new RegExp(`^Not so, though they believed it:.*\\b${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b.*\\b(?:dead|slain|killed|died)\\b`, 'i');
+    const who = (cast ?? []).filter((c) => !c.player && (c.knows ?? []).some((k) => dead.test(clean(k)))).map((c) => clean(c.name));
+    return who.length ? `${andList(who)} saw ${player} dead with their own eyes, and ${player} is standing here alive: that is what this meeting is to ${who.length === 1 ? 'them' : 'each of them'}. It is no rumour and no hearsay, and no one who saw it speaks of ${player}'s death as something they only heard about.` : '';
+}
+
 function arrivalPast(list, input, player) {
     const first = player.split(/\s+/)[0];
     const about = (text) => new RegExp(`\\b${first.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(String(text ?? ''));
@@ -520,13 +532,15 @@ export function buildNow(input) {
     const viewer = looksThrough(input.playerPost);
     const prisoners = captivesLine(input.captives, { side: (input.cast ?? []).find((c) => c.player) ? `${clean((input.cast ?? []).find((c) => c.player).name)}'s side` : '' });
     const argumentEnds = clean(input.windDown);
-    if (!argumentEnds && !prisoners && !pronouns && !viewer && !radio && !meet && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
+    const sawDead = backFromDead(input.cast);
+    if (!sawDead && !argumentEnds && !prisoners && !pronouns && !viewer && !radio && !meet && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (argumentEnds) orders.push(argumentEnds);
     if (corrections) orders.push(corrections);
     if (pronouns) orders.push(`${pronouns}.`);
     if (prisoners) orders.push(prisoners);
+    if (sawDead) orders.push(sawDead);
     if (arriving.length) orders.push(arriving.length === 1
         ? `${arriving[0]} comes in now - they arrive where everyone can see and speak or act, with their own reason for coming.`
         : `${andList(arriving)} come in now - each arrives where everyone can see and speaks or acts, with their own reason for coming.`);
