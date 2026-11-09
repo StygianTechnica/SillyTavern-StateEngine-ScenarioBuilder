@@ -28,6 +28,7 @@ import { triggerLines } from '../triggers/model.js';
 import { deadText, placesTheAbsent } from '../state/death.js';
 import { detainedIds, detainedText } from '../state/detained.js';
 import { captivesFrom } from './captives.js';
+import { aloneOrder, sentAfter } from './alone.js';
 import { circling } from '../director/loops.js';
 import { stillWaiting, waitingIds } from '../director/suspended.js';
 import { sidesApart, sidesText } from './sides.js';
@@ -601,6 +602,14 @@ export async function gatherInputs(chatId, chatKey) {
             playerPost: latestPlayerPost(),
             // Those the player's side holds prisoner, in the scene (src/guidance/captives.js).
             captives: captivesHere(castFor, [doc.op, ...(doc.opsAlso ?? []), ...(doc.opsDone ?? [])]),
+            // The player character alone (src/guidance/alone.js).
+            aloneNow: ((player) => {
+                if (!player || castFor.some((c) => !c.player)) return '';
+                const replies = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system && !m.is_user).slice(-8).map((m) => String(m.mes ?? ''));
+                const dead = detainedIds(doc);
+                const people = allCharacters.filter((ch) => ch.name !== player && !powerIds.has(ch.id) && !dead.has(ch.id) && !doc.dead.some((d) => d.id === ch.id)).map((ch) => ch.name);
+                return aloneOrder({ player, sent: sentAfter(replies, { player, people }) });
+            })(castFor.find((c) => c.player)?.name ?? ''),
             // Those taken out by hand and those a split left elsewhere too:
             // the note just before the reply is what a small model keeps.
             elsewhere: [...new Set([...absent, ...splitAway, ...elsewhereNow(allCharacters, {

@@ -533,10 +533,12 @@ export function buildNow(input) {
     const prisoners = captivesLine(input.captives, { side: (input.cast ?? []).find((c) => c.player) ? `${clean((input.cast ?? []).find((c) => c.player).name)}'s side` : '' });
     const argumentEnds = clean(input.windDown);
     const sawDead = backFromDead(input.cast);
-    if (!sawDead && !argumentEnds && !prisoners && !pronouns && !viewer && !radio && !meet && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
+    const aloneNow = clean(input.aloneNow);
+    if (!aloneNow && !sawDead && !argumentEnds && !prisoners && !pronouns && !viewer && !radio && !meet && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (argumentEnds) orders.push(argumentEnds);
+    if (aloneNow) orders.push(aloneNow);
     if (corrections) orders.push(corrections);
     if (pronouns) orders.push(`${pronouns}.`);
     if (prisoners) orders.push(prisoners);

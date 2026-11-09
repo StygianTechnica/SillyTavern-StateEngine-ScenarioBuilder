@@ -73,6 +73,10 @@ describe('in the prompt', () => {
         const { user } = buildGenerationPrompt({ ...input, entry: { name: 'Ilse', values: { description: 'Short and round.' } } });
         expect(user).not.toContain('used these too often');
     });
+    it('a person is not given relatives no one wrote', () => {
+        expect(buildGenerationPrompt({ ...input, person: true }).user).toContain('never kin');
+        expect(buildGenerationPrompt({ ...input, type: { id: 'faction', label: 'Faction', noun: 'faction' }, person: false }).user).not.toContain('never kin');
+    });
     it('nothing added without them', () => {
         const { user } = buildGenerationPrompt({ ...input, kindred: '', overused: '' });
         expect(user).not.toContain('have in common');

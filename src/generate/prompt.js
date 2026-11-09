@@ -310,6 +310,9 @@ ${input.populationLine} Let what you write fit this mix.`);
         job += `\n${shownName || 'This character'} is a man or a woman - whichever their name and what is written of them suggest: write he / him or she / her and keep to it - never "they" or "them" for this one person.`;
     }
     if (input.overused && targets.some((f) => f.name === 'description')) job += `\n${input.overused}`;
+    // Enrique Medina's sheet made brothers of Randrés and Tiago Moriarty, his
+    // partners in the Syndicate.
+    if (input.person) job += '\nFamily: call someone a parent, child, brother, sister or other relative only where what is above says so. Sharing a faction, a rank or a job makes people colleagues or rivals, never kin.';
     job += `\nEach text field: ${length}.`;
 
     const template = [...(askName ? [['name', '"..."']] : []), ...targets.map((f) => [f.name, formOf(f, refNames).json])];
