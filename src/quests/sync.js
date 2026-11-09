@@ -31,7 +31,7 @@ import { listEntries, createEntry, updateEntry, setEntryMeta, mayAddGeneratedDet
 import { PRESET_NAME } from '../preset/blueprint.js';
 import { enqueueEnrichment } from '../generate/enrich.js';
 import {
-    isQuestThread, idleSeed, threadDormant, rejectedLike, statusFromThread, typeFromThread, objectivesFromThread, mergeObjectives, tidyObjectives, foreignStepTest,
+    isQuestThread, idleSeed, notAQuest, threadDormant, rejectedLike, statusFromThread, typeFromThread, objectivesFromThread, mergeObjectives, tidyObjectives, foreignStepTest,
     effectiveStatus, questProgress, currentObjective, questPriority, sortQuests, normalizeQuestMeta, conditionOf, conditionTarget,
 } from './model.js';
 
@@ -161,6 +161,9 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
             if (thread.dormant && !scan) continue;
             // A passing remark is no quest until something comes of it.
             if (idleSeed(thread)) continue;
+            // Plainly no quest, or one the board already has in other words.
+            // "Scan for quests" (the user asking) still finds them.
+            if (!scan && (notAQuest(thread) || rejectedLike(thread, quests.map((q) => ({ name: q.name, text: q.description }))))) continue;
             const finished = thread.status === 'resolved' || thread.status === 'abandoned';
             if (finished && !scan) continue;
 
@@ -201,7 +204,7 @@ export async function runQuestSync(chatId, chatKey, settingId, { scan = false } 
         const seen = doc.questsSeen;
         const fresh = seen ? quests.filter((q) => !seen.includes(q.id) && !Object.values(links).includes(q.id) && !getEntryMeta(settingId, q.id).origin) : [];
         // A quest the story starts again under a rejected name is removed.
-        for (const q of fresh.filter((x) => rejectedName(x.name) || rejectedLike({ title: x.name, text: x.description }, rejectedQuests))) {
+        for (const q of fresh.filter((x) => rejectedName(x.name) || rejectedLike({ title: x.name, text: x.description }, rejectedQuests) || notAQuest({ title: x.name, text: x.description, goal: (x.objectives ?? [])[0] }))) {
             await deleteEntry(chatId, settingId, q.id);
             quests = quests.filter((x) => x.id !== q.id);
         }

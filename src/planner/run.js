@@ -48,6 +48,9 @@ import { triggerSection,
     removeFromDay, planBehindBeat, addSettled, removeSettled, settledSection, keptSettled, arrivalReasons,
 } from './model.js';
 import { shapeOf, tensionAim } from './shapes.js';
+import { narrowIdeas } from './idea-filter.js';
+import { isLive } from '../ops/model.js';
+import { encounterOpen } from '../ops/detect.js';
 import { companyLines } from '../director/company.js';
 import { questBoard } from '../quests/sync.js';
 import { stillWaiting } from '../director/suspended.js';
@@ -1233,10 +1236,20 @@ export async function runIdeas(chatId, chatKey) {
         // chat), and an enrichment only for an open quest.
         const recentText = messages.map((m) => m.text).join('\n');
         const openQuests = quests.map((q) => ({ name: q.name, aliases: [] }));
-        const kept = ideas.filter((idea) => {
+        const guarded = ideas.filter((idea) => {
             if (idea.kind === 'quest') return !knownAs(idea.name, known) && relevance({ kind: 'quest', name: idea.name, why: [idea.why, ...idea.ties].join('; ') }, { recentText, quests: guidance.quests ?? [], known }).ok;
             if (idea.kind === 'enrich') return !!knownAs(idea.target, openQuests);
             return true;
+        });
+        // Quests and detail only that the story has made room for (src/planner/idea-filter.js).
+        const now = getChatDoc(chatKey);
+        const kept = narrowIdeas(guarded, {
+            past: now.gm.ideas,
+            rejected: now.rejected.filter((r) => r.type === 'quest').map((r) => ({ name: r.name, text: r.text })),
+            open: quests.map((q) => ({ name: q.name, text: q.description })),
+            recent: recentText,
+            player: [userName()],
+            encounter: isLive(now.op) || encounterOpen({ fight: now.fight, lastOp: now.op ?? (now.opsDone ?? []).at(-1) ?? null, castIds: now.canonical.castIds }),
         });
         updateChatDoc(chatKey, (d) => { d.gm.counters.sinceIdeas = 0; });
         if (!kept.length) return ideas.length ? 'nothing that fits' : 'no ideas this time';

@@ -656,7 +656,7 @@ export function buildIdeasPrompt(input) {
         'YOUR IDEAS',
         canon
             ? 'This setting is fixed canon: invent no new quests and add no detail to existing ones. Give only happenings and seeds.'
-            : 'At most two of each kind; fewer is fine, and none of a kind is fine. A quest is a new potential quest tied to the current story (it starts not yet taken up). An enrichment adds lore, a complication or objectives to an open quest above. ',
+            : 'At most two of each kind; fewer is fine, and none of a kind is fine. A quest is a new potential quest tied to the current story (it starts not yet taken up): something definite to do and a way to finish it, opened by someone in THE LATEST CHAT, named in its ties. A conversation, a mood, a rumour or a backstory is no quest; usually there is none. An enrichment adds lore, a complication or objectives to an open quest above. ',
         'A happening is something set for a later in-game day (one to fourteen days on) that should come up then without disrupting the scene now. A seed is a small thing to plant now so a later beat pays off.',
         'An event is a structured contest or expedition - an arena, a tournament, a dungeon crawl, or a programme (a festival, a trial) - but only when the story itself speaks of one coming ("the tournament at midsummer", "the old mine nobody comes back from") or the place would plainly hold one now. At most one; usually none.',
         'Answer in this JSON shape:',

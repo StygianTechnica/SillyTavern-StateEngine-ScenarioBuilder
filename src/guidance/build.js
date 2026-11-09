@@ -20,6 +20,7 @@ import { opGuidance, opRadio, opMeet, opPlaces } from '../ops/model.js';
 import { LOOKS, VIEWER } from './afar.js';
 import { povRule } from '../director/perspective.js';
 import { intimacySection } from './intimacy.js';
+import { captivesLine } from './captives.js';
 
 const labelOf = (list, id) => list.find(([key]) => key === id)?.[1] ?? id;
 
@@ -504,11 +505,13 @@ export function buildNow(input) {
     const meet = opMeet(input.op, { here: clean((input.location?.path ?? []).at(-1)) || clean(input.location?.name), post: input.playerPost, player: clean((input.cast ?? []).find((c) => c.player)?.name) });
     const pronouns = pronounsNamed(input.cast, input.playerPost);
     const viewer = looksThrough(input.playerPost);
-    if (!pronouns && !viewer && !radio && !meet && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
+    const prisoners = captivesLine(input.captives, { side: (input.cast ?? []).find((c) => c.player) ? `${clean((input.cast ?? []).find((c) => c.player).name)}'s side` : '' });
+    if (!prisoners && !pronouns && !viewer && !radio && !meet && !notInPerson.length && !later.length && !pushFair && !pushTeam && !elsewhere.length && !arriving.length && !triggered.length && !settled.length && !next && !dodging && !sides && !corrections && !named && !jobs && !notYet && !nextThing) return '';
     const player = (input.cast ?? []).find((c) => c.player);
     const orders = [];
     if (corrections) orders.push(corrections);
     if (pronouns) orders.push(`${pronouns}.`);
+    if (prisoners) orders.push(prisoners);
     if (arriving.length) orders.push(arriving.length === 1
         ? `${arriving[0]} comes in now - they arrive where everyone can see and speak or act, with their own reason for coming.`
         : `${andList(arriving)} come in now - each arrives where everyone can see and speaks or acts, with their own reason for coming.`);

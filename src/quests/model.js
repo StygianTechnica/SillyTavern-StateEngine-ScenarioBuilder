@@ -43,6 +43,28 @@ export function idleSeed(thread) {
     return !clean(thread.goal) && !steps.length;
 }
 
+// A thread that is plainly no quest, for all that Archivist filed it as a
+// goal or plan: 30 of Assassins Inc's were rejected by hand. A conversation
+// to have ("Discuss Alliance Terms with Vex", "Contact Zane for Cookout
+// Details"), a night in ("Find Private Location for Intimacy"), getting used
+// to things ("Adapt to the New Environment"), something that has simply
+// happened or is so ("Extraction Successful", "Cyril is considering..."), or
+// a passage of the story rather than a thing to do ("Galice mentioned...",
+// "Delvin 'Ice' Timmers is a suave...", with no goal or steps of its own).
+const JUST_TALK = /^(?:discuss(?:ing)?|talk(?:ing)?|chat(?:ting)?|speak(?:ing)?|contact(?:ing)?|reach(?:ing)? out|ask(?:ing)?|tell(?:ing)?|consider(?:ing)?|address(?:ing)?|flirt(?:ing)?|embrac(?:e|ing)|explor(?:e|ing) options)\b/i;
+const MOMENT_TO_MOMENT = /^(?:adapt(?:ing)?|gear(?:ing)? up|practic(?:e|ing)|hon(?:e|ing)|stay(?:ing)?|rest(?:ing)?|relax(?:ing)?|familiari[sz](?:e|ing)|get(?:ting)? (?:ready|used))\b/i;
+const BEDROOM = /\b(?:flirt\w*|intimac\w*|intimate|passionate|seduc\w*|sexual\w*|lovemaking|appetites|one-night)\b/i;
+const OVER_OR_SO = /\b[Ss](?:uccessful|ucceeded)$|^(?:[\p{Lu}][\p{L}'’-]*\s+){1,3}(?:is|are|was|were|has|have)\b|\bconditions? (?:is|are)\b/u;
+const PASSAGE = /^(?:(?:[\p{Lu}][\p{L}'’-]*|["'][^"']+["'])(?:\s+|['’]s\s+[\p{L}]+\s+)){1,4}(?:is an?|stands?|sits?|recalls?|reels?|mentioned|threatened|said|told|turned|walked|looked|felt)\b/u;
+export function notAQuest(thread) {
+    if (!thread || typeof thread !== 'object' || thread.entity?.type === 'quest') return false;
+    const title = clean(thread.title);
+    const text = clean(thread.text);
+    if (JUST_TALK.test(title) || MOMENT_TO_MOMENT.test(title) || OVER_OR_SO.test(title) || BEDROOM.test(`${title} ${text}`)) return true;
+    const steps = (Array.isArray(thread.steps) ? thread.steps : []).filter((s) => clean(typeof s === 'string' ? s : s?.text));
+    return !clean(thread.goal) && !steps.length && PASSAGE.test(text);
+}
+
 export function statusFromThread(status) {
     switch (String(status ?? '').toLowerCase()) {
         case 'active': return 'Active';

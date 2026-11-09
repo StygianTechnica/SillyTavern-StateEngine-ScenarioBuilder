@@ -397,6 +397,7 @@ export function dossierText(input) {
     // Who has died in this story (src/state/death.js).
     if (clean(input.deadText)) { section('THE DEAD (gone for good - they can be mourned, remembered or spoken of, never shown alive, speaking or acting - unless the latest chat itself brings one back: RISES)'); lines.push(clean(input.deadText)); }
     // Who is jailed or held for a time (src/state/detained.js).
+    if (clean(input.captivesText)) { section('PRISONERS HERE (taken by the player character\'s side and still in their hands; when they are handed over: DETAINED)'); lines.push(clean(input.captivesText)); }
     if (clean(input.detainedText)) { section('THE HELD (jailed or held for now - they can be spoken of, or visited where they are held, but they do not come into the scene or act on their own unless the latest chat frees them: RELEASED)'); lines.push(clean(input.detainedText)); }
     // Who cannot be killed here (src/director/combat.js).
     if (clean(input.protectedText)) { section('NEVER KILLED IN THIS STORY'); lines.push(clean(input.protectedText)); }

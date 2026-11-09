@@ -55,6 +55,7 @@ import { timedHappenings } from '../planner/timed.js';
 const WOUNDS_KEPT = 30;
 import { markDead, deadText, deadByName, bringBack } from '../state/death.js';
 import { isDetained, detainedText, detainedByName, soundsHeld, release } from '../state/detained.js';
+import { captivesLine } from '../guidance/captives.js';
 import { contextualPlace } from '../library/place-context.js';
 import { personGender } from '../naming/classify.js';
 import { creatureFormOf, readCount, addCount, takeCount, creatureLabel } from '../library/creature-form.js';
@@ -766,6 +767,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             return [ch?.base?.role ?? ch?.role ?? '', patrons.length ? `champion of ${patrons.join(' and ')}` : ''].filter((x) => String(x).trim()).join(', ');
         } }),
         detainedText: detainedText(doc, { recentText: messages.slice(-6).map((m) => m.text).join('\n') }),
+        captivesText: captivesLine(guidance.captives, { side: `${clean(SillyTavern.getContext().name1) || 'the player character'}'s side` }),
         powersText: powersText(atWork),
         suspendedText: suspendedText(waiting, nameOfId),
         splitText: splitText(waiting, nameOfId),

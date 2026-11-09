@@ -27,6 +27,7 @@ import { getPresetStatus, PRESET_STATUS_EVENT } from '../preset/scenario-preset.
 import { triggerLines } from '../triggers/model.js';
 import { deadText, placesTheAbsent } from '../state/death.js';
 import { detainedIds, detainedText } from '../state/detained.js';
+import { captivesFrom } from './captives.js';
 import { circling } from '../director/loops.js';
 import { stillWaiting, waitingIds } from '../director/suspended.js';
 import { sidesApart, sidesText } from './sides.js';
@@ -598,6 +599,8 @@ export async function gatherInputs(chatId, chatKey) {
             // and who is not here: they stay where they are.
             // The player's latest post: where they are headed (src/ops/model.js opMeet).
             playerPost: latestPlayerPost(),
+            // Those the player's side holds prisoner, in the scene (src/guidance/captives.js).
+            captives: captivesHere(castFor),
             // Those taken out by hand and those a split left elsewhere too:
             // the note just before the reply is what a small model keeps.
             elsewhere: [...new Set([...absent, ...splitAway, ...elsewhereNow(allCharacters, {
@@ -812,6 +815,18 @@ export async function syncGuidance() {
 // Scenario Builder places this one. Off in settings, or with nothing to
 // say, it is cleared.
 // The player's latest post - the one the next reply answers.
+// Prisoners among those here, from the player's recent posts: never one of
+// the player character's own faction ("we caught Zane" is no capture).
+const CAPTIVE_POSTS = 40;
+function captivesHere(cast) {
+    const player = cast.find((c) => c.player);
+    const mine = new Set(player?.factionIds ?? []);
+    const others = cast.filter((c) => !c.player && !(c.factionIds ?? []).some((id) => mine.has(id)));
+    if (!others.length) return [];
+    const posts = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system && m.is_user).slice(-CAPTIVE_POSTS).map((m) => String(m.mes ?? ''));
+    return captivesFrom(posts, others);
+}
+
 const latestPlayerPost = () => String([...(SillyTavern.getContext().chat ?? [])].reverse().find((m) => m && !m.is_system && m.is_user)?.mes ?? '');
 // The player's last `n` posts, oldest first.
 const recentPlayerPosts = (n) => (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system && m.is_user).slice(-n).map((m) => String(m.mes ?? ''));
