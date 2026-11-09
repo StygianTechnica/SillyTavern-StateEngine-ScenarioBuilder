@@ -1498,10 +1498,16 @@ export const SETTLED_RETIRE = 40;
 // reply kept the trial in front of Adam, who asked for a report on it.
 const POINTS = /\b(?:this|these|those)\s+[\p{L}-]+/iu;
 const OPEN = /\b(?:unclear|uncertain|unknown|undecided|unresolved|to be seen|to be determined|not yet (?:known|decided|clear)|remains? (?:open|a mystery|in question))\b/i;
+// Someone's verdict on how another behaved is an opinion, not a fact of the
+// story: "Cyril's actions during the mission were unauthorized and
+// compromised the operation", taken from the narrator's own accusation, went
+// out as settled - no one to argue it - while Cyril was arguing it.
+const VERDICT = /\b(?:reckless\w*|careless\w*|irresponsible|impulsive\w*|incompetent|incompetence|insubordinat\w*|unauthori[sz]ed|foolish\w*|at fault|to blame|(?:nearly |almost )?(?:compromised|jeopardi[sz]ed|endangered) (?:the|our|their|its)\b)/i;
 export function unsettledReason(text) {
     const t = clean(text);
     if (POINTS.test(t)) return 'points at something in the scene ("this ...")';
     if (OPEN.test(t)) return 'says something is still open';
+    if (VERDICT.test(t)) return 'is someone\'s judgement of how another behaved';
     return '';
 }
 
