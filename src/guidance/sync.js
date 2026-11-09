@@ -600,7 +600,7 @@ export async function gatherInputs(chatId, chatKey) {
             // The player's latest post: where they are headed (src/ops/model.js opMeet).
             playerPost: latestPlayerPost(),
             // Those the player's side holds prisoner, in the scene (src/guidance/captives.js).
-            captives: captivesHere(castFor),
+            captives: captivesHere(castFor, [doc.op, ...(doc.opsDone ?? [])]),
             // Those taken out by hand and those a split left elsewhere too:
             // the note just before the reply is what a small model keeps.
             elsewhere: [...new Set([...absent, ...splitAway, ...elsewhereNow(allCharacters, {
@@ -816,12 +816,15 @@ export async function syncGuidance() {
 // say, it is cleared.
 // The player's latest post - the one the next reply answers.
 // Prisoners among those here, from the player's recent posts: never one of
-// the player character's own faction ("we caught Zane" is no capture).
+// the player character's own faction ("we caught Zane" is no capture),
+// unless they ran with a rival crew: a sheet can be wrong (Tadam, of Enrique's
+// crew, was written up as White Cerberus's surveillance man).
 const CAPTIVE_POSTS = 40;
-function captivesHere(cast) {
+function captivesHere(cast, ops = []) {
     const player = cast.find((c) => c.player);
     const mine = new Set(player?.factionIds ?? []);
-    const others = cast.filter((c) => !c.player && !(c.factionIds ?? []).some((id) => mine.has(id)));
+    const rivals = new Set(ops.filter((o) => o && !mine.has(o.sideId)).flatMap((o) => [o.leader?.objectId, ...(o.crew ?? []).map((c) => c?.objectId)]).filter(Boolean));
+    const others = cast.filter((c) => !c.player && (rivals.has(c.id) || !(c.factionIds ?? []).some((id) => mine.has(id))));
     if (!others.length) return [];
     const posts = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system && m.is_user).slice(-CAPTIVE_POSTS).map((m) => String(m.mes ?? ''));
     return captivesFrom(posts, others);

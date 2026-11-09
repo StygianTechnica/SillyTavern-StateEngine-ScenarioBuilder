@@ -54,7 +54,7 @@ import { timedHappenings } from '../planner/timed.js';
 // How many replies a broken-off fight's wounds are remembered.
 const WOUNDS_KEPT = 30;
 import { markDead, deadText, deadByName, bringBack } from '../state/death.js';
-import { isDetained, detainedText, detainedByName, soundsHeld, release } from '../state/detained.js';
+import { isDetained, detainedText, detainedByName, soundsHeld, heldByOwnSide, release } from '../state/detained.js';
 import { captivesLine } from '../guidance/captives.js';
 import { contextualPlace } from '../library/place-context.js';
 import { personGender } from '../naming/classify.js';
@@ -1310,6 +1310,14 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         for (const d of parsed.detentions ?? []) {
             const who = whoIs(d.name);
             if (!who || playerNames.some((p) => p.toLowerCase() === who.name.toLowerCase()) || !namedHere(who) || !soundsHeld(d.how)) continue;
+            // Still with the player's own side, it is a prisoner in the scene,
+            // not someone led away: Tadam, "in Inji's custody" in the back of
+            // their car, went out of the cast and spoke from it anyway.
+            const ownSide = (guidance.cast ?? []).filter((c) => c.player || (c.factionIds ?? []).some((id) => (guidance.cast ?? []).find((p) => p.player)?.factionIds?.includes(id)));
+            if ((guidance.captives ?? []).some((c) => c.name === who.name) || heldByOwnSide(d.how, ownSide.flatMap((c) => [c.name, String(c.name).split(/\s+/)[0]]))) {
+                console.info(LOG_PREFIX, `${who.name} left in the scene: still in the hands of the player's side (${d.how})`);
+                continue;
+            }
             if (await detainPerson(chatId, chatKey, settingId, { id: who.id, name: who.name, how: d.how, source: 'director', reply: replyIndex })) console.info(LOG_PREFIX, `${who.name} detained: ${d.how}`);
         }
         for (const r of parsed.releases ?? []) {

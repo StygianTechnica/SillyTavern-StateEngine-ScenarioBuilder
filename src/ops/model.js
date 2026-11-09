@@ -193,6 +193,25 @@ function end(op, turn, status, text) {
     return note({ ...op, status, endedTurn: turn, endText: text, steps: op.steps.map((s) => (s.status === 'current' && status === 'got away' ? { ...s, status: 'done' } : s)) }, turn, text);
 }
 
+// The job a person the story has just named is on, newest first, and the
+// words that hold their sheet to it. Assassins Inc: Tadam Chi, on Enrique's
+// crew, was first seen as a voice on a radio; the sheet written from that had
+// him loyal to White Cerberus, the side he was robbing. ops: the chat's
+// operations, oldest first. -> { side, sideId, brief } or null.
+export function crewJobOf(ops, name) {
+    const o = [...(ops ?? [])].filter(Boolean).reverse().find((x) => crewIndex(x, name) >= 0 || (x.leader?.name && sameName(x.leader.name, name)));
+    if (!o || !clean(o.side)) return null;
+    const boss = clean(o.boss?.name);
+    const leader = clean(o.leader?.name);
+    const under = leader && !sameName(leader, name) ? `, answering to ${leader}` : '';
+    const against = clean(o.against);
+    return {
+        side: clean(o.side),
+        sideId: o.sideId ?? '',
+        brief: `They are one of ${clean(o.side)}'s people, on ${boss ? `${boss}'s` : 'its'} job at ${clean(o.placeName) || 'the scene'}${under}. Their role, background, ties and goals keep to that${against ? `; they are against ${against} and were never one of them` : ''}.`,
+    };
+}
+
 // Who in the crew (or the leader) a name from the story is.
 export function crewIndex(op, name) {
     return (op?.crew ?? []).findIndex((c) => sameName(c.name, name));

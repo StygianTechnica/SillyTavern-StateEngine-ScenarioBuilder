@@ -1,6 +1,7 @@
 // Assassins Inc: "We snagged Tadam", then Tadam at the getaway car, nodding along.
 import { captivesFrom, captivesLine } from '../src/guidance/captives.js';
 import { buildNow } from '../src/guidance/build.js';
+import { heldByOwnSide } from '../src/state/detained.js';
 
 const tadam = { name: 'Tadam Chi', aliases: [] };
 const delvin = { name: 'Delvin "Ice" Timmers', aliases: [] };
@@ -36,6 +37,21 @@ describe('a prisoner in hand', () => {
         expect(captivesFrom(['We captured Maelis at the ford. We will ransom her to the Choir.'], [{ name: 'Maelis' }])).toEqual([{ name: 'Maelis', plan: 'We will ransom her to the Choir.' }]);
         expect(captivesFrom(['Vance had arrested Reyes on the bridge. "Reyes goes to the magistrate on Ceres."'], [{ name: 'Commander Reyes', aliases: ['Reyes'] }])[0].plan).toContain('magistrate');
         expect(captivesFrom(['Sam cuffed Dana.'], [{ name: 'Dana' }])).toEqual([{ name: 'Dana', plan: '' }]);
+    });
+});
+
+describe('held by their own side', () => {
+    const own = ['Cyril', 'Inji Miyama', 'Inji', 'Zane'];
+    it('is not led away', () => {
+        expect(heldByOwnSide("Inji's custody, being taken back to her apartment", own)).toBe(true);
+    });
+    it('the police or a rival are', () => {
+        expect(heldByOwnSide('the city police, for the museum job', own)).toBe(false);
+        expect(heldByOwnSide('the Pale Choir, in the crypt', ['Kiri'])).toBe(false);
+        expect(heldByOwnSide('Officer Hale, at the precinct', own)).toBe(false);
+    });
+    it('not a name inside another word', () => {
+        expect(heldByOwnSide('Zanetti, at the docks', own)).toBe(false);
     });
 });
 

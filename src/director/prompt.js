@@ -607,7 +607,7 @@ export function buildDirectorPrompt(input) {
             'RISES | <name> | <how, a few words>',
         ] : []),
         '',
-        `If someone other than ${userName} is arrested, jailed or taken captive and led away in this reply, out of the story for a while, a line for each - not someone only held at gunpoint, tied up for the moment or still in the scene:`,
+        `If someone other than ${userName} is arrested, jailed or taken captive and led away in this reply, out of the story for a while, a line for each - not someone only held at gunpoint, tied up for the moment, still in the scene, or still in the hands of ${userName}'s side (PRISONERS HERE): only once handed over or locked up elsewhere:`,
         'DETAINED | <name> | <who holds them and why, a few words>',
         ...(clean(input.detainedText) ? [
             '',

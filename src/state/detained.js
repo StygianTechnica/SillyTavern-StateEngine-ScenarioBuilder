@@ -75,6 +75,11 @@ const CUSTODY = /\b(?:arrest\w*|jail\w*|gaol\w*|prison\w*|imprison\w*|cell|cells
 const ONLY_A_MOMENT = /\b(?:at (?:gun|knife|sword|spear|blade|wand)?\s*point|gunpoint|knifepoint|swordpoint|at bay|in (?:a|his|her|their) (?:grip|sights?))\b/i;
 export const soundsHeld = (how) => CUSTODY.test(clean(how)) && !ONLY_A_MOMENT.test(clean(how));
 
+// Whether who holds them is one of the player character's own side, here
+// with them. names: that side's people in the scene.
+export const heldByOwnSide = (how, names = []) => (names ?? []).map(clean).filter((n) => n.length >= 3)
+    .some((n) => new RegExp(`(^|[^\\p{L}])${escape(n)}(?!\\p{L})`, 'iu').test(clean(how)));
+
 // Who works to free them: their first faction that is not the one holding
 // them. factions: the person's [{ id, name, aliases }]. -> a faction or null.
 export function rescuerOf(factions = [], how = '') {

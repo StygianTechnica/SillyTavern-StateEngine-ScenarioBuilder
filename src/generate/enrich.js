@@ -14,7 +14,8 @@
 
 import { LOG_PREFIX } from '../constants.js';
 import { getObject } from '../api/objects.js';
-import { updateChatDoc } from '../store/chat-store.js';
+import { getChatDoc, updateChatDoc } from '../store/chat-store.js';
+import { crewJobOf } from '../ops/model.js';
 import { getEntryMeta, getSettingDoc } from '../store/setting-store.js';
 import { addRelation, relationsFor } from '../library/relations-edit.js';
 import { getObjectType, getObjectTypes, listEntries, updateEntry, setEntryMeta, mayAddGeneratedDetail, getParents, setParent } from '../library/library.js';
@@ -142,9 +143,12 @@ async function enrichOne(job) {
         // For a person the description is looks only: what the line says of
         // them is their role, background and ties.
         const what = seed ? foldRegion(seed, oldRegion) : '';
-        const brief = !seed ? ''
+        const seedBrief = !seed ? ''
             : type.id === 'character' ? `What the story says of them: ${what} - their role, background, ties and goals keep to that.`
                 : `It is: ${what} - keep that, and write the description out from it.`;
+        // On a rival crew's job: that is who they are, whatever the scene around them.
+        const crewJob = type.id === 'character' && job.chatKey ? crewJobOf([...(getChatDoc(job.chatKey).opsDone ?? []), getChatDoc(job.chatKey).op], obj.name) : null;
+        const brief = [seedBrief, crewJob?.brief].filter(Boolean).join(' ');
         const draft = { name: obj.name, aliases: base.aliases ?? [], description: seed ? '' : base.description ?? '', fields: Object.fromEntries(fields.map((f) => [f.name, base[f.name] ?? null])) };
         const { values } = await generateEntry({ task: 'fill', type, ctx: { chatId, chatKey: job.chatKey, settingId }, fields, entry: obj, draft, all, brief, story: job.story ?? '', fromStory: !!job.adoptedId });
 
@@ -167,6 +171,8 @@ async function enrichOne(job) {
             // Kept so it can be put back (src/generate/revert.js).
             await recordEnrichment(settingId, job.objectId, enrichmentRecord({ id: newLocalId('e'), at: new Date().toISOString(), source: 'auto', before: Object.fromEntries(Object.keys(patch).map((k) => [k, now[k] ?? null])), after: patch }));
         }
+        // Of the crew's side, as its job says - before the fill's own guesses.
+        if (crewJob?.sideId && !relationsFor(job.objectId, getSettingDoc(settingId).relations ?? []).length) addRelation(settingId, { from: job.objectId, to: crewJob.sideId, kind: 'member of', note: 'on their job' });
         // A person with no ties yet: the side and the people the fill tied
         // them to (Lena came out of the director with none - no faction, no
         // one she knew).
