@@ -31,6 +31,15 @@ describe('a mission giver', () => {
 });
 
 describe('writing a mission', () => {
+    it('sees the story, so a job to stop a heist is not the heist', () => {
+        const { user } = buildMissionPrompt({ giver: { name: 'Adam Miller' }, story: 'Cyril: We need to stop that heist.\nMiller: Our main priority remains securing that art collection.' });
+        expect(user).toContain('We need to stop that heist.');
+        expect(user).toContain('a job to stop something is stopping it, never doing it');
+        expect(user.indexOf('The story just now')).toBeLessThan(user.indexOf('# Your task'));
+    });
+    it('says nothing of the story when there is none', () => {
+        expect(buildMissionPrompt({ giver: { name: 'The Quiet Hand' } }).user).not.toContain('The story just now');
+    });
     it('asks for the five parts, sized to the difficulty, with the setting to draw on', () => {
         const { user } = buildMissionPrompt({
             giver: { name: 'The Quiet Hand', type: 'faction', trade: guild.trade, clients: guild.clients, reward: guild.reward },

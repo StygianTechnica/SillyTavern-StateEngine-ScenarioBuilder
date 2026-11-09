@@ -37,7 +37,7 @@ import { activeBeat, settledNow, touchedSettled, retireSettled, dueToday } from 
 import { notYet, notYetLine } from '../planner/timed.js';
 import { closesOut, nextThingLine } from './wrapped.js';
 import { needsPresence, notePresent, rememberPeople, shownOf, takingPart, isKnownPerson } from '../planner/presence.js';
-import { pushBack } from './pushback.js';
+import { pushBack, windDown } from './pushback.js';
 import { opposedJobs, jobsLine, jobsTouched, planTexts } from '../planner/aims.js';
 import { creatureFormOf } from '../library/creature-form.js';
 import { giftsText } from '../library/powers.js';
@@ -656,7 +656,8 @@ export async function gatherInputs(chatId, chatKey) {
                     if (settled) job = { text: settled, people: names(settled) };
                 }
                 const p = pushBack({ post: latestPlayerPost(), player, cast, beat: job });
-                return { pushFair: p.fair, pushTeam: p.team };
+                const chat = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system);
+                return { pushFair: p.fair, pushTeam: p.team, windDown: windDown({ posts: chat.filter((m) => m.is_user).map((m) => String(m.mes ?? '')), replies: chat.filter((m) => !m.is_user).map((m) => String(m.mes ?? '')), player }) };
             })(settings.planner?.enabled === true ? activeBeat(doc.gm.outline) : null),
             // Who has died in this story (src/state/death.js).
             // Only the dead the latest messages speak of.

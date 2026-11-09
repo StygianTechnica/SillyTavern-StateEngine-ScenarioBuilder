@@ -148,6 +148,9 @@ export function buildMissionPrompt(input) {
         candidates.length ? `# People, places and things the setting has (use them as client or target where they fit)\n${candidates.map((c) => `- ${clean(c.name)}${clean(c.type) ? ` (${clean(c.type)})` : ''}${clean(c.description) ? `: ${cut(c.description, 90)}` : ''}`).join('\n')}` : '',
         past.length ? `# Jobs this giver has handed out before (do not repeat them)\n${past.map((p) => `- ${clean(p.name)}${clean(p.status) ? ` (${clean(p.status).toLowerCase()})` : ''}`).join('\n')}` : '',
         clean(input?.occasion) ? `# Why this job comes up now\n${cut(input.occasion, 500)}\nThe job answers this: it is what the giver wants found out, fetched, stopped or done about it.` : '',
+        // Written blind, Adam Miller's job to stop a heist at the museum came
+        // out as the robbery itself, for a client made from Inji's codename.
+        clean(input?.story) ? `# The story just now (most recent last)\n${cut(input.story, 1800)}\nIf the giver has a job in hand here, this is that job: its goal, its side and its people as the story has them - a job to stop something is stopping it, never doing it.` : '',
         clean(input?.request) ? `# What the user wants this time\n${cut(input.request, 400)}` : '',
         '# Your task',
         `Write the next job ${clean(g.name) || 'the giver'} hands out - the kind of work they give, for one of their clients, at this difficulty.`,
@@ -411,6 +414,7 @@ export async function offerMission(chatId, chatKey, settingId, giverId, { diffic
             past: past.map((m) => ({ name: m.name, status: m.status })),
             request,
             occasion,
+            story: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).slice(-6).map((m) => `${m.name}: ${clean(m.mes).slice(0, 400)}`).join('\n'),
             canonOnly,
             pool: live?.pool ?? null,
         });

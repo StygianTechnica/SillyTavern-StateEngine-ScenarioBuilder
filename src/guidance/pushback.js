@@ -17,6 +17,30 @@ const andList = (xs) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join('
 
 const OBJECTS = /\?|\b(?:hang on|hold on|wait a|no way|that's not|that isn't|i don't (?:think|agree|buy)|why (?:are|is|would|should|did|do)|this (?:is|was) (?:our|my)|says? who|since when)\b/i;
 
+// An argument that has gone on long enough. Assassins Inc's debrief: Cyril
+// answered every charge and asked to leave three times, while Inji, Zane and
+// Adam took turns, and Inji made up a plan to accuse him of breaking. "They do
+// not close ranks" was in the note all along and lost to ten replies of it.
+const DEFENDS = /\b(?:i (?:was|did)(?: not|n't)|i wasn't|i didn't|it wasn't|i (?:followed|fired|disarmed|cleared|blocked|had to)|if i hadn't|you're saying|you are saying|what (?:the \w+ )?are you talking|back me up|with all due respect|that's unfair|not fair|what was the plan)\b/i;
+const WANTS_OUT = /\b(?:can i (?:go|leave)|may i (?:go|leave)|let me (?:go|leave)|i'?m done|i am done|i'?m (?:leaving|walking|out of here)|i am (?:leaving|walking)|am i (?:done|free to go)|is that all)\b/i;
+const CRITICISM = /\b(?:reckless\w*|impulsive\w*|inexperience\w*|discipline\w*|deviated|diverged|mistakes?|missteps?|trigger-?happy|should have|rookie|newbie|novice|critiques?|your (?:actions|methods|performance|conduct|behaviou?r)|disobey\w*|insubordinat\w*|you failed)\b/i;
+export const WIND_DOWN_AFTER = 3;
+// posts: the player's posts, replies: the replies - each oldest first.
+// -> the order for the note nearest the reply, or ''.
+export function windDown({ posts = [], replies = [], player = '' } = {}) {
+    const who = clean(player) || 'the player character';
+    const said = (posts ?? []).map((p) => String(p ?? '').replace(/[’]/g, "'").replace(/\*/g, '')).slice(-6);
+    if ((replies ?? []).slice(-3).filter((r) => CRITICISM.test(String(r ?? ''))).length < 2) return '';
+    let run = 0;
+    for (const p of [...said].reverse()) {
+        if (!(OBJECTS.test(p) || DEFENDS.test(p) || WANTS_OUT.test(p))) break;
+        run += 1;
+    }
+    const leaving = said.slice(-5).some((p) => WANTS_OUT.test(p));
+    if (run < (leaving ? 2 : WIND_DOWN_AFTER)) return '';
+    return `This argument ends in this reply. ${who} has answered it again and again${leaving ? ' and has asked to go' : ''}: at least one of them plainly grants something specific ${who} said, the criticism stops, and no one keeps ${who} here or starts on anything new against ${who}. What ${who} says ${who} did stands; no one claims a plan, order or agreement the story never showed.`;
+}
+
 // post: the player's latest post; player: their name; cast: [{ name,
 // aliases, player }] here; beat: the active beat { text, people: [names it
 // gives a part] }. -> { fair: '', team: '' }

@@ -16,6 +16,12 @@ describe('a verdict is not a settled fact', () => {
             expect(unsettledReason(t)).toBe('');
         }
     });
+    it('nor is what is only true for now', () => {
+        for (const t of ["Enrique's operation remains the priority to stop; his heist plans are still set for tonight.", 'The caravan leaves at dawn tomorrow.', 'The reactor is stable for now.']) {
+            expect(unsettledReason(t)).toContain('for now');
+        }
+        expect(unsettledReason('Adam agreed Cyril will not be sent against Omicron Innovations.')).toBe('');
+    });
     it('from the game master it is turned away', () => {
         const gm = emptyGm();
         expect(addSettled(gm, { id: 's1', text: 'Cyril was reckless in the surveillance room.', source: 'director' })).toBeNull();

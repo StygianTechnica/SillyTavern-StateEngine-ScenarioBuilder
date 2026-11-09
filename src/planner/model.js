@@ -1503,11 +1503,15 @@ const OPEN = /\b(?:unclear|uncertain|unknown|undecided|unresolved|to be seen|to 
 // compromised the operation", taken from the narrator's own accusation, went
 // out as settled - no one to argue it - while Cyril was arguing it.
 const VERDICT = /\b(?:reckless\w*|careless\w*|irresponsible|impulsive\w*|incompetent|incompetence|insubordinat\w*|unauthori[sz]ed|foolish\w*|at fault|to blame|(?:nearly |almost )?(?:compromised|jeopardi[sz]ed|endangered) (?:the|our|their|its)\b)/i;
+// True only for the moment it was written: "his heist plans are still set
+// for tonight", still going out the night after, with the museum job over.
+const FOR_NOW = /\b(?:tonight|today|tomorrow|this (?:morning|afternoon|evening)|right now|at the moment|for now|still set|still planned|still on)\b/i;
 export function unsettledReason(text) {
     const t = clean(text);
     if (POINTS.test(t)) return 'points at something in the scene ("this ...")';
     if (OPEN.test(t)) return 'says something is still open';
     if (VERDICT.test(t)) return 'is someone\'s judgement of how another behaved';
+    if (FOR_NOW.test(t)) return 'is only true for now';
     return '';
 }
 
