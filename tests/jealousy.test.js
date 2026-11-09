@@ -6,6 +6,38 @@ import {
 import { buildDirectorPrompt, parseDirectorNote } from '../src/director/prompt.js';
 import { normalizeEntryMeta } from '../src/store/schema.js';
 
+describe('who has a claim to mind', () => {
+    const resolve = (n) => ({ Cyril: 'c', Zane: 'z' }[n] ?? null);
+    const take = (bond) => takeHearts(emptyHearts(), { romance: [{ one: 'Cyril', other: 'Zane', what: 'a night together' }] }, { resolve, nameOf: (id) => id, present: ['c', 'z'], bonds: [bond], playerId: 'c', day: 5, newId: () => 'x' }).added;
+    it('a lover or a sworn partner', () => {
+        expect(take({ who: 'i', to: 'c', strength: 3, romantic: true, label: 'lover' })).toHaveLength(1);
+    });
+    it('not a flirtation the notes read as romance', () => {
+        expect(take({ who: 'i', to: 'c', strength: 2, romantic: true, label: 'flirtatious' })).toEqual([]);
+        expect(take({ who: 'i', to: 'c', strength: 3, romantic: true, label: 'wants him' })).toEqual([]);
+    });
+});
+
+describe('what someone was not there for', () => {
+    const inji = { id: 'inji', name: 'Inji' };
+    const cyril = { id: 'cyril', name: 'Cyril', player: true };
+    const zane = { id: 'zane', name: 'Zane' };
+    const g = { id: 'g', who: 'inji', whoName: 'Inji', over: 'cyril', overName: 'Cyril', rival: 'zane', rivalName: 'Zane', what: 'Cyril and Zane - a night together', kind: 'word', strength: 3, day: 10, soothed: false };
+    const section = (present) => heartsSection({ present, grievances: [g], day: 11, userName: 'Cyril', nameOf: (id) => ({ inji: 'Inji', zane: 'Zane' }[id] ?? '') }).text;
+    it('is nothing to them while no one here could tell them', () => {
+        expect(section([inji, cyril])).toBe('');
+    });
+    it('only the other one who was there could let it slip, and until then it changes nothing', () => {
+        const text = section([inji, cyril, zane]);
+        expect(text).toContain('Inji does not know: Cyril and Zane - a night together');
+        expect(text).toContain('Only Zane could let it slip');
+        expect(text).toContain('treats Cyril as if it never happened');
+    });
+    it('what they saw for themselves still counts', () => {
+        expect(heartsSection({ present: [inji, cyril], grievances: [{ ...g, kind: 'seen' }], day: 11, userName: 'Cyril', nameOf: () => '' }).text).toContain('Inji is still');
+    });
+});
+
 let n = 0;
 const newId = () => `g${++n}`;
 const names = { mira: 'Mira', aldric: 'Aldric', sera: 'Sera', kesh: 'Kesh', pc: 'Remus', bran: 'Bran' };

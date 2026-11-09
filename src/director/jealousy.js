@@ -250,7 +250,10 @@ export function heartsSection({ present = [], bonds = [], grievances = [], modeO
         const rival = g.rival ? (playerIds.has(g.rival) ? userName : nameOfId(g.rival) || g.rivalName) : '';
         const when = ago(Number.isInteger(day) && Number.isInteger(g.day) ? day - g.day : 0);
         if (g.kind === 'word') {
-            lines.push(`- Word may have reached ${who}: ${unstop(g.what)} (${when}). Whether ${who} has heard is for the story - someone here may let it slip, or ${who} may ask; once ${who} knows, it ${g.strength >= 3 ? 'wounds' : 'stings'}.`);
+            // They were not there and no one has told them: nothing to go on,
+            // unless the one other person who was there is here to let it slip.
+            // Inji, told only "word may have reached" him, had nothing to know it by.
+            if (g.rival && here.has(g.rival) && !playerIds.has(g.rival)) lines.push(`- ${who} does not know: ${unstop(g.what)} (${when}). Only ${rival} could let it slip. Until the story shows ${who} finding out, ${who} treats ${over} as if it never happened; once ${who} knows, it ${g.strength >= 3 ? 'wounds' : 'stings'}.`);
             continue;
         }
         const toward = [
@@ -312,7 +315,10 @@ export function takeHearts(hearts, { jealous = [], romance = [], soothed = [] } 
         const b = resolve(r.other);
         if (!a || !b || a === b) continue;
         for (const [over, rival] of [[a, b], [b, a]]) {
-            for (const bond of bonds.filter((x) => x.romantic && x.to === over && x.who !== rival && !here.has(x.who) && may(x.who))) {
+            // Someone truly bound to them, not a flirtation the story's notes
+            // read as romance: Inji had a grudge over Zane from before there
+            // was anything between him and Cyril.
+            for (const bond of bonds.filter((x) => x.romantic && x.strength >= 3 && !isDesire(x.label) && x.to === over && x.who !== rival && !here.has(x.who) && may(x.who))) {
                 const what = `${nameOf(over)} and ${nameOf(rival)}${r.what ? ` - ${unstop(r.what)}` : ''}`;
                 const g = addGrievance(hearts, { who: bond.who, whoName: nameOf(bond.who), over, overName: nameOf(over), rival, rivalName: nameOf(rival), what, kind: 'word', strength: /kiss|bed|night|made love|embrac/i.test(str(r.what)) ? 3 : 2, day, turn }, { newId });
                 if (g) { added.push(g); word.push({ who: bond.who, over, rival, what }); }
