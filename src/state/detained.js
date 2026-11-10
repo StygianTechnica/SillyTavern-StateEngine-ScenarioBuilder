@@ -73,7 +73,14 @@ export function detainedText(doc, { max = 6, about = () => '', recentText = null
 // and the like are a moment in a scene, not someone led away for a time.
 const CUSTODY = /\b(?:arrest\w*|jail\w*|gaol\w*|prison\w*|imprison\w*|cell|cells|custody|captive\w*|captur\w*|detain\w*|locked (?:up|away|in)|brig|dungeon\w*|stockade|held|handcuff\w*|shackl\w*|manacl\w*|taken in|hauled (?:off|away|in)|led away|police|guards?|watch|warrant|authorities|magistrate|court)\b/i;
 const ONLY_A_MOMENT = /\b(?:at (?:gun|knife|sword|spear|blade|wand)?\s*point|gunpoint|knifepoint|swordpoint|at bay|in (?:a|his|her|their) (?:grip|sights?))\b/i;
-export const soundsHeld = (how) => CUSTODY.test(clean(how)) && !ONLY_A_MOMENT.test(clean(how));
+export const soundsHeld = (how) => (CUSTODY.test(clean(how)) || LOCKED_AWAY.test(clean(how))) && !ONLY_A_MOMENT.test(clean(how));
+
+// Locked away, whoever holds them: a cell at their own side's headquarters
+// is detention, not a prisoner kept in the scene. Tadam Chi, processed into
+// White Cerberus's custody, was let stand as Cyril's side's prisoner, never
+// counted as held - and turned up on the Medina Syndicate's next crew.
+const LOCKED_AWAY = /\b(?:cells?|jail\w*|gaol\w*|prison|imprison\w*|brig|dungeons?|stockade|lock-?up|holding (?:cell|area|facility)|locked (?:up|away)|processed|booked|handed (?:\w+ )?(?:over|off)|turned (?:\w+ )?over|security)\b/i;
+export const lockedAway = (how) => LOCKED_AWAY.test(clean(how));
 
 // Whether who holds them is one of the player character's own side, here
 // with them. names: that side's people in the scene.

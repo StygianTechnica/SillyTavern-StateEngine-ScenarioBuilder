@@ -55,7 +55,7 @@ import { timedHappenings } from '../planner/timed.js';
 // How many replies a broken-off fight's wounds are remembered.
 const WOUNDS_KEPT = 30;
 import { markDead, deadText, deadByName, bringBack } from '../state/death.js';
-import { isDetained, detainedText, detainedByName, soundsHeld, heldByOwnSide, release } from '../state/detained.js';
+import { isDetained, detainedText, detainedByName, soundsHeld, heldByOwnSide, lockedAway, release } from '../state/detained.js';
 import { captivesLine } from '../guidance/captives.js';
 import { heldBySheet } from '../guidance/spoken.js';
 import { narrationOf } from './departures.js';
@@ -764,7 +764,8 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
         opLive: opRunning(getChatDoc(chatKey).op),
         opRoom: roomForJob(getChatDoc(chatKey)),
         opAware: getChatDoc(chatKey).op?.aware === true,
-        opposition: settings.director.opposition !== false && !!settingId,
+        // No rival job is asked for during a private moment (src/director/whereabouts.js).
+        opposition: settings.director.opposition !== false && !!settingId && !privateMoment({ people: getChatDoc(chatKey).canonical.castIds.length, recent: messages.map((m) => m.text) }),
         // Only the dead the latest messages speak of.
         // The story going in circles, or the player asking whether it is over.
         loopLine: circling(messages.slice(-8), { names: (guidance.cast ?? []).filter((c) => !c.player).map((c) => c.name) }).line,
@@ -1343,7 +1344,7 @@ async function run(chatId, chatKey, type, force, { ahead = false, preRaw = null 
             // not someone led away: Tadam, "in Inji's custody" in the back of
             // their car, went out of the cast and spoke from it anyway.
             const ownSide = (guidance.cast ?? []).filter((c) => c.player || (c.factionIds ?? []).some((id) => (guidance.cast ?? []).find((p) => p.player)?.factionIds?.includes(id)));
-            if ((guidance.captives ?? []).some((c) => c.name === who.name) || heldByOwnSide(d.how, ownSide.flatMap((c) => [c.name, String(c.name).split(/\s+/)[0]]))) {
+            if (!lockedAway(d.how) && ((guidance.captives ?? []).some((c) => c.name === who.name) || heldByOwnSide(d.how, ownSide.flatMap((c) => [c.name, String(c.name).split(/\s+/)[0]])))) {
                 console.info(LOG_PREFIX, `${who.name} left in the scene: still in the hands of the player's side (${d.how})`);
                 continue;
             }

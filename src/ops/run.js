@@ -17,6 +17,9 @@ import { inPersonOf } from '../guidance/spoken.js';
 import { allWingsOf, wingOfPerson, markOtherWings } from '../library/wings.js';
 import { buildOpPrompt, readOpPlan, matchPeople, swapOpNames, isPersonName, findSide, tiedFirst, shapePlan, aboutThem, sideInStory } from './generate.js';
 import { encounterOpen, repeatJob, shownAtWork, namesOf } from './detect.js';
+import { privateMoment } from '../director/whereabouts.js';
+import { offTheJob, isOff, dropUnavailable } from './available.js';
+import { captivesFrom } from '../guidance/captives.js';
 
 // How far back the chat must have named a group for a crew of theirs to start.
 const RECENT_FOR_SIDE = 12;
@@ -250,8 +253,16 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
                 console.warn(LOG_PREFIX, 'could not roll names for the other side', err);
             }
         }
+        // Not those held, dead or still prisoners of the player's side
+        // (src/ops/available.js): read from all the player's posts, since a
+        // capture long ago stands until a post lets them go.
+        const docNow = getChatDoc(chatKey);
+        const posts = (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system && m.is_user).map((m) => String(m.mes ?? ''));
+        const off = offTheJob({ detained: docNow.detained, dead: docNow.dead, captives: captivesFrom(posts, people.map((p) => ({ name: p.name, aliases: p.aliases ?? [] }))) });
+        const free = people.filter((p) => !isOff(p, off));
+        if (free.length < people.length) console.info(LOG_PREFIX, `left off ${sideName}'s job - held, dead or a prisoner: ${people.filter((p) => isOff(p, off)).map((p) => p.name).join(', ')}`);
         // Crewed from the wing of whoever's job it is (src/library/wings.js).
-        const wings = markOtherWings(tiedFirst(people, [request, side, story].join('\n')), { relations, factionIds, sideName });
+        const wings = markOtherWings(tiedFirst(free,[request, side, story].join('\n')), { relations, factionIds, sideName });
         const sidePeople = wings.people;
         const prompt = buildOpPrompt({
             side: { name: sideName, description: found.faction?.description ?? found.faction?.base?.description ?? '' },
@@ -295,6 +306,7 @@ export async function planOp(chatId, chatKey, settingId, { side = '', request = 
         }
         // Held to what a small model skips (src/ops/generate.js shapePlan).
         plan = shapePlan(plan, { people: sidePeople, against: them, aware, placeName: places.find((p) => p.id === at)?.name ?? '', fallbackAim: aboutThem(request, them) ? '' : request });
+        plan = dropUnavailable(plan, off);
         return {
             ...plan,
             sideId: found.faction?.id ?? '',
@@ -371,6 +383,13 @@ export async function opFromDirector(chatId, chatKey, settingId, opposed) {
         if (!opposed?.who || !settingId || getSettings().director.opposition === false) return null;
         const doc = getChatDoc(chatKey);
         if (!roomForJob(doc)) return null;
+        // Not on top of a private moment: the Medina Syndicate came for
+        // "whatever is most worth taking" from Inji's quarters with Cyril and
+        // Inji in bed there (src/director/whereabouts.js).
+        if (privateMoment({ people: doc.canonical.castIds.length, recent: (SillyTavern.getContext().chat ?? []).filter((m) => m && !m.is_system).map((m) => String(m.mes ?? '')) })) {
+            console.info(LOG_PREFIX, `the other side: ${opposed.who} left alone - a private moment is under way`);
+            return null;
+        }
         const lastOp = doc.op ?? (doc.opsDone ?? []).at(-1) ?? null;
         const lib = await import('../library/library.js');
         const { libraryMemberships } = await import('../library/faction-sync.js');

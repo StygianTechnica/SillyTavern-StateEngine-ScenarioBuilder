@@ -261,7 +261,7 @@ export function elsewhereEntering(enters, { characters = [], elsewhere = [], cas
 // three replies of waiting he was walked in on Cyril and Inji in Inji's
 // quarters. It takes two people here and two of the latest messages reading
 // close: one kiss on the way past is not a closed door. recent: texts.
-const CLOSE = /\b(?:kiss\w*|embrac\w*|caress\w*|cuddl\w*|nuzzl\w*|lips|undress\w*|naked|in bed|into bed|affection\w*|intimate\w*|suggestive\w*|moan\w*|in (?:his|her|their|your|my|each other's) arms)\b/i;
+const CLOSE = /\b(?:kiss\w*|embrac\w*|caress\w*|cuddl\w*|nuzzl\w*|lips?|talk(?:ing)? dirty|undress\w*|naked|in bed|into bed|affection\w*|intimate\w*|suggestive\w*|moan\w*|in (?:his|her|their|your|my|each other's) arms)\b/i;
 export function privateMoment({ people = 0, recent = [] } = {}) {
     return people === 2 && (recent ?? []).slice(-4).filter((t) => CLOSE.test(String(t ?? ''))).length >= 2;
 }
